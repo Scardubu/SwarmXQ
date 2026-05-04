@@ -1,0 +1,69 @@
+family: meta
+version: IEP-ELITE-2026.4-apex15
+description: Parallel specialist execution with evidence merge and convergence.
+risk: medium
+handoff_validation: type-and-range
+
+meta:
+  model_triad:
+    orchestrator: phi4-mini
+    reasoning:    deepseek-r1:7b
+    execution:    qwen2.5-coder
+
+stages:
+  - name: intake
+    owner: strategist
+    model: phi4-mini
+    risk: low
+    purpose: Define the objective and identify independent branches.
+    outputs:
+      - objective
+      - branch_candidates
+    handoff_validation: type-and-range
+
+  - name: decompose
+    owner: subagent-coordinator
+    model: deepseek-r1:7b       # reasoning engine decomposes
+    risk: low
+    purpose: Split the problem into parallel subproblems.
+    outputs:
+      - subproblems[]
+      - branch_assignments
+    handoff_validation: type-and-range
+
+  - name: fan-out
+    owner: expert-pool
+    model: qwen2.5-coder           # execution engine runs specialists
+    risk: low
+    purpose: Assign the right specialists to each branch and keep each branch narrowly scoped.
+    outputs:
+      - branch_results[]
+    handoff_validation: type-and-range
+
+  - name: fan-in
+    owner: subagent-coordinator
+    model: deepseek-r1:7b       # reasoning engine merges and resolves
+    risk: low
+    purpose: Merge results, resolve conflicts, and synthesize evidence into one answer.
+    outputs:
+      - merged_result
+      - conflict_resolution_notes
+    handoff_validation: type-and-range
+
+  - name: verify
+    owner: evaluator
+    model: phi4-mini
+    risk: low
+    purpose: Check the merged result for consistency and regressions.
+    outputs:
+      - verification_result
+    handoff_validation: type-and-range
+
+  - name: learn
+    owner: memory-curator
+    model: phi4-mini
+    risk: low
+    purpose: Record the decomposition pattern for reuse.
+    outputs:
+      - memory_entry
+    handoff_validation: type-level

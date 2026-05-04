@@ -1,0 +1,28 @@
+family: meta
+risk: low
+description: Transform successful run patterns into reusable skills and templates.
+stages:
+- name: observe
+  owner: evaluator
+  risk: low
+  purpose: Collect recent run outcomes, evidence, and recurring motifs.
+- name: distill
+  owner: skill-curator
+  risk: low
+  purpose: Extract high-value habits, compress them, and convert them into skill candidates.
+- name: rank
+  owner: tournament-judge
+  risk: low
+  purpose: Score candidate skills by leverage, frequency, transferability, and clarity.
+- name: publish
+  owner: skill-curator
+  risk: low
+  purpose: Write the synthesized skills to the reusable library with minimal duplication.
+- name: verify
+  owner: evaluator
+  risk: low
+  purpose: Check that the new skills are consistent with evidence.
+- name: learn
+  owner: memory-curator
+  risk: low
+  purpose: Store the skill synthesis lesson and retrieval cues.

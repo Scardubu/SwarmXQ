@@ -1,0 +1,33 @@
+# ── SwarmX supplemental runtime dependencies ──────────────────────────────────
+#
+# Extends the core set declared in pyproject.toml with ML / vector / storage
+# packages that require precise version pinning due to C-API ABI constraints.
+#
+# Bounds explained:
+#   numpy <2.0     — faiss-cpu 1.x links against the numpy 1.x C API
+#   scikit <1.6    — 1.6 introduced breaking changes to the embedding pipeline
+#   faiss-cpu <2.0 — major version boundary; 2.x API is incompatible
+#   sentence-transformers <3.0 — 3.x deprecates SentenceTransformer.encode signature
+#   sqlite-vec <0.2 — experimental extension; minor bump may shift symbol names
+#   redis <6.0     — 6.x redis-py dropped compat shims used by BullMQ bridge
+#   requests <3.0  — 3.x drops Python 3.11 transport-level fallbacks
+#
+# To upgrade: bump the version, run `make test`, then commit.
+# Never leave bare package names — implicit latest will silently break builds.
+
+# ── Numeric / ML ──────────────────────────────────────────────────────────────
+numpy>=1.26.4,<2.0
+scikit-learn>=1.4.2,<1.6
+
+# ── Vector search ─────────────────────────────────────────────────────────────
+# CPU-only build compatible with numpy <2.0.
+# For GPU hosts: replace faiss-cpu with faiss-gpu and rebuild the image.
+faiss-cpu>=1.8.0,<2.0
+sentence-transformers>=2.7.0,<3.0
+
+# ── Storage ───────────────────────────────────────────────────────────────────
+sqlite-vec>=0.1.6,<0.2
+
+# ── Network / IO ──────────────────────────────────────────────────────────────
+requests>=2.32.3,<3.0
+redis>=5.0.8,<6.0

@@ -1,0 +1,75 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# SwarmX · configs/verticals/conviction-engine.yaml
+# Per-vertical constraint overlay for the Conviction Engine (Core Identity Framework).
+#
+# Loaded by llm.py _load_vertical_config("conviction-engine").
+# This vertical defines the living philosophy, principles, and strict engineering
+# standards that power Oscar Ndugbu’s portfolio and all conviction-driven systems.
+# It serves as the foundational overlay for oscar-portfolio-main and future projects.
+#
+# The Conviction Engine is a versioned, evolving framework (currently targeting v11+)
+# for achieving full-stack identity coherence, production-grade excellence,
+# technical authority, and relentless iterative refinement.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+vertical: conviction-engine
+version: "2026.05.01"
+
+extra_constraints:
+
+  # Conviction Engine Core Philosophy
+  - "The Conviction Engine is the central guiding framework for all decisions affecting Oscar Ndugbu’s digital presence. It demands full-stack identity alignment, uncompromising production quality, technical clarity, and continuous evolution toward mastery"
+  - "All changes must be tagged with `conviction(vX.Y)` in commit messages to track the evolution of the Engine"
+  - "Current mandate: Advance from v10.0 (full-stack identity + SkillsMap foundation) toward v11+ by deepening design system maturity, performance systems, and multi-platform coherence"
+
+  # Expanded Conviction Engine Core Tenets
+  - "Tenet 1 — Full-Stack Identity Coherence: Every visual, textual, and technical element must consistently reinforce Oscar Ndugbu’s positioning as a Principal Full-Stack Engineer with deep expertise across AI/ML infrastructure, fintech systems, backend reliability, frontend craftsmanship, cross-platform mobile development (React Native/Expo), infrastructure, and data engineering"
+  - "Tenet 2 — Production Readiness as Baseline: Treat the portfolio as a production system — every feature, refactor, or addition must maintain or improve build stability, type safety, observability, test coverage, and deployment reliability"
+  - "Tenet 3 — Measurable Impact & Technical Storytelling: Case studies, SkillsMap entries, and writing must clearly articulate architectural decisions, trade-offs, real-world outcomes, and measurable production impact rather than generic descriptions"
+  - "Tenet 4 — Relentless Progressive Refinement: View the entire portfolio as a living system under continuous improvement — actively reduce technical debt, polish edge cases, optimize performance, and elevate design quality with each iteration"
+  - "Tenet 5 — Inclusive Excellence & Accessibility: Maintain WCAG 2.1 AA compliance as a non-negotiable standard. Prioritize semantic HTML, proper ARIA, keyboard navigation, reduced-motion support, and high-contrast modes to ensure the experience is excellent for all users"
+  - "Tenet 6 — Performance Obsession: Aggressively optimize for Core Web Vitals using Partial Prerendering, strategic motion, minimal client JavaScript, and clean architecture. Target and sustain Lighthouse scores of 95+"
+  - "Tenet 7 — Design System Maturity & Consistency: Evolve a cohesive design language (glassmorphism, cursor effects, section kickers, motion vocabulary, design tokens) that feels premium, intentional, and distinctly Oscar’s"
+  - "Tenet 8 — Technical Authority Through Clarity: Favor deep technical honesty, architectural transparency, and precise language. Avoid superficial hype — let strong engineering speak through clarity and substance"
+  - "Tenet 9 — Multi-Platform & Future-Proof Thinking: Ensure decisions today support seamless extension to mobile (React Native/Expo), potential Turborepo monorepo structures, Effect-TS patterns, and other conviction-aligned systems"
+
+  # SkillsMap & Content Discipline
+  - "SkillsMap must accurately reflect the 6 pillars (AI/ML, Backend, Frontend, Mobile, Infrastructure, Data) with dynamic filtering, proficiency visualization, system context tags, and full accessibility compliance"
+  - "All long-form content and case studies must live in the content/ directory as MDX and actively reinforce multiple Conviction Engine tenets"
+  - "JSON-LD structured data (Person schema + knowsAbout), meta tags, and the 24-keyword SEO array must remain synchronized with the current Conviction Engine version and identity"
+
+  # Technical & Tooling Standards
+  - "Enforce strict TypeScript with no `any` types; prefer branded types and precise utility patterns"
+  - "Framer Motion 11 must exclusively use LazyMotion + domAnimations and the `m.*` alias"
+  - "Tailwind CSS v4 with centralized design tokens and consistent visual language"
+  - "Mandatory quality gates: Vitest unit/integration tests + Playwright E2E (including accessibility checks) must pass before merging conviction-tagged changes"
+  - "ESLint (with custom rules), Husky pre-commit hooks, pnpm, and type-checking are non-negotiable"
+
+  # Versioning & Evolution
+  - "When advancing the Conviction Engine version, update Conviction-engine,md, README.md, and all relevant vertical configs"
+  - "Major features or refactors must demonstrably advance at least three of the nine core tenets"
+  - "Resume PDF, contact surfaces, hero section, and SkillsMap must stay aligned with the latest Conviction Engine identity statement"
+
+  # Cross-Vertical Alignment
+  - "Any code generated under oscar-portfolio-main must fully comply with active Conviction Engine tenets"
+  - "When operating in other verticals (taxbridge, sabiscore, hashablanca, etc.), identify and surface opportunities to strengthen Conviction Engine alignment"
+
+risk_keywords:
+  - "conviction engine"
+  - "conviction v11"
+  - "conviction(v"
+  - "full-stack identity"
+  - "skillsmap"
+  - "principal full-stack"
+  - "oscar ndugbu"
+
+stack_signals:
+  - "conviction-engine"
+  - "next.js 15"
+  - "react 19"
+  - "framer-motion 11"
+  - "tailwindcss v4"
+  - "skillsmap"
+  - "mdx"
+  - "playwright"
+  - "typescript strict"

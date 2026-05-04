@@ -1,0 +1,28 @@
+family: frontend
+description: Design-led frontend upgrade loop with accessibility and polish.
+risk: medium
+stages:
+- name: intake
+  owner: strategist
+  risk: low
+  purpose: Define the UX goal and target audience.
+- name: layout-review
+  owner: design-critic
+  risk: low
+  purpose: Assess hierarchy, spacing, and information density.
+- name: design-system
+  owner: frontend-architect
+  risk: medium
+  purpose: Align tokens, components, and responsive behavior.
+- name: implement
+  owner: frontend-architect
+  risk: medium
+  purpose: Ship the smallest coherent UI improvement.
+- name: visual-qa
+  owner: evaluator
+  risk: low
+  purpose: Check visual consistency and accessibility cues.
+- name: learn
+  owner: memory-curator
+  risk: low
+  purpose: Capture UX lessons and component patterns.

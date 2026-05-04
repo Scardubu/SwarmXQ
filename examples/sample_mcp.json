@@ -1,0 +1,26 @@
+{
+  "servers": [
+    {
+      "name": "filesystem",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "."
+      ]
+    },
+    {
+      "name": "git",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-git"
+      ]
+    }
+  ],
+  "allowlist": [
+    "filesystem",
+    "git",
+    "browser"
+  ]
+}

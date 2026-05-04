@@ -1,0 +1,28 @@
+family: security
+risk: high
+description: Guarded hardening sprint for risky surfaces, secrets, and release paths.
+stages:
+  - name: intake
+    owner: strategist
+    risk: low
+    purpose: Define the hardening scope and approval requirements.
+  - name: threat-model
+    owner: security-reviewer
+    risk: high
+    purpose: Enumerate credible threats and privileged surfaces.
+  - name: patch
+    owner: backend-engineer
+    risk: medium
+    purpose: Apply the smallest safe hardening patch.
+  - name: verify
+    owner: evaluator
+    risk: medium
+    purpose: Validate evidence and confirm no new exposure.
+  - name: gate
+    owner: risk-sentinel
+    risk: high
+    purpose: Enforce human review for high-risk changes.
+  - name: learn
+    owner: memory-curator
+    risk: low
+    purpose: Record the security lesson and rollback path.

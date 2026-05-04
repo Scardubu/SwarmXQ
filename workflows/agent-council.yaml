@@ -1,0 +1,100 @@
+family: meta
+version: IEP-ELITE-2026.4
+description: >
+  Executive swarm council for architecture, workflow selection, and safety arbitration.
+  Upgraded: blast-radius delta tracked from intake through gate; island bias signal feeds adjudicate.
+risk: medium
+
+meta:
+  blast_radius_estimate: medium
+  fitness_island: alpha   # precision-dominant — correctness and boundary fidelity above all
+
+stages:
+  - name: intake
+    owner: strategist
+    risk: low
+    purpose: >
+      Frame the objective and the decision boundary.
+      Rank all inputs (T1/T2/T3/T4). Resolve T1 ambiguities before assigning work.
+      Set initial blast-radius estimate.
+    outputs:
+      - framed objective
+      - signal triage result
+      - blast_radius_estimate: initial
+      - stop conditions (explicit)
+    handoff_validation: type-level
+
+  - name: map
+    owner: chief-architect
+    risk: low
+    purpose: >
+      Map the system, the attack surface, and the leverage points.
+      Produce the boundary map that §7 Coherence Pulse will validate against for the rest of this run.
+    outputs:
+      - boundary map
+      - attack surface summary
+      - leverage points
+    handoff_validation: type-level
+
+  - name: compose
+    owner: workflow-composer
+    risk: low
+    purpose: >
+      Choose the best workflow or synthesize a new one.
+      Enforce minimum-stage discipline — justify any stage count > 6.
+      Select the runtime shape (LangGraph / CrewAI / AutoGen / Direct / etc).
+    outputs:
+      - selected workflow or synthesized graph
+      - runtime shape
+      - stage count with justification
+    handoff_validation: type-and-range-level
+
+  - name: route
+    owner: strategist
+    risk: low
+    purpose: >
+      Assign specialist agents and budgets after the winning path has been chosen.
+      Each agent receives a scoped lane — no agent operates outside its assigned boundary.
+    outputs:
+      - agent assignments
+      - budget allocations
+      - scope lanes
+    handoff_validation: type-and-range-level
+
+  - name: adjudicate
+    owner: tournament-judge
+    risk: low
+    purpose: >
+      Compare 2–3 candidate paths internally. Apply crossover if top-2 cover non-overlapping axes.
+      Select the strongest evidence-backed path. Register CROSSOVER in Fix Log if hybridized.
+      Apply island bias signal from intake fix_log_pattern_summary.
+    outputs:
+      - winning path
+      - fitness scores (all candidates)
+      - crossover event (if applicable)
+    handoff_validation: type-and-range-level
+
+  - name: gate
+    owner: risk-sentinel
+    risk: high
+    purpose: >
+      Block unsafe actions. Verify blast-radius delta is non-positive or explicitly approved.
+      Require human approval for any change that crosses high-risk boundary.
+      Register BLOCK in Fix Log for any rejected action.
+    outputs:
+      - gate decision: PASS | BLOCK
+      - human_approval: required/obtained/waived
+      - blast_radius_delta: final
+    handoff_validation: type-and-range-level
+
+  - name: learn
+    owner: memory-curator
+    risk: low
+    purpose: >
+      Store the decision trail, reusable heuristics, island bias update, and Fix Log summary.
+      Write retrieval-cued memory note. Promote skill candidate if pattern repeated ≥ 2 times.
+    outputs:
+      - memory note (retrieval cues + expiry signal)
+      - skill candidate (if applicable)
+      - island_bias_update
+    handoff_validation: type-level

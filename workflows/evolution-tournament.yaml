@@ -1,0 +1,80 @@
+family: meta
+version: IEP-ELITE-2026.4-apex15
+description: >
+  Propose, score, compare, and promote low-risk upgrades.
+  Upgraded: 3-candidate tournament with explicit crossover step; island-model fitness bias;
+  blast-radius delta gate. Model triad: Phi-4-mini routes, R1 evaluates, Qwen2.5-Coder implements patches.
+risk: low
+handoff_validation: type-and-range
+
+meta:
+  blast_radius_estimate: low
+  fitness_island: beta      # leverage-dominant — highest value per mutation
+  candidate_count: 3        # fixed; never fewer, never more
+  model_triad:
+    orchestrator: phi4-mini
+    reasoning:    deepseek-r1:7b
+    execution:    qwen2.5-coder
+
+stages:
+  - name: observe
+    owner: evaluator
+    model: phi4-mini               # fast evaluation pass
+    risk: low
+    purpose: >
+      Collect run evidence, Fix Log patterns (CRITICAL / GAP / CROSSOVER / BLOCK counts),
+      and the current baseline. Compute island bias signal from pattern summary.
+    outputs:
+      - baseline_score
+      - fix_log_pattern_summary
+      - island_bias_signal
+    handoff_validation: type-and-range
+
+  - name: propose
+    owner: evolver
+    model: deepseek-r1:7b     # reasoning engine generates proposals
+    risk: low
+    purpose: >
+      Generate exactly 3 bounded change proposals. Each must be independently reversible.
+      Score each on the 5 IEP-ELITE axes. Seed island selection from island_bias_signal.
+    outputs:
+      - proposals[]            # exactly 3 entries
+      - island_winner
+    handoff_validation: type-and-range
+
+  - name: tournament
+    owner: tournament-judge
+    model: deepseek-r1:7b     # causal reasoning for fitness comparison
+    risk: low
+    purpose: >
+      Run 3-island tournament. Apply crossover when no island clears 0.80 fitness.
+      Register crossover events in Fix Log. Select the winning proposal.
+    outputs:
+      - winning_proposal
+      - crossover_event        # optional; present if crossover applied
+    handoff_validation: type-and-range
+
+  - name: implement
+    owner: evolver
+    model: qwen2.5-coder         # execution engine applies the patch
+    risk: low
+    purpose: >
+      Apply the winning proposal. Store proposal record before any change.
+      Register rollback anchor. Apply only when auto_apply=true and risk=low.
+    outputs:
+      - applied_patch          # null if proposal_only_by_default=true
+      - proposal_record
+      - rollback_anchor
+    handoff_validation: type-and-range
+
+  - name: learn
+    owner: memory-curator
+    model: phi4-mini
+    risk: low
+    purpose: >
+      Write a memory note for the winning pattern. Update PromptBreeder win/loss counters.
+      Record island result for convergence tracking.
+    outputs:
+      - memory_entry
+      - promptbreeder_update
+    handoff_validation: type-level

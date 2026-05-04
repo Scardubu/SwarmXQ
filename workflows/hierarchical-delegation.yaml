@@ -1,0 +1,28 @@
+family: meta
+description: Recursive delegation from supervisor to specialists and back.
+risk: medium
+stages:
+- name: intake
+  owner: strategist
+  risk: low
+  purpose: Frame the goal and the supervision boundary.
+- name: architect
+  owner: chief-architect
+  risk: low
+  purpose: Define the team topology and decision lanes.
+- name: delegate
+  owner: subagent-coordinator
+  risk: low
+  purpose: Send scoped work to specialists with clear contracts.
+- name: synthesize
+  owner: subagent-coordinator
+  risk: low
+  purpose: Merge specialist outputs into a coherent plan.
+- name: verify
+  owner: evaluator
+  risk: low
+  purpose: Validate the synthesis and surface gaps.
+- name: learn
+  owner: memory-curator
+  risk: low
+  purpose: Persist the delegation pattern.

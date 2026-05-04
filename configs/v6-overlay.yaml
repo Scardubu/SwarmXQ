@@ -1,0 +1,12 @@
+# SwarmX V6 overlay
+# [V5.9-FIX-01] Updated model tags to canonical names.
+self_improving_layer:
+  enabled: true
+  default_cycles: 1
+  artifact_store: evolution-layer
+  observer_model: phi4-fast          # [V5.9-FIX-01] was phi4-mini
+  critic_model: deepseek-reasoner    # [V5.9-FIX-01] was deepseek-r1:7b
+  mutator_model: qwen-worker         # [V5.9-FIX-01] was qwen2.5-coder
+  default_mode: staged
+  allow_auto_deploy: false
+  require_baseline_comparison: true

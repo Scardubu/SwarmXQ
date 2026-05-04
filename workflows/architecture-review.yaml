@@ -1,0 +1,28 @@
+family: architecture
+description: Deep system design critique and implementation plan.
+risk: medium
+stages:
+- name: intake
+  owner: strategist
+  risk: low
+  purpose: State the architecture question clearly.
+- name: map
+  owner: backend-engineer
+  risk: low
+  purpose: Map boundaries, dependencies, and critical paths.
+- name: critique
+  owner: design-critic
+  risk: low
+  purpose: Pressure-test structure, clarity, and usability.
+- name: recommend
+  owner: backend-engineer
+  risk: medium
+  purpose: Write the implementation direction and tradeoffs.
+- name: verify
+  owner: evaluator
+  risk: low
+  purpose: Check the proposal against objectives and constraints.
+- name: learn
+  owner: memory-curator
+  risk: low
+  purpose: Record durable architecture lessons.

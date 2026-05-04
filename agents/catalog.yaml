@@ -1,0 +1,412 @@
+version: 2026.04.2-upgraded
+description: Swarm agent catalog upgraded with stateful orchestration, expanded specialist governance, least-privilege tool
+  use, eval/trace gates, and reversible meta-evolution.
+shared_enhancements:
+- langgraph-cyclic-stateful-workflows
+- crewai-role-based-crews-and-flows
+- autogen-event-driven-collaboration
+- openai-responses-agents-sdk-evals-guardrails
+- google-adk-production-agent-lifecycle
+- strands-agents-model-first-tooling
+- mcp-standard-tool-context-integration
+- evals-and-trace-grading
+- gea-experience-sharing
+- hyperagents-editable-meta-learning
+- memevolve-memory-architecture-evolution
+- dr-zero-data-free-proposer-solver-loops
+- robophd-evolutionary-tournaments
+- voyager-style-skill-libraries
+- stop-conditions-first
+- latent-ensemble-exactly-3
+- predictive-downstream-simulation
+- swarm-fitness-scoring
+- token-optimal-compression
+agents:
+- name: strategist
+  file: strategist.md
+  model: fast
+  outputs:
+  - routing-decision
+  - plan-summary
+  - stop-conditions
+  - workflow-routing
+  - swarm-coherence-note
+  skill_tags:
+  - workflow-routing
+  - confidence-gating
+  - swarm-coherence
+  - predictive-simulation
+  - stateful-planning
+- name: design-critic
+  file: design-critic.md
+  model: fast
+  outputs:
+  - critique-memo
+  - prioritized-fixes
+  - accessibility-risks
+  - design-critique
+  - swarm-experience-note
+  skill_tags:
+  - ux-critique
+  - accessibility
+  - design-system
+  - swarm-coherence
+  - usability-review
+- name: mcp-toolsmith
+  file: mcp-toolsmith.md
+  model: code
+  outputs:
+  - tool-map
+  - manifest-update
+  - access-policy
+  - mcp-tooling
+  - swarm-security-note
+  skill_tags:
+  - least-privilege
+  - manifest-management
+  - security-boundaries
+  - auditability
+  - mcp
+- name: frontend-architect
+  file: frontend-architect.md
+  model: code
+  outputs:
+  - implementation-plan
+  - ui-patch-notes
+  - validation-evidence
+  - design-system-polish
+  - swarm-coherence-note
+  skill_tags:
+  - ui-architecture
+  - accessibility
+  - responsive-design
+  - design-system
+  - stateful-ui
+- name: tournament-judge
+  file: tournament-judge.md
+  model: fast
+  outputs:
+  - scorecard
+  - ranking
+  - winner rationale
+  - selection notes
+  - swarm-fitness-score
+  skill_tags:
+  - comparison
+  - rubric-scoring
+  - evidence-ranking
+  - swarm-fitness
+  - tournament-selection
+- name: context-researcher
+  file: context-researcher.md
+  model: reason
+  outputs:
+  - source-summary
+  - freshness-note
+  - doc-deltas
+  - context7-auto-research
+  - swarm-doc-alignment-note
+  skill_tags:
+  - docs-research
+  - freshness-check
+  - version-sensitivity
+  - implementation-notes
+  - primary-sources
+- name: research-analyst
+  file: research-analyst.md
+  model: reason
+  outputs:
+  - evidence-summary
+  - recommendation-stack
+  - citations
+  - research-acceleration
+  - swarm-applicability-score
+  skill_tags:
+  - evidence-synthesis
+  - fact-vs-inference
+  - citations
+  - applicability
+  - eval-informed-research
+- name: skill-librarian
+  file: skill-librarian.md
+  model: fast
+  outputs:
+  - skill-gap-map
+  - candidate-skills
+  - published-skill
+  - skill-sentinel
+  - swarm-retrieval-optimization
+  skill_tags:
+  - cataloging
+  - retrieval-optimization
+  - reusable-skills
+  - knowledge-management
+  - skill-versioning
+- name: qa-evaluator
+  file: qa-evaluator.md
+  model: code
+  outputs:
+  - repro-steps
+  - failure-analysis
+  - fix-validation
+  - test-stabilization
+  - swarm-test-coherence-note
+  skill_tags:
+  - debugging
+  - test-stabilization
+  - flaky-test-reduction
+  - regression-defense
+  - trace-grading
+- name: chief-architect
+  file: chief-architect.md
+  model: reason
+  outputs:
+  - architecture-brief
+  - boundary-map
+  - tradeoff-memo
+  - architecture-review
+  - swarm-evolution-note
+  skill_tags:
+  - architecture-governance
+  - boundary-management
+  - validation-evidence
+  - evolution-control
+  - state-boundaries
+- name: subagent-coordinator
+  file: subagent-coordinator.md
+  model: reason
+  outputs:
+  - delegation-map
+  - handoff-record
+  - merge-plan
+  - subagent-driven-development
+  - swarm-merge-evidence
+  skill_tags:
+  - delegation
+  - handoffs
+  - deterministic-merges
+  - subagent-orchestration
+  - stateful-routing
+- name: evolver
+  file: evolver.md
+  model: reason
+  outputs:
+  - proposal-set
+  - risk-note
+  - apply-or-wait
+  - autonomy-ops
+  - swarm-fitness-impact
+  skill_tags:
+  - proposal-generation
+  - reversible-mutation
+  - meta-evolution
+  - swarm-fitness
+  - memory-evolution
+- name: performance-optimizer
+  file: performance-optimizer.md
+  model: code
+  outputs:
+  - profile-summary
+  - bottleneck-list
+  - optimization-plan
+  - benchmarking
+  - swarm-efficiency-note
+  skill_tags:
+  - profiling
+  - optimization
+  - benchmarking
+  - regression-safety
+  - throughput
+- name: data-engineer
+  file: data-engineer.md
+  model: code
+  outputs:
+  - pipeline-plan
+  - quality-notes
+  - measurement-evidence
+  - data-engineering
+  - swarm-lineage-note
+  skill_tags:
+  - data-lineage
+  - schema-design
+  - observability
+  - contract-management
+  - metrics
+- name: workflow-composer
+  file: workflow-composer.md
+  model: reason
+  outputs:
+  - workflow-selection
+  - stage-ordering
+  - routing-notes
+  - compose-plan
+  - swarm-graph-coherence-score
+  skill_tags:
+  - workflow-graph
+  - routing
+  - minimal-workflow
+  - stateful-orchestration
+  - graph-design
+- name: prompt-architect
+  file: prompt-architect.md
+  model: reason
+  outputs:
+  - prompt-stack
+  - instruction-architecture
+  - rubric
+  - prompt-ops
+  - swarm-predictability-score
+  skill_tags:
+  - prompt-design
+  - instruction-hierarchy
+  - rubrics
+  - safety-rails
+  - evaluation-ready
+- name: backend-engineer
+  file: backend-engineer.md
+  model: code
+  outputs:
+  - backend-patch-plan
+  - contract-notes
+  - test-evidence
+  - backend-architecture
+  - swarm-invariants-note
+  skill_tags:
+  - api-design
+  - contracts
+  - error-handling
+  - idempotency
+  - state-machines
+- name: skill-curator
+  file: skill-curator.md
+  model: fast
+  outputs:
+  - skill-candidates
+  - retention-notes
+  - reuse-hints
+  - skill-synthesis
+  - swarm-velocity-impact
+  skill_tags:
+  - skill-curation
+  - retrieval-cues
+  - pattern-distillation
+  - versioning
+  - transferability
+- name: evaluator
+  file: evaluator.md
+  model: fast
+  outputs:
+  - scorecard
+  - accept-reject
+  - evidence-gaps
+  - eval-grading
+  skill_tags:
+  - critic-gate
+  - confidence-gating
+- name: memory-curator
+  file: memory-curator.md
+  model: fast
+  outputs:
+  - memory-note
+  - pattern-summary
+  - reuse-hints
+  - memory-architecture
+  skill_tags:
+  - precision-compression
+- name: release-manager
+  file: release-manager.md
+  model: code
+  outputs:
+  - release-checklist
+  - rollout-notes
+  - go-no-go
+  - release-governance
+- name: risk-sentinel
+  file: risk-sentinel.md
+  model: fast
+  outputs:
+  - gate-decision
+  - risk-memo
+  - approval-note
+  - rollback-path
+  skill_tags:
+  - risk-sentinel
+  - security-hardening
+  - release-governance
+  - confidence-gating
+  framework_tags:
+  - openai_agents
+  - adk
+  - crewai
+  decision_rights:
+  - block-action
+  - require-human-review
+  priority: highest
+- name: security-reviewer
+  file: security-reviewer.md
+  model: code
+  outputs:
+  - threat-model
+  - approval-note
+  - mitigation-list
+  - security-hardening
+- name: security-auditor
+  file: security-auditor.md
+  model: reason
+  outputs:
+  - threat-model
+  - actions-audit
+  - secret-risks
+  - agentic-actions-auditor
+- name: benchmark-analyst
+  file: benchmark-analyst.md
+  model: reason
+  outputs:
+  - benchmark-plan
+  - score-delta
+  - leaderboard
+  - benchmarking
+- name: incident-commander
+  file: incident-commander.md
+  model: reason
+  outputs:
+  - incident-log
+  - rollback-plan
+  - postmortem-outline
+  - incident-command
+- name: workflow-router
+  file: workflow-router.md
+  model: fast
+  outputs:
+  - routing-decision
+  - workflow-plan
+  - selected-skill-set
+  - skill-router
+- name: producer
+  file: producer.md
+  model: code
+  outputs:
+  - implementation-delta
+  - patch-notes
+  - validation-hints
+  - producer-reviewer
+  skill_tags:
+  - precision-compression
+- name: reviewer
+  file: reviewer.md
+  model: fast
+  outputs:
+  - review-score
+  - blockers
+  - approval-note
+  - skill-check
+  skill_tags:
+  - critic-gate
+- name: environment-governor
+  file: environment-governor.md
+  model: code
+  outputs:
+  - devcontainer-plan
+  - settings-audit
+  - toolchain-lock
+  - devcontainer-setup

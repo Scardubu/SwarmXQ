@@ -1,0 +1,227 @@
+# =============================================================================
+# swarmx_config.yaml  —  SwarmX V5.9-MERGED
+# SCAR Cognitive OS · APEX-17 Gate-Aware
+# Hardware target: 8 GB RAM + 12 GB VRAM (HP EliteBook 850 G3 class)
+#
+# MERGE NOTES:
+#   Base: V5.9 (new reliability + brain features)
+#   Merged from V5.7: Full tool_rate_limits, self_improvement, detailed observability,
+#                      semantic_validation_schemas, rich comments, circuit_breaker keys
+# =============================================================================
+
+version: "5.9-merged"
+
+# ─── Ollama endpoint ──────────────────────────────────────────────────────────
+ollama:
+  base_url:                "http://127.0.0.1:11434"
+  request_timeout_seconds: 180
+  connect_timeout_seconds:  10
+
+# ─── Model role assignments ───────────────────────────────────────────────────
+models:
+  supervisor: "qwen-supervisor"
+  worker:     "phi4-worker"
+  executor:   "qwen-worker"
+  fast:       "phi4-fast"
+  reasoner:   "deepseek-reasoner"
+  critic:     "deepseek-critic"
+
+# ─── Context windows (tokens) ────────────────────────────────────────────────
+context_limits:
+  qwen-supervisor:   12288
+  qwen-worker:        8192
+  phi4-worker:        8192
+  phi4-fast:          4096
+  deepseek-reasoner: 16384
+  deepseek-critic:   20480
+
+# ─── VRAM estimates (MB) ─────────────────────────────────────────────────────
+vram_estimates_mb:
+  qwen-supervisor:   6100
+  qwen-worker:       5500
+  phi4-worker:       4350
+  phi4-fast:         4150
+  deepseek-reasoner: 6000
+  deepseek-critic:   6300
+
+# ─── Escalation chains ───────────────────────────────────────────────────────
+escalation_chains:
+  qwen-supervisor:   ["qwen-supervisor",   "deepseek-reasoner", "qwen-worker"]
+  qwen-worker:       ["qwen-worker",       "phi4-worker",       "phi4-fast"]
+  phi4-worker:       ["phi4-worker",       "qwen-worker",       "phi4-fast"]
+  phi4-fast:         ["phi4-fast",         "phi4-worker"]
+  deepseek-reasoner: ["deepseek-reasoner", "qwen-supervisor",   "qwen-worker"]
+  deepseek-critic:   ["deepseek-critic",   "deepseek-reasoner"]
+
+# ─── Co-load matrix (12 GB VRAM) ─────────────────────────────────────────────
+co_load:
+  strict_single_model:  true
+  batch_max_concurrent: 2
+  safe_pairs:
+    - ["phi4-fast", "qwen-worker"]
+    - ["phi4-fast", "phi4-worker"]
+    - ["phi4-fast", "qwen-supervisor"]
+    - ["phi4-fast", "deepseek-reasoner"]
+  unsafe_pairs:
+    - ["qwen-supervisor",   "deepseek-reasoner"]
+    - ["deepseek-reasoner", "deepseek-critic"]
+    - ["deepseek-critic",   "deepseek-r1-evolve"]
+
+# ─── LLM Response Cache ──────────────────────────────────────────────────────
+cache:
+  enabled:     false
+  ttl_seconds: 3600
+  dir:         ""
+
+# ─── Orchestration limits ────────────────────────────────────────────────────
+orchestration:
+  max_steps_per_task:             20
+  max_retries_per_step:            3
+  max_tool_calls_per_step:         6
+  retry_backoff_base_seconds:      2
+  retry_backoff_max_seconds:      30
+  memory_compression_threshold:  0.70
+  memory_compression_window:     10
+  # [V5.9] Prevents context bloat in long tool chains
+  tool_loop_msg_keep:            12
+
+# ─── Tool execution ──────────────────────────────────────────────────────────
+# Hard timeout for individual tool calls (seconds)
+tool_hard_timeout_s: 180
+
+# ─── Per-tool rate limits (calls/minute) ─────────────────────────────────────
+# Merged: Full rich list from V5.7 + conservative updates from V5.9
+tool_rate_limits:
+  run_python:       10    # expensive sandbox
+  run_shell_safe:   20
+  http_get:         60
+  http_post:        30
+  summarise_text:   20
+  git_status:       60
+  read_file:        120
+  write_file:       30
+  search_files:     60
+  list_directory:   120
+  batch_read_files: 30
+  calculate:        200
+  check_file_exists:200
+  env_info:         20
+  semantic_search:  60
+  diff_files:       60
+  hash_file:        60
+  yaml_parse:       120
+  json_merge:       120
+
+# ─── Circuit Breaker ─────────────────────────────────────────────────────────
+circuit_breaker:
+  open_threshold: 5          # V5.7 name (more intuitive)
+  threshold_failures: 5      # V5.9 alias (for compatibility)
+  reset_seconds:  60.0
+
+# ─── Task routing thresholds ─────────────────────────────────────────────────
+routing:
+  reasoner_complexity_threshold: 0.65
+  complexity_score_timeout_s:    30.0
+  supervisor_delegation_max_depth: 2
+  semantic_validation_schemas:
+    - "plan"
+    - "final_answer"
+    - "analysis"
+
+# ─── KV cache strategy ───────────────────────────────────────────────────────
+kv_cache:
+  strategy:
+    supervisor: "q8_0"
+    worker:     "q4_0"
+    executor:   "q8_0"
+    reasoner:   "q8_0"
+    fast:       "q4_0"
+    critic:     "q8_0"
+  fill_warning_threshold: 0.80
+
+# ─── Brain / Vector Memory (enhanced) ────────────────────────────────────────
+brain:
+  enabled:        false
+  vector_store:   "faiss"
+  index_path:     ".swarmx/brain/vector_index.faiss"
+  metadata_path:  ".swarmx/brain/metadata.json"
+  embedding_dim:  384
+  top_k:          5
+  embedding_model: "nomic-embed-text"
+  # V5.9 enhancements
+  memory_ttl_seconds: 0
+  rag_top_k:          3
+  rag_max_chars:      300
+  sbert_model:        "all-MiniLM-L6-v2"
+  vector_max_docs:    1000
+
+# ─── Observability ───────────────────────────────────────────────────────────
+observability:
+  log_level:       "INFO"
+  log_format:      "console"
+  metrics_enabled: true
+  latency_window:  50
+  latency_targets_ms:
+    fast:       5000
+    worker:    15000
+    executor:  30000
+    supervisor: 30000
+    reasoner:  300000
+    critic:    300000
+  event_bus_strict: false
+  dispatch_log:     "dispatch.jsonl"
+  health_log:       "swarmx_health.jsonl"
+  improvements_log: "swarmx_improvements.jsonl"
+
+# ─── Trace persistence ───────────────────────────────────────────────────────
+traces:
+  output_dir:           "traces"
+  auto_critic:          false
+  auto_critic_timeout_s: 120
+  retention_days:       30
+
+# ─── Self-improvement gate ───────────────────────────────────────────────────
+self_improvement:
+  enabled:                true
+  human_review_required:  true
+  log_path:               "swarmx_improvements.jsonl"
+  auto_open_improvements: false
+
+# ─── APEX-17 Evolution cycle ─────────────────────────────────────────────────
+evolution:
+  safety_floor:        4
+  reversibility_floor: 3
+  allow_auto_deploy:   false   # NEVER set to true in production
+
+  models:
+    observe:  "phi4-fast:swarmx-evolve"
+    critique: "deepseek-critic"
+    mutate:   "qwen2.5:swarmx-evolve"
+    validate: "deepseek-critic"
+
+# ─── API Bridge ──────────────────────────────────────────────────────────────
+api:
+  host:              "127.0.0.1"
+  port:              3721          # V5.7 default (more conservative)
+  cors_origins:      ["http://localhost:3000"]
+  max_body_size_mb:  2
+  auth_enabled:      false
+  auth_key_env_var:  "SWARMX_API_KEY"
+  jwt_secret_env:    "SWARMX_JWT_SECRET"
+  request_timeout_ms: 30000
+
+# ─── Vertical context injection ──────────────────────────────────────────────
+verticals:
+  enabled: true
+  configs_dir: "configs/verticals"
+
+# ─── System advisory ─────────────────────────────────────────────────────────
+system:
+  physical_ram_gb:      8
+  vram_gb:              12
+  zram_device_size_mb:  4096
+  zram_compression:     "zstd"
+  zram_swappiness:      180
+  max_loaded_models:    1
+  flash_attention:      true
+  keep_alive_seconds:   300

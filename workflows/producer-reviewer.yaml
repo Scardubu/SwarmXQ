@@ -1,0 +1,73 @@
+family: quality
+version: IEP-ELITE-2026.4-apex15
+description: Producer-reviewer loop for fast implementation with a strict review gate.
+risk: medium
+handoff_validation: type-and-range
+
+meta:
+  model_triad:
+    orchestrator: phi4-mini
+    reasoning:    deepseek-r1:7b
+    execution:    qwen2.5-coder
+
+stages:
+  - name: intake
+    owner: strategist
+    model: phi4-mini
+    risk: low
+    purpose: Define the scope, expected outcome, and stop condition.
+    outputs:
+      - scope
+      - acceptance_criteria
+      - stop_condition
+    handoff_validation: type-and-range
+
+  - name: produce
+    owner: producer
+    model: qwen2.5-coder          # execution engine implements
+    risk: medium
+    purpose: Implement the smallest safe change slice with enough evidence for review.
+    outputs:
+      - implementation
+      - evidence
+    handoff_validation: type-and-range
+
+  - name: review
+    owner: reviewer
+    model: deepseek-r1:7b       # reasoning engine challenges
+    risk: medium
+    purpose: >
+      Challenge correctness, safety, completeness, and hidden coupling.
+      Push one refinement if needed.
+    outputs:
+      - review_findings
+      - refinement_required     # bool
+    handoff_validation: type-and-range
+
+  - name: revise
+    owner: producer
+    model: qwen2.5-coder
+    risk: medium
+    purpose: Apply review findings without expanding scope.
+    outputs:
+      - revised_implementation
+    handoff_validation: type-and-range
+
+  - name: verify
+    owner: evaluator
+    model: phi4-mini
+    risk: low
+    purpose: Confirm the final state against acceptance criteria.
+    outputs:
+      - verification_result
+      - acceptance_status
+    handoff_validation: type-and-range
+
+  - name: learn
+    owner: memory-curator
+    model: phi4-mini
+    risk: low
+    purpose: Store the review lesson and reusable pattern.
+    outputs:
+      - memory_entry
+    handoff_validation: type-level

@@ -1,0 +1,28 @@
+family: meta
+description: Inspect, create, validate, and publish reusable skills.
+risk: low
+stages:
+- name: intake
+  owner: strategist
+  risk: low
+  purpose: Define the recurring problem to codify.
+- name: inspect
+  owner: skill-sentinel
+  risk: low
+  purpose: Find gaps, duplicates, and drift; surface only the highest-value correction.
+- name: synthesize
+  owner: skill-developer
+  risk: low
+  purpose: Draft the new or improved skill with crisp triggers and output contracts.
+- name: validate
+  owner: skill-check
+  risk: low
+  purpose: Run structural, semantic, and duplication checks before publication.
+- name: publish
+  owner: skill-librarian
+  risk: low
+  purpose: Promote the skill into the reusable library.
+- name: learn
+  owner: memory-curator
+  risk: low
+  purpose: Store the catalog lesson and trigger pattern.

@@ -1,0 +1,28 @@
+family: security
+description: Audit agent-facing workflows, GitHub Actions, and secret handling.
+risk: high
+stages:
+- name: intake
+  owner: strategist
+  risk: low
+  purpose: Define the security review scope and blast radius.
+- name: threat-model
+  owner: security-auditor
+  risk: high
+  purpose: Map threats across automation, tooling, and permissions.
+- name: audit-actions
+  owner: agentic-actions-auditor
+  risk: high
+  purpose: Review GitHub Actions and agent integrations for weaknesses.
+- name: scan-secrets
+  owner: varlock
+  risk: high
+  purpose: Check env handling, secret exposure, and logging boundaries.
+- name: gate
+  owner: risk-sentinel
+  risk: high
+  purpose: Block unsafe changes and require human approval where needed.
+- name: learn
+  owner: memory-curator
+  risk: low
+  purpose: Store the security pattern and the negative examples.

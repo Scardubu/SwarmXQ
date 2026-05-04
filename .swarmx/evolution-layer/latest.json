@@ -1,0 +1,31 @@
+{
+  "stage_id": "stage-20260429102555589199",
+  "cycle_id": "cycle-20260429102552986260",
+  "repo": "/mnt/data/swarmx_v6_work/base",
+  "candidate": {
+    "id": "reasoning-escalation",
+    "title": "Escalate ambiguous or risky tasks to the reasoning model",
+    "kind": "routing",
+    "risk": "low",
+    "expected_gain": 0.15,
+    "config_delta": {
+      "routing": {
+        "escalate_on_uncertainty": true,
+        "reasoning_first_for_high_risk": true
+      }
+    },
+    "rationale": "Ambiguous tasks should spend more budget on deep planning before execution.",
+    "model_used": ""
+  },
+  "validation": {
+    "candidate_id": "reasoning-escalation",
+    "approved": true,
+    "score": 0.15,
+    "reasons": [
+      "candidate is small, reversible, and above the deployment threshold"
+    ],
+    "risk": "low"
+  },
+  "summary": "Heuristic critique identified routing, latency, and learning-surface opportunities.",
+  "timestamp": "2026-04-29T10:25:55.589242+00:00"
+}

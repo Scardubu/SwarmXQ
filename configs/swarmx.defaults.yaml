@@ -1,0 +1,165 @@
+# SwarmX · configs/swarmx.defaults.yaml
+# Version: 2026.04-v4 · mission-aware control plane
+# Model triad upgrade: phi4-fast (router/orchestrator) · deepseek-reasoner (reasoning) · qwen-worker (execution)
+#
+# CHANGELOG vs apex13:
+#   [MODEL-01] model_fast   → phi4-fast             (Phi-4-mini always-on orchestrator)
+#   [MODEL-02] model_reason → deepseek-reasoner     (reasoning engine, planning, logic chains)
+#   [MODEL-03] model_code   → qwen-worker           (execution engine, coding, tool-use)
+#   [ADD-01]   routing.triadic_dispatch — explicit 3-role model routing rules
+#   [ADD-02]   routing.escalation_chain — fallback cascade when primary model unavailable
+#   [ADD-03]   gate_mu1/mu3 fixes already reflected (APEX.15 runtime)
+
+runtime:
+  autonomous: true
+  review_required: false
+  auto_apply: false
+  max_iterations: 3
+  checkpoint_every: 1
+  signal_triage_on_entry: true
+  output_quality_gate_on_exit: true
+
+  # V4 operational settings
+  mission_budget: 4
+  worker_pool_size: 1
+  worker_interval: 2.0
+  control_mode: hybrid
+
+# ── MODEL TRIAD (phi4-fast · deepseek-reasoner · qwen-worker) ─────────────────────
+routing:
+  provider: ollama                 # ollama | openai | anthropic | custom
+  base_url: http://localhost:11434 # default Ollama endpoint
+
+  # ── Primary model assignments ──────────────────────────────────────────────
+  # ORCHESTRATOR: phi4-fast — always-on, lightweight, routing + decision logic
+  model_fast: phi4-fast
+
+  # REASONING ENGINE: deepseek-reasoner — planning, logic chains, complex reasoning
+  model_reason: deepseek-reasoner
+
+  # EXECUTION ENGINE: qwen-worker — coding, tool-use, agentic tasks
+  model_code: qwen-worker
+
+  # ── Triadic dispatch rules ─────────────────────────────────────────────────
+  # Which model handles which agent roles. phi4-fast is the default for all roles
+  # not explicitly assigned here — it is the always-on router brain.
+  triadic_dispatch:
+    # phi4-fast roles: routing, light evaluation, memory curation, status checks
+    phi4-fast:
+      - strategist
+      - workflow-router
+      - memory-curator
+      - evaluator
+      - risk-sentinel
+      - skill-sentinel
+      - skill-check
+      - release-manager
+      - tournament-judge   # lightweight scoring pass
+
+    # deepseek-reasoner roles: deep planning, causal chains, architecture review
+    deepseek-reasoner:
+      - chief-architect
+      - workflow-composer
+      - research-analyst
+      - context-researcher
+      - subagent-coordinator
+      - benchmark-analyst
+      - evolver
+      - security-auditor
+      - incident-commander
+      - prompt-architect
+
+    # qwen-worker roles: implementation, code generation, tool-use, testing
+    qwen-worker:
+      - backend-engineer
+      - frontend-architect
+      - data-engineer
+      - perf-optimizer
+      - performance-optimizer
+      - mcp-toolsmith
+      - security-reviewer
+      - qa-evaluator
+      - producer
+      - reviewer
+      - skill-developer
+      - skill-librarian
+      - skill-curator
+
+  # ── Escalation chain ───────────────────────────────────────────────────────
+  # If the primary model is unavailable, fall back in order.
+  # This ensures the swarm degrades gracefully when a model isn't pulled yet.
+  escalation_chain:
+    phi4-fast:          [phi4-fast, deepseek-reasoner, qwen-worker]
+    deepseek-reasoner:  [deepseek-reasoner, qwen-worker, phi4-fast]
+    qwen-worker:        [qwen-worker, deepseek-reasoner, phi4-fast]
+
+  # ── Legacy aliases (backward compat with legacy env vars) ────────────────
+  # MODEL_FAST and MODEL_CODE env vars still respected; triadic_dispatch takes
+  # precedence when set. MODEL_REASON is new in apex15.
+  model_fast_alias: phi4-fast
+  model_reason_alias: deepseek-reasoner
+  model_code_alias: qwen-worker
+
+safety:
+  approval_required_for: [high, critical]
+  auto_apply_risk_floor: low
+  allow_destructive_actions: false
+
+evolution:
+  proposal_only_by_default: true
+  auto_apply_low_risk: true
+  selection_strategy: tournament
+  multi_island:
+    islands: 3
+    crossover_probability_exploit: 0.30
+    crossover_probability_explore: 0.60
+    convergence_window: 3
+  promptbreeder:
+    strategy_promotion_wins: 2
+    max_active_strategies: 5
+  # FIX v2.1: config.py reads evolution.budget.refinement_passes and
+  # evolution.budget.proposals_per_run but this section was absent — those
+  # YAML keys were permanently inert, silently falling to Python defaults.
+  budget:
+    refinement_passes: 2      # evaluator_passes — refinement loops per task
+    proposals_per_run: 3      # proposal_budget  — evolution proposals per cycle
+
+observability:
+  trace_every_stage: true
+  persist_run_artifacts: true
+  stream_interval: 2.0
+  event_retention: 200
+  mission_retention: 100
+
+
+# ── Memory ──────────────────────────────────────────────────────────────────
+# FIX v4.1-post: config.py reads memory.graph_limit and memory.search_limit
+# but this section was absent — those YAML keys were permanently inert,
+# silently falling to Python defaults (250 and 20 respectively).
+memory:
+  graph_limit: 250          # max nodes in the in-memory knowledge graph
+  search_limit: 20          # max results from memory_search_graph / semantic retrieval
+  retain_recent_runs: 50    # jsonl trim limit for runs.jsonl
+  retain_recent_memories: 200
+
+# ── Storage ─────────────────────────────────────────────────────────────────
+# FIX v4.1-post: config.py reads storage.backend but section was absent.
+storage:
+  backend: sqlite+jsonl     # sqlite+jsonl | jsonl-only | memory
+
+# ── MCP defaults ────────────────────────────────────────────────────────────
+# FIX v4.1-post: config.py reads mcp.allowlist but section was absent here
+# (it existed only in mcp-defaults.yaml which is also merged, but this ensures
+# the key is always resolvable without depending on merge order).
+mcp:
+  allowlist:
+    - git
+    - python
+    - python3
+    - bash
+    - node
+    - npm
+    - pnpm
+    - pip
+    - curl
+    - wget

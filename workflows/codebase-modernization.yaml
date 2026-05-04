@@ -1,0 +1,32 @@
+family: general
+risk: medium
+description: Deep codebase modernization with architecture, refactor safety, and validation.
+stages:
+  - name: intake
+    owner: strategist
+    risk: low
+    purpose: Define the modernization objective and constraints.
+  - name: map
+    owner: chief-architect
+    risk: low
+    purpose: Map critical paths, coupling, and module boundaries.
+  - name: diagnose
+    owner: evaluator
+    risk: low
+    purpose: Identify the highest leverage defects and technical debt.
+  - name: refactor
+    owner: backend-engineer
+    risk: medium
+    purpose: Apply the smallest safe structural improvement.
+  - name: optimize
+    owner: performance-optimizer
+    risk: medium
+    purpose: Remove waste and improve the hot path.
+  - name: verify
+    owner: qa-evaluator
+    risk: low
+    purpose: Validate behavior, regressions, and edge cases.
+  - name: learn
+    owner: memory-curator
+    risk: low
+    purpose: Record the modernization pattern.

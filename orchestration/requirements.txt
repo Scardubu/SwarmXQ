@@ -1,0 +1,65 @@
+# SwarmX Python dependencies — V5.8
+# Install in a virtual environment (recommended):
+#   python3 -m venv .venv && source .venv/bin/activate
+#   pip install -r requirements.txt
+#
+# Or system-wide (WSL2 / Linux without venv):
+#   pip install -r requirements.txt --break-system-packages
+#
+# CHANGES V5.8 (vs V5.7):
+#   ✦ aiofiles promoted from comment to active dep (required by trace persistence)
+#   ✦ difflib is stdlib — no pip entry needed (noted for clarity)
+#   ✦ Version ceilings tightened to <X+1 (major) for stability
+#   ✦ numpy optional block expanded to cover both vector stores
+
+# ── Core HTTP / async ──────────────────────────────────────────────────────────
+httpx>=0.27.0,<2.0
+
+# ── YAML config loading ────────────────────────────────────────────────────────
+pyyaml>=6.0.1,<7.0
+
+# ── Retry with exponential backoff ────────────────────────────────────────────
+tenacity>=8.3.0,<10.0
+
+# ── JSON schema validation ────────────────────────────────────────────────────
+jsonschema>=4.22.0,<5.0
+
+# ── Structured logging ────────────────────────────────────────────────────────
+structlog>=24.1.0,<26.0
+
+# ── Rich terminal output (CLI) ────────────────────────────────────────────────
+rich>=13.7.0,<15.0
+
+# ── Pydantic (typed config, data models) ──────────────────────────────────────
+pydantic>=2.7.0,<3.0
+pydantic-settings>=2.3.0,<3.0
+
+# ── Environment variable loading (.env support) ────────────────────────────────
+python-dotenv>=1.0.1,<2.0
+
+# ── Async file I/O (trace persistence, health log writes) ─────────────────────
+# Required by orchestrator V5.8 TaskTrace.save() and health check async writes.
+aiofiles>=24.1.0,<25.0
+
+# NOTE: asyncio, difflib, ast, json, hashlib, math, operator are Python stdlib —
+#       do NOT pip install them.
+
+# ── Optional: TF-IDF vector store (memory/vector_store.py) ───────────────────
+# Install if brain.enabled = true and faiss-cpu is NOT available.
+# numpy>=1.26.0
+# scikit-learn>=1.5.0
+
+# ── Optional: FAISS semantic vector store (memory/faiss_store.py) ─────────────
+# Install for highest-quality semantic memory retrieval.
+# numpy>=1.26.0
+# faiss-cpu>=1.8.0
+# sentence-transformers>=3.0.0
+
+# ── Framework integrations (install only what you use) ────────────────────────
+# LangGraph:  pip install "langgraph>=0.2.0"
+# CrewAI:     pip install "crewai>=1.8.0"
+# AutoGen v2: pip install "autogen-agentchat>=0.4.0"
+# OpenAI SDK: pip install "openai-agents>=0.0.9"
+# Google ADK: pip install "google-adk>=0.3.0"
+# Strands:    pip install "strands-agents>=0.1.0"
+# MCP:        pip install "mcp>=1.0.0"

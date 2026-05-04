@@ -1,0 +1,503 @@
+skills:
+
+# ── TIER 1: Core System Skills (weight 5) ──────────────────────────────────────
+
+- name: signal-triage
+  purpose: Rank all inputs by decision-relevance before solving. Suppress noise. Focus only on what changes the output.
+  triggers: [triage, signal, prioritize inputs, context dilution, what matters, rank inputs, focus, filter context]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: latent-ensemble-selection
+  purpose: Generate exactly 3 internal variants, score them silently on a multi-objective rubric, and keep the best candidate before responding.
+  triggers: [competition, variant, compare approaches, choose best, tournament, which approach, alternative]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: critic-gate
+  purpose: Adversarially pressure-test the selected solution once before finalizing. One pass. No loops.
+  triggers: [critic, self-check, review, edge cases, challenge, pressure-test, validate]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: confidence-gating
+  purpose: Calibrate output depth and certainty signaling based on internal confidence. Never fabricate certainty.
+  triggers: [confidence, uncertainty, assumption, clarify, simplify, hedge, constrain, low confidence]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: output-quality-gate
+  purpose: Final pre-response filter — confirm output answers the objective, is correct, and is minimum sufficient.
+  triggers: [quality gate, final check, output gate, pre-response, output filter, is this right]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: autonomy-ops
+  purpose: Route work, maintain bounded control loops, enforce stop conditions, and preserve system coherence in autonomous runs.
+  triggers: [autonomous, agent, orchestration, loop, route, control plane, bounded, stop condition, handoff]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: precision-compression
+  purpose: Strip redundancy at the earliest stage and preserve only the highest-signal reasoning path.
+  triggers: [concise, compress, minimal, high-signal, tight]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: micro-self-correction
+  purpose: Single bounded Plan→Execute→Verify→Refine cycle. Trigger only on detected inconsistency. One cycle maximum.
+  triggers: [inconsistency, self-correct, verify output, internal correction, fix before emit]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: skill-router
+  purpose: Route ambiguous objectives to the most effective skill set and workflow shape. Never guess; never over-specify.
+  triggers: [skill, router, choose skill, where to start, route, which workflow, what skill, how to approach]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: tournament-selection
+  purpose: Rank candidate plans by evidence quality, leverage, and safety. Select the strongest survivor or return a regenerate signal.
+  triggers: [tournament, ranking, selection, winner, compare, rank options, which plan, best approach]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: workflow-routing
+  purpose: Pick the highest-leverage workflow and budget before execution begins.
+  triggers: [workflow, route, budget, planner]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: workflow-composition
+  purpose: Compose the best execution graph from available specialist agents with explicit stop conditions and handoff contracts.
+  triggers: [workflow, compose, route, graph, orchestration]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: workflow-automation
+  purpose: Design durable execution, retries, idempotency, checkpoints, and rollback for long-running automated workflows.
+  triggers: [workflow automation, durable execution, checkpoint, rollback]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: hierarchical-delegation
+  purpose: Delegate recursively from supervisor to specialists and synthesize results at each merge point.
+  triggers: [hierarchical delegation, delegate, supervisor]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: fan-out-fan-in
+  purpose: Decompose parallelizable work, execute in parallel with explicit merge contracts, then converge on evidence.
+  triggers: [fan out, fan-in, parallel, cross validate]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: expert-pool
+  purpose: Select the minimum useful expert set and invoke only those specialists. Prevent context bloat.
+  triggers: [expert pool, specialist, choose experts]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: harness-orchestrator
+  purpose: Design domain-specific agent teams and generate the skills they need. Choose pipeline, review loop, expert pool, or delegation.
+  triggers: [harness, agent team, team design, orchestrator]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: producer-reviewer
+  purpose: Implement with a produce→review→revise→verify loop. Clear ownership at each stage.
+  triggers: [producer reviewer, review loop, code review, merge]
+  stack: [generic]
+  owner: engineering
+  weight: 5
+
+- name: subagent-driven-development
+  purpose: Split implementation into independent subagents with explicit handoff contracts and deterministic merge.
+  triggers: [subagent, independent tasks, baton pass]
+  stack: [generic]
+  owner: engineering
+  weight: 5
+
+- name: risk-sentinel
+  purpose: Enforce human gates and block unsafe actions before they execute. Safety always trumps velocity.
+  triggers: [gate, approval, risk, safety, block]
+  stack: [security, devops, generic]
+  owner: security
+  weight: 5
+
+- name: eval-grading
+  purpose: Design rubrics, scorecards, and trace-grade criteria that produce deterministic, evidence-based evaluation signals.
+  triggers: [rubric, scorecard, grading, eval, acceptance criteria, trace grade, quality gate, pass/fail, benchmark]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: chief-architecture
+  purpose: Define durable system shape, boundaries, and tradeoffs before implementation. Approve or reject boundary changes.
+  triggers: [architecture, system design, boundary, tradeoff]
+  stack: [generic]
+  owner: architecture
+  weight: 5
+
+- name: backend-architecture
+  purpose: Strengthen service boundaries, domain modeling, API contracts, and data flow clarity. Preserve invariants.
+  triggers: [service, api, domain, schema, queue]
+  stack: [backend]
+  owner: platform
+  weight: 5
+
+- name: security-hardening
+  purpose: Threat-model secrets, auth, deployment boundaries, and compliance surface. Least-privilege by default.
+  triggers: [auth, secret, payment, compliance, security]
+  stack: [security, devops]
+  owner: security
+  weight: 5
+
+- name: varlock
+  purpose: Keep environment variables and secrets out of logs, shells, and commits. Enforce at every boundary.
+  triggers: [varlock, env vars, secrets, leak]
+  stack: [security, devops]
+  owner: security
+  weight: 5
+
+- name: agentic-actions-auditor
+  purpose: Audit GitHub Actions and agent integrations for security weaknesses, secret exposure, and overly broad tokens.
+  triggers: [actions audit, github actions, workflow security, agent security]
+  stack: [security, devops]
+  owner: security
+  weight: 5
+
+- name: context7-auto-research
+  purpose: Fetch current documentation and version-sensitive guidance before making version-sensitive changes.
+  triggers: [context7, latest docs, current docs, library docs]
+  stack: [generic]
+  owner: research
+  weight: 5
+
+- name: design-critique
+  purpose: Find friction in hierarchy, flow, motion, accessibility, and narrative clarity. Every finding maps to a fix.
+  triggers: [design, ux, ui, layout, visual, motion, a11y]
+  stack: [frontend]
+  owner: design
+  weight: 5
+
+- name: design-system-polish
+  purpose: Sharpen spacing, token consistency, component coherence, and accessibility defaults.
+  triggers: [tokens, spacing, theme, components, design system]
+  stack: [frontend]
+  owner: design
+  weight: 5
+
+- name: skill-check
+  purpose: Validate skill files for structural, semantic, and naming quality before promotion.
+  triggers: [skill check, validate skill, agentskills, skill authoring]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: skill-developer
+  purpose: Design and maintain skills from requirements through activation. Full lifecycle.
+  triggers: [skill developer, create skill, write skill, skill lifecycle]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: skill-improver
+  purpose: Iteratively improve a skill using review, evidence, and regression checks.
+  triggers: [skill improver, improve skill, skill review]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: skill-sentinel
+  purpose: Audit the skill ecosystem for quality, duplication, drift, cost, and safety. The system's immune response.
+  triggers: [skill sentinel, skill health, skill audit]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: skill-synthesis
+  purpose: Convert repeated successes into reusable skill capsules and templates with retrieval-optimized cues.
+  triggers: [skill, synthesis, template, capsule, retention]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: skill-writer
+  purpose: Write and update agent skills with clear triggers, contracts, and outputs. Author-quality skill files.
+  triggers: [skill writer, update skill, author skill]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: refactor-safety
+  purpose: Restructure code with guardrails and regression checks. Preserve behavior, improve structure.
+  triggers: [refactor, cleanup, rename, simplify]
+  stack: [generic]
+  owner: engineering
+  weight: 5
+
+- name: test-stabilization
+  purpose: Repair flaky tests and strengthen deterministic verification. Regression-safe by default.
+  triggers: [test, flaky, ci, failure, regression]
+  stack: [generic]
+  owner: qa
+  weight: 5
+
+- name: incident-command
+  purpose: Stabilize outages, coordinate mitigation, and preserve a clean postmortem trail. Stop conditions enforced from minute one.
+  triggers: [incident, outage, postmortem, rollback, blameless]
+  stack: [devops, security]
+  owner: release
+  weight: 5
+
+- name: claude-settings-audit
+  purpose: Generate repository-specific Claude settings and least-privilege permission guidance.
+  triggers: [settings audit, permissions, claude settings]
+  stack: [devops, generic]
+  owner: platform
+  weight: 5
+
+- name: devcontainer-setup
+  purpose: Create reproducible devcontainer environments with pinned toolchains, persistent volumes, and idempotency guarantee.
+  triggers: [devcontainer, container setup, reproducible env]
+  stack: [devops, generic]
+  owner: platform
+  weight: 5
+
+- name: code-diagnose
+  purpose: Evidence-first, hypothesis-elimination diagnosis before any fix is proposed. Four-phase protocol — Gather Evidence, Form Hypotheses, Eliminate, Confirm. Never guess.
+  triggers: [diagnose, investigate, what's wrong, root cause, why is this failing, trace the bug, find the problem, before fixing, understand the failure, reproduce, bug, broken, error, failure]
+  stack: [generic]
+  owner: engineering
+  weight: 5
+
+- name: tdd-discipline
+  purpose: Write the test before the implementation. Red → Green → Refactor. No exceptions for non-trivial logic. Coverage and regression gating built in.
+  triggers: [tdd, test first, red green refactor, write test first, test driven, failing test before code, specification by example, behavior before implementation, test before code]
+  stack: [generic]
+  owner: qa
+  weight: 5
+
+- name: grill-with-docs
+  purpose: Interrogate every assumption against authoritative documentation before trusting code or configuration. Enumerate assumptions, source the docs, grill each one, produce a verified manifest.
+  triggers: [grill with docs, check the docs, verify against docs, docs vs code, is this documented, what does the spec say, trust but verify, api contract, documentation drift, hallucination check, verify api]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: architecture-improve
+  purpose: Holistic codebase architecture review with explicit drift detection, boundary enforcement, and an incremental refactoring roadmap. Improve structure without burning the ship.
+  triggers: [improve architecture, architecture review, codebase health, structural drift, domain model, service boundaries, coupling, cohesion, architectural debt, modernize architecture, boundary violations, tech debt]
+  stack: [generic]
+  owner: platform
+  weight: 5
+
+- name: improve-codebase-architecture
+  purpose: Identify the highest-leverage architectural improvements (coupling, cohesion, boundary violations) and emit ranked, vertically-sliced proposals to the evolution loop. Cap at 7 proposals.
+  triggers: [improve codebase, codebase architecture, ranked refactor proposals, structural improvement, coupling hotspots, cohesion gaps, absent abstractions, refactor plan]
+  stack: [generic]
+  owner: engineering
+  weight: 5
+
+- name: grill-me
+  purpose: Adversarially interrogate mission requirements and implicit assumptions. Surface BLOCKING, IMPORTANT, and OPTIONAL gaps before work begins. Antidote to silent assumption.
+  triggers: [grill me, interrogate requirements, challenge my plan, poke holes, find the gaps, what am I missing, alignment check, requirements audit, probe assumptions, challenge the plan]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: zoom-out
+  purpose: Strategic zoom-out for direction resets. Recover context when the mission is drifting, assumptions have accumulated, or the swarm has lost the thread of the original objective.
+  triggers: [zoom out, step back, big picture, am i solving the right problem, direction reset, lost the thread, what are we actually doing, context recovery, mission drift, objective alignment, forest for the trees]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: debugging-strategies
+  purpose: Systematic hypothesis-elimination debugging using 6 strategies — Binary Search/Bisect, Divide and Conquer, Instrumentation-First, Differential, Time-Travel/Snapshot, Elimination by Simplification.
+  triggers: [debug, can't reproduce, intermittent failure, flapping, race condition, nondeterministic, production bug, why is this slow, narrowing down, bisect, investigate failure, weird behavior, memory leak, silent failure]
+  stack: [generic]
+  owner: engineering
+  weight: 5
+
+# ── TIER 1: Meta-Orchestration (weight 5) ─────────────────────────────────────
+
+- name: dynamic-team-factory
+  purpose: Generate purpose-built agent teams using one of 6 orchestration patterns. Wire handoff contracts and capture team performance as a delta for the evolution loop.
+  triggers: [build a team, generate team, team factory, dynamic team, harness team, which pattern, orchestration pattern, compose agents, mission team, team for this objective]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: multi-agent-orchestrator
+  purpose: Compose dynamic orchestration graphs on demand. Decompose missions, route agents, manage shared state and handoffs, govern convergence, capture deltas for the evolution loop.
+  triggers: [orchestrate, multi-agent, compose agents, build workflow, agent graph, who should work on this, which agents, coordinate agents, multi-step mission, agent coordination, parallel agents, spawn workers]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: delta-evolution
+  purpose: Capture the fitness delta between current and previous swarm configuration, score it against the fitness function, attribute improvements/regressions, and generate the next ranked evolution proposals.
+  triggers: [delta evolution, evolution delta, what improved, fitness delta, swarm improvement, evolve the swarm, self-improve, evolution proposal, capture delta]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+# ── TIER 1: Security (weight 5) ───────────────────────────────────────────────
+
+- name: security-auditor
+  purpose: Full STRIDE + OWASP Top 10 structured security audit with dependency CVE scanning and a prioritized remediation plan. Model the attacker, not the checklist.
+  triggers: [security audit, owasp, stride, threat model full, pentest prep, security review, attack surface, vulnerability assessment, auth audit, injection risks, full security sweep, cve sweep, find vulnerabilities, secrets audit]
+  stack: [security, devops, generic]
+  owner: security
+  weight: 5
+
+# ── TIER 2: Domain-Depth Skills (weight 4) ─────────────────────────────────────
+
+- name: backend-performance
+  purpose: Reduce latency, CPU, memory, and I/O waste in backend code and services with measured baselines.
+  triggers: [latency, throughput, perf, cache, db]
+  stack: [backend]
+  owner: platform
+  weight: 4
+
+- name: data-engineering
+  purpose: Improve schemas, pipelines, query efficiency, data contracts, and observability. Lineage-first.
+  triggers: [data, pipeline, etl, schema, warehouse, ingestion, query]
+  stack: [backend, generic]
+  owner: platform
+  weight: 4
+
+- name: frontend-experience
+  purpose: Improve onboarding, interaction clarity, content flow, and conversion paths.
+  triggers: [ux, conversion, onboarding, cta, flow]
+  stack: [frontend]
+  owner: design
+  weight: 4
+
+- name: mcp-tooling
+  purpose: Connect the swarm to external tools and context providers. Least-privilege. Auditable. Versioned.
+  triggers: [mcp, tool, server, integration]
+  stack: [devops, generic]
+  owner: platform
+  weight: 4
+
+- name: memory-architecture
+  purpose: Persist lessons, promote reusable experiences, and evolve the retrieval layer without accumulating drift.
+  triggers: [memory, lesson, retain, recall, archive]
+  stack: [generic]
+  owner: system
+  weight: 4
+
+- name: observability
+  purpose: Improve logs, traces, metrics, and actionable run summaries. Make failures self-diagnosing.
+  triggers: [trace, log, telemetry, debug, observability]
+  stack: [generic]
+  owner: platform
+  weight: 4
+
+- name: performance-optimization
+  purpose: Improve CPU, render, memory, and network budgets across frontend and backend.
+  triggers: [performance, budget, cpu, memory, network]
+  stack: [frontend, backend, devops]
+  owner: platform
+  weight: 4
+
+- name: benchmarking
+  purpose: Build repeatable baselines, compare variants, and track regressions over time with measurement evidence.
+  triggers: [benchmark, baseline, compare, measure, latency]
+  stack: [generic]
+  owner: qa
+  weight: 4
+
+- name: prompt-ops
+  purpose: Shape system prompts, instruction hierarchy, and prompt hygiene for consistent, predictable outputs.
+  triggers: [prompt, instruction, system prompt, prompting]
+  stack: [generic]
+  owner: system
+  weight: 4
+
+- name: release-governance
+  purpose: Apply safe gating, approvals, and release sequencing. Human gates enforced before irreversible actions.
+  triggers: [release, approval, governance, rollout]
+  stack: [devops, security]
+  owner: release
+  weight: 4
+
+- name: release-readiness
+  purpose: Prepare changelogs, manifests, and rollout notes. Ship-ready artifacts only.
+  triggers: [ship, publish, deploy, release notes]
+  stack: [devops]
+  owner: release
+  weight: 4
+
+- name: template-authoring
+  purpose: Maintain reusable prompt, workflow, and review templates. High-retrieval-fidelity authoring.
+  triggers: [template, prompt, rubric, checklist]
+  stack: [generic]
+  owner: system
+  weight: 4
+
+# ── TIER 3: Research & Acceleration (weight 3) ────────────────────────────────
+
+- name: research-acceleration
+  purpose: Gather sources, distill patterns, and convert findings into immediately actionable output.
+  triggers: [research, analysis, paper, compare, source]
+  stack: [generic]
+  owner: research
+  weight: 3
+
+# ── DERIVED: High-Value Modular Skills (new, backward-compatible) ──────────────
+
+- name: handoff-contract
+  purpose: Validate that a stage output matches the input expectation of the next stage before passing. Silent but mandatory.
+  triggers: [handoff, output contract, stage transition, pass to next, baton]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: swarm-coherence-audit
+  purpose: Check any proposed action against all four swarm boundaries simultaneously — architecture, security, design, data.
+  triggers: [coherence, swarm boundary, drift, boundary check, cross-agent consistency]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: predictive-downstream-simulation
+  purpose: Simulate the next 2–3 agent hops before committing to a path. Reject options that amplify risk or create hidden coupling.
+  triggers: [downstream, simulate, predict impact, future stages, dependency check]
+  stack: [generic]
+  owner: system
+  weight: 5
+
+- name: harness-trace-grader
+  purpose: Grade evidence quality across a full run trace. Score each stage output against observable proof.
+  triggers: [trace grade, run quality, stage evidence, harness grade, run review]
+  stack: [generic]
+  owner: qa
+  weight: 4
+
+- name: requirements-pipeline
+  purpose: Convert a vague mission objective into a structured PRD and decompose it into vertical-sliced, immediately actionable issues with acceptance criteria and dependency ordering.
+  triggers: [prd, requirements, write requirements, product requirements, to issues, break into tickets, requirements document, what are we building, spec, feature spec, scope the work, user stories]
+  stack: [generic]
+  owner: system
+  weight: 4

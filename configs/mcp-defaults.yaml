@@ -1,0 +1,26 @@
+mcp:
+  allowlist:
+    - filesystem
+    - git
+    - postgres
+    - sqlite
+    - browser
+    - github
+    - memory
+  servers:
+    - name: filesystem
+      transport: stdio
+      command: npx
+      args:
+        - -y
+        - '@modelcontextprotocol/server-filesystem'
+        - .
+    - name: git
+      transport: stdio
+      command: npx
+      args:
+        - -y
+        - '@modelcontextprotocol/server-git'
+  resource_policy:
+    read_only_first: true
+    sandbox_sensitive_paths: true

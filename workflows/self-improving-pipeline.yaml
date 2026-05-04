@@ -1,0 +1,70 @@
+family: meta
+version: V6
+name: self-improving-pipeline
+
+description: >
+  Observation -> critique -> mutation -> validation -> staging loop for
+  autonomous swarm improvement.
+
+risk: medium
+meta:
+  blast_radius_estimate: medium
+  fitness_island: gamma
+  max_iterations: 3
+  deploy_requires: low_risk
+
+stages:
+  - name: observe
+    owner: strategist
+    model_hint: router
+    risk: low
+    purpose: Collect runtime signals, baseline metrics, memories, and recent proposals.
+    handoff_validation: type-level
+    outputs:
+      - baseline_snapshot
+      - performance_trend
+      - memory_motifs
+
+  - name: critique
+    owner: evaluator
+    model_hint: reason
+    risk: low
+    purpose: Identify bottlenecks, weak routing, and opportunities for compounding gains.
+    handoff_validation: type-and-range-level
+    outputs:
+      - issue_list
+      - critique_summary
+      - leverage_score
+
+  - name: mutate
+    owner: backend-engineer
+    model_hint: code
+    risk: medium
+    purpose: Produce a small set of bounded candidate improvements.
+    handoff_validation: type-and-range-level
+    outputs:
+      - candidate_mutations
+      - config_delta
+      - rationale
+
+  - name: validate
+    owner: benchmark-analyst
+    model_hint: reason
+    risk: low
+    purpose: Compare candidates against baseline and safety constraints.
+    handoff_validation: type-and-range-level
+    outputs:
+      - winner
+      - score_delta
+      - safety_verdict
+
+  - name: stage
+    owner: memory-curator
+    model_hint: router
+    risk: low
+    purpose: Persist the best candidate as a replayable proposal artifact.
+    handoff_validation: type-level
+    outputs:
+      - staged_artifact
+      - audit_record
+      - next_actions

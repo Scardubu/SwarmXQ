@@ -1,0 +1,61 @@
+# configs/verticals/taxbridge.yaml
+# ═══════════════════════════════════════════════════════════════════════════════
+# TaxBridge Vertical Configuration — NRS Phase-2 Compliance Overlay
+#
+# Loaded by swarmx.llm._load_vertical_config("taxbridge") and merged into
+# every LLM prompt when the repo stack signals TaxBridge context.
+#
+# All constraints here are ADDITIVE — they extend the hardcoded base in llm.py
+# rather than replacing it. Add project-specific rules below as the NRS
+# Phase-2 specification evolves.
+#
+# Reference:
+#   NRS 2024 Technical Specification v2.1 — FIRS e-Invoicing Mandate
+#   NDPC Data Protection Compliance Framework (2024 edition)
+#   CBN Risk-Based Cybersecurity Framework for Financial Institutions (2023)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+vertical: taxbridge
+version: "1.0.0"
+
+# ── Extra constraints injected into every LLM prompt ─────────────────────────
+# Keep each entry to ≤120 chars so it fits within the prompt budget.
+extra_constraints:
+  - "NRS Phase-2: all e-invoice payloads must include IRN, FIRS TIN, and timestamp_utc"
+  - "Prisma schema: monetary fields use Decimal type — never Float or number"
+  - "Paystack webhooks: verify SHA-512 HMAC of raw body before processing"
+  - "Idempotency key required on all payment mutation endpoints (POST /payments/*)"
+  - "NDPC Article 37: PII fields (BVN, NIN, phone) encrypted at rest with AES-256-GCM"
+  - "Audit log: every tax computation event must be append-only with actor + timestamp"
+  - "Rate limits: per-user per-endpoint (not just global) — CBN Cybersecurity §4.2"
+  - "NRS IRN generation: use server-side UUID v4 — never client-supplied values"
+
+# ── Model routing overrides for TaxBridge tasks ────────────────────────────────
+# These override the default triadic dispatch for compliance-critical paths.
+routing_overrides:
+  # Tax computation and IRN generation require the reasoning model for accuracy
+  tax_computation: reason
+  irn_generation:  reason
+  # Schema migrations affecting monetary columns require the code model
+  schema_migration: code
+  # Webhook signature verification — code model for precision
+  webhook_handler: code
+
+# ── Memory injection policy ────────────────────────────────────────────────────
+memory_injection:
+  # Keep compliance-critical memory fresh — 12 h max age for NRS context
+  max_age_hours: 12
+  max_lines: 15
+
+# ── Guardrail overrides ────────────────────────────────────────────────────────
+guardrails:
+  # Auto-apply is disabled for any task touching payment or tax schema
+  auto_apply_blocked_keywords:
+    - "payment"
+    - "invoice"
+    - "tax_rate"
+    - "irn"
+    - "firs"
+    - "decimal"
+  # All schema changes require human review
+  schema_changes_require_review: true

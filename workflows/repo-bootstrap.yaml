@@ -1,0 +1,28 @@
+family: devops
+description: Bootstrap a repository with secure, reproducible, agent-friendly setup.
+risk: medium
+stages:
+- name: intake
+  owner: strategist
+  risk: low
+  purpose: Identify the repo type and bootstrap goals.
+- name: audit-settings
+  owner: environment-governor
+  risk: low
+  purpose: Audit permissions, settings, and environment assumptions.
+- name: prepare-env
+  owner: environment-governor
+  risk: medium
+  purpose: Prepare the devcontainer, lockfiles, and pinned tools.
+- name: install-tools
+  owner: workflow-router
+  risk: medium
+  purpose: Wire the minimum useful tools and adapters.
+- name: verify
+  owner: evaluator
+  risk: low
+  purpose: Confirm the bootstrap is reproducible and bounded.
+- name: learn
+  owner: memory-curator
+  risk: low
+  purpose: Record the bootstrap profile.

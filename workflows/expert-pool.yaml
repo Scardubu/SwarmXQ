@@ -1,0 +1,28 @@
+family: meta
+description: Selective expert invocation for mixed-domain objectives.
+risk: low
+stages:
+- name: intake
+  owner: strategist
+  risk: low
+  purpose: Clarify the objective and the domains involved.
+- name: select-experts
+  owner: expert-pool
+  risk: low
+  purpose: Choose the minimum useful expert set.
+- name: consult
+  owner: expert-pool
+  risk: low
+  purpose: Ask each expert only what they are uniquely qualified to answer.
+- name: combine
+  owner: subagent-coordinator
+  risk: low
+  purpose: Merge the expert responses without duplication.
+- name: verify
+  owner: evaluator
+  risk: low
+  purpose: Check the combined answer for coverage and gaps.
+- name: learn
+  owner: memory-curator
+  risk: low
+  purpose: Store the specialist selection heuristic.

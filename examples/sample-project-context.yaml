@@ -1,0 +1,19 @@
+project:
+  name: demo-app
+  stack:
+  - frontend
+  - backend
+  target: frontend design refresh
+  preferences:
+    autonomous: true
+    review_required: false
+    performance_budget_ms: 200
+    accessibility: AA
+    framework_preferences:
+    - langgraph
+    - agent_framework
+    - crewai
+  acceptance_criteria:
+  - The primary user path is faster and clearer.
+  - Backend changes preserve contracts and pass tests.
+  - Any high-risk step is explicitly gated.

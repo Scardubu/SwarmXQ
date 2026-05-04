@@ -1,0 +1,456 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SwarmX Message Schemas",
+  "description": "Canonical JSON schemas for all inter-agent message types in the SwarmX multi-agent system.\n\nV5.7 ADDITIONS:\n  - plan_refinement schema added — was listed in orchestrator terminal_types but undefined.\n  - code schema added — distinct from code_plan; used for inline code snippets.\n  - envelope schemas added: escalate, block, clarify, done, approval_required, scope_creep.\n  - audit schema added — formal definition for run_critic output.\n\nV5.6-refined FIXES (retained):\n  - code_plan.sub_tasks.owner enum extended with 'supervisor' and 'critic'.\n  - code_plan 'type' const enforced.\n  - plan.steps.items: 'schema' field made optional.\n\nV5.6 FIXES (retained):\n  - plan.steps.depends_on now accepts both integer AND string items.\n  - code_plan type added.\n  - audit.agent_scores: fast and critic entries added.\n\nV5.3 FIXES (retained):\n  - agent_name enum includes 'executor'.\n  - delegation: escalation_context added as optional.\n  - final_answer.sources accepts both int and string.\n  - step_complete.confidence normalised to lowercase only.",
+  "definitions": {
+
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "description": "RFC 4122 UUID v4"
+    },
+
+    "agent_name": {
+      "type": "string",
+      "enum": ["supervisor", "worker", "executor", "reasoner", "fast", "critic", "orchestrator"],
+      "description": "V5.3 FIX: 'executor' added (maps to qwen-worker). V5.6-refined: 'critic' in sub_tasks."
+    },
+
+    "confidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low"],
+      "description": "Lowercase only. ROUTING_SCHEMA in orchestrator.py uses uppercase — kept separate."
+    },
+
+    "plan": {
+      "type": "object",
+      "required": ["type", "task_id", "goal", "steps", "constraints", "fallback"],
+      "properties": {
+        "type":    {"type": "string", "const": "plan"},
+        "task_id": {"type": "string", "description": "UUID v4 (relaxed to string for fallback plans)"},
+        "goal":    {"type": "string", "maxLength": 500},
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["step_id", "agent", "action", "depends_on"],
+            "properties": {
+              "step_id":    {"type": "integer", "minimum": 1},
+              "agent":      {"$ref": "#/definitions/agent_name"},
+              "action":     {"type": "string", "maxLength": 500},
+              "depends_on": {
+                "type": "array",
+                "items": {
+                  "type": ["integer", "string"],
+                  "description": "V5.6 FIX: accepts both int and string — orchestrator coerces with int(d)."
+                }
+              },
+              "schema": {"type": "string", "description": "Optional — expected output schema name."}
+            },
+            "additionalProperties": false
+          }
+        },
+        "constraints":        {"type": "array", "items": {"type": "string"}},
+        "fallback":           {"type": "string", "maxLength": 200},
+        "warnings":           {"type": "array", "items": {"type": "string"}},
+        "domain_constraints": {"type": ["string", "null"]},
+        "skill_context":      {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    },
+
+    "plan_refinement": {
+      "type": "object",
+      "description": "V5.7 NEW: emitted when an agent refines an existing plan mid-execution. Listed in orchestrator terminal_types since V5.4 but schema was undefined until now.",
+      "required": ["type", "task_id", "step_id", "refined_steps", "rationale", "confidence"],
+      "properties": {
+        "type":          {"type": "string", "const": "plan_refinement"},
+        "task_id":       {"type": "string"},
+        "step_id":       {"type": "integer", "minimum": 1},
+        "refined_steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["step_id", "agent", "action", "depends_on"],
+            "properties": {
+              "step_id":    {"type": "integer", "minimum": 1},
+              "agent":      {"$ref": "#/definitions/agent_name"},
+              "action":     {"type": "string", "maxLength": 500},
+              "depends_on": {"type": "array", "items": {"type": ["integer", "string"]}}
+            },
+            "additionalProperties": false
+          }
+        },
+        "rationale":  {"type": "string", "maxLength": 500},
+        "confidence": {"$ref": "#/definitions/confidence"},
+        "warnings":   {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+
+    "delegation": {
+      "type": "object",
+      "required": ["type", "task_id", "step_id", "agent", "instruction", "input", "expected_output_schema", "timeout_seconds"],
+      "properties": {
+        "type":                   {"type": "string", "const": "delegation"},
+        "task_id":                {"type": "string"},
+        "step_id":                {"type": "integer", "minimum": 1},
+        "agent":                  {"$ref": "#/definitions/agent_name"},
+        "instruction":            {"type": "string", "maxLength": 1000},
+        "input":                  {},
+        "expected_output_schema": {"type": "string"},
+        "timeout_seconds":        {"type": "integer", "minimum": 1, "maximum": 600},
+        "escalation_context": {
+          "type": ["object", "null"],
+          "description": "V5.3 FIX: Added as optional. Populated on ESCALATE envelope."
+        },
+        "stream": {
+          "type": "boolean",
+          "description": "When true, the agent should request streamed inference."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "tool_call": {
+      "type": "object",
+      "required": ["type", "task_id", "step_id", "tool", "args", "reason"],
+      "properties": {
+        "type":    {"type": "string", "const": "tool_call"},
+        "task_id": {"type": "string"},
+        "step_id": {"type": "integer"},
+        "tool":    {"type": "string"},
+        "args":    {"type": "object"},
+        "reason":  {"type": "string", "maxLength": 200}
+      },
+      "additionalProperties": false
+    },
+
+    "tool_result": {
+      "type": "object",
+      "required": ["type", "task_id", "step_id", "tool", "status", "result", "error_detail"],
+      "properties": {
+        "type":         {"type": "string", "const": "tool_result"},
+        "task_id":      {"type": "string"},
+        "step_id":      {"type": "integer"},
+        "tool":         {"type": "string"},
+        "status":       {"type": "string", "enum": ["success", "error", "partial"]},
+        "result":       {},
+        "error_detail": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    },
+
+    "step_complete": {
+      "type": "object",
+      "required": ["type", "task_id", "step_id", "output", "confidence", "warnings"],
+      "properties": {
+        "type":       {"type": "string", "const": "step_complete"},
+        "task_id":    {"type": "string"},
+        "step_id":    {"type": "integer"},
+        "output":     {},
+        "confidence": {"$ref": "#/definitions/confidence"},
+        "warnings":   {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+
+    "step_error": {
+      "type": "object",
+      "required": ["type", "task_id", "step_id", "error_code", "error_detail", "recoverable"],
+      "properties": {
+        "type":         {"type": "string", "const": "step_error"},
+        "task_id":      {"type": "string"},
+        "step_id":      {"type": "integer"},
+        "error_code":   {
+          "type": "string",
+          "enum": ["tool_failure", "schema_violation", "timeout", "ambiguous_input", "context_exceeded", "rate_limit_exceeded", "circuit_open"]
+        },
+        "error_detail": {"type": "string"},
+        "recoverable":  {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+
+    "validation": {
+      "type": "object",
+      "required": ["type", "task_id", "step_id", "status", "issues", "next_action"],
+      "properties": {
+        "type":        {"type": "string", "const": "validation"},
+        "task_id":     {"type": "string"},
+        "step_id":     {"type": "integer"},
+        "status":      {"type": "string", "enum": ["pass", "fail", "retry"]},
+        "issues":      {"type": "array", "items": {"type": "string"}},
+        "next_action": {"type": "string", "enum": ["continue", "retry_step", "escalate", "abort"]}
+      },
+      "additionalProperties": false
+    },
+
+    "analysis": {
+      "type": "object",
+      "required": ["type", "task_id", "step_id", "conclusion", "sub_findings", "confidence", "caveats", "recommended_action"],
+      "properties": {
+        "type":               {"type": "string", "const": "analysis"},
+        "task_id":            {"type": "string"},
+        "step_id":            {"type": "integer"},
+        "conclusion":         {"type": "string"},
+        "sub_findings":       {"type": "array", "items": {"type": "string"}},
+        "confidence":         {"$ref": "#/definitions/confidence"},
+        "caveats":            {"type": "array", "items": {"type": "string"}},
+        "recommended_action": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+
+    "code": {
+      "type": "object",
+      "description": "V5.7 NEW: inline code snippet output — distinct from code_plan (which is a multi-hop decomposition). Used when a reasoner or executor produces a short self-contained code block.",
+      "required": ["type", "task_id", "step_id", "language", "code", "confidence"],
+      "properties": {
+        "type":         {"type": "string", "const": "code"},
+        "task_id":      {"type": "string"},
+        "step_id":      {"type": "integer"},
+        "language":     {"type": "string"},
+        "code":         {"type": "string"},
+        "explanation":  {"type": "string"},
+        "confidence":   {"$ref": "#/definitions/confidence"},
+        "warnings":     {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+
+    "code_plan": {
+      "type": "object",
+      "description": "V5.6 NEW. V5.6-refined FIX: sub_tasks.owner enum extended with 'supervisor' and 'critic'.",
+      "required": ["type", "task_id", "step_id", "language", "code", "explanation", "confidence", "sub_tasks"],
+      "properties": {
+        "type":         {"type": "string", "const": "code_plan"},
+        "task_id":      {"type": "string"},
+        "step_id":      {"type": "integer"},
+        "language":     {"type": "string"},
+        "code":         {"type": "string", "description": "JSON-escaped code string."},
+        "explanation":  {"type": "string"},
+        "confidence":   {"$ref": "#/definitions/confidence"},
+        "dependencies": {"type": "array", "items": {"type": "string"}},
+        "test_cases":   {"type": "array", "items": {"type": "string"}},
+        "fix_log": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["level", "item", "resolved"],
+            "properties": {
+              "level":    {"type": "string", "enum": ["CRITICAL", "GAP"]},
+              "item":     {"type": "string"},
+              "resolved": {"type": "boolean"}
+            }
+          }
+        },
+        "sub_tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "owner", "objective", "stop_condition"],
+            "properties": {
+              "id":             {"type": "string"},
+              "owner": {
+                "type": "string",
+                "enum": ["worker", "executor", "reasoner", "fast", "supervisor", "critic"],
+                "description": "V5.6-refined FIX: 'supervisor' and 'critic' added."
+              },
+              "objective":      {"type": "string"},
+              "stop_condition": {"type": "string"}
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "critique": {
+      "type": "object",
+      "required": ["type", "task_id", "step_id", "subject", "verdict", "issues", "severity", "suggested_fix"],
+      "properties": {
+        "type":          {"type": "string", "const": "critique"},
+        "task_id":       {"type": "string"},
+        "step_id":       {"type": "integer"},
+        "subject":       {"type": "string", "enum": ["plan", "code", "analysis", "tool_result"]},
+        "verdict":       {"type": "string", "enum": ["accept", "reject", "revise"]},
+        "issues":        {"type": "array", "items": {"type": "string"}},
+        "severity":      {"type": "string", "enum": ["critical", "major", "minor"]},
+        "suggested_fix": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+
+    "memory_update": {
+      "type": "object",
+      "required": ["type", "task_id", "compressed_context", "key_facts", "discard"],
+      "properties": {
+        "type":               {"type": "string", "const": "memory_update"},
+        "task_id":            {"type": "string"},
+        "compressed_context": {"type": "string"},
+        "key_facts":          {"type": "array", "items": {"type": "string"}},
+        "discard":            {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+
+    "final_answer": {
+      "type": "object",
+      "required": ["type", "task_id", "result", "confidence", "sources", "warnings"],
+      "properties": {
+        "type":       {"type": "string", "const": "final_answer"},
+        "task_id":    {"type": "string"},
+        "result":     {},
+        "confidence": {"$ref": "#/definitions/confidence"},
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": ["integer", "string"],
+            "description": "V5.3 FIX: Accepts both int and string."
+          }
+        },
+        "warnings":    {"type": "array", "items": {"type": "string"}},
+        "task_status": {
+          "type": "string",
+          "enum": ["pending", "planning", "running", "validating", "complete", "failed", "aborted", "blocked"]
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "audit": {
+      "type": "object",
+      "description": "V5.7: Formal schema for run_critic output. Was informally structured before.",
+      "required": ["type", "task_id", "verdict", "agent_scores", "improvement_signals", "apex_signals"],
+      "properties": {
+        "type":    {"type": "string", "const": "audit"},
+        "task_id": {"type": "string"},
+        "verdict": {"type": "string", "enum": ["pass", "pass_with_warnings", "fail"]},
+        "agent_scores": {
+          "type": "object",
+          "description": "Scores per agent role (0–10).",
+          "properties": {
+            "supervisor": {"type": "number", "minimum": 0, "maximum": 10},
+            "worker":     {"type": "number", "minimum": 0, "maximum": 10},
+            "executor":   {"type": "number", "minimum": 0, "maximum": 10},
+            "reasoner":   {"type": "number", "minimum": 0, "maximum": 10},
+            "fast":       {"type": "number", "minimum": 0, "maximum": 10},
+            "critic":     {"type": "number", "minimum": 0, "maximum": 10}
+          },
+          "additionalProperties": false
+        },
+        "improvement_signals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["area", "signal", "priority"],
+            "properties": {
+              "area":     {"type": "string"},
+              "signal":   {"type": "string"},
+              "priority": {"type": "string", "enum": ["critical", "high", "medium", "low"]}
+            }
+          }
+        },
+        "apex_signals": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "APEX-17 evolution signal tokens for the mutate phase."
+        },
+        "summary":       {"type": "string"},
+        "duration_s":    {"type": "number"},
+        "tokens_est":    {"type": "integer"}
+      },
+      "additionalProperties": false
+    },
+
+    "envelope_escalate": {
+      "type": "object",
+      "description": "V5.7 NEW: formal schema for the ESCALATE envelope emitted by agents.",
+      "required": ["status", "reason", "task_id", "step_id"],
+      "properties": {
+        "status":   {"type": "string", "const": "ESCALATE"},
+        "task_id":  {"type": "string"},
+        "step_id":  {"type": "integer"},
+        "reason":   {"type": "string", "maxLength": 500},
+        "context":  {},
+        "suggested_model": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+
+    "envelope_block": {
+      "type": "object",
+      "description": "V5.7 NEW: formal schema for the BLOCK envelope — task terminates immediately.",
+      "required": ["status", "reason", "task_id", "step_id"],
+      "properties": {
+        "status":  {"type": "string", "const": "BLOCK"},
+        "task_id": {"type": "string"},
+        "step_id": {"type": "integer"},
+        "reason":  {"type": "string", "maxLength": 500},
+        "policy":  {"type": "string", "description": "Safety policy identifier that triggered the block."}
+      },
+      "additionalProperties": false
+    },
+
+    "envelope_clarify": {
+      "type": "object",
+      "description": "V5.7 NEW: formal schema for the CLARIFY envelope — agent needs more info.",
+      "required": ["status", "question", "task_id", "step_id"],
+      "properties": {
+        "status":   {"type": "string", "const": "CLARIFY"},
+        "task_id":  {"type": "string"},
+        "step_id":  {"type": "integer"},
+        "question": {"type": "string", "maxLength": 500},
+        "options":  {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+
+    "envelope_done": {
+      "type": "object",
+      "description": "V5.7 NEW: formal schema for DONE — agent signals early completion.",
+      "required": ["status", "result", "task_id", "step_id"],
+      "properties": {
+        "status":     {"type": "string", "const": "DONE"},
+        "task_id":    {"type": "string"},
+        "step_id":    {"type": "integer"},
+        "result":     {},
+        "confidence": {"$ref": "#/definitions/confidence"}
+      },
+      "additionalProperties": false
+    },
+
+    "envelope_approval_required": {
+      "type": "object",
+      "description": "V5.7 NEW: formal schema for APPROVAL_REQUIRED — human gate.",
+      "required": ["status", "reason", "action_description", "task_id", "step_id"],
+      "properties": {
+        "status":             {"type": "string", "const": "APPROVAL_REQUIRED"},
+        "task_id":            {"type": "string"},
+        "step_id":            {"type": "integer"},
+        "reason":             {"type": "string", "maxLength": 500},
+        "action_description": {"type": "string", "maxLength": 1000},
+        "risk_level":         {"type": "string", "enum": ["low", "medium", "high"]}
+      },
+      "additionalProperties": false
+    },
+
+    "envelope_scope_creep": {
+      "type": "object",
+      "description": "V5.7 NEW: formal schema for SCOPE_CREEP — agent detects task exceeded original bounds.",
+      "required": ["status", "original_scope", "detected_expansion", "task_id", "step_id"],
+      "properties": {
+        "status":             {"type": "string", "const": "SCOPE_CREEP"},
+        "task_id":            {"type": "string"},
+        "step_id":            {"type": "integer"},
+        "original_scope":     {"type": "string"},
+        "detected_expansion": {"type": "string"},
+        "recommendation":     {"type": "string", "enum": ["abort", "escalate", "narrow_and_continue"]}
+      },
+      "additionalProperties": false
+    }
+  }
+}

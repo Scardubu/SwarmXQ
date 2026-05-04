@@ -1,0 +1,137 @@
+family: meta
+version: "v5.0"
+description: >
+  V5 stabilization loop: detect coherence drift, checkpoint the current state,
+  optionally resume a stalled run, evolve targeted micro-proposals, and validate
+  that the Swarm Coherence Score (SCS) recovers above the warn threshold.
+  Designed to run autonomously on a schedule or triggered by an SCS alert.
+risk: low
+handoff_validation: scs-gate
+
+meta:
+  blast_radius_estimate: low
+  fitness_island: alpha        # correctness-dominant — stability over leverage
+  candidate_count: 2           # minimal tournament to reduce churn
+  model_triad:
+    orchestrator: phi4-mini
+    reasoning:    deepseek-r1:7b
+    execution:    qwen2.5-coder
+  scs_warn_threshold: 0.50
+  scs_critical_threshold: 0.30
+  checkpoint_stage: before_evolve
+
+stages:
+  - name: scs-measure
+    owner: evaluator
+    model: phi4-mini
+    risk: low
+    purpose: >
+      Compute the current Swarm Coherence Score over the last
+      ``scs.measurement_window_runs`` runs. Surface pattern anomalies:
+      repeated failures, stalled jobs, diverging island scores.
+    outputs:
+      - scs_current
+      - anomaly_summary
+      - stalled_run_ids
+
+  - name: checkpoint-current
+    owner: executor
+    model: phi4-mini
+    risk: low
+    purpose: >
+      Write a ``before_evolve`` checkpoint for each stalled run so that
+      resume jobs can be enqueued safely if needed.
+    depends_on:
+      - scs-measure
+    condition: "scs_current < scs_warn_threshold or len(stalled_run_ids) > 0"
+    outputs:
+      - checkpoint_ids
+
+  - name: resume-stalled
+    owner: worker
+    model: phi4-mini
+    risk: low
+    purpose: >
+      Enqueue ``resume`` jobs for any stalled run IDs surfaced in scs-measure.
+      Each job carries the run_id, checkpoint stage, and resume_cursor=0.
+    depends_on:
+      - checkpoint-current
+    condition: "len(stalled_run_ids) > 0"
+    outputs:
+      - resume_job_ids
+
+  - name: micro-evolve
+    owner: evolver
+    model: deepseek-r1:7b
+    risk: low
+    purpose: >
+      Generate 2 targeted micro-proposals to address the specific anomalies
+      identified in scs-measure. Prefer Island A (correctness-first) proposals
+      when SCS is below the warn threshold. Use Island C (simplicity-first)
+      proposals when the anomaly is config drift.
+    depends_on:
+      - scs-measure
+    condition: "scs_current < scs_warn_threshold"
+    max_proposals: 2
+    island_bias: alpha
+    outputs:
+      - proposals
+
+  - name: apply-proposals
+    owner: executor
+    model: qwen2.5-coder
+    risk: low
+    purpose: >
+      Apply the lowest-risk proposal from micro-evolve. Write an
+      ``after_plan`` checkpoint before execution and a ``before_evolve``
+      checkpoint after. Roll back via checkpoint resume if execution fails.
+    depends_on:
+      - micro-evolve
+    review_required: true
+    checkpoint_on_start: true
+    outputs:
+      - applied_proposal
+      - run_record
+
+  - name: scs-recheck
+    owner: evaluator
+    model: phi4-mini
+    risk: low
+    purpose: >
+      Re-measure the SCS after the proposal has been applied. Pass if
+      SCS >= scs_warn_threshold. Fail (and surface alert) if still below.
+    depends_on:
+      - apply-proposals
+    scs_gate:
+      pass_threshold: 0.50
+      fail_action: alert        # surface to operator console; do not block
+    outputs:
+      - scs_after
+      - stabilization_verdict
+
+  - name: narrative-synthesis
+    owner: producer
+    model: phi4-mini
+    risk: low
+    purpose: >
+      Generate a 3–5 sentence human-readable stabilization narrative covering
+      what drifted, what was applied, and whether the SCS recovered.
+      Appended to the run record as ``run.narrative``.
+    depends_on:
+      - scs-recheck
+    outputs:
+      - narrative
+
+guards:
+  - id: scs-critical-block
+    condition: "scs_current < scs_critical_threshold"
+    action: block_evolution
+    message: >
+      SCS is below the critical threshold ({{ scs_current }} < {{ scs_critical_threshold }}).
+      Evolution blocked. Operator intervention required before resuming.
+
+  - id: blast-radius
+    condition: "proposals[0].blast_radius != 'low'"
+    action: require_human_approval
+    message: >
+      Proposed change has non-low blast radius. Human approval required before application.

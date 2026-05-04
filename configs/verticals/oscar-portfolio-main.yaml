@@ -1,0 +1,98 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# SwarmX · configs/verticals/oscar-portfolio-main.yaml
+# Per-vertical constraint overlay for Oscar Portfolio Main (scardubu.dev).
+#
+# Loaded by llm.py _load_vertical_config("oscar-portfolio-main").
+# This vertical governs all code generation, refactoring, feature development,
+# and long-term maintenance of Oscar Ndugbu’s production personal portfolio —
+# a high-signal, Conviction Engine-powered digital identity platform that
+# showcases Principal Full-Stack Engineering excellence.
+#
+# Strongly additive to base constraints. Emphasizes bleeding-edge Next.js/React
+# practices, performance obsession, accessibility, SEO authority, and deep
+# alignment with the expanded Conviction Engine philosophy.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+vertical: oscar-portfolio-main
+version: "2026.05.01"
+
+extra_constraints:
+
+  # Architecture & Rendering Discipline
+  - "All routes must use Next.js 15 App Router with React 19 Server Components and Partial Prerendering (PPR) wherever static/dynamic boundaries exist"
+  - "Prioritize Server Components aggressively; introduce Client Components only when interactivity, state, or Framer Motion is strictly required"
+  - "Leverage React 19 capabilities (use(), compiler optimizations, improved hydration) while maintaining strict hydration boundaries"
+  - "Tailwind CSS v4 with centralized design tokens, CSS variables, glassmorphism effects (frosted blur + subtle noise + depth), cursor glow, and consistent section kicker patterns"
+
+  # Motion & Interactive Experience
+  - "Framer Motion 11: always use LazyMotion + domAnimations and the m.* alias to minimize bundle size"
+  - "All animations must respect prefers-reduced-motion; never cause layout shift or degrade Core Web Vitals"
+  - "Use motion strategically to enhance storytelling — especially in SkillsMap filtering, project card reveals, section transitions, and subtle hover depth on glassmorphic elements"
+
+  # Content & Data Layer
+  - "All long-form content, case studies, and writing must be authored in MDX within the content/ directory and processed via mdx-components.tsx with custom remark/rehype plugins"
+  - "SkillsMap must remain fully interactive and filterable by the 6 core pillars: AI/ML, Backend, Frontend, Mobile, Infrastructure, Data — with proficiency visualization, system context tags, and complete ARIA compliance"
+  - "Maintain accurate metadata, JSON-LD structured data (Person, knowsAbout), and the 24-keyword SEO array across all routes"
+
+  # Performance, Observability & Quality Gates
+  - "Target Lighthouse scores of 95+ across Performance, Accessibility, Best Practices, and SEO — enforce via lighthouserc.json in CI"
+  - "Maintain aggressive Core Web Vitals (LCP < 1.5s) through heavy use of Partial Prerendering, optimized chunking, and clean client-side JavaScript"
+  - "Full Sentry instrumentation required on client, server, and edge runtimes with proper error boundaries and context"
+  - "Testing strategy: Vitest for unit/integration tests + Playwright for comprehensive E2E coverage (responsive, accessibility, and interaction flows)"
+
+  # Type Safety, Tooling & Development Discipline
+  - "Enforce strict TypeScript mode (tsconfig.typecheck.json); eliminate all `any` types in favor of branded types and precise utilities"
+  - "ESLint with custom rules from eslint-rules/, Prettier, and Husky pre-commit hooks must pass on every change"
+  - "Use pnpm for dependency management; keep lockfile clean and Node.js version pinned to >=22 where possible"
+
+  # Conviction Engine Alignment (Expanded Tenets)
+  - "All changes must advance the Conviction Engine (currently v11+) — the living framework for full-stack identity coherence, production-grade quality, and measurable engineering impact"
+  - "Tenet 1 — Full-Stack Identity Coherence: Every element must consistently position Oscar Ndugbu as Principal Full-Stack Engineer with deep expertise across AI/ML infrastructure, fintech systems, backend reliability, frontend craftsmanship, cross-platform mobile (React Native/Expo), infrastructure, and data engineering"
+  - "Tenet 2 — Production Readiness as Baseline: Treat the portfolio as a true production system — every change must maintain or improve build stability, type safety, observability, test coverage, and deployment reliability"
+  - "Tenet 3 — Measurable Impact & Technical Storytelling: Case studies, SkillsMap entries, and writing must clearly articulate architectural decisions, trade-offs, real-world outcomes, and measurable production impact"
+  - "Tenet 4 — Relentless Progressive Refinement: View the portfolio as a living system — continuously reduce technical debt, polish edge cases, optimize performance, and elevate overall quality with each iteration"
+  - "Tenet 5 — Inclusive Excellence & Accessibility: Maintain WCAG 2.1 AA compliance as non-negotiable. Prioritize semantic HTML, proper ARIA, keyboard navigation, reduced-motion support, and high-contrast modes"
+  - "Tenet 6 — Performance Obsession: Aggressively optimize for Core Web Vitals using Partial Prerendering, strategic motion, minimal client JavaScript, and clean architecture. Sustain Lighthouse 95+ scores"
+  - "Tenet 7 — Design System Maturity & Consistency: Evolve a premium, cohesive design language featuring refined glassmorphism (frosted blur, subtle noise, depth), intentional motion vocabulary, design tokens, and section kickers that feel distinctly high-signal and modern"
+  - "Tenet 8 — Technical Authority Through Clarity: Favor deep technical honesty, architectural transparency, and precise language. Let strong engineering speak through substance rather than superficial hype"
+  - "Tenet 9 — Multi-Platform & Future-Proof Thinking: Ensure decisions support seamless extension to mobile (React Native/Expo), Turborepo structures, Effect-TS patterns, and other conviction-aligned systems"
+
+  # Deployment, SEO & Accessibility
+  - "Primary deployment on Vercel (vercel.json) with synchronized netlify.toml fallback; ensure next-sitemap.config.js and robots.txt stay current"
+  - "OG image generation and all social meta tags must be production-hardened and consistent"
+  - "Full WCAG 2.1 AA compliance across the site, with special attention to dynamic components like SkillsMap"
+  - "No secrets in source code; manage all environment variables through deployment platform dashboards"
+
+risk_keywords:
+  - "oscar-portfolio-main"
+  - "scardubu.dev"
+  - "conviction engine"
+  - "conviction v11"
+  - "skillsmap"
+  - "oscar ndugbu"
+  - "principal full-stack"
+  - "next.js 15"
+  - "react 19"
+  - "partial prerendering"
+  - "framer motion 11"
+  - "mdx"
+  - "tailwind v4"
+  - "glassmorphism"
+  - "lighthouse ci"
+
+stack_signals:
+  - "next.js 15"
+  - "react 19"
+  - "typescript strict"
+  - "tailwindcss v4"
+  - "framer-motion 11"
+  - "mdx"
+  - "playwright"
+  - "vitest"
+  - "sentry"
+  - "husky"
+  - "vercel"
+  - "conviction-engine"
+  - "oscar-portfolio"
+  - "scardubu"
+  - "skillsmap"

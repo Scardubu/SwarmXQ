@@ -1,0 +1,89 @@
+family: custom
+name: workflow-blueprint
+version: 2026.04-apex10
+risk: medium
+description: >
+  Blueprint for creating a new execution workflow with bounded autonomy.
+  IEP-ELITE-MAX compliant: signal triage on entry, output quality gate on exit,
+  Fix Log flows through all stages.
+
+# IEP-ELITE execution contract (applied at every stage boundary)
+iep_elite:
+  signal_triage_on_entry: true
+  output_quality_gate_on_exit: true
+  fix_log_forwarded: true
+  handoff_contract_validated: true
+  island_convergence_probe: true
+
+stages:
+  - name: intake
+    owner: strategist
+    risk: low
+    purpose: >
+      Define the objective, scope, and stop conditions. Run signal triage (§1).
+      Resolve T1 ambiguity before proceeding — do not pass an ambiguous brief.
+    outputs:
+      - problem framing (T1 + T2 only)
+      - scope guardrails with blast-radius estimate
+      - stop conditions
+    quality_gate: output_quality_gate
+
+  - name: map
+    owner: chief-architect
+    risk: low
+    purpose: >
+      Map system boundaries, dependencies, and leverage points. Verify Swarm
+      Coherence Invariant (§7) against the boundary map before emitting.
+    outputs:
+      - boundary map
+      - dependency graph (minimal)
+      - leverage point list
+    quality_gate: swarm_coherence_invariant
+
+  - name: compose
+    owner: workflow-composer
+    risk: low
+    purpose: >
+      Select or assemble the most effective stage ordering with the minimum
+      stage count. Run latent ensemble (§2) with island convergence probe (μ-5).
+    outputs:
+      - execution graph (stage count minimized)
+      - runtime-shape selection with rationale
+      - handoff contracts between stages
+    quality_gate: latent_ensemble + convergence_probe
+
+  - name: implement
+    owner: backend-engineer
+    risk: medium
+    purpose: >
+      Apply the smallest safe change. Register rollback anchor (§14) before
+      any mutation. Validate against predictive downstream simulation (§6).
+    outputs:
+      - patch (minimal, reversible)
+      - rollback anchor registered
+      - downstream simulation result
+    quality_gate: rollback_anchor + downstream_simulation
+
+  - name: critique
+    owner: evaluator
+    risk: low
+    purpose: >
+      Score evidence, run tournament selection, expose missing validation.
+      Run adversarial self-check (§4) with causal chain trace. One pass only.
+    outputs:
+      - scored candidates with island labels
+      - tournament winner with fitness score
+      - Fix Log update
+    quality_gate: adversarial_self_check
+
+  - name: learn
+    owner: skill-curator
+    risk: low
+    purpose: >
+      Promote durable lessons into reusable skills. Run Fix Log drain (μ-4)
+      before final handoff. Only cold-retrieval-ready lessons stored.
+    outputs:
+      - memory note (cold-retrieval validated)
+      - skill promotion decision (promote | defer | none)
+      - Fix Log: CLEAN confirmation
+    quality_gate: fix_log_drain

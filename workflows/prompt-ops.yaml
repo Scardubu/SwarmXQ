@@ -1,0 +1,28 @@
+family: meta
+description: Prompt architecture, instruction hierarchy, and control-loop refinement.
+risk: low
+stages:
+- name: intake
+  owner: strategist
+  risk: low
+  purpose: State the prompt problem and the desired behavior.
+- name: draft
+  owner: prompt-architect
+  risk: low
+  purpose: Write the strongest prompt structure and internal control layers with explicit contracts.
+- name: grade
+  owner: benchmark-analyst
+  risk: low
+  purpose: Evaluate prompt variants against a rubric, examples, and failure modes.
+- name: refine
+  owner: prompt-architect
+  risk: low
+  purpose: Tighten wording, ordering, and guardrails with one bounded refinement pass.
+- name: verify
+  owner: evaluator
+  risk: low
+  purpose: Confirm the prompt produces the intended outcome.
+- name: learn
+  owner: memory-curator
+  risk: low
+  purpose: Capture the reusable prompt pattern.

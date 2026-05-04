@@ -1,0 +1,28 @@
+family: operations
+description: Stabilize incidents with containment, diagnosis, and recovery.
+risk: high
+stages:
+- name: intake
+  owner: strategist
+  risk: low
+  purpose: Capture the incident scope and customer impact.
+- name: contain
+  owner: release-manager
+  risk: high
+  purpose: Limit blast radius and stop the bleeding.
+- name: diagnose
+  owner: evaluator
+  risk: medium
+  purpose: Identify the failure mode and current evidence.
+- name: mitigate
+  owner: backend-engineer
+  risk: high
+  purpose: Apply a minimal stabilizing change.
+- name: verify
+  owner: qa-evaluator
+  risk: medium
+  purpose: Confirm recovery and watch for regressions.
+- name: postmortem
+  owner: memory-curator
+  risk: low
+  purpose: Record what happened and how to prevent recurrence.

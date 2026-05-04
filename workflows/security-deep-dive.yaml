@@ -1,0 +1,28 @@
+family: security
+description: Risk-first review loop with explicit approvals and evidence.
+risk: high
+stages:
+- name: intake
+  owner: strategist
+  risk: low
+  purpose: Define assets, trust boundaries, and blast radius.
+- name: threat-model
+  owner: security-reviewer
+  risk: high
+  purpose: Enumerate threats, abuse cases, and sensitive paths.
+- name: scan
+  owner: security-reviewer
+  risk: high
+  purpose: Review code, configs, and dependencies for exposure.
+- name: review
+  owner: evaluator
+  risk: medium
+  purpose: Validate evidence and require approvals where appropriate.
+- name: verify
+  owner: qa-evaluator
+  risk: medium
+  purpose: Check the mitigation path without weakening controls.
+- name: learn
+  owner: memory-curator
+  risk: low
+  purpose: Preserve the security lesson and the gate that mattered.

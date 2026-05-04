@@ -1,0 +1,70 @@
+family: frontend
+version: IEP-ELITE-2026.4-apex15
+description: Fast UX and interface iteration loop.
+risk: medium
+handoff_validation: type-and-range
+
+meta:
+  model_triad:
+    orchestrator: phi4-mini
+    reasoning:    deepseek-r1:7b
+    execution:    qwen2.5-coder
+
+stages:
+  - name: intake
+    owner: strategist
+    model: phi4-mini
+    risk: low
+    purpose: Capture the user problem and desired emotion.
+    outputs:
+      - problem_statement
+      - target_emotion
+    handoff_validation: type-and-range
+
+  - name: design-critique
+    owner: design-critic
+    model: deepseek-r1:7b       # reasoning engine identifies structural issues
+    risk: low
+    purpose: Identify friction, clutter, and weak hierarchy.
+    outputs:
+      - critique_findings
+      - priority_issues[]
+    handoff_validation: type-and-range
+
+  - name: wireframe
+    owner: frontend-architect
+    model: qwen2.5-coder           # execution engine generates component structures
+    risk: low
+    purpose: Sketch a cleaner interaction path.
+    outputs:
+      - wireframe_spec
+      - component_list
+    handoff_validation: type-and-range
+
+  - name: polish
+    owner: frontend-architect
+    model: qwen2.5-coder
+    risk: medium
+    purpose: Refine spacing, tokens, and micro-interactions.
+    outputs:
+      - polished_implementation
+    handoff_validation: type-and-range
+
+  - name: review
+    owner: evaluator
+    model: phi4-mini
+    risk: low
+    purpose: Validate the design against the brief.
+    outputs:
+      - review_result
+      - acceptance_status
+    handoff_validation: type-and-range
+
+  - name: learn
+    owner: memory-curator
+    model: phi4-mini
+    risk: low
+    purpose: Capture repeatable design patterns.
+    outputs:
+      - memory_entry
+    handoff_validation: type-level

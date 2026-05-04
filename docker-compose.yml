@@ -1,0 +1,233 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# SwarmX — Production Docker Compose
+# Requires: Docker 26+, Docker Compose v2.27+, cgroup v2 on host
+#
+# Services:
+#   redis            — BullMQ message broker (required by swarmx-api)
+#   ollama           — Local LLM inference runtime
+#   swarmx-python    — Python orchestration brain (port 8787)
+#   swarmx-api       — Fastify telemetry + SSE API (port 3001)
+#   swarmx-dashboard — Next.js operator console (port 3000)
+#
+# Production hardening changelog:
+#   [DC-FIX-01] ollama pinned to versioned tag — never :latest
+#   [DC-FIX-02] swarmx-python healthcheck unified to /health
+#   [DC-FIX-03] Dashboard build context = repo root (.) so COPY packages/swarmx-types
+#               works without "path outside build context" Docker error
+#   [DC-ENH-01] PYTHONDONTWRITEBYTECODE + PYTHONUNBUFFERED + SWARM_ROOT added
+#   [DC-ENH-02] SWARM_LLM_CACHE and SWARM_VRAM_CEILING_GB added
+#   [DC-ENH-03] Redis healthcheck retries raised; start_period aligned
+#   [DC-ENH-04] tini installed in Dockerfile.python for SIGTERM propagation
+#   [DC-ENH-05] All ports bound to 127.0.0.1 — reverse proxy handles external TLS
+#
+# Usage:
+#   cp env.example env.local && nano env.local
+#   docker compose --env-file env.local up -d
+#   make health
+# ═══════════════════════════════════════════════════════════════════════════════
+
+name: swarmx
+
+services:
+
+  # ── Redis (BullMQ message broker) ─────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # AOF persistence with a 60s / 1-write checkpoint window
+    command: redis-server --save 60 1 --loglevel warning --appendonly yes
+    volumes:
+      - redis-data:/data
+    ports:
+      - "127.0.0.1:6379:6379"  # [DC-ENH-05] loopback only
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12        # [DC-ENH-03] raised from 5 to 12
+      start_period: 10s  # [DC-ENH-03] added explicit start_period
+
+  # ── Ollama (local LLM runtime) ─────────────────────────────────────────────
+  # [DC-FIX-01] Pinned to a specific release tag.
+  # Bump intentionally after pulling + validating the model triad.
+  ollama:
+    image: ollama/ollama:0.6.2
+    restart: unless-stopped
+    environment:
+      OLLAMA_KEEP_ALIVE: "10m"
+      OLLAMA_MAX_LOADED_MODELS: "2"
+    volumes:
+      - ollama-data:/root/.ollama
+    ports:
+      - "127.0.0.1:11434:11434"  # [DC-ENH-05] loopback only
+    deploy:
+      resources:
+        limits:
+          memory: 12G
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:11434/api/tags"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  # ── SwarmX Python runtime ──────────────────────────────────────────────────
+  swarmx-python:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      # Python runtime discipline [DC-ENH-01]
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+      # Bundle root for vertical config loader [DC-ENH-01]
+      SWARM_ROOT: "/app"
+      # SwarmX home on the persistent volume
+      SWARM_HOME: /data/swarmx
+      # Ollama connection
+      OLLAMA_HOST: http://ollama:11434
+      # Model triad
+      SWARM_LLM_PROVIDER: "${SWARM_LLM_PROVIDER:-ollama}"
+      SWARM_MODEL_FAST:   "${SWARM_MODEL_FAST:-phi4-mini}"
+      SWARM_MODEL_CODE:   "${SWARM_MODEL_CODE:-qwen2.5-coder}"
+      SWARM_MODEL_REASON: "${SWARM_MODEL_REASON:-deepseek-r1:7b}"
+      # Runtime behaviour
+      SWARM_AUTONOMOUS:      "${SWARM_AUTONOMOUS:-true}"
+      SWARM_REVIEW_REQUIRED: "${SWARM_REVIEW_REQUIRED:-false}"
+      SWARM_AUTO_APPLY:      "${SWARM_AUTO_APPLY:-false}"
+      SWARM_MAX_ITERATIONS:  "${SWARM_MAX_ITERATIONS:-3}"
+      SWARMX_ALLOWED_ORIGINS: "${SWARMX_ALLOWED_ORIGINS:-http://localhost:3000}"
+      # LLM response cache [DC-ENH-02] — off by default in production
+      SWARM_LLM_CACHE:     "${SWARM_LLM_CACHE:-0}"
+      SWARM_LLM_CACHE_TTL: "${SWARM_LLM_CACHE_TTL:-3600}"
+      # VRAM guard ceiling in GB [DC-ENH-02]
+      SWARM_VRAM_CEILING_GB: "${SWARM_VRAM_CEILING_GB:-10}"
+      # Timezone — WAT (UTC+1) for operator dashboards
+      TZ: "${TZ:-Africa/Lagos}"
+    volumes:
+      - swarmx-data:/data/swarmx
+      - ./workflows:/app/workflows:ro
+      - ./agents:/app/agents:ro
+      - ./skills:/app/skills:ro
+    ports:
+      - "127.0.0.1:8787:8787"
+    healthcheck:
+      # [DC-FIX-02] Unified to /health — matches server.py FIX-SRV05 and
+      # Dockerfile.python HEALTHCHECK directive.
+      test: ["CMD", "curl", "-sf", "http://localhost:8787/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  # ── SwarmX API (Fastify / Node 22) ─────────────────────────────────────────
+  swarmx-api:
+    build:
+      context: apps/swarmx-api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      swarmx-python:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
+      SWARMX_API_PORT: "3001"
+      # 0.0.0.0 inside container — nginx/Caddy on the host handles TLS termination
+      SWARMX_API_HOST: "0.0.0.0"
+      SWARMX_DASHBOARD_ORIGIN: "${SWARMX_DASHBOARD_ORIGIN:-http://localhost:3000}"
+      # Redis (required by BullMQ queue poller)
+      REDIS_URL: "redis://redis:6379"
+      # Python bridge
+      SWARMX_PYTHON: "python"
+      SWARMX_HOME: /data/swarmx
+      # Ollama
+      SWARMX_OLLAMA_BASE_URL: http://ollama:11434
+      SWARMX_COMPOSER_MODEL: "${SWARMX_COMPOSER_MODEL:-phi4-mini}"
+      # Telemetry polling intervals
+      SWARMX_TELEMETRY_INTERVAL_MS: "${SWARMX_TELEMETRY_INTERVAL_MS:-2000}"
+      SWARMX_V5_POLL_INTERVAL_MS:   "${SWARMX_V5_POLL_INTERVAL_MS:-15000}"
+      SWARMX_CGROUP_INTERVAL_MS:    "${SWARMX_CGROUP_INTERVAL_MS:-2000}"
+      SWARMX_QUEUE_INTERVAL_MS:     "${SWARMX_QUEUE_INTERVAL_MS:-3000}"
+      SWARMX_QUEUE_NAMES:           "${SWARMX_QUEUE_NAMES:-swarmx}"
+      # Terminal (PTY)
+      SWARMX_MAX_PTY_SESSIONS:    "${SWARMX_MAX_PTY_SESSIONS:-8}"
+      SWARMX_PTY_IDLE_TIMEOUT_MS: "${SWARMX_PTY_IDLE_TIMEOUT_MS:-3600000}"
+      SWARMX_PTY_SHELL: /bin/bash
+      # cgroup v2 — host must have cgroup v2 enabled (Ubuntu 22.04+ default)
+      SWARMX_CGROUP_ROOT: "${SWARMX_CGROUP_ROOT:-/sys/fs/cgroup/swarmx.slice}"
+    volumes:
+      - swarmx-data:/data/swarmx
+      # cgroup v2 stats — read-only mount for resource telemetry
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+    ports:
+      - "127.0.0.1:3001:3001"
+    healthcheck:
+      test:
+        - "CMD"
+        - "node"
+        - "-e"
+        - "require('http').get('http://localhost:3001/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  # ── SwarmX Dashboard (Next.js) ─────────────────────────────────────────────
+  swarmx-dashboard:
+    build:
+      # [DC-FIX-03] Build context is the REPO ROOT, not apps/swarmx-dashboard.
+      # The Dockerfile COPYs packages/swarmx-types/ which lives at the root.
+      # Using apps/swarmx-dashboard as context caused Docker to reject the COPY
+      # with "path outside build context" — breaking every CI build silently.
+      context: .
+      dockerfile: apps/swarmx-dashboard/Dockerfile
+      args:
+        NEXT_PUBLIC_SWARMX_VERSION: "${NEXT_PUBLIC_SWARMX_VERSION:-2026.6.0}"
+    restart: unless-stopped
+    depends_on:
+      swarmx-api:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_SWARMX_VERSION: "${NEXT_PUBLIC_SWARMX_VERSION:-2026.6.0}"
+      # Internal container-to-container URL for Next.js server-side API calls
+      SWARMX_API_URL: "http://swarmx-api:3001"
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test:
+        - "CMD"
+        - "node"
+        - "-e"
+        - "require('http').get('http://localhost:3000',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"
+      interval: 15s
+      timeout: 8s
+      retries: 4
+      start_period: 30s
+
+# ── Named volumes ──────────────────────────────────────────────────────────────
+volumes:
+  redis-data:
+    driver: local
+  ollama-data:
+    driver: local
+  swarmx-data:
+    driver: local
+
+# ── Internal network ───────────────────────────────────────────────────────────
+networks:
+  default:
+    name: swarmx-net
+    driver: bridge

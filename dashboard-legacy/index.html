@@ -1,0 +1,63 @@
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- ╔══════════════════════════════════════════════════════════════════╗
+         ║  ⚠  DEPRECATED — Phase 4 Legacy Dashboard Retirement           ║
+         ║                                                                  ║
+         ║  This is the legacy fallback dashboard (dashboard-legacy/).     ║
+         ║  It is retained for reference only and will be removed in       ║
+         ║  the Phase 4 release.                                           ║
+         ║                                                                  ║
+         ║  Canonical dashboard: apps/swarmx-dashboard/ (Next.js 16)      ║
+         ║  Run: pnpm --filter @swarmx/dashboard dev                       ║
+         ╚══════════════════════════════════════════════════════════════════╝ -->
+    <meta name="description" content="SwarmX — local autonomous multi-agent control plane dashboard · legacy fallback [DEPRECATED]" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚙️</text></svg>" />
+    <title>SwarmX Dashboard · Legacy [DEPRECATED — see apps/swarmx-dashboard]</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="app.js"></script>
+  </head>
+  <body>
+    <div id="app" class="shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">SwarmX autonomous control plane</p>
+          <h1>Living engineering system</h1>
+          <p id="status-line" class="lede">Loading legacy runtime state…</p>
+        </div>
+        <div class="hero-actions">
+          <button data-action="refresh">Refresh</button>
+          <button data-action="plan">Plan</button>
+          <button data-action="run">Run</button>
+          <button data-action="evolve">Evolve</button>
+        </div>
+      </header>
+
+      <section class="panel controls">
+        <div class="field">
+          <label for="repo-input">Repository</label>
+          <input id="repo-input" type="text" placeholder="/path/to/repo" />
+        </div>
+        <div class="field">
+          <label for="target-input">Target</label>
+          <input id="target-input" type="text" value="repository acceleration" />
+        </div>
+        <div class="field inline">
+          <label><input id="autonomous-input" type="checkbox" checked /> Autonomous</label>
+          <label><input id="auto-apply-input" type="checkbox" /> Auto-apply low-risk evolution</label>
+          <label><input id="review-input" type="checkbox" /> Require review</label>
+        </div>
+      </section>
+
+      <section id="overview-grid" class="grid"></section>
+      <section id="detail-grid" class="grid grid-wide"></section>
+      <section class="panel log-panel">
+        <h2>Activity</h2>
+        <pre id="log-output">Awaiting actions…</pre>
+      </section>
+    </div>
+  </body>
+</html>

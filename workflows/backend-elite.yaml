@@ -1,0 +1,28 @@
+family: backend
+description: API, data, performance, and reliability acceleration loop.
+risk: medium
+stages:
+- name: intake
+  owner: strategist
+  risk: low
+  purpose: Scope the backend change and the performance budget.
+- name: architecture
+  owner: backend-engineer
+  risk: medium
+  purpose: Review boundaries, contracts, and failure modes.
+- name: implement
+  owner: backend-engineer
+  risk: medium
+  purpose: Apply the smallest safe code change.
+- name: test
+  owner: qa-evaluator
+  risk: medium
+  purpose: Validate correctness and regressions.
+- name: profile
+  owner: performance-optimizer
+  risk: low
+  purpose: Measure latency, memory, and throughput.
+- name: learn
+  owner: memory-curator
+  risk: low
+  purpose: Store durable implementation lessons.

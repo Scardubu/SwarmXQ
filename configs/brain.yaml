@@ -1,0 +1,20 @@
+models:
+  fast: phi3
+  reason: llama3:8b
+  code: qwen:7b
+
+execution:
+  parallel: true
+  max_threads: 4
+
+reflection:
+  enabled: true
+
+memory:
+  enabled: true
+  min_length: 20
+  similarity_threshold: 0.1
+
+autonomous:
+  max_loops: 3
+  min_score: 2

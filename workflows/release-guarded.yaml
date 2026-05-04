@@ -1,0 +1,28 @@
+family: devops
+description: Safe release preparation and rollout guardrails.
+risk: high
+stages:
+- name: intake
+  owner: strategist
+  risk: low
+  purpose: Clarify the release goal and the blast radius.
+- name: package
+  owner: release-manager
+  risk: high
+  purpose: Assemble artifacts and manifest evidence.
+- name: verify
+  owner: evaluator
+  risk: medium
+  purpose: Confirm checksums, tests, and trace completeness.
+- name: review
+  owner: release-manager
+  risk: high
+  purpose: Perform go/no-go with a human gate if needed.
+- name: release-notes
+  owner: memory-curator
+  risk: low
+  purpose: Write release notes and rollback notes.
+- name: learn
+  owner: memory-curator
+  risk: low
+  purpose: Store release lessons and gaps.

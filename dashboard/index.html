@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- ╔══════════════════════════════════════════════════════════════════╗
+         ║  ⚠  DEPRECATED — Phase 4 Legacy Dashboard Retirement           ║
+         ║                                                                  ║
+         ║  This is the legacy static dashboard (dashboard/).              ║
+         ║  It is retained for reference only and will be removed in       ║
+         ║  the Phase 4 release.                                           ║
+         ║                                                                  ║
+         ║  Canonical dashboard: apps/swarmx-dashboard/ (Next.js 16)      ║
+         ║  Run: pnpm --filter @swarmx/dashboard dev                       ║
+         ╚══════════════════════════════════════════════════════════════════╝ -->
+    <meta name="description" content="SwarmX — SCAR Cognitive OS · v4.0-FINAL · autonomous multi-agent control plane" />
+    <meta name="theme-color" content="hsl(230 60% 4%)" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚙</text></svg>" />
+    <title>SwarmX · v4.0-FINAL · IEP-ELITE-MAX [LEGACY — see apps/swarmx-dashboard]</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="app.js"></script>
+  </head>
+  <body>
+    <!-- Ambient particle canvas -->
+    <canvas id="ambient-canvas" aria-hidden="true" tabindex="-1"></canvas>
+
+    <div id="app" class="shell">
+
+      <!-- ── Masthead ──────────────────────────────────────────────────── -->
+      <header class="masthead" role="banner">
+        <div class="masthead-brand">
+          <div class="brand-mark" aria-hidden="true">
+            <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <polygon class="brand-hex" points="18,2 33,10 33,26 18,34 3,26 3,10"/>
+              <circle class="brand-core" cx="18" cy="18" r="5"/>
+              <line class="brand-ray" x1="18" y1="2"  x2="18"   y2="8"/>
+              <line class="brand-ray" x1="33" y1="10" x2="27.5" y2="13"/>
+              <line class="brand-ray" x1="33" y1="26" x2="27.5" y2="23"/>
+              <line class="brand-ray" x1="18" y1="34" x2="18"   y2="28"/>
+              <line class="brand-ray" x1="3"  y1="26" x2="8.5"  y2="23"/>
+              <line class="brand-ray" x1="3"  y1="10" x2="8.5"  y2="13"/>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <span class="brand-name">SwarmX</span>
+            <span class="brand-ver">v4.0-FINAL</span>
+          </div>
+        </div>
+
+        <nav class="masthead-nav" aria-label="Primary actions">
+          <button class="action-btn" data-action="refresh" aria-label="Refresh runtime state">
+            <span class="btn-icon">↻</span><span class="btn-label">Refresh</span>
+          </button>
+          <button class="action-btn" data-action="plan" aria-label="Plan workflow">
+            <span class="btn-icon">◈</span><span class="btn-label">Plan</span>
+          </button>
+          <button class="action-btn action-btn--primary" data-action="run" aria-label="Run workflow">
+            <span class="btn-icon">▶</span><span class="btn-label">Run</span>
+          </button>
+          <button class="action-btn action-btn--evolve" data-action="evolve" aria-label="Trigger evolution cycle">
+            <span class="btn-icon">⟳</span><span class="btn-label">Evolve</span>
+          </button>
+        </nav>
+      </header>
+
+      <!-- ── Hero band ─────────────────────────────────────────────────── -->
+      <section class="hero-band" aria-label="System status">
+        <div class="hero-copy">
+          <p class="eyebrow">Autonomous multi-agent control plane · SCAR Cognitive OS · IEP-ELITE-MAX</p>
+          <h1 class="hero-title">Living engineering<br><em>system</em></h1>
+          <p id="status-line" class="status-lede" aria-live="polite" aria-atomic="true">Loading live runtime state…</p>
+        </div>
+        <div class="hero-meta" aria-label="Key vitals">
+          <div class="vital" id="vital-agents">
+            <span class="vital-num">—</span>
+            <span class="vital-label">Agents</span>
+          </div>
+          <div class="vital-sep" aria-hidden="true"></div>
+          <div class="vital" id="vital-runs">
+            <span class="vital-num">—</span>
+            <span class="vital-label">Runs</span>
+          </div>
+          <div class="vital-sep" aria-hidden="true"></div>
+          <div class="vital" id="vital-proposals">
+            <span class="vital-num">—</span>
+            <span class="vital-label">Proposals</span>
+          </div>
+          <div class="vital-sep" aria-hidden="true"></div>
+          <div class="vital" id="vital-memories">
+            <span class="vital-num">—</span>
+            <span class="vital-label">Memories</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Control strip ─────────────────────────────────────────────── -->
+      <section class="control-strip panel" aria-label="Runtime controls">
+        <div class="field">
+          <label for="repo-input">Repository</label>
+          <input id="repo-input" type="text" placeholder="/path/to/repo" autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="field">
+          <label for="target-input">Target</label>
+          <input id="target-input" type="text" value="repository acceleration" autocomplete="off" />
+        </div>
+        <div class="field field--toggles">
+          <label class="toggle-label">
+            <input id="autonomous-input" type="checkbox" checked class="sr-only" />
+            <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+            <span>Autonomous</span>
+          </label>
+          <label class="toggle-label">
+            <input id="auto-apply-input" type="checkbox" class="sr-only" />
+            <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+            <span>Auto-apply low-risk</span>
+          </label>
+          <label class="toggle-label">
+            <input id="review-input" type="checkbox" class="sr-only" />
+            <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+            <span>Require review</span>
+          </label>
+        </div>
+      </section>
+
+      <!-- ── IEP-ELITE engine status bar ───────────────────────────────── -->
+      <section id="iep-status-bar" class="iep-bar" aria-label="IEP-ELITE engine status">
+        <div class="iep-bar-title" aria-hidden="true">IEP-ELITE</div>
+
+        <div class="iep-indicators">
+          <div class="iep-indicator" id="iep-signal-triage" title="Signal Triage · §1">
+            <span class="iep-dot" aria-hidden="true"></span>
+            <span class="iep-label">Signal Triage</span>
+          </div>
+          <div class="iep-indicator" id="iep-ensemble" title="Multi-Island Ensemble · §2">
+            <span class="iep-dot" aria-hidden="true"></span>
+            <span class="iep-label">Ensemble</span>
+          </div>
+          <div class="iep-indicator" id="iep-critic" title="Adversarial Critic · §4">
+            <span class="iep-dot" aria-hidden="true"></span>
+            <span class="iep-label">Critic</span>
+            <span id="iep-critic-count" class="iep-count" aria-label="critic findings" style="display:none"></span>
+          </div>
+          <div class="iep-indicator" id="iep-confidence" title="Confidence Gate · §5">
+            <span class="iep-dot" aria-hidden="true"></span>
+            <span class="iep-label" id="iep-confidence-label">Confidence</span>
+          </div>
+          <div class="iep-indicator" id="iep-quality-gate" title="Output Quality Gate · §15">
+            <span class="iep-dot" aria-hidden="true"></span>
+            <span class="iep-label">Quality Gate</span>
+          </div>
+          <div class="iep-indicator" id="iep-handoff" title="Handoff Contract Validator · §12">
+            <span class="iep-dot" aria-hidden="true"></span>
+            <span class="iep-label">Handoff</span>
+          </div>
+          <div class="iep-indicator" id="iep-coherence" title="Swarm Coherence Invariant · §13">
+            <span class="iep-dot iep-dot--pulse" aria-hidden="true"></span>
+            <span class="iep-label">Coherence</span>
+          </div>
+          <div class="iep-indicator" id="iep-fix-log" title="Append-Only Fix Log · §14">
+            <span class="iep-dot" aria-hidden="true"></span>
+            <span class="iep-label">Fix Log</span>
+            <span id="iep-fix-log-count" class="iep-count" aria-label="critical fix log entries" style="display:none"></span>
+          </div>
+          <div class="iep-indicator" id="iep-anchor" title="Rollback Anchor Registry · §14">
+            <span class="iep-dot" aria-hidden="true"></span>
+            <span class="iep-label">Anchor</span>
+            <span id="iep-anchor-count" class="iep-count iep-count--anchor" aria-label="active anchors" style="display:none"></span>
+          </div>
+        </div>
+
+        <div class="iep-sep" aria-hidden="true"></div>
+
+        <!-- Island tournament -->
+        <div class="iep-tournament" id="iep-island-row" aria-label="Island tournament">
+          <span class="iep-tournament-label">Island</span>
+          <button class="iep-island-badge" id="island-a" data-island="A"
+            aria-label="Island A: Conservative" title="Island A — Conservative: proven patterns, maximum reversibility">A</button>
+          <button class="iep-island-badge" id="island-b" data-island="B"
+            aria-label="Island B: Lateral" title="Island B — Lateral: novel angle, high leverage">B</button>
+          <button class="iep-island-badge" id="island-c" data-island="C"
+            aria-label="Island C: Compressed" title="Island C — Compressed: fewest stages, max leverage">C</button>
+          <span class="iep-convergence-badge" id="iep-convergence" aria-live="polite">—</span>
+        </div>
+
+        <div class="iep-sep" aria-hidden="true"></div>
+
+        <!-- Active PromptBreeder strategy -->
+        <div class="iep-strategy-slot" id="iep-strategy-slot" title="Active PromptBreeder strategy · §8">
+          <span class="iep-strat-label">PB</span>
+          <span class="iep-strat-name" id="iep-strategy-name">—</span>
+        </div>
+
+        <!-- Exploration / Exploitation mode pill -->
+        <div class="iep-mode-pill" id="iep-mode-pill" title="Exploration-Exploitation Balance · §16">
+          <span class="iep-mode-dot" aria-hidden="true"></span>
+          <span id="iep-mode-label" class="iep-mode-text">Exploitation</span>
+        </div>
+      </section>
+
+      <!-- ── Tab navigation ────────────────────────────────────────────── -->
+      <div class="tab-nav" role="tablist" aria-label="Dashboard sections">
+        <button id="tab-btn-overview" class="tab tab--active" role="tab" data-tab="overview"
+          aria-selected="true" aria-controls="tab-overview">Overview</button>
+        <button id="tab-btn-council" class="tab" role="tab" data-tab="council"
+          aria-selected="false" aria-controls="tab-council">Council</button>
+        <button id="tab-btn-runs" class="tab" role="tab" data-tab="runs"
+          aria-selected="false" aria-controls="tab-runs">Runs</button>
+        <button id="tab-btn-missions" class="tab" role="tab" data-tab="missions"
+          aria-selected="false" aria-controls="tab-missions">
+          Missions<span class="tab-badge" id="tab-badge-missions" style="display:none"></span>
+        </button>
+        <button id="tab-btn-events" class="tab" role="tab" data-tab="events"
+          aria-selected="false" aria-controls="tab-events">
+          Events<span class="tab-badge" id="tab-badge-events" style="display:none"></span>
+        </button>
+        <button id="tab-btn-workflows" class="tab" role="tab" data-tab="workflows"
+          aria-selected="false" aria-controls="tab-workflows">Workflows</button>
+        <button id="tab-btn-evolution" class="tab" role="tab" data-tab="evolution"
+          aria-selected="false" aria-controls="tab-evolution">
+          Evolution<span class="tab-badge" id="tab-badge-evolution" style="display:none"></span>
+        </button>
+        <button id="tab-btn-fixlog" class="tab" role="tab" data-tab="fixlog"
+          aria-selected="false" aria-controls="tab-fixlog">
+          Fix&nbsp;Log<span class="tab-badge tab-badge--err" id="tab-badge-fixlog" style="display:none"></span>
+        </button>
+        <button id="tab-btn-activity" class="tab" role="tab" data-tab="activity"
+          aria-selected="false" aria-controls="tab-activity">Activity</button>
+
+      </div><!-- /.tab-nav -->
+
+      <!-- ╔═══════ TAB: OVERVIEW ═════════════════════════════════════╗ -->
+      <div id="tab-overview" class="tab-panel tab-panel--active" role="tabpanel" tabindex="0" aria-labelledby="tab-btn-overview">
+        <!-- IDs preserved verbatim for full backward compatibility -->
+        <section id="overview-grid" class="grid" aria-label="Runtime overview"></section>
+        <section id="detail-grid"   class="grid grid-wide" aria-label="System detail"></section>
+      </div>
+
+      <!-- ╔═══════ TAB: COUNCIL ══════════════════════════════════════╗ -->
+      <div id="tab-council" class="tab-panel" role="tabpanel" tabindex="0" aria-labelledby="tab-btn-council" hidden>
+        <div class="section-hdr">
+          <span class="section-hdr__title">Agent Council</span>
+          <span class="muted" id="council-meta"></span>
+        </div>
+        <div id="council-grid" class="council-grid"></div>
+
+        <div class="section-hdr" style="margin-top:28px">
+          <span class="section-hdr__title">Island Tournament Bracket</span>
+          <span class="muted">AlphaEvolve 3-island · convergence window</span>
+        </div>
+        <div id="island-tournament-panel" class="panel island-bracket-panel"></div>
+
+        <div class="section-hdr" style="margin-top:28px">
+          <span class="section-hdr__title">PromptBreeder Strategy Pool</span>
+          <span class="muted">Active strategies · win / loss signal</span>
+        </div>
+        <div id="promptbreeder-panel" class="panel promptbreeder-panel"></div>
+      </div>
+
+      <!-- ╔═══════ TAB: RUNS ═════════════════════════════════════════╗ -->
+      <div id="tab-runs" class="tab-panel" role="tabpanel" tabindex="0" aria-labelledby="tab-btn-runs" hidden>
+        <div class="section-hdr">
+          <span class="section-hdr__title">Active Run</span>
+          <span class="muted" id="active-run-meta">No run in progress</span>
+        </div>
+        <div class="panel stage-pipeline-panel" id="stage-pipeline-panel">
+          <div class="stage-pipeline" id="stage-pipeline"></div>
+        </div>
+
+        <div class="section-hdr" style="margin-top:28px">
+          <span class="section-hdr__title">Run History</span>
+        </div>
+        <div id="run-timeline-panel" class="run-timeline-panel"></div>
+      </div>
+
+      <!-- ╔═══════ TAB: WORKFLOWS ════════════════════════════════════╗ -->
+      <div id="tab-workflows" class="tab-panel" role="tabpanel" tabindex="0" aria-labelledby="tab-btn-workflows" hidden>
+        <div class="section-hdr">
+          <span class="section-hdr__title">Workflow Library</span>
+          <span class="muted" id="workflow-count-meta"></span>
+        </div>
+        <div id="workflow-library" class="workflow-library"></div>
+      </div>
+
+      <!-- ╔═══════ TAB: EVOLUTION ════════════════════════════════════╗ -->
+      <div id="tab-evolution" class="tab-panel" role="tabpanel" tabindex="0" aria-labelledby="tab-btn-evolution" hidden>
+        <div class="section-hdr">
+          <span class="section-hdr__title">Evolution Proposals</span>
+          <span class="muted">Fitness threshold: 0.72 · selection: tournament</span>
+        </div>
+        <div id="evolution-proposals-panel"></div>
+
+        <div class="section-hdr" style="margin-top:28px">
+          <span class="section-hdr__title">Island Convergence History</span>
+        </div>
+        <div id="island-history-panel" class="panel island-history-panel"></div>
+
+        <div class="section-hdr" style="margin-top:28px">
+          <span class="section-hdr__title">Memory Timeline</span>
+        </div>
+        <div id="memory-timeline-panel" class="memory-timeline-panel"></div>
+      </div>
+
+      <!-- ╔═══════ TAB: FIX LOG ══════════════════════════════════════╗ -->
+      <div id="tab-fixlog" class="tab-panel" role="tabpanel" tabindex="0" aria-labelledby="tab-btn-fixlog" hidden>
+
+        <div class="fix-log-legend" aria-label="Fix Log entry classifications">
+          <span class="legend-item"><span class="legend-dot legend-dot--crit"></span>Critical flaw</span>
+          <span class="legend-item"><span class="legend-dot legend-dot--gap"></span>Meaningful gap</span>
+          <span class="legend-item"><span class="legend-dot legend-dot--anchor"></span>Rollback anchor</span>
+          <span class="legend-item"><span class="legend-dot legend-dot--removed"></span>Removed claim</span>
+          <span class="legend-item"><span class="legend-dot legend-dot--style"></span>Style / ignored</span>
+        </div>
+
+        <!-- fix-log-panel ID preserved verbatim for backward compat -->
+        <section id="fix-log-panel" class="panel fix-log-panel" style="display:none" aria-label="IEP-ELITE Fix Log">
+          <div class="fix-log-header">
+            <div>
+              <h2>Append-Only Fix Log <span class="badge badge--err" id="fix-log-badge">0</span></h2>
+              <div class="fix-log-meta" id="fix-log-meta"></div>
+            </div>
+            <div class="fix-log-filter-row">
+              <label class="chk chk--sm"><input id="fl-filter-crit" type="checkbox" checked /><span>Critical</span></label>
+              <label class="chk chk--sm"><input id="fl-filter-gap"  type="checkbox" checked /><span>Gap</span></label>
+              <label class="chk chk--sm"><input id="fl-filter-anch" type="checkbox" checked /><span>Anchor</span></label>
+            </div>
+          </div>
+          <div id="fix-log-classified" class="fix-log-classified"></div>
+          <!-- fix-log-output ID preserved verbatim -->
+          <pre id="fix-log-output" class="fix-log-raw" aria-label="Raw fix log">No entries.</pre>
+        </section>
+
+        <div id="fix-log-empty" class="empty-state" aria-live="polite">
+          <span class="empty-state__icon">&#10003;</span>
+          <p class="empty-state__title">Fix log is clean</p>
+          <p class="empty-state__desc">No critical flaws or gaps detected. Entries appear here when the evolution engine flags issues.</p>
+        </div>
+
+        <div class="section-hdr" style="margin-top:24px">
+          <span class="section-hdr__title">Rollback Anchor Registry</span>
+          <span class="muted">§14 — named pre-mutation state registrations</span>
+        </div>
+        <div id="anchor-registry-panel" class="panel anchor-registry"></div>
+
+      </div>
+
+      <!-- ╔═══════ TAB: ACTIVITY ═════════════════════════════════════╗ -->
+      <div id="tab-activity" class="tab-panel" role="tabpanel" tabindex="0" aria-labelledby="tab-btn-activity" hidden>
+        <section class="panel log-panel" aria-label="Activity log">
+          <div class="log-header">
+            <h2>Activity Log</h2>
+            <div class="log-controls">
+              <button class="log-clear-btn" id="log-clear-btn" aria-label="Clear activity log">Clear</button>
+            </div>
+          </div>
+          <!-- log-output ID preserved verbatim -->
+          <pre id="log-output" aria-label="Raw API response" aria-live="polite">Awaiting actions…</pre>
+        </section>
+      </div>
+
+      <!-- ╔═══════ TAB: MISSIONS ═════════════════════════════════════╗ -->
+      <div id="tab-missions" class="tab-panel" role="tabpanel" tabindex="0" aria-labelledby="tab-btn-missions" hidden>
+        <div class="section-hdr">
+          <span class="section-hdr__title">Mission Control</span>
+          <span class="muted" id="missions-meta"></span>
+        </div>
+        <div id="missions-list" class="grid grid-wide" aria-label="Mission list"></div>
+
+        <div class="section-hdr" style="margin-top:28px">
+          <span class="section-hdr__title">Policy Gate</span>
+        </div>
+        <div id="policy-panel" class="grid" aria-label="Policy assessment"></div>
+      </div>
+
+      <!-- ╔═══════ TAB: EVENTS ═══════════════════════════════════════╗ -->
+      <div id="tab-events" class="tab-panel" role="tabpanel" tabindex="0" aria-labelledby="tab-btn-events" hidden>
+        <div class="section-hdr">
+          <span class="section-hdr__title">Event Feed</span>
+          <span class="muted" id="events-meta"></span>
+        </div>
+        <div id="events-feed" aria-label="Live event feed"></div>
+      </div>
+
+      <!-- ── Footer ──────────────────────────────────────────────────── -->
+      <footer class="site-footer" role="contentinfo">
+        <span class="footer-mark">SwarmX · v4.0-FINAL · IEP-ELITE-MAX · Triadic Dispatch</span>
+        <span class="footer-sep" aria-hidden="true">·</span>
+        <span class="footer-note">The incision is precise.</span>
+        <span class="footer-sep" aria-hidden="true">·</span>
+        <span class="footer-kbd" title="Keyboard shortcuts">R = refresh · E = evolve</span>
+        <span id="footer-poll" class="footer-poll" aria-live="polite" aria-atomic="true">Poll: 15s</span>
+      </footer>
+
+    </div><!-- /.shell -->
+  </body>
+</html>

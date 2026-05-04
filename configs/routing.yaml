@@ -1,0 +1,515 @@
+# SwarmX · configs/routing.yaml
+# Version: 2026.06-v5.9 · IEP-ELITE-MAX · V5.9.0
+# [V5.9-FIX-01] All model tags updated to canonical names (phi4-fast, deepseek-reasoner, qwen-worker).
+#
+# CHANGELOG v5.0 vs v4.2:
+#   [ROUTE-V50-00] controller.version bumped to "5.0" (V5.1.0 GA)
+#
+# CHANGELOG v4.2 vs v4.1:
+#   [ROUTE-V42-01] controller.version bumped to "4.2"
+#   [ROUTE-V42-02] New `resource_sentinel` block — documents μ-10 VRAM ceiling
+#                  thresholds and maps them to _check_resources() defaults in
+#                  swarm-controller.sh; VRAM_CEILING_GB default: 10
+#   [ROUTE-V42-03] New `controller_v42` block — documents all v4.2 flags and
+#                  their env var / CLI bindings
+#   [ROUTE-V42-04] triadic_model_config.phi4-mini: adversarial_check annotation
+#                  clarified — phi4-mini is the critic; is never itself critiqued
+#   [ROUTE-V42-05] llm_retry block — documents with_retry() defaults (max_retries=3,
+#                  base_backoff=1.0s) applied to _ollama_generate and
+#                  _ollama_generate_stream in llm.py v4.2
+#
+# CHANGELOG v4.1 vs v4.0:
+#   [ROUTE-FIX-01] proposer_solver.n_candidates.orchestrator was 1 but
+#                  _proposer_solver_loop now guards n_candidates>=1; no behaviour
+#                  change, but value clarified as intentional single-pass
+#   [ROUTE-FIX-02] compression.max_chars_per_model.phi4-mini raised from 8000 to
+#                  10000 — 4096 tokens * ~3 chars/token = 12288 max; 8000 was
+#                  over-conservative and caused premature truncation of routing prompts
+#   [ROUTE-FIX-03] latency_guard.spike_action: "warn" was the only documented
+#                  option but flush and escalate were referenced in docs; all three
+#                  are now listed as valid values in an inline comment
+#   [ROUTE-ENH-01] qwen2.5-coder responsibilities: added "Effect-TS service layer
+#                  implementation" and "BullMQ worker with OpenTelemetry tracing"
+#                  to align with TaxBridge production stack
+#   [ROUTE-ENH-02] adversarial_check.max_response_chars_sampled raised from 600
+#                  to 1200 — 600 chars is too small for multi-step code responses;
+#                  critic was only seeing the preamble, not the implementation
+#   [ROUTE-ENH-03] New `controller_v41` block: documents new flags added in v4.1
+#                  (adversarial_critique_phase, proposer_solver_flag, self_test_gate)
+#   [ROUTE-ENH-04] triadic_dispatch: `signal-triage` and `swarm-coherence-probe`
+#                  listed under phi4-mini are now explicitly mapped (were added in
+#                  v4.0 but lacked temperature/timeout override documentation)
+#   [ROUTE-ENH-05] streaming.chunk_size clarified: value is tokens, not bytes
+#
+# CHANGELOG v4.0 vs v3.0:
+#   [ROUTE-01] adversarial_check block — dual-axis self-check config per model
+#   [ROUTE-02] proposer_solver block — Dr. Zero N-candidate config per role tier
+#   [ROUTE-03] tournament block — RoboPhD multi-island tournament thresholds
+#   [ROUTE-04] memory_injection block — MemEvolve digest injection controls
+#   [ROUTE-05] skill_injection block — Voyager-style skill library controls
+#   [ROUTE-06] mcp_injection block — MCP tool manifest auto-injection controls
+#   [ROUTE-07] compression block — prompt compression policy per model
+#   [ROUTE-08] cache block — response cache TTL and key policy
+#   [ROUTE-09] latency_guard block — P95 latency thresholds for gate μ-6
+#   [ROUTE-10] streaming block — streaming mode opt-in per role tier
+#   [ROUTE-11] triadic_dispatch extended: new roles added (tool-agent,
+#              zk-architect, compliance-auditor, ml-ops-engineer)
+#   [ROUTE-12] escalation_chain: latency-weighted fallback note added
+#   [ROUTE-13] dispatch_rules: mcp, agentic, zk signals added
+
+triadic_model_config:
+
+  # ── ORCHESTRATOR: phi4-fast ──────────────────────────────────────────────────
+  # Always-on router brain. Lightweight. Fires first on every request.
+  # RAM footprint: ~2 GB. Safe to stay slightly warm. keep_alive = 60s.
+  phi4-fast:                                          # [V5.9-FIX-01] was phi4-mini
+    ollama_model: phi4-fast
+    # GGUF source: ~/llm-local/gguf/microsoft_Phi-4-mini-instruct-Q8_0.gguf
+    # Ollama registration: ollama create phi4-fast -f models/Modelfiles/primary/phi4-fast.modelfile
+    gguf_file: microsoft_Phi-4-mini-instruct-Q8_0.gguf  # [V5.9-FIX-01] corrected filename
+    quant: Q8_0
+    ram_footprint_gb: 2.0
+    role: orchestrator
+    always_on: true
+    context_window: 4096
+    temperature: 0.20         # deterministic routing decisions
+    top_p: 0.90
+    timeout_seconds: 30
+    keep_alive: 60            # stay warm for 60s (orchestrator fires repeatedly)
+    num_predict: 1024         # routing decisions are concise
+    dispatch_signal: "router"
+    adversarial_check: false  # [ROUTE-01] Phi-4-mini is the critic, not the critiqued
+    proposer_solver:          # [ROUTE-02]
+      enabled: false          # single response for routing decisions
+      n_candidates: 1
+    streaming: false          # [ROUTE-10] fast enough without streaming
+    responsibilities:
+      - task classification (T1/T2/T3/T4 signal triage)
+      - model routing decision
+      - escalation control
+      - lightweight evaluation scoring
+      - swarm coherence pulse
+      - stop condition enforcement (μ-1)
+      - adversarial critique (critic gate, one pass)
+
+  # ── REASONING ENGINE: deepseek-reasoner ────────────────────────────────────
+  # Deep planner. Fires on planning/architecture/analysis tasks.
+  # RAM footprint: ~4.7 GB. Unload after each call on 8 GB.
+  deepseek-reasoner:                                  # [V5.9-FIX-01] was deepseek-r1
+    ollama_model: deepseek-reasoner
+    # GGUF source: ~/llm-local/gguf/DeepSeek-R1-Distill-Qwen-7B-Q5_K_M.gguf
+    # Ollama registration: ollama create deepseek-reasoner -f models/Modelfiles/primary/deepseek-reasoner.modelfile
+    gguf_file: DeepSeek-R1-Distill-Qwen-7B-Q5_K_M.gguf
+    quant: Q5_K_M
+    ram_footprint_gb: 4.7
+    role: reasoning
+    always_on: false
+    context_window: 8192
+    temperature: 0.40         # creative reasoning with structure
+    top_p: 0.92
+    timeout_seconds: 300      # extended for chain-of-thought generation
+    keep_alive: 0             # UNLOAD after each call (8 GB RAM discipline)
+    num_predict: 4096         # planning outputs can be long
+    dispatch_signal: "reason"
+    adversarial_check: true   # [ROUTE-01] architecture decisions critiqued by Phi-4-mini
+    proposer_solver:          # [ROUTE-02]
+      enabled: true
+      n_candidates: 2         # 2 plan variants, pick fittest
+    streaming: false          # [ROUTE-10] chain-of-thought benefits from full response
+    responsibilities:
+      - workflow planning and decomposition
+      - architecture review and proposal
+      - causal chain tracing (§4 Adversarial Self-Check)
+      - blast-radius delta simulation (§6)
+      - island strategy selection (§8)
+      - complex research synthesis
+      - ZK architecture and circuit design
+      - ML pipeline design
+
+  # ── EXECUTION ENGINE: qwen-worker ────────────────────────────────────────────
+  # Code generator and tool executor. Fires on implementation tasks.
+  # RAM footprint: ~5 GB. Unload after each call on 8 GB.
+  qwen-worker:                                        # [V5.9-FIX-01] was qwen2.5-coder
+    ollama_model: qwen-worker
+    # GGUF source: ~/llm-local/gguf/Qwen2.5-7B-Instruct-Q5_K_M.gguf
+    # Ollama registration: ollama create qwen-worker -f models/Modelfiles/primary/qwen-worker.modelfile
+    # Also registered as: qwen-supervisor (same GGUF, different system prompt)
+    gguf_file: Qwen2.5-7B-Instruct-Q5_K_M.gguf      # [V5.9-FIX-01] corrected filename
+    quant: Q5_K_M
+    ram_footprint_gb: 5.0
+    always_on: false
+    context_window: 8192
+    temperature: 0.15         # deterministic code output
+    top_p: 0.95
+    timeout_seconds: 120
+    keep_alive: 0             # UNLOAD after each call (8 GB RAM discipline)
+    num_predict: 4096         # code outputs can be long
+    dispatch_signal: "code"
+    adversarial_check: true   # [ROUTE-01] code output pressure-tested
+    proposer_solver:          # [ROUTE-02]
+      enabled: true
+      n_candidates: 2         # 2 code candidates, pick fittest
+    streaming: true           # [ROUTE-10] streaming for long code generation
+    responsibilities:
+      - code generation and refactoring
+      - tool-use and MCP calls
+      - test generation
+      - agentic task execution
+      - frontend component generation (Next.js 15 / React 19 / RSC)
+      - backend API implementation (Fastify 5 / Prisma 5)
+      - security code review
+      - NRS e-invoice schema implementation
+      - OpenTelemetry instrumentation
+      - ZK circuit implementation
+      - Effect-TS service layer implementation     # new v4.1 — TaxBridge stack
+      - BullMQ worker with OpenTelemetry tracing   # new v4.1 — SabiScore stack
+
+# ── Model selection variables ────────────────────────────────────────────────
+# Priority: SWARM_MODEL_* env > MODEL_* env > these defaults
+routing:
+  provider: ollama
+  base_url: http://localhost:11434
+  model_fast:   phi4-fast        # [V5.9-FIX-01] was phi4-mini
+  model_reason: deepseek-reasoner # [V5.9-FIX-01] was deepseek-r1:7b
+  model_code:   qwen-worker       # [V5.9-FIX-01] was qwen2.5-coder
+  workflow_preference: autonomous-pipeline
+  framework_preference: []
+
+  # Triadic dispatch: role → model
+  triadic_dispatch:
+    phi4-fast:                                        # [V5.9-FIX-01] was phi4-mini
+      - strategist
+      - workflow-router
+      - memory-curator
+      - evaluator
+      - risk-sentinel
+      - skill-sentinel
+      - skill-check
+      - release-manager
+      - tournament-judge
+      - design-critic
+      - expert-pool
+      - signal-triage
+      - swarm-coherence-probe
+
+    deepseek-reasoner:                                # [V5.9-FIX-01] was deepseek-r1:7b
+      - chief-architect
+      - workflow-composer
+      - research-analyst
+      - context-researcher
+      - subagent-coordinator
+      - benchmark-analyst
+      - evolver
+      - security-auditor
+      - incident-commander
+      - prompt-architect
+      - zk-architect
+      - ml-ops-engineer
+      - compliance-auditor
+
+    qwen-worker:                                      # [V5.9-FIX-01] was qwen2.5-coder
+      - backend-engineer
+      - frontend-architect
+      - data-engineer
+      - perf-optimizer
+      - performance-optimizer
+      - mcp-toolsmith
+      - security-reviewer
+      - qa-evaluator
+      - producer
+      - reviewer
+      - skill-developer
+      - skill-librarian
+      - skill-curator
+      - environment-governor
+      - tool-agent
+      - refactor-agent
+
+  # Escalation chain: primary model unavailable → try in order
+  escalation_chain:
+    phi4-fast:          [phi4-fast, deepseek-reasoner, qwen-worker]   # [V5.9-FIX-01]
+    deepseek-reasoner:  [deepseek-reasoner, qwen-worker, phi4-fast]   # [V5.9-FIX-01]
+    qwen-worker:        [qwen-worker, deepseek-reasoner, phi4-fast]   # [V5.9-FIX-01]
+
+  # Legacy aliases (backward compat — SwarmConfig._normalise_model_tag maps these)
+  model_fast_alias:   phi4-mini
+  model_reason_alias: deepseek-r1:7b
+  model_code_alias:   qwen2.5-coder
+
+# ── Dispatch signal rules ────────────────────────────────────────────────────
+# Evaluated in order by swarm-controller.sh cmd_auto() and llm.py choose_model()
+dispatch_rules:
+  code_signals:
+    - implement
+    - refactor
+    - test
+    - tool_call
+    - generate_code
+    - security_review
+    - frontend
+    - backend
+    - data_pipeline
+    - build
+    - deploy
+    - debug
+    - fix
+    - patch
+    - scaffold
+    - component
+    - api
+    - endpoint
+    - schema
+    - migration
+    - webhook
+    - middleware
+    - plugin
+    - mcp          # new v4.0
+    - agentic      # new v4.0
+    - instrument   # new v4.0 — OTel instrumentation
+    - circuit      # new v4.0 — ZK circuit implementation
+  reason_signals:
+    - plan
+    - strategy
+    - reason
+    - research
+    - architecture
+    - analyze
+    - analyse
+    - simulate
+    - evaluate_deep
+    - causal_trace
+    - design
+    - review
+    - audit
+    - propose
+    - assessment
+    - tradeoff
+    - decision
+    - compare
+    - compliance   # new v4.0
+    - zk           # new v4.0 — ZK architecture
+    - ml_design    # new v4.0 — ML pipeline design
+  router_signals:
+    - classify
+    - route
+    - evaluate_fast
+    - memory_write
+    - coherence_check
+    - status
+    - score
+    - drain
+
+# ── Parallel execution policy ────────────────────────────────────────────────
+parallel:
+  orchestrator_concurrent_with_specialists: true
+  max_concurrent_specialist_calls: 1       # R1 and Qwen2.5-Coder never simultaneously (8 GB)
+  queue_overflow_policy: queue             # queue | drop | escalate
+
+# ── Controller integration ────────────────────────────────────────────────────
+# Alignment config for swarm-controller.sh v4.0
+controller:
+  version: "4.2"
+  dispatch_log: "controller/dispatch.jsonl"   # relative to SWARM_HOME
+  chain_log:    "controller/chain_*.jsonl"
+  gate_pre_chain:  true   # always gate before chain dispatch
+  gate_post_chain: true   # always gate after chain dispatch
+
+  # Session-mode keep_alive overrides (env var names)
+  session_mode_env:
+    router: SWARM_KEEP_ALIVE_ROUTER
+    reason: SWARM_KEEP_ALIVE_REASON
+    code:   SWARM_KEEP_ALIVE_CODE
+
+  # 8 GB RAM guard: models that should NEVER be co-loaded
+  exclusive_pairs:
+    - [deepseek-reasoner, qwen-worker]   # [V5.9-FIX-01] both ~5 GB — mutual exclusion required
+
+# ── Dr. Zero proposer-solver config (v4.0 [ROUTE-02]) ──────────────────────
+proposer_solver:
+  enabled_by_default: false   # opt-in per call; auto-enabled in chain mode
+  n_candidates:
+    orchestrator: 1   # routing decisions: single pass
+    reasoning:    2   # planning: 2 candidates, pick fittest
+    execution:    2   # code: 2 candidates, pick fittest
+  temperature_variance: 0.05  # per-candidate temperature offset for diversity
+
+# ── RoboPhD tournament config (v4.0 [ROUTE-03]) ─────────────────────────────
+tournament:
+  enabled_by_default: false   # opt-in via --tournament flag on swarm-controller.sh
+  trigger_on_risk: [high, critical]  # auto-enable for high-risk tasks
+  models: [qwen-worker, deepseek-reasoner, phi4-fast]  # [V5.9-FIX-01]
+  fitness_threshold: 0.70     # minimum score to accept tournament winner
+
+# ── MemEvolve config (v4.0 [ROUTE-04]) ──────────────────────────────────────
+memory_injection:
+  enabled: true
+  max_lines: 10               # digest truncated to 10 recent lessons
+  max_age_hours: 24           # ignore memories older than 24h
+  inject_into_roles: [all]    # or list specific roles
+
+# ── Voyager skill injection (v4.0 [ROUTE-05]) ───────────────────────────────
+skill_injection:
+  enabled: true
+  max_skills_per_call: 3      # inject up to 3 matching skill fragments
+  max_chars_per_skill: 300    # truncate skill fragments to 300 chars
+  skill_dirs:
+    - "{SWARM_HOME}/skills"
+    - "{SWARM_ROOT}/skills"
+
+# ── MCP tool injection (v4.0 [ROUTE-06]) ────────────────────────────────────
+mcp_injection:
+  enabled: true
+  inject_for_roles: [execution]  # only inject for code/execution-engine roles
+  max_tools: 20               # maximum tools to list in prompt
+  tooling_dir: "{SWARM_HOME}/tooling"
+
+# ── Prompt compression (v4.0 [ROUTE-07]) ────────────────────────────────────
+compression:
+  enabled: true
+  strategy: signal_hierarchy   # preserve T1/T2 signals, compress T3/T4
+  max_chars_per_model:
+    phi4-fast:          10000  # [V5.9-FIX-01] was phi4-mini
+    deepseek-reasoner:  20000  # [V5.9-FIX-01] was deepseek-r1:7b
+    qwen-worker:        20000  # [V5.9-FIX-01] was qwen2.5-coder
+
+# ── Response cache (v4.0 [ROUTE-08]) ────────────────────────────────────────
+cache:
+  enabled: false              # opt-in via SWARM_LLM_CACHE=1 env
+  ttl_seconds: 3600
+  cache_dir: "{SWARM_HOME}/llm_cache"
+  max_size_mb: 500
+  exclude_roles: [evaluator, adversarial-critic]  # never cache critique responses
+
+# ── Latency guards for gate μ-6 (v4.0 [ROUTE-09]) ──────────────────────────
+latency_guard:
+  thresholds_ms:
+    phi4-fast:          30000   # [V5.9-FIX-01] 30s P95 ceiling for orchestrator
+    deepseek-reasoner:  300000  # [V5.9-FIX-01] 5min P95 ceiling for reasoning engine
+    qwen-worker:        120000  # [V5.9-FIX-01] 2min P95 ceiling for execution engine
+  spike_action: warn        # [ROUTE-FIX-03] valid: warn | flush | escalate
+  flush_command: "./swarm-controller.sh flush"
+
+# ── v4.1 controller feature flags (ROUTE-ENH-03) ─────────────────────────────
+controller_v41:
+  # Phase 4 adversarial critique in chain mode
+  adversarial_critique_phase:
+    enabled_by_env: SWARM_ADVERSARIAL      # set to "1" to enable
+    enabled_by_flag: "--adversarial"       # pass to swarm-controller.sh chain
+    critic_model: phi4-fast  # [V5.9-FIX-01]
+    sample_chars: 1200
+
+  # Dr. Zero proposer-solver flag in code/reason dispatch
+  proposer_solver_flag:
+    enabled_by_flag: "--proposer-solver"
+    python_path: src/swarmx/llm.py::generate(use_proposer_solver=True)
+
+  # Gate self-test smoke check (CI/CD)
+  self_test_gate:
+    enabled_by_flag: "--self-test"
+    fixture: synthetic-runtime-dir         # created at runtime in /tmp
+
+# ── Adversarial check config (v4.0 [ROUTE-01]) ──────────────────────────────
+adversarial_check:
+  enabled_by_default: false   # opt-in; auto-enabled in chain mode
+  critic_model: phi4-mini
+  critic_timeout_seconds: 30
+  max_response_chars_sampled: 1200  # [ROUTE-ENH-02] raised from 600; covers multi-step code
+  enable_for_risk: [high, critical]  # always enable for high-risk tasks
+
+# ── Streaming config (v4.0 [ROUTE-10]) ──────────────────────────────────────
+streaming:
+  enabled_by_default: false   # opt-in via --stream flag on swarm-controller.sh
+  chunk_size: 1               # [ROUTE-ENH-05] tokens (not bytes)
+  flush_interval_ms: 50       # force flush every 50ms
+
+# ── Ollama resource sentinel config (v4.2 [ROUTE-V42-02]) ───────────────────
+# Maps to swarm-gate.sh gate_mu10() and swarm-controller.sh _check_resources()
+resource_sentinel:
+  vram_ceiling_gb: 10           # flush threshold for _check_resources(); override via SWARM_VRAM_CEILING_GB
+  error_spike_threshold: 8      # recent errors in last 100 dispatches before μ-10 warns
+  ollama_timeout_seconds: 5     # /api/ps query timeout for VRAM checks
+  gpu_layer_check: true         # warn when models are running CPU-only (size_vram == 0)
+  auto_flush_on_ceiling: true   # _check_resources() calls flush_models() at ceiling
+
+# ── LLM retry policy (v4.2 [ROUTE-V42-05]) ──────────────────────────────────
+# Documents with_retry() defaults applied in llm.py to _ollama_generate and
+# _ollama_generate_stream. Retries only on transient network errors.
+llm_retry:
+  max_retries: 3
+  base_backoff_seconds: 1.0     # doubles per attempt: 1s, 2s, 4s
+
+  # ── V5 additions ─────────────────────────────────────────────────────────────
+  # CHANGELOG v5.0:
+  #   [ROUTE-V50-01] sandbox block — bounded experiment container config
+  #   [ROUTE-V50-02] narrative block — post-run narrative synthesis model settings
+  #   [ROUTE-V50-03] scs block — Swarm Coherence Score gate thresholds
+  #   [ROUTE-V50-04] mcp block — MCP bridge server opt-in (disabled by default)
+  #   [ROUTE-V50-05] checkpoint block — V5 checkpoint stage config
+
+  sandbox:
+    enabled: false                # set true to run tasks inside the container
+    image: "swarmx-sandbox:v5"
+    timeout_seconds: 120
+    network: none                 # no egress inside sandbox by default
+    memory_limit_mb: 512
+    cpu_shares: 512
+
+  narrative:
+    model: "phi4-mini"            # lightweight orchestrator model for synthesis
+    min_sentences: 3
+    max_sentences: 5
+    inject_into_run_record: true  # appended as run.narrative field
+
+  scs:                            # Swarm Coherence Score thresholds
+    warn_threshold: 0.50          # log warning below this score
+    critical_threshold: 0.30      # block evolution below this score
+    measurement_window_runs: 10   # rolling window for scoring
+
+  mcp:
+    enabled: false                # set true to start the MCP bridge server
+    host: "127.0.0.1"
+    port: 9090
+    allowlist: []                 # empty = allow all registered tools
+
+  checkpoint:
+    stages:
+      - after_plan
+      - after_task
+      - before_evolve
+      - interrupt
+    compress_snapshots: true      # gzip state_snapshot blobs in SQLite
+    max_snapshots_per_run: 50     # prune oldest when exceeded
+  retryable_errors:
+    - URLError
+    - TimeoutError
+    - ConnectionError
+  non_retryable_errors:
+    - json.JSONDecodeError       # bad response body — not transient
+    - KeyboardInterrupt          # user abort
+
+# ── v4.2 controller feature flags (ROUTE-V42-03) ────────────────────────────
+controller_v42:
+  # Pre-dispatch VRAM resource guard
+  resource_guard:
+    enabled: true
+    env_override: SWARM_VRAM_CEILING_GB
+    default_ceiling_gb: 10
+    called_by: [cmd_chain, cmd_solve, cmd_code, cmd_reason]
+
+  # μ-10 quick-triage health flag
+  health_flag:
+    enabled_by_flag: "--health"
+    routes_to: "swarm-gate.sh --health"
+    gate: "μ-10"
+
+  # GenerateResult v4.2 extended fields
+  generate_result_v42:
+    retry_count:   "int — retries consumed before successful response"
+    vram_warning:  "bool — True if VRAM near ceiling at dispatch time"
+    quant_level:   "str — model quantisation hint (e.g. Q4_K_M, F16, unknown)"
+
+  # Vertical YAML config overlay
+  vertical_config_loader:
+    enabled: true
+    config_path: "configs/verticals/{vertical}.yaml"
+    example_keys: [extra_constraints, max_decimal_precision, audit_log_required]

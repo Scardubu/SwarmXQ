@@ -1,0 +1,28 @@
+family: performance
+description: Perf budget, bottleneck, and optimization loop.
+risk: medium
+stages:
+- name: intake
+  owner: strategist
+  risk: low
+  purpose: Define the performance objective and baseline.
+- name: profile
+  owner: performance-optimizer
+  risk: low
+  purpose: Measure the bottleneck and actual cost.
+- name: identify
+  owner: performance-optimizer
+  risk: low
+  purpose: Find the dominant waste source.
+- name: optimize
+  owner: backend-engineer
+  risk: medium
+  purpose: Apply the smallest targeted improvement.
+- name: verify
+  owner: evaluator
+  risk: low
+  purpose: Check the before/after effect and regressions.
+- name: learn
+  owner: memory-curator
+  risk: low
+  purpose: Store the optimization pattern.

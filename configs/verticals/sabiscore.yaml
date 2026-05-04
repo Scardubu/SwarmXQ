@@ -1,0 +1,36 @@
+# configs/verticals/sabiscore.yaml
+# ═══════════════════════════════════════════════════════════════════════════════
+# SabiScore Vertical Configuration — ML Observability Overlay
+#
+# Loaded by swarmx.llm._load_vertical_config("sabiscore") and merged into
+# every LLM prompt when the repo stack signals SabiScore context
+# (sabiscore, otel, opentelemetry, sports intel, ml observ).
+# ═══════════════════════════════════════════════════════════════════════════════
+
+vertical: sabiscore
+version: "1.0.0"
+
+extra_constraints:
+  - "OpenTelemetry spans required on all ML pipeline stages (ingest → feature → predict → evaluate)"
+  - "BullMQ job tracing: propagate job_id → span_id correlation via job metadata"
+  - "Model performance: precision/recall/F1 logged per prediction batch to OTel metrics"
+  - "Feature drift detection: emit alert span when KL divergence exceeds 0.15"
+  - "Credit score output: always include confidence interval and model version tag"
+  - "PII in feature vectors: anonymise before logging — reference by hash, not value"
+  - "Retrain triggers: automated only after human-approved threshold breach in dashboard"
+
+routing_overrides:
+  model_evaluation: reason
+  feature_engineering: code
+  pipeline_orchestration: code
+
+memory_injection:
+  max_age_hours: 24
+  max_lines: 10
+
+guardrails:
+  auto_apply_blocked_keywords:
+    - "credit_score"
+    - "model_weights"
+    - "feature_schema"
+  model_retrain_requires_review: true

@@ -1,0 +1,51 @@
+sources:
+  antigravity-awesome-skills:
+    repo: sickn33/antigravity-awesome-skills
+    patterns:
+    - skill-router
+    - skill-check
+    - skill-developer
+    - skill-improver
+    - skill-writer
+    - skill-sentinel
+    - workflow-automation
+    - subagent-driven-development
+    - context7-auto-research
+    - devcontainer-setup
+    - claude-settings-audit
+    - varlock
+    - agentic-actions-auditor
+  harness:
+    repo: revfactory/harness
+    patterns:
+    - producer-reviewer
+    - fan-out-fan-in
+    - expert-pool
+    - hierarchical-delegation
+    - skill-generation
+    - progressive-disclosure
+  frameworks:
+    openai_agents_sdk: true
+    langgraph: true
+    mcp: true
+    sandbox_agents: true
+routing_hints:
+  skills_first:
+  - skill-router
+  - skill-check
+  - skill-developer
+  - skill-improver
+  - skill-writer
+  - skill-sentinel
+  workflow_first:
+  - producer-reviewer
+  - fan-out-fan-in
+  - expert-pool
+  - hierarchical-delegation
+  - skill-lifecycle
+  - repo-bootstrap
+  - agentic-security-audit
+  security_gate:
+  - varlock
+  - agentic-actions-auditor
+  - claude-settings-audit

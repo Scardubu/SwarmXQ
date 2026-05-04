@@ -1,0 +1,28 @@
+family: quality
+description: Iterative test stabilization and regression hardening.
+risk: medium
+stages:
+- name: intake
+  owner: strategist
+  risk: low
+  purpose: Scope the failure and the current signal.
+- name: reproduce
+  owner: qa-evaluator
+  risk: low
+  purpose: Make the failure deterministic.
+- name: diagnose
+  owner: qa-evaluator
+  risk: medium
+  purpose: Find the root cause and the smallest fix.
+- name: repair
+  owner: backend-engineer
+  risk: medium
+  purpose: Fix the implementation or test harness.
+- name: verify
+  owner: evaluator
+  risk: low
+  purpose: Rerun and confirm stability.
+- name: learn
+  owner: memory-curator
+  risk: low
+  purpose: Record the flake pattern and prevention strategy.

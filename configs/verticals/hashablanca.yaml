@@ -1,0 +1,43 @@
+# configs/verticals/hashablanca.yaml
+# ═══════════════════════════════════════════════════════════════════════════════
+# Hashablanca Vertical Configuration — ZK Infrastructure Overlay
+#
+# Loaded by swarmx.llm._load_vertical_config("hashablanca") and merged into
+# every LLM prompt when the repo stack signals Hashablanca context
+# (hashablanca, zk, zero-knowledge, blockchain, zkp).
+# ═══════════════════════════════════════════════════════════════════════════════
+
+vertical: hashablanca
+version: "1.0.0"
+
+extra_constraints:
+  - "ZK proof generation: witness data must NEVER appear in application logs"
+  - "Circuit constraints must pass formal verification (circom --O2) before any deploy"
+  - "Key management: HSM-backed via PKCS#11 — private keys never in process memory"
+  - "Commitment schemes: Pedersen or Poseidon only — SHA-256 is not ZK-friendly"
+  - "Proof verification: always verify on-chain; off-chain verification is advisory only"
+  - "SNARK trusted setup: document toxic waste disposal procedure in every PR"
+  - "Gas estimation: include worst-case proof size in cost analysis for L1 calls"
+
+routing_overrides:
+  # Circuit design and constraint system require the reasoning model
+  circuit_design: reason
+  constraint_analysis: reason
+  # Solidity/Circom code generation uses the code model
+  contract_generation: code
+  proof_generation: code
+
+memory_injection:
+  max_age_hours: 48
+  max_lines: 8
+
+guardrails:
+  auto_apply_blocked_keywords:
+    - "witness"
+    - "circuit"
+    - "trusted_setup"
+    - "private_key"
+    - "zkp"
+  circuit_changes_require_review: true
+  # Any change touching key management requires explicit human sign-off
+  hsm_changes_require_review: true

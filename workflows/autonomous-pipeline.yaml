@@ -1,0 +1,53 @@
+family: general
+description: Balanced multi-agent acceleration for mixed stacks with stateful verification.
+risk: medium
+stages:
+- name: intake
+  owner: strategist
+  risk: low
+  purpose: Clarify the target, constraints, and success criteria.
+  outputs:
+  - problem framing
+  - scope guardrails
+- name: triage
+  owner: strategist
+  risk: low
+  purpose: Split work by impact, stack, and urgency.
+  outputs:
+  - priority list
+  - role map
+- name: diagnose
+  owner: evaluator
+  risk: low
+  purpose: Inspect the current state and identify the highest leverage issues.
+  outputs:
+  - diagnostic summary
+  - evidence list
+- name: implement
+  owner: backend-engineer
+  risk: medium
+  purpose: Apply the smallest useful change set.
+  outputs:
+  - patch plan
+  - implementation notes
+- name: verify
+  owner: evaluator
+  risk: medium
+  purpose: Validate changes with tests or local checks.
+  outputs:
+  - verification evidence
+- name: retrospect
+  owner: memory-curator
+  risk: low
+  purpose: Capture what worked, surface gaps, and prepare inputs for the evolution
+    loop.
+  outputs:
+  - run summary
+  - lesson note
+- name: learn
+  owner: memory-curator
+  risk: low
+  purpose: Promote durable lessons to memory and evolution inputs.
+  outputs:
+  - memory update
+  - evolution input

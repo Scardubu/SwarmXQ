@@ -1,0 +1,355 @@
+// ============================================================================
+// SwarmX OS — Shared Type Definitions
+// Target: Linux (Ubuntu 22.04+ / Debian 12+, systemd + cgroup v2)
+// Shared between: apps/swarmx-dashboard (Next.js) · apps/swarmx-api (Fastify)
+// ============================================================================
+
+// ── Agent ────────────────────────────────────────────────────────────────────
+
+export type AgentStatus =
+  | 'idle'
+  | 'queued'
+  | 'running'
+  | 'activating'
+  | 'active'
+  | 'deactivating'
+  | 'success'
+  | 'error'
+  | 'fatal'
+  | 'failed'
+  | 'failed_permanent'
+  | 'oom_killed'
+  | 'oom'
+  | 'killed'
+  | 'throttled'
+  | 'reloading'
+  | 'reload'
+  | 'paused'
+
+export type SystemdUnitState =
+  | 'active'
+  | 'activating'
+  | 'deactivating'
+  | 'inactive'
+  | 'failed'
+  | 'reloading'
+
+export interface AgentState {
+  id: string
+  status: AgentStatus
+  name?: string
+  role?: string
+  model?: string | 'fast' | 'reason' | 'code'
+  systemdUnit?: string // e.g. swarmx-agent-taxbridge.service
+  systemdState?: SystemdUnitState
+  pid?: number | null
+  cgroupPath?: string // /sys/fs/cgroup/swarmx.slice/agent-[name].scope
+  resource?: AgentResourceSnapshot | null
+  /** Alias for resource — used by dashboard components */
+  resources?: AgentResourceSnapshot | null
+  lastActive?: number // Unix ms timestamp
+  oomCount?: number // memory.events oom_kill counter
+  skillTags?: string[]
+  outputs?: string[]
+  currentTask?: string
+  lastError?: string
+  startedAt?: string
+}
+
+export interface AgentResourceSnapshot {
+  pid: number
+  cpuPercent: number // from /proc/[pid]/stat
+  memRssMb: number // from /proc/[pid]/status (VmRSS)
+  /** Alias for memRssMb */
+  memoryMb?: number
+  memPssMb: number // from /proc/[pid]/smaps_rollup (proportional)
+  cgroupPath: string
+  cpuThrottledPercent: number // from cgroup cpu.stat (throttled_usec / usage_usec)
+  oomEvents: number // from cgroup memory.events (oom_kill)
+  ioReadBytes: number // from cgroup io.stat
+  ioWriteBytes: number // from cgroup io.stat
+}
+
+// ── Workflow ─────────────────────────────────────────────────────────────────
+
+export type WorkflowStatus = 'idle' | 'running' | 'completed' | 'failed' | 'dry-run'
+
+export type WorkflowRunStatus = 'queued' | 'running' | 'success' | 'failed' | 'cancelled'
+
+export type StepState = 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
+
+export interface WorkflowDefinition {
+  id: string
+  name: string
+  description?: string
+  yamlContent?: string
+  /** Alias for yamlContent */
+  rawYaml?: string
+  /** Parsed workflow steps */
+  steps?: unknown[]
+  agentIds?: string[]
+  lastRunAt?: number | null
+  lastRunStatus?: WorkflowStatus | null
+  runCount?: number
+  runHistory?: WorkflowRunSummary[]
+}
+
+export interface WorkflowRunSummary {
+  id: string
+  workflowId: string
+  startedAt: number
+  completedAt: number | null
+  status: WorkflowStatus
+  stepsTotal: number
+  stepsCompleted: number
+  stepsFailed: number
+  agentIds: string[]
+}
+
+export interface WorkflowRunState {
+  runId: string
+  workflowId: string
+  correlationId: string
+  status: WorkflowRunStatus
+  createdAt: string
+  updatedAt: string
+  target?: string
+  error?: string | null
+  result?: unknown
+}
+
+export interface WorkflowStep {
+  id: string
+  name: string
+  agentId: string
+  state: StepState
+  startedAt: number | null
+  completedAt: number | null
+  retryCount: number
+  dependsOn: string[]
+  errorMessage: string | null
+}
+
+// ── System Metrics ────────────────────────────────────────────────────────────
+
+export interface SystemMetricsSnapshot {
+  /** WAT ISO-8601 timestamp (UTC+1) */
+  timestamp: number | string
+  cpu: {
+    load1m: number // /proc/loadavg
+    load5m: number
+    load15m: number
+    /** Per-core utilisation 0–100. Field name alias: perCorePercent (API) */
+    perCore: number[]
+    /** Alias used by API broadcasts; same as perCore */
+    perCorePercent?: number[]
+    coreCount?: number
+    temperatureCelsius?: number | null // /sys/class/hwmon (may be unavailable)
+  }
+  memory: {
+    totalMb: number // /proc/meminfo MemTotal
+    usedMb: number // MemTotal - MemAvailable
+    swarmxSliceMb: number // /sys/fs/cgroup/swarmx.slice/memory.current / 1024²
+    swarmxSliceLimitMb: number | null // /sys/fs/cgroup/swarmx.slice/memory.max
+    availableMb?: number
+  }
+  disk: {
+    readBytesPerSec: number // /proc/diskstats delta
+    writeBytesPerSec: number
+    usedPercent?: number // df /
+    utilizationPercent?: number // alias
+  }
+  network: {
+    rxBytesPerSec: number // /proc/net/dev delta
+    txBytesPerSec: number
+    interfaceName?: string
+  }
+}
+
+/** V5 Swarm Coherence Score broadcast (emitted every ~15 s by API) */
+export interface ScsSnapshot {
+  score: number        // 0.0–1.0
+  history: number[]    // last 20 readings
+  timestamp: number | string
+}
+
+export interface CgroupScopeMetrics {
+  path: string // /sys/fs/cgroup/swarmx.slice/agent-[name].scope
+  agentId: string
+  cpuUsagePercent: number // from cpu.stat throttled_usec / period_usec
+  /** Alias for cpuUsagePercent */
+  cpuPercent?: number
+  cpuThrottledPercent: number
+  /** Alias for cpuThrottledPercent */
+  cpuThrottledPct?: number
+  memCurrentMb: number // memory.current / 1024²
+  /** Alias for memCurrentMb */
+  memoryCurrentMb?: number
+  memHighMb: number | null // memory.high
+  memMaxMb: number | null // memory.max
+  oomKillCount: number // memory.events oom_kill
+  /** Alias for oomKillCount */
+  oomEvents?: number
+  ioReadBytes: number // io.stat rbytes
+  ioWriteBytes: number // io.stat wbytes
+}
+
+// ── Queue (BullMQ) ────────────────────────────────────────────────────────────
+
+export interface QueueMetrics {
+  name: string
+  waiting: number
+  active: number
+  completed: number
+  failed: number
+  delayed: number
+  paused: boolean
+  latencyMs: number | null
+}
+
+// ── Logs (journald) ───────────────────────────────────────────────────────────
+
+export type LogLevel = 'emergency' | 'alert' | 'critical' | 'fatal' | 'error' | 'warn' | 'notice' | 'info' | 'debug'
+
+export interface JournaldEntry {
+  id: string
+  MESSAGE: string
+  PRIORITY: string // 0=emerg, 3=err, 4=warning, 6=info, 7=debug
+  _SYSTEMD_UNIT: string
+  _PID: string
+  __REALTIME_TIMESTAMP: string // microseconds since epoch as string
+  SYSLOG_IDENTIFIER: string
+}
+
+export interface LogEntry {
+  id?: string
+  agentId?: string | null
+  unit?: string
+  level: LogLevel
+  message: string
+  timestamp: number | string // Unix ms or ISO string
+  pid?: number | null
+  raw?: string
+}
+
+// ── Control Plane ─────────────────────────────────────────────────────────────
+
+export interface ControlPlaneLayer {
+  id: string
+  name: string
+  description: string
+  status: 'healthy' | 'degraded' | 'critical' | 'unknown'
+  latencyP50Ms: number | null
+  lastEventAt: number | null
+}
+
+// ── SSE Events ───────────────────────────────────────────────────────────────
+
+// ── Canonical SSE events (must match apps/swarmx-api broadcast shape exactly) ─
+
+export type WorkflowEventStatus = 'running' | 'success' | 'failed' | 'cancelled'
+
+export interface WorkflowEventData {
+  id: string
+  workflowId: string
+  correlationId: string
+  status: WorkflowEventStatus
+  timestamp: string
+  name?: string
+  exitCode?: number
+  error?: string
+}
+
+export type SwarmXEvent =
+  // Agent lifecycle — full state object; handles create, update, status change
+  | { type: 'agent:update'; data: AgentState }
+  | { type: 'agent:remove'; data: { id: string } }
+  // Workflow lifecycle
+  // [V5.9-ENH-02] Workflow lifecycle events share one typed payload with correlation metadata.
+  | { type: 'workflow:started'; data: WorkflowEventData }
+  | { type: 'workflow:completed'; data: WorkflowEventData }
+  | { type: 'workflow:failed'; data: WorkflowEventData }
+  | { type: 'workflow:cancelled'; data: WorkflowEventData }
+  // Queue telemetry — data wrapper matches API broadcast
+  | { type: 'queue:metrics'; data: QueueMetrics }
+  | { type: 'queue:drained'; data: { name: string } }
+  // System metrics — full snapshot
+  | { type: 'system:metrics'; data: SystemMetricsSnapshot }
+  // V5 Swarm Coherence Score
+  | { type: 'system:scs'; data: ScsSnapshot }
+  // OEM / safety events
+  | { type: 'system:oom'; data: { agentId: string; cgroupPath: string; count: number } }
+  | { type: 'system:alert'; data: { severity: 'warn' | 'critical'; message: string; source: string; timestamp: number } }
+  // cgroup scope telemetry — data wrapper matches API broadcast
+  | { type: 'cgroup:metrics'; data: CgroupScopeMetrics }
+  // Structured log stream (journald)
+  | { type: 'log:entry'; data: { timestamp: string; level: LogLevel; message: string; unit?: string; agentId?: string; traceId?: string } }
+  // Control plane signals
+  | { type: 'control:pause'; data: Record<string, never> }
+  | { type: 'control:resume'; data: Record<string, never> }
+
+// ── Legacy SSE events (kept for backward-compat consumers; not emitted by API v2+) ─
+
+/** @deprecated Use agent:update instead */
+export type LegacySwarmXEvent =
+  | { type: 'agent:status'; agentId: string; status: AgentStatus; pid: number | null; timestamp: number }
+  | { type: 'agent:resource'; agentId: string; resource: AgentResourceSnapshot }
+  | { type: 'agent:log'; agentId: string; level: LogLevel; message: string; timestamp: number }
+  | { type: 'agent:oom'; agentId: string; count: number; timestamp: number }
+  | { type: 'queue:metrics'; queueName: string; metrics: QueueMetrics }
+  | { type: 'cgroup:metrics'; metrics: CgroupScopeMetrics }
+  | { type: 'system:cpu'; load1m: number; load5m: number; perCore: number[]; timestamp: number }
+  | { type: 'system:memory'; totalMb: number; usedMb: number; swarmxSliceMb: number; timestamp: number }
+  | { type: 'system:io'; readBps: number; writeBps: number; rxBps: number; txBps: number; timestamp: number }
+  | { type: 'system:oom_global'; count: number; timestamp: number }
+  | { type: 'workflow:step'; workflowId: string; stepId: string; state: StepState; timestamp: number }
+  | { type: 'workflow:status'; workflowId: string; status: WorkflowStatus; timestamp: number }
+
+// ── PTY (Terminal) ────────────────────────────────────────────────────────────
+
+export interface PTYSessionConfig {
+  shell: string // process.env.SHELL ?? '/bin/bash'
+  cwd: string
+  cols: number
+  rows: number
+  agentId?: string // if bound to agent stdout
+  env?: Record<string, string>
+}
+
+export interface PTYResizeMessage {
+  type: 'resize'
+  cols: number
+  rows: number
+}
+
+export interface PTYDataMessage {
+  type: 'data'
+  data: string
+}
+
+export type PTYClientMessage = PTYResizeMessage | PTYDataMessage
+
+// ── API Response shapes ───────────────────────────────────────────────────────
+
+export interface ApiResponse<T> {
+  data: T
+  timestamp: number
+}
+
+export interface ApiError {
+  code: string
+  message: string
+  details?: unknown
+}
+
+// ── Terminal Tab ──────────────────────────────────────────────────────────────
+
+export interface TerminalTab {
+  id: string
+  label: string
+  sessionId: string
+  agentId?: string
+  lastExitCode: number | null
+  cwd: string
+  createdAt: number
+}

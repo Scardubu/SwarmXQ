@@ -1,0 +1,28 @@
+family: research
+description: Research, synthesis, and evidence conversion loop.
+risk: low
+stages:
+- name: intake
+  owner: strategist
+  risk: low
+  purpose: Define the research question and decision criteria.
+- name: collect
+  owner: research-analyst
+  risk: low
+  purpose: Gather primary sources and supporting material.
+- name: synthesize
+  owner: research-analyst
+  risk: low
+  purpose: Distill evidence into a decision memo.
+- name: implement
+  owner: backend-engineer
+  risk: medium
+  purpose: Translate the findings into code or config.
+- name: verify
+  owner: evaluator
+  risk: low
+  purpose: Check that the implementation matches the evidence.
+- name: learn
+  owner: memory-curator
+  risk: low
+  purpose: Store the useful conclusions.

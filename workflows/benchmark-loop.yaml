@@ -1,0 +1,28 @@
+family: quality
+description: Repeatable benchmark, eval, and comparison loop for code or prompts.
+risk: medium
+stages:
+  - name: intake
+    owner: strategist
+    risk: low
+    purpose: Define the benchmark goal and baseline.
+  - name: benchmark
+    owner: benchmark-analyst
+    risk: low
+    purpose: Run or design the benchmark harness.
+  - name: grade
+    owner: benchmark-analyst
+    risk: low
+    purpose: Score variants using the evaluation rubric.
+  - name: optimize
+    owner: backend-engineer
+    risk: medium
+    purpose: Apply the smallest improvement that wins on the benchmark.
+  - name: verify
+    owner: evaluator
+    risk: low
+    purpose: Re-run to confirm the improvement is real.
+  - name: learn
+    owner: memory-curator
+    risk: low
+    purpose: Store the benchmark lesson and threshold.

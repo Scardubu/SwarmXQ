@@ -1,0 +1,94 @@
+/**
+ * V5 metrics poller — periodically calls `python -m swarmx metrics`
+ * and broadcasts the Swarm Coherence Score (SCS) via SSE.
+ *
+ * WAT (UTC+1) timestamps are used per Nigerian fintech compliance requirements.
+ */
+import type { FastifyInstance } from "fastify";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { broadcastEvent } from "../plugins/sse.js";
+
+const execFileAsync = promisify(execFile);
+
+function watNow(): string {
+  return new Date(Date.now() + 3_600_000).toISOString().replace("Z", "+01:00");
+}
+
+interface V5MetricsPayload {
+  scs_history?: number[];
+  coherence_score?: number;
+  tier?: string;
+  event_counts?: Record<string, number>;
+  error_rate?: number;
+  retry_rate?: number;
+  memory_entries?: number;
+}
+
+export function startV5MetricsPoller(server: FastifyInstance): void {
+  const INTERVAL_MS = Number.parseInt(
+    process.env["SWARMX_V5_POLL_INTERVAL_MS"] ?? "15000",
+    10
+  );
+  const pythonExe = process.env["SWARMX_PYTHON"] ?? "python";
+  const runtimeHome =
+    process.env["SWARMX_HOME"] ??
+    `${process.env["HOME"] ?? process.env["USERPROFILE"] ?? ""}/.swarmx`;
+
+  const tick = async (): Promise<void> => {
+    try {
+      const { stdout } = await execFileAsync(
+        pythonExe,
+        ["-m", "swarmx", "metrics", "--home", runtimeHome, "--format", "json"],
+        { timeout: 12_000 }
+      );
+
+      const trimmed = stdout.trim();
+      if (!trimmed) return;
+
+      const payload: V5MetricsPayload = JSON.parse(trimmed) as V5MetricsPayload;
+
+      const history: number[] = Array.isArray(payload.scs_history)
+        ? payload.scs_history.map(Number)
+        : [];
+
+      const last = history.at(-1) ?? 0;
+      const score: number =
+        typeof payload.coherence_score === "number"
+          ? payload.coherence_score
+          : last;
+
+      broadcastEvent({
+        type: "system:scs",
+        data: {
+          score: Math.min(1, Math.max(0, score)),
+          history: history.slice(-20),
+          timestamp: watNow(),
+        },
+      });
+    } catch (err) {
+      // Suppress routine poll failures (Python not available, no metrics yet)
+      // Only log at debug level to avoid noise in production logs
+      server.log.debug({ err }, "V5 metrics poll skipped");
+    }
+  };
+
+  const handle = setInterval(() => {
+    tick().catch(() => {
+      // Intentionally swallow — error already logged inside tick()
+    });
+  }, INTERVAL_MS);
+
+  // Prevent the interval from keeping the process alive during graceful shutdown
+  if (handle.unref) handle.unref();
+
+  // Initial poll after short delay to let server finish boot
+  setTimeout(() => {
+    tick().catch(() => {});
+  }, 5_000);
+
+  server.log.info(
+    { intervalMs: INTERVAL_MS, pythonExe, runtimeHome },
+    "V5 metrics poller started"
+  );
+}

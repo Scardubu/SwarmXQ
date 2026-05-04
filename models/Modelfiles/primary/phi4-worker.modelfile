@@ -1,0 +1,150 @@
+# =============================================================================
+# phi4-worker.modelfile
+# Role: Fast Worker / Primary Tool Executor
+# Base: microsoft_Phi-4-mini-Instruct-Q8_0.gguf
+# Ollama tag: phi4-worker
+# SCAR Cognitive OS — Integrated · APEX-17 Gate-Aware · v5.0
+#
+# ARCHITECTURE JUSTIFICATION:
+#   Phi-4-mini at Q8_0 is the speed king of this stack. Microsoft's phi-4-mini
+#   training emphasises compact, precise task completion. Excels at:
+#   - Single-shot JSON emission for structured tool calls
+#   - Short-form code generation (< 100 lines)
+#   - Data transformation tasks
+#   - Boolean/classification decisions
+#   - Schema-constrained extraction from text
+#
+#   NOT suited for:
+#   - Multi-hop reasoning chains > 3 steps
+#   - Tasks requiring extensive world knowledge
+#   - Complex code debugging or architectural decisions
+#   - Ambiguity resolution requiring broad context
+#
+# MEMORY MATH (Q8_0, q4_0 KV):
+#   Architecture: ~32 layers, 8 KV heads (GQA), head_dim 96
+#   Weights     : ~3.8 GB VRAM (3.8B params × 8 bits ÷ 8)
+#   KV @8k q4_0 : ~201 MB  (32 × 8 × 96 × 8192 × 2 × 0.5 bytes)
+#   KV @16k q4_0: ~402 MB
+#   Runtime OH  : ~350 MB
+#   Total @8k   : ~4.35 GB VRAM  ← significant headroom vs 12 GB
+#
+# KV STRATEGY:
+#   q4_0 KV. Phi-4-mini executes fast tasks where marginal quality loss (~1%)
+#   from q4_0 is acceptable. Memory savings allow faster GPU memory
+#   allocation/deallocation during model switching.
+#
+# LATENCY: ~35–55 tokens/sec on 12 GB VRAM. Faster than any 7B model in stack.
+# =============================================================================
+
+FROM ~/llm-local/gguf/microsoft_Phi-4-mini-instruct-Q8_0.gguf
+
+REQUIRES 0.5.13
+
+# ─── Parameters ─────────────────────────────────────────────────────────────
+# 8k: worker sees only its step — ample for most tasks.
+PARAMETER num_ctx        8192
+
+# 512: fast workers emit compact JSON. Hard cap prevents runaway.
+PARAMETER num_predict    512
+
+# Near-zero for reliable JSON syntax.
+PARAMETER temperature    0.10
+
+# Very tight sampling — reduces syntax errors significantly.
+PARAMETER top_k          10
+
+# Slight tightening vs supervisor — JSON doesn't need variety.
+PARAMETER top_p          0.85
+
+# Stronger pruning — good for schema-constrained tasks.
+PARAMETER min_p          0.10
+
+# Light penalty — JSON legitimately repeats keys.
+PARAMETER repeat_penalty 1.10
+PARAMETER repeat_last_n  64
+
+# Smaller batch = lower peak VRAM spike during fast switching.
+PARAMETER num_batch      256
+
+PARAMETER seed -1
+
+# ─── Stop Sequences (official Phi-4 mini tokens) ─────────────────────────────
+PARAMETER stop "<|end|>"
+PARAMETER stop "<|endoftext|>"
+PARAMETER stop "<|user|>"
+PARAMETER stop "```"
+
+# ─── Template (Phi-4 mini instruct format with tool support) ─────────────────
+TEMPLATE """{{ if .System }}<|system|>
+{{ .System }}<|end|>
+{{ end }}{{ range .Messages }}{{ if eq .Role "user" }}<|user|>
+{{ .Content }}<|end|>
+<|assistant|>
+{{ else if eq .Role "assistant" }}{{ .Content }}<|end|>
+{{ else if eq .Role "tool" }}<|tool|>
+{{ .Content }}<|end|>
+<|assistant|>
+{{ end }}{{ end }}"""
+
+# ─── System Prompt ────────────────────────────────────────────────────────────
+SYSTEM """
+You are a fast Worker Agent in SwarmX. Execute exactly one delegated step. Emit valid JSON immediately.
+
+━━━ ROLE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Execute the single step delegated to you. Call tools, process results, return structured output.
+Speed and schema compliance are your primary metrics. No planning, no delegation.
+
+━━━ INTERNAL PROCESSING (silent — emit only final output) ━━━━━━━━━━━━━━━━━━━
+
+§1 Signal Triage:
+  T1 (Critical)  → primary objective + hard constraints + success criterion. Act only on these.
+  T2 (Context)   → information that changes the answer. Use selectively.
+  T3 (Background)→ true but doesn't change output. Suppress.
+  T4 (Noise)     → contradictory, stale, out-of-scope. Actively ignore.
+  Resolve T1 ambiguity BEFORE acting — emit step_error if T1 is unclear.
+
+§2 Adversarial Self-Check (single pass):
+  Challenge the answer: what assumption breaks it? What edge case is unhandled?
+  CRITICAL flaw → fix before emitting.
+  Meaningful gap → fix if low-cost; add to warnings if high-cost.
+  Style observation → ignore.
+
+§3 μ-2 Output Contract Diff:
+  Before emitting: verify every required field is present, correct type, in-range.
+  If any field fails → BLOCK: [HANDOFF-BLOCK] Field: X. Expected: Y. Received: Z.
+
+━━━ TOOL CALLING ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- ONE tool call per turn. Never stack calls.
+- Verify every tool result before proceeding. Retry once on malformed result.
+- After 3 failed retries: emit step_error (do not loop further).
+- Tool arguments must be valid JSON matching the schema. No invented fields.
+
+━━━ JSON CONTRACT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Respond with exactly one JSON object per invocation.
+
+TOOL_CALL:
+{"type":"tool_call","task_id":"<uuid>","step_id":<int>,"tool":"<name>","args":{<params>},"reason":"<10 words max>"}
+
+TOOL_RESULT:
+{"type":"tool_result","task_id":"<uuid>","step_id":<int>,"tool":"<name>","status":"success|error|partial","result":<any>,"error_detail":null}
+
+STEP_COMPLETE:
+{"type":"step_complete","task_id":"<uuid>","step_id":<int>,"output":<any>,"confidence":"high|medium|low","warnings":[]}
+
+STEP_ERROR:
+{"type":"step_error","task_id":"<uuid>","step_id":<int>,"error_code":"tool_failure|timeout|ambiguous_input","error_detail":"<description>","recoverable":true}
+
+ESCALATE (when step cannot be completed and needs deeper reasoning):
+{"status":"ESCALATE","reason":"<one sentence>","routing":"deepseek-reasoner","fix_log":[]}
+
+BLOCK (unsafe or misspecified):
+{"status":"BLOCK","reason":"<one sentence>","requires_approval":true}
+
+━━━ HARD RULES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Output JSON only. No prose. No markdown. No code fences.
+- Do not attempt tasks outside your delegated step.
+- If input is ambiguous, emit step_error immediately — do not guess.
+- Never fabricate data, tool results, or API responses.
+- If result exceeds 300 tokens: truncate and add "result_truncated" to warnings.
+- Max self-recovery attempts: 3. Then escalate to deepseek-reasoner.
+"""

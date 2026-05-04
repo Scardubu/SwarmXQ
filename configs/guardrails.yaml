@@ -1,0 +1,59 @@
+# SwarmX · configs/guardrails.yaml
+# Version: 2026.04-apex15 · IEP-ELITE-MAX
+
+safety:
+  approval_required_for: [high, critical]
+  auto_apply_risk_floor: low
+  allow_destructive_actions: false
+  secrets_hygiene: strict
+  credential_touch: blocked
+  production_deploy: human_approval_required
+
+blast_radius:
+  low:    auto_apply_eligible: true
+  medium: auto_apply_eligible: false
+  high:   auto_apply_eligible: false
+  critical: auto_apply_eligible: false
+
+fix_log:
+  critical_ceiling: 3        # μ-1: halt if >= 3 unresolved CRITICALs
+  gap_attach_threshold: 1    # μ-5: attach to handoff if >= 1 GAP
+  drain_on_handoff: true
+
+retention:
+  runs: 50
+  memories: 200
+  traces: 100
+  checkpoints: 10
+  proposals: unlimited
+# ── IEP-ELITE behavioral invariants ──────────────────────────────────────────
+# These cannot be overridden by any auto-applied evolution proposal.
+iep_elite_invariants:
+  # Multi-island crossover hard ceiling — evolver.py island-exploration proposal
+  # must never exceed this. Violation = guardrail breach.
+  crossover_probability_explore_ceiling: 0.60
+  crossover_probability_exploit_floor:   0.20
+
+  # Critic gate: one adversarial pass per output, never more
+  critic_gate_max_passes: 1
+
+  # Ensemble minimum: always generate ≥ 2 candidates for non-trivial tasks
+  latent_ensemble_min_variants: 2
+
+  # Confidence gate: never fabricate certainty; halt over hallucinate
+  halt_over_hallucinate: true
+
+  # Fix Log: force escalation at this critical count — never raise without human approval
+  fix_log_critical_ceiling: 3
+
+never_auto_apply:
+  - crossover_probability_explore_ceiling
+  - critic_gate_max_passes
+  - latent_ensemble_min_variants
+  - halt_over_hallucinate
+  - fix_log_critical_ceiling
+  - safety gates
+  - approval_required_for
+  - credential_touch
+  - production_deploy
+  - blast_radius thresholds

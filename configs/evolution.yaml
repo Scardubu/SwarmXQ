@@ -1,0 +1,52 @@
+# SwarmX V6 evolution overlay
+proposal_only_by_default: true
+fitness_threshold: 0.74
+selection: tournament
+candidate_count: 3
+
+multi_island:
+  islands: 3
+  island_labels: [alpha, beta, gamma]
+  crossover_probability_exploit: 0.30
+  crossover_probability_explore: 0.60
+  convergence_window: 3
+
+promptbreeder:
+  strategy_promotion_wins: 2
+  max_active_strategies: 5
+  strategy_demotion_losses: 4
+
+scoring_axes:
+  - correctness
+  - leverage
+  - reversibility
+  - simplicity
+  - swarm_synergy
+
+self_improving_layer:
+  enabled: true
+  default_cycles: 1  # unified with v6-overlay.yaml key name
+
+  # Model assignments for the observe → critique → mutate pipeline
+  # [V5.9-FIX-01] Updated to canonical model tags.
+  observer_model: phi4-fast          # was phi4-mini
+  critic_model: deepseek-reasoner    # was deepseek-r1:7b
+  mutator_model: qwen-worker         # was qwen2.5-coder
+
+  # Deployment gate — a candidate must clear ALL of these before staging
+  deploy_requires:
+    min_score_delta: 0.05  # must improve baseline score by at least 5%
+    risk: low              # only low-risk mutations may auto-stage
+
+  artifact_store: evolution-layer
+
+  # stage_only_mode: true means winning mutations are written as staged proposals
+  # and never auto-applied to the live swarm — this is the hard safety boundary.
+  # allow_auto_deploy: false (in v6-overlay.yaml) reinforces the same constraint
+  # at the overlay level; the two settings are intentionally redundant.
+  stage_only_mode: true
+
+  validate_against:
+    - baseline        # must outperform the current production baseline
+    - previous_best   # must also outperform the prior staged winner
+    - safety_rules    # must pass the guardrails safety ruleset
