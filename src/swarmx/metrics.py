@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -78,7 +79,66 @@ NEW_V5_METRICS: list[str] = [
     # Resource
     "vram_ceiling_hits",            # μ-10 VRAM ceiling breach events
     "retry_count_by_model",         # {model_id: retry_count}
+    "governor_snapshot",           # procfs-derived pressure and active governor limits
 ]
+
+
+def _build_governor_snapshot() -> dict[str, Any]:
+    """Return the current runtime governor snapshot for API/dashboard consumers."""
+    try:
+        from .config import SwarmConfig, _cfg
+        from .pressure import concurrency_limit_from_config, get_pressure
+
+        swarm_cfg = SwarmConfig()
+        zram_device_mb = int(_cfg("system", "zram_device_size_mb", default=4096))
+        zram_warn_pct = float(_cfg("governance", "pressure", "zram_warn_used_pct", default=0.60))
+        zram_critical_pct = float(_cfg("governance", "pressure", "zram_critical_used_pct", default=0.85))
+        token_ceilings = _cfg(
+            "governance",
+            "token_ceilings",
+            default={
+                "fast": 512,
+                "worker": 1024,
+                "supervisor": 1536,
+                "reasoner": 4096,
+                "critic": 2048,
+            },
+        ) or {}
+
+        snapshot = get_pressure(
+            warn_mb=swarm_cfg.pressure_warn_mb,
+            critical_mb=swarm_cfg.pressure_critical_mb,
+            zram_warn_pct=zram_warn_pct,
+            zram_critical_pct=zram_critical_pct,
+            zram_device_mb=zram_device_mb,
+            ttl_s=swarm_cfg.pressure_check_interval_s,
+        )
+
+        return {
+            "pressureLevel": snapshot.level.value,
+            "availableMb": snapshot.available_mb,
+            "zramUsedPct": snapshot.zram_used_pct,
+            "concurrencyLimit": int(concurrency_limit_from_config(swarm_cfg)),
+            "observeOnly": bool(swarm_cfg.governance_observe_only),
+            "tokenCeilings": {str(key): int(value) for key, value in dict(token_ceilings).items()},
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception:
+        return {
+            "pressureLevel": "normal",
+            "availableMb": 0,
+            "zramUsedPct": 0.0,
+            "concurrencyLimit": 1,
+            "observeOnly": False,
+            "tokenCeilings": {
+                "fast": 512,
+                "worker": 1024,
+                "supervisor": 1536,
+                "reasoner": 4096,
+                "critic": 2048,
+            },
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
 
 
 def build_v5_metrics(runtime_home: Path) -> dict[str, Any]:
@@ -183,5 +243,7 @@ def build_v5_metrics(runtime_home: Path) -> dict[str, Any]:
             v5["scs_history"] = [round(current_scs, 4)]
     except Exception:
         v5["scs_history"] = []
+
+    v5["governor_snapshot"] = _build_governor_snapshot()
 
     return {**base, **v5}

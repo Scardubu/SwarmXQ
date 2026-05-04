@@ -23,6 +23,29 @@ Local GGUF filenames used by the bundle:
 - candidate storage instead of blind auto-mutation
 - model-aware evolution telemetry and artifact capture
 - V6 workflow and model registry manifests
+- a pressure-aware runtime governor for 8 GB RAM + ZRAM environments
+
+## Runtime Governor
+
+SwarmX now includes a deterministic runtime governor that keeps the local stack stable under memory pressure.
+
+- Procfs-driven pressure sampling from `/proc/meminfo` and `/proc/swaps`
+- Three pressure tiers: `normal`, `high`, `critical`
+- Concurrency degradation for graph-root fanout under pressure
+- Per-tier output token ceilings for fast, worker, supervisor, reasoner, and critic roles
+- Typed SSE governor snapshots surfaced to the dashboard
+
+The runtime governor is configured in [orchestration/swarmx_config.yaml](orchestration/swarmx_config.yaml) under `governance:`.
+
+Key knobs:
+
+- `governance.pressure.warn_available_mb`
+- `governance.pressure.critical_available_mb`
+- `governance.pressure.zram_warn_used_pct`
+- `governance.pressure.zram_critical_used_pct`
+- `governance.concurrency.*`
+- `governance.token_ceilings.*`
+- `governance.observe_only`
 
 ## Quick start
 
@@ -43,6 +66,14 @@ swarm evolve-layer --cycles 1
 - `swarm evolve-layer` — the V6 autonomous self-improvement cycle
 - `swarm status` — runtime state and telemetry
 - `swarm dashboard` — browser dashboard
+
+## Dashboard UX
+
+The dashboard now renders governor state end-to-end:
+
+- `system:governor` SSE events are emitted by the API from Python runtime metrics
+- the command bar shows a compact pressure badge (`MEM OK`, `MEM HIGH`, `MEM CRITICAL`)
+- the telemetry rail shows pressure tier, available RAM, ZRAM usage, active concurrency limit, and token ceilings
 
 ## Documentation
 

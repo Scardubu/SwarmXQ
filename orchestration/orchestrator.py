@@ -191,6 +191,47 @@ def _wire_per_tool_rate_limits() -> None:
         )
 
 
+def _wire_circuit_breaker() -> None:
+    """
+    Push circuit-breaker thresholds from swarmx_config.yaml into tools.py.
+
+    Reads `circuit_breaker.open_threshold` (or legacy alias `threshold_failures`)
+    and `circuit_breaker.reset_seconds` from the loaded config and forwards them
+    to `tools.set_circuit_breaker_thresholds()`.
+
+    Without this wiring, tools.py only reads TOOL_CB_THRESHOLD / TOOL_CB_RESET_S
+    env vars (defaulting to 5 failures / 60s), making YAML-level tuning a no-op.
+    """
+    try:
+        import tools as _tools
+        if not hasattr(_tools, "set_circuit_breaker_thresholds"):
+            return
+
+        threshold = (
+            cfg("circuit_breaker.open_threshold")
+            or cfg("circuit_breaker.threshold_failures")
+        )
+        reset_s = cfg("circuit_breaker.reset_seconds")
+
+        if threshold is None and reset_s is None:
+            return  # nothing to wire — config section absent
+
+        _tools.set_circuit_breaker_thresholds(
+            open_threshold=int(threshold) if threshold is not None else None,
+            reset_s=float(reset_s) if reset_s is not None else None,
+        )
+        structlog.get_logger("swarmx").debug(
+            "circuit_breaker_wired",
+            open_threshold=threshold,
+            reset_s=reset_s,
+        )
+    except (ImportError, Exception) as exc:
+        structlog.get_logger("swarmx").debug(
+            "circuit_breaker_wire_skipped", reason=str(exc)
+        )
+
+
+# config→runtime gap where CB thresholds existed in YAML but had no effect.
 def cfg(key_path: str, default: Any = None) -> Any:
     """Dot-separated key path accessor. E.g. cfg('orchestration.max_steps_per_task')."""
     c = load_config()
@@ -234,6 +275,24 @@ def REASONER_COMPLEXITY_THRESHOLD() -> float:
 
 
 def CO_LOAD_MAX_CONCURRENT() -> int:
+    # [V5.9-ENH-05] Pressure-aware concurrency: under memory stress the
+    # governance.concurrency.* thresholds take precedence over co_load limits.
+    try:
+        from src.swarmx.pressure import PressureLevel, level_from_config  # type: ignore
+        from src.swarmx.config import SwarmConfig  # type: ignore
+        _swarm_cfg = SwarmConfig()
+        _level = level_from_config(_swarm_cfg)
+        if _level is PressureLevel.CRITICAL:
+            return int(getattr(_swarm_cfg, "governance_critical_max", 1))
+        if _level is PressureLevel.HIGH:
+            return int(getattr(_swarm_cfg, "governance_high_max", 1))
+        # NORMAL: honour governance normal_max (capped by strict_single_model)
+        gov_max = int(getattr(_swarm_cfg, "governance_normal_max", 2))
+        if cfg("co_load.strict_single_model", True):
+            return 1
+        return min(gov_max, int(cfg("co_load.batch_max_concurrent", 2)))
+    except Exception:
+        pass
     if cfg("co_load.strict_single_model", True):
         return 1
     return int(cfg("co_load.batch_max_concurrent", 2))
@@ -1506,8 +1565,23 @@ class SwarmXOrchestrator:
             # If the plan has any steps that have no dependencies (true root
             # nodes), execute all root-level steps in parallel via brain.graph
             # before falling through to the sequential loop for dep-bound steps.
+            # [V5.9-ENH-05] Pressure gate: skip fanout entirely under CRITICAL
+            # or HIGH pressure to avoid ZRAM thrash; fall through to sequential.
             try:
                 from brain.graph import build_graph_from_plan, TaskGraph, TaskNode  # type: ignore
+
+                # Check runtime pressure before attempting parallel fanout.
+                _allow_parallel = True
+                try:
+                    from src.swarmx.pressure import PressureLevel, level_from_config  # type: ignore
+                    from src.swarmx.config import SwarmConfig as _SC  # type: ignore
+                    _fanout_level = level_from_config(_SC())
+                    if _fanout_level in (PressureLevel.HIGH, PressureLevel.CRITICAL):
+                        _allow_parallel = False
+                        log.info("graph_parallel_skipped_pressure",
+                                 pressure=_fanout_level.value, task_id=task_id)
+                except Exception:
+                    pass
 
                 async def _graph_dispatcher(node_id: str, task_payload: Any) -> Any:
                     """Bridge brain.graph dispatcher → orchestrator step execution."""
@@ -1526,7 +1600,7 @@ class SwarmXOrchestrator:
                     if not s.get("depends_on")
                 }
 
-                if len(root_ids) > 1:
+                if len(root_ids) > 1 and _allow_parallel:
                     graph = build_graph_from_plan(plan)
                     root_graph = TaskGraph([
                         TaskNode(nid, graph.nodes[nid].task)

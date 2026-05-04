@@ -173,6 +173,28 @@ export interface ScsSnapshot {
   timestamp: number | string
 }
 
+// ── Runtime Governor Snapshot (APEX-17 pressure-aware governance) ─────────────
+// [V5.9-ENH-05] Broadcast by API v5metrics poller alongside system:scs.
+// Consumers: dashboard TelemetryRail, CommandBar pressure badge.
+export type PressureLevel = 'normal' | 'high' | 'critical'
+
+export interface RuntimeGovernorSnapshot {
+  /** Current procfs-derived pressure tier */
+  pressureLevel: PressureLevel
+  /** MemAvailable from /proc/meminfo in MB (0 = unreadable) */
+  availableMb: number
+  /** ZRAM utilisation fraction 0.0–1.0 */
+  zramUsedPct: number
+  /** Effective concurrency limit (governance.concurrency.*_max) */
+  concurrencyLimit: number
+  /** Whether governance is in observe-only mode */
+  observeOnly: boolean
+  /** Per-tier token ceilings as configured */
+  tokenCeilings: Record<string, number>
+  /** ISO-8601 UTC timestamp */
+  timestamp: string
+}
+
 export interface CgroupScopeMetrics {
   path: string // /sys/fs/cgroup/swarmx.slice/agent-[name].scope
   agentId: string
@@ -277,6 +299,8 @@ export type SwarmXEvent =
   | { type: 'system:metrics'; data: SystemMetricsSnapshot }
   // V5 Swarm Coherence Score
   | { type: 'system:scs'; data: ScsSnapshot }
+  // [V5.9-ENH-05] Runtime governor: pressure level, concurrency, token ceilings
+  | { type: 'system:governor'; data: RuntimeGovernorSnapshot }
   // OEM / safety events
   | { type: 'system:oom'; data: { agentId: string; cgroupPath: string; count: number } }
   | { type: 'system:alert'; data: { severity: 'warn' | 'critical'; message: string; source: string; timestamp: number } }

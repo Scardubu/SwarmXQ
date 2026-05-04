@@ -225,3 +225,44 @@ system:
   max_loaded_models:    1
   flash_attention:      true
   keep_alive_seconds:   300
+
+# ─── Runtime Governance (APEX-17 pressure-aware execution) ───────────────────
+# [V5.9-ENH-05] Self-regulating swarm: procfs-driven pressure state machine,
+#               token ceilings, strict tier escalation, concurrency degradation.
+governance:
+  # ── Memory pressure thresholds (read from /proc/meminfo MemAvailable kB) ──
+  pressure:
+    warn_available_mb:       1500   # ~18% of 8 GB RAM → HIGH pressure tier
+    critical_available_mb:    800   # ~10% → CRITICAL / sequential-only
+    check_interval_s:           5.0
+    zram_warn_used_pct:        0.60  # ZRAM at 60% → warn
+    zram_critical_used_pct:    0.85  # ZRAM at 85% → critical
+
+  # ── Per-tier output token ceilings (num_predict passed to Ollama) ─────────
+  token_ceilings:
+    fast:        512
+    worker:     1024
+    supervisor: 1536
+    reasoner:   4096
+    critic:     2048
+
+  # ── Strict tier escalation policy ────────────────────────────────────────
+  escalation:
+    strict_tier_enforcement:    true   # L1→L2→L3 only, no skipping
+    min_confidence_for_l2:      0.55   # below this → escalate L1→L2
+    min_confidence_for_l3:      0.40   # below this → escalate L2→L3
+    max_direct_l3_tasks_per_run: 2
+
+  # ── Concurrency degradation under pressure ────────────────────────────────
+  concurrency:
+    normal_max:   2    # parallel graph roots under normal pressure
+    high_max:     1    # high pressure → sequential
+    critical_max: 1    # critical → sequential + skip non-essential steps
+
+  # ── Cross-agent handoff context limits ────────────────────────────────────
+  handoff:
+    max_context_chars:    2000   # hard cap on delegation context passed to agents
+    compress_above_chars:  800   # compress if context exceeds this
+
+  # ── Observe-only mode: measure without enforcing any limits ───────────────
+  observe_only: false

@@ -22,9 +22,17 @@ dependencies = [
   "tqdm>=4.66.0",
   "pyfiglet>=1.0.2",
   "questionary>=2.0.1",
-  # Structured JSON logging for production deployments
+  # Structured JSON logging — used throughout orchestration/ and src/swarmx/
   "structlog>=24.1.0",
+  # HTTP client — required by orchestration/orchestrator.py (OllamaClient),
+  # src/swarmx/server.py (health probes), cli/commands/doctor.py,
+  # and brain/router.py. NOT optional — every execution path needs it.
+  "httpx>=0.27.0",
+  # Async file I/O — required by orchestration/orchestrator.py TaskTrace.save()
+  # and health log async writes. Promoted from orchestration/requirements.txt.
+  "aiofiles>=24.1.0",
 ]
+
 
 # ── Optional framework adapters ────────────────────────────────────────────────
 [project.optional-dependencies]

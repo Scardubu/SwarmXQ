@@ -26,11 +26,13 @@ function resetStore() {
     controlPlaneLayers: new Map(),
     cgroupScopes: new Map(),
     logs: [],
+    workflowRuns: new Map(),
     errorAgentCount: 0,
     activeAgentCount: 0,
     totalAgentCount: 0,
     scsScore: null,
     scsHistory: [],
+    governorState: null,
   });
 }
 
@@ -191,6 +193,38 @@ describe("useEventsStore.handleEvent", () => {
       handleEvent({ type: "queue:metrics", data: { ...base, waiting: 3 } as never });
 
       expect(useEventsStore.getState().queues.get("default")?.waiting).toBe(3);
+    });
+  });
+
+  describe("system:governor", () => {
+    it("stores the latest runtime governor snapshot", () => {
+      const { handleEvent } = useEventsStore.getState();
+
+      handleEvent({
+        type: "system:governor",
+        data: {
+          pressureLevel: "high",
+          availableMb: 912,
+          zramUsedPct: 0.72,
+          concurrencyLimit: 1,
+          observeOnly: false,
+          tokenCeilings: {
+            fast: 512,
+            worker: 1024,
+            supervisor: 1536,
+            reasoner: 4096,
+            critic: 2048,
+          },
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      const state = useEventsStore.getState();
+      expect(state.governorState?.pressureLevel).toBe("high");
+      expect(state.governorState?.availableMb).toBe(912);
+      expect(state.governorState?.concurrencyLimit).toBe(1);
+      expect(state.lastEventAt).not.toBeNull();
+      expect(state.isStale).toBe(false);
     });
   });
 

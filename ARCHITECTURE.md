@@ -99,6 +99,50 @@ score_complexity()          ← phi4-fast  (30 s timeout; neutral 0.5 on timeout
 
 ---
 
+## Runtime Governor (V5.9 ENH-05)
+
+SwarmX now includes a pressure-aware runtime governor designed for 8 GB RAM + ZRAM targets.
+
+Authoritative control path:
+
+1. [src/swarmx/pressure.py](src/swarmx/pressure.py) samples `/proc/meminfo` and `/proc/swaps`.
+2. [src/swarmx/config.py](src/swarmx/config.py) resolves `governance.*` thresholds and limits.
+3. [orchestration/orchestrator.py](orchestration/orchestrator.py) degrades root-step fanout and batch concurrency under pressure.
+4. [src/swarmx/llm.py](src/swarmx/llm.py) enforces per-tier token ceilings and persists dispatch telemetry.
+5. [src/swarmx/metrics.py](src/swarmx/metrics.py) emits the canonical `governor_snapshot` consumed by the API and dashboard.
+
+Governor tiers:
+
+| Pressure tier | Trigger | Runtime behavior |
+|---------------|---------|------------------|
+| `normal` | available RAM above warn threshold and ZRAM below warn threshold | allow configured normal concurrency |
+| `high` | RAM below warn threshold or ZRAM above warn threshold | degrade fanout to sequential execution |
+| `critical` | RAM below critical threshold or ZRAM above critical threshold | enforce sequential execution and preserve headroom |
+
+Governor payload surfaced to the UI:
+
+```json
+{
+        "pressureLevel": "high",
+        "availableMb": 912,
+        "zramUsedPct": 0.72,
+        "concurrencyLimit": 1,
+        "observeOnly": false,
+        "tokenCeilings": {
+                "fast": 512,
+                "worker": 1024,
+                "supervisor": 1536,
+                "reasoner": 4096,
+                "critic": 2048
+        },
+        "timestamp": "2026-05-04T22:10:00+00:00"
+}
+```
+
+The API rebroadcasts this snapshot as `system:governor`, and the dashboard renders it in both the command bar and telemetry rail.
+
+---
+
 ## Tool Registry (V5.9 — 24 tools)
 
 | Tool                 | Category      | Key safety feature                         |

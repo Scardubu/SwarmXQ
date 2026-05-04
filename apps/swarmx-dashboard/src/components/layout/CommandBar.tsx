@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { useEventsStore } from "@/stores/events";
 import { useUIStore } from "@/stores/ui";
 import { Terminal, PanelRight } from "lucide-react";
+import type { PressureLevel } from "@swarmx/types";
 
 /** Live WAT clock (UTC+1 / Africa/Lagos). */
 function useWATClock() {
@@ -41,17 +42,20 @@ function useSystemHealth(): "healthy" | "degraded" | "critical" {
   const errorCount = useEventsStore((s) => s.errorAgentCount);
   const metrics = useEventsStore((s) => s.systemMetrics);
   const scsScore = useEventsStore((s) => s.scsScore);
+  const governorState = useEventsStore((s) => s.governorState);
+
+  if (governorState?.pressureLevel === "critical") return "critical";
 
   // SCS is the authoritative health signal when available
   if (scsScore !== null) {
     if (scsScore < 0.5) return "critical";
-    if (scsScore < 0.7) return "degraded";
+    if (scsScore < 0.7 || governorState?.pressureLevel === "high") return "degraded";
     if (errorCount > 0) return "degraded";
     return "healthy";
   }
 
   // Fallback: CPU/memory heuristics
-  if (errorCount > 0) return "degraded";
+  if (errorCount > 0 || governorState?.pressureLevel === "high") return "degraded";
   const cpuLoad = metrics?.cpu.load1m ?? 0;
   const memPct = metrics
     ? (metrics.memory.usedMb / (metrics.memory.totalMb || 1)) * 100
@@ -65,6 +69,13 @@ function getScsColorClass(score: number): string {
   if (score < 0.5) return "text-status-error";
   if (score < 0.7) return "text-status-warning";
   return "text-status-success";
+}
+
+// [V5.9-ENH-05] Map pressure level → badge colour class and label
+function getPressureBadge(level: PressureLevel): { label: string; cls: string } {
+  if (level === "critical") return { label: "MEM CRITICAL", cls: "text-status-error" };
+  if (level === "high")     return { label: "MEM HIGH",     cls: "text-status-warning" };
+  return                           { label: "MEM OK",       cls: "text-text-muted" };
 }
 
 interface CommandBarProps {
@@ -84,6 +95,7 @@ export function CommandBar({ breadcrumb = "Overview" }: CommandBarProps) {
   const openCommandPalette = useUIStore((s) => s.openCommandPalette);
   const errorCount = useEventsStore((s) => s.errorAgentCount);
   const scsScore = useEventsStore((s) => s.scsScore);
+  const governorState = useEventsStore((s) => s.governorState);
   const toggleTerminal = useUIStore((s) => s.toggleTerminal);
   const terminalVisible = useUIStore((s) => s.terminalVisible);
   const toggleTelemetryRail = useUIStore((s) => s.toggleTelemetryRail);
@@ -172,6 +184,20 @@ export function CommandBar({ breadcrumb = "Overview" }: CommandBarProps) {
             aria-label={`SCS: ${(scsScore * 100).toFixed(0)}%`}
           >
             SCS {(scsScore * 100).toFixed(0)}%
+          </span>
+        )}
+
+        {/* [V5.9-ENH-05] Runtime pressure badge */}
+        {governorState && (
+          <span
+            className={cn(
+              "text-[10px] font-mono tabular-nums",
+              getPressureBadge(governorState.pressureLevel).cls
+            )}
+            title={`Memory pressure: ${governorState.pressureLevel} · ${governorState.availableMb} MB available · ZRAM ${(governorState.zramUsedPct * 100).toFixed(0)}% used`}
+            aria-label={`Memory pressure: ${governorState.pressureLevel}`}
+          >
+            {getPressureBadge(governorState.pressureLevel).label}
           </span>
         )}
 

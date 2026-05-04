@@ -13,6 +13,7 @@ import type {
   CgroupScopeMetrics,
   WorkflowEventData,
   WorkflowRunState,
+  RuntimeGovernorSnapshot,
 } from "@swarmx/types";
 
 const MAX_LOG_ENTRIES = 10_000;
@@ -63,6 +64,9 @@ interface EventsState {
   // V5 Swarm Coherence Score
   scsScore: number | null;
   scsHistory: number[];
+
+  // [V5.9-ENH-05] Runtime governor: pressure level, concurrency, token ceilings
+  governorState: RuntimeGovernorSnapshot | null;
 
   // Derived
   errorAgentCount: number;
@@ -224,6 +228,11 @@ function applyScsSnapshot(state: EventsState, scs: ScsEventData): EventsPatch {
   });
 }
 
+// [V5.9-ENH-05] Governor snapshot reducer
+function applyGovernorSnapshot(_state: EventsState, snap: RuntimeGovernorSnapshot): EventsPatch {
+  return freshPatch({ governorState: snap });
+}
+
 function applySystemOom(state: EventsState, agentId: string, count: number): EventsPatch {
   const agents = new Map(state.agents);
   const existing = agents.get(agentId);
@@ -280,6 +289,8 @@ function reduceEvent(state: EventsState, event: SwarmXEvent): EventsPatch {
       return applySystemMetrics(state, event.data);
     case "system:scs":
       return applyScsSnapshot(state, event.data);
+    case "system:governor":
+      return applyGovernorSnapshot(state, event.data);
     case "system:oom":
       return applySystemOom(state, event.data.agentId, event.data.count);
     case "cgroup:metrics":
@@ -321,6 +332,7 @@ export const useEventsStore = create<EventsState & EventsActions>()(
     totalAgentCount: 0,
     scsScore: null,
     scsHistory: [],
+    governorState: null,
 
     setConnectionStatus: (status) => set({ connectionStatus: status }),
 

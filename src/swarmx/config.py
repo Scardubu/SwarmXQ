@@ -222,6 +222,49 @@ class SwarmConfig:
         "SWARM_RETAIN_MEMORIES",
         str(_cfg("retention", "memories", default=_cfg("memory", "retain_recent_memories", default=200))),
     )))
+    # ── Runtime Governance — pressure thresholds and enforcement flags ────────
+    # [V5.9-ENH-05] Procfs-based pressure state machine wired through config so
+    # orchestrator and graph executor can adapt concurrency and token budgets.
+    pressure_warn_mb: int = field(default_factory=lambda: int(os.environ.get(
+        "SWARM_PRESSURE_WARN_MB",
+        str(_cfg("governance", "pressure", "warn_available_mb", default=1500)),
+    )))
+    pressure_critical_mb: int = field(default_factory=lambda: int(os.environ.get(
+        "SWARM_PRESSURE_CRITICAL_MB",
+        str(_cfg("governance", "pressure", "critical_available_mb", default=800)),
+    )))
+    pressure_check_interval_s: float = field(default_factory=lambda: float(os.environ.get(
+        "SWARM_PRESSURE_INTERVAL",
+        str(_cfg("governance", "pressure", "check_interval_s", default=5.0)),
+    )))
+    strict_escalation: bool = field(default_factory=lambda: _boolish(
+        os.environ.get("SWARM_STRICT_ESCALATION"),
+        _cfg("governance", "escalation", "strict_tier_enforcement", default=True),
+    ))
+    governance_observe_only: bool = field(default_factory=lambda: _boolish(
+        os.environ.get("SWARM_GOVERNANCE_OBSERVE_ONLY"),
+        _cfg("governance", "observe_only", default=False),
+    ))
+    governance_normal_max: int = field(default_factory=lambda: int(os.environ.get(
+        "SWARM_CONCURRENCY_NORMAL",
+        str(_cfg("governance", "concurrency", "normal_max", default=2)),
+    )))
+    governance_high_max: int = field(default_factory=lambda: int(os.environ.get(
+        "SWARM_CONCURRENCY_HIGH",
+        str(_cfg("governance", "concurrency", "high_max", default=1)),
+    )))
+    governance_critical_max: int = field(default_factory=lambda: int(os.environ.get(
+        "SWARM_CONCURRENCY_CRITICAL",
+        str(_cfg("governance", "concurrency", "critical_max", default=1)),
+    )))
+    handoff_max_context_chars: int = field(default_factory=lambda: int(os.environ.get(
+        "SWARM_HANDOFF_MAX_CHARS",
+        str(_cfg("governance", "handoff", "max_context_chars", default=2000)),
+    )))
+    handoff_compress_above_chars: int = field(default_factory=lambda: int(os.environ.get(
+        "SWARM_HANDOFF_COMPRESS_ABOVE",
+        str(_cfg("governance", "handoff", "compress_above_chars", default=800)),
+    )))
 
     @property
     def runs_dir(self) -> Path:

@@ -1,6 +1,7 @@
 /**
  * V5 metrics poller — periodically calls `python -m swarmx metrics`
- * and broadcasts the Swarm Coherence Score (SCS) via SSE.
+ * and broadcasts the Swarm Coherence Score (SCS) and runtime governor
+ * snapshot (pressure level, concurrency, token ceilings) via SSE.
  *
  * WAT (UTC+1) timestamps are used per Nigerian fintech compliance requirements.
  */
@@ -8,6 +9,7 @@ import type { FastifyInstance } from "fastify";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { broadcastEvent } from "../plugins/sse.js";
+import type { RuntimeGovernorSnapshot } from "../types/events.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -23,6 +25,7 @@ interface V5MetricsPayload {
   error_rate?: number;
   retry_rate?: number;
   memory_entries?: number;
+  governor_snapshot?: RuntimeGovernorSnapshot;
 }
 
 export function startV5MetricsPoller(server: FastifyInstance): void {
@@ -36,6 +39,7 @@ export function startV5MetricsPoller(server: FastifyInstance): void {
     `${process.env["HOME"] ?? process.env["USERPROFILE"] ?? ""}/.swarmx`;
 
   const tick = async (): Promise<void> => {
+    // ── SCS metrics ─────────────────────────────────────────────────────────
     try {
       const { stdout } = await execFileAsync(
         pythonExe,
@@ -44,31 +48,36 @@ export function startV5MetricsPoller(server: FastifyInstance): void {
       );
 
       const trimmed = stdout.trim();
-      if (!trimmed) return;
+      if (trimmed) {
+        const payload: V5MetricsPayload = JSON.parse(trimmed) as V5MetricsPayload;
 
-      const payload: V5MetricsPayload = JSON.parse(trimmed) as V5MetricsPayload;
+        const history: number[] = Array.isArray(payload.scs_history)
+          ? payload.scs_history.map(Number)
+          : [];
 
-      const history: number[] = Array.isArray(payload.scs_history)
-        ? payload.scs_history.map(Number)
-        : [];
+        const last = history.at(-1) ?? 0;
+        const score: number =
+          typeof payload.coherence_score === "number"
+            ? payload.coherence_score
+            : last;
 
-      const last = history.at(-1) ?? 0;
-      const score: number =
-        typeof payload.coherence_score === "number"
-          ? payload.coherence_score
-          : last;
+        broadcastEvent({
+          type: "system:scs",
+          data: {
+            score: Math.min(1, Math.max(0, score)),
+            history: history.slice(-20),
+            timestamp: watNow(),
+          },
+        });
 
-      broadcastEvent({
-        type: "system:scs",
-        data: {
-          score: Math.min(1, Math.max(0, score)),
-          history: history.slice(-20),
-          timestamp: watNow(),
-        },
-      });
+        if (payload.governor_snapshot) {
+          broadcastEvent({
+            type: "system:governor",
+            data: payload.governor_snapshot,
+          });
+        }
+      }
     } catch (err) {
-      // Suppress routine poll failures (Python not available, no metrics yet)
-      // Only log at debug level to avoid noise in production logs
       server.log.debug({ err }, "V5 metrics poll skipped");
     }
   };
@@ -79,8 +88,9 @@ export function startV5MetricsPoller(server: FastifyInstance): void {
     });
   }, INTERVAL_MS);
 
-  // Prevent the interval from keeping the process alive during graceful shutdown
-  if (handle.unref) handle.unref();
+  server.addHook("onClose", async () => {
+    clearInterval(handle);
+  });
 
   // Initial poll after short delay to let server finish boot
   setTimeout(() => {

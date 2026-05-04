@@ -5,7 +5,7 @@ import { cn, formatBps, formatPct } from "@/lib/utils";
 import { useEventsStore } from "@/stores/events";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Cpu, MemoryStick, HardDrive, Network, Bot, AlertCircle, Zap } from "lucide-react";
+import { Cpu, MemoryStick, HardDrive, Network, Bot, AlertCircle, Zap, Gauge } from "lucide-react";
 
 // ── Micro sparkline (bar chart) ───────────────────────────────────────────────
 
@@ -200,6 +200,70 @@ function QueueSummary() {
   );
 }
 
+function governorTone(level: "normal" | "high" | "critical"): string {
+  if (level === "critical") return "text-status-error";
+  if (level === "high") return "text-status-warning";
+  return "text-status-success";
+}
+
+function governorSurface(level: "normal" | "high" | "critical"): string {
+  if (level === "critical") return "border-status-error/40 bg-status-error/8";
+  if (level === "high") return "border-status-warning/40 bg-status-warning/8";
+  return "border-border bg-bg-base/60";
+}
+
+function GovernorSummary() {
+  const governorState = useEventsStore((s) => s.governorState);
+
+  if (!governorState) {
+    return <div className="h-20 skeleton w-full rounded" />;
+  }
+
+  const zramPct = governorState.zramUsedPct * 100;
+  const levelLabel = governorState.pressureLevel.toUpperCase();
+
+  return (
+    <div className={cn("rounded-md border px-2.5 py-2 space-y-2", governorSurface(governorState.pressureLevel))}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className={cn("text-[10px] font-mono tracking-widest", governorTone(governorState.pressureLevel))}>
+            {levelLabel}
+          </span>
+          <span className="text-[9px] font-mono text-text-muted truncate">
+            {governorState.observeOnly ? "observe-only" : "enforced"}
+          </span>
+        </div>
+        <span className="text-[10px] font-mono text-text-secondary tabular-nums">
+          x{governorState.concurrencyLimit}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div className="rounded border border-border/70 bg-bg-surface px-2 py-1.5">
+          <div className="text-[9px] font-mono uppercase tracking-wide text-text-muted">Avail</div>
+          <div className="text-xs font-mono text-text-secondary tabular-nums">{governorState.availableMb} MB</div>
+        </div>
+        <div className="rounded border border-border/70 bg-bg-surface px-2 py-1.5">
+          <div className="text-[9px] font-mono uppercase tracking-wide text-text-muted">ZRAM</div>
+          <div className="text-xs font-mono text-text-secondary tabular-nums">{zramPct.toFixed(0)}%</div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-1">
+        {Object.entries(governorState.tokenCeilings).map(([tier, limit]) => (
+          <span
+            key={tier}
+            className="rounded border border-border/70 bg-bg-surface px-1.5 py-0.5 text-[9px] font-mono text-text-muted"
+            title={`${tier} token ceiling`}
+          >
+            {tier}:{limit}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Main TelemetryRail ────────────────────────────────────────────────────────
 
 export function TelemetryRail() {
@@ -282,6 +346,16 @@ export function TelemetryRail() {
             <SectionLabel icon={Bot} label="Agent Fleet" />
             <div className="mt-1.5">
               <AgentFleetSummary />
+            </div>
+          </section>
+
+          <Separator />
+
+          {/* Governor */}
+          <section>
+            <SectionLabel icon={Gauge} label="Governor" />
+            <div className="mt-1.5">
+              <GovernorSummary />
             </div>
           </section>
 

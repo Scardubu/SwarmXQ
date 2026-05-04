@@ -45,6 +45,38 @@ swarm status dashboard
 | `dashboard/` | legacy static dashboard assets preserved for compatibility |
 | `swarm-gate.sh` | IEP-ELITE micro-utility gate runner (μ-1 through μ-5) |
 
+## Runtime Governor Integration
+
+The runtime governor is now part of the production integration surface.
+
+Cross-layer flow:
+
+1. Python runtime computes the authoritative governor snapshot in [src/swarmx/metrics.py](src/swarmx/metrics.py).
+2. The API poller rebroadcasts that snapshot as the typed `system:governor` SSE event.
+3. The dashboard store reduces `system:governor` into `governorState` and surfaces it in the top bar and telemetry rail.
+
+Governor payload contract:
+
+```json
+{
+  "pressureLevel": "normal",
+  "availableMb": 3124,
+  "zramUsedPct": 0.18,
+  "concurrencyLimit": 2,
+  "observeOnly": false,
+  "tokenCeilings": {
+    "fast": 512,
+    "worker": 1024,
+    "supervisor": 1536,
+    "reasoner": 4096,
+    "critic": 2048
+  },
+  "timestamp": "2026-05-04T22:10:00+00:00"
+}
+```
+
+Operational note: the API should not recompute governor policy independently when Python metrics are available. The Python runtime is the single source of truth for pressure thresholds and active limits.
+
 ## LLM provider configuration
 
 ### Ollama (default — local triadic dispatch)

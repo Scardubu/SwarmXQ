@@ -124,6 +124,19 @@ export interface ScsSnapshot {
   timestamp: string;
 }
 
+// [V5.9-ENH-05] Runtime governor snapshot — pressure level, concurrency, token ceilings
+export type PressureLevel = "normal" | "high" | "critical";
+
+export interface RuntimeGovernorSnapshot {
+  pressureLevel: PressureLevel;
+  availableMb: number;
+  zramUsedPct: number;
+  concurrencyLimit: number;
+  observeOnly: boolean;
+  tokenCeilings: Record<string, number>;
+  timestamp: string;
+}
+
 export type WorkflowEventStatus = "running" | "success" | "failed" | "cancelled";
 
 export interface WorkflowEventData {
@@ -142,6 +155,8 @@ export type SwarmXEvent =
   | { type: "agent:remove"; data: { id: string } }
   | { type: "system:metrics"; data: SystemMetricsSnapshot }
   | { type: "system:scs"; data: ScsSnapshot }
+  // [V5.9-ENH-05] Runtime governor: pressure level, concurrency, token ceilings
+  | { type: "system:governor"; data: RuntimeGovernorSnapshot }
   | { type: "system:alert"; data: { severity: "warn" | "critical"; message: string; source: string; timestamp: number } }
   | { type: "cgroup:metrics"; data: CgroupScopeMetrics }
   | { type: "queue:metrics"; data: QueueMetrics }

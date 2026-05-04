@@ -68,6 +68,11 @@ class EventKind:
     AUDIT_FLAG      = "audit.flag"
     POLICY_BLOCK    = "audit.policy_block"
 
+    # Governance (APEX-17 pressure state machine)
+    # [V5.9-ENH-05] Pressure level transitions and governor snapshots
+    PRESSURE_STATE_CHANGE  = "governance.pressure_state_change"
+    GOVERNANCE_SNAPSHOT    = "governance.snapshot"
+
     @classmethod
     def all_kinds(cls) -> frozenset[str]:
         return frozenset(

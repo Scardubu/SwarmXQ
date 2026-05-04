@@ -196,8 +196,29 @@ def cache_invalidate(cache_key_str: str, home: Path | None = None) -> bool:
 
 # ── Rolling P95 latency tracker (v4.0 [LLM-03]) ─────────────────────────────
 _LATENCY_HISTORY: dict[str, list[float]] = {}
-_LATENCY_WINDOW  = 20  # samples per model
 
+
+def _latency_window() -> int:
+    """
+    Read the rolling latency window size from bundle defaults.
+
+    Authoritative source: configs/swarmx.defaults.yaml observability.latency_window
+    (default 50, same as orchestration/orchestrator.py).
+
+    [FIX] Replaces the hardcoded _LATENCY_WINDOW = 20 constant that diverged
+    from the orchestration layer (config-driven at 50), creating a split
+    observation window where the same P95 latency stat would differ by 2.5x
+    depending on which execution path was used.
+    """
+    try:
+        from .config import _bundle_defaults
+        val = _bundle_defaults().get("observability", {}).get("latency_window", 50)
+        return max(1, int(val))
+    except Exception:
+        return 50
+
+
+_LATENCY_WINDOW: int = _latency_window()
 
 def _record_latency(model: str, elapsed_ms: float) -> None:
     hist = _LATENCY_HISTORY.setdefault(model, [])
@@ -503,6 +524,47 @@ def _escalation_chain_for(model: str) -> list[str]:
     return [model, "phi4-fast", "deepseek-reasoner", "qwen-worker"]  # [V5.9-FIX-01]
 
 
+# ── Governance: per-tier output token ceiling ─────────────────────────────────
+# [V5.9-ENH-05] Enforce governance.token_ceilings from config so no model tier
+# produces unbounded output. Tier key matched by model tag prefix.
+_TIER_KEY_MAP: tuple[tuple[str, str], ...] = (
+    ("phi4-fast",          "fast"),
+    ("phi4-mini",          "fast"),
+    ("phi4-worker",        "worker"),
+    ("qwen-worker",        "worker"),
+    ("qwen-supervisor",    "supervisor"),
+    ("deepseek-reasoner",  "reasoner"),
+    ("deepseek-r1",        "reasoner"),
+    ("deepseek-critic",    "critic"),
+)
+
+_DEFAULT_TOKEN_CEILINGS: dict[str, int] = {
+    "fast":       512,
+    "worker":    1024,
+    "supervisor": 1536,
+    "reasoner":  4096,
+    "critic":    2048,
+}
+
+
+def _token_ceiling_for(model: str) -> int:
+    """Return the governance token ceiling for a model (num_predict cap)."""
+    try:
+        from .config import _cfg  # local import to avoid circular at module load
+        ceilings: dict = _cfg("governance", "token_ceilings", default=_DEFAULT_TOKEN_CEILINGS) or {}
+    except Exception:
+        ceilings = _DEFAULT_TOKEN_CEILINGS
+
+    name = model.lower()
+    for prefix, tier_key in _TIER_KEY_MAP:
+        if name == prefix or name.startswith(prefix):
+            ceiling = ceilings.get(tier_key)
+            if ceiling is not None:
+                return int(ceiling)
+            return _DEFAULT_TOKEN_CEILINGS.get(tier_key, 4096)
+    return int(ceilings.get("reasoner", 4096))
+
+
 # ── Telemetry ─────────────────────────────────────────────────────────────────
 def _emit_dispatch_telemetry(
     model: str,
@@ -512,7 +574,8 @@ def _emit_dispatch_telemetry(
     extra: dict[str, Any] | None = None,
 ) -> None:
     try:
-        log_dir = Path(os.environ.get("SWARM_HOME", Path.home() / ".swarmx")) / "controller"
+        home = Path(os.environ.get("SWARM_HOME", Path.home() / ".swarmx"))
+        log_dir = home / "controller"
         log_dir.mkdir(parents=True, exist_ok=True)
         ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         record: dict[str, Any] = {
@@ -523,6 +586,20 @@ def _emit_dispatch_telemetry(
             record.update(extra)
         with open(log_dir / "dispatch.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps(record) + "\n")
+    except Exception:
+        pass
+
+    # [V5.9-ENH-05] Also persist to SQLite so build_v5_metrics() llm_routing_by_tier
+    # counts are populated. Never blocks — any error is silently swallowed.
+    try:
+        from .storage import store_dispatch_telemetry  # lazy import to avoid circular
+        _sqlite_home = Path(os.environ.get("SWARM_HOME", Path.home() / ".swarmx"))
+        store_dispatch_telemetry(_sqlite_home, {
+            "selected_model": model,
+            "latency_ms": elapsed_ms,
+            "event": event,
+            **(extra or {}),
+        })
     except Exception:
         pass
 
@@ -887,6 +964,11 @@ def _ollama_generate(
     num_predict: int = 4096,
 ) -> str:
     """Generate a response via the Ollama HTTP API."""
+    # [V5.9-ENH-05] Apply governance token ceiling — caller's num_predict is
+    # capped to the configured tier ceiling so no model produces unbounded output.
+    _ceiling = _token_ceiling_for(model)
+    num_predict = min(num_predict, _ceiling)
+
     home = Path(os.environ.get("SWARM_HOME", Path.home() / ".swarmx"))
 
     # Cache check
