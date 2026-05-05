@@ -282,6 +282,36 @@ export interface WorkflowEventData {
   error?: string
 }
 
+// ── Startup Autopilot Summary (V6.1) ─────────────────────────────────────────
+// [V6.1-ENH-01] Emitted once per process launch via "system:startup" SSE event.
+// Persisted to SWARM_HOME/state/startup_summary.json between launches.
+export interface StartupSummary {
+  /** ISO-8601 UTC timestamp of autopilot completion */
+  timestamp: string
+  /** Overall startup status */
+  status: 'ready' | 'degraded' | 'critical'
+  /** Warm user-facing narrative describing the startup result */
+  narrative: string
+  /** Memory pressure level at startup */
+  pressureLevel: PressureLevel
+  /** Available RAM in MB at startup */
+  availableMb: number
+  /** ZRAM utilisation fraction 0.0–1.0 at startup */
+  zramUsedPct: number
+  /** Effective concurrency limit resolved at startup */
+  concurrencyLimit: number
+  /** Whether Ollama /api/tags responded successfully */
+  ollamaReachable: boolean
+  /** Whether model warmup ping completed within budget */
+  warmupDone: boolean
+  /** Whether evolver dry-run cycle completed within budget */
+  evolverSynced: boolean
+  /** Number of evolution proposals staged during evolver sync */
+  evolverProposals: number
+  /** Total startup autopilot duration in milliseconds */
+  durationMs: number
+}
+
 export type SwarmXEvent =
   // Agent lifecycle — full state object; handles create, update, status change
   | { type: 'agent:update'; data: AgentState }
@@ -301,6 +331,8 @@ export type SwarmXEvent =
   | { type: 'system:scs'; data: ScsSnapshot }
   // [V5.9-ENH-05] Runtime governor: pressure level, concurrency, token ceilings
   | { type: 'system:governor'; data: RuntimeGovernorSnapshot }
+  // [V6.1-ENH-01] Startup autopilot summary — emitted once per process launch
+  | { type: 'system:startup'; data: StartupSummary }
   // OEM / safety events
   | { type: 'system:oom'; data: { agentId: string; cgroupPath: string; count: number } }
   | { type: 'system:alert'; data: { severity: 'warn' | 'critical'; message: string; source: string; timestamp: number } }

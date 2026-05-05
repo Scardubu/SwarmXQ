@@ -150,6 +150,11 @@ def cmd_start(
             console.print(f"[warn]Dashboard not found at {dash_root}[/warn]")
         dashboard = False
 
+    # ── Startup Autopilot ─────────────────────────────────────────────────────
+    # [V6.1-ENH-01] Run before API launch: health check, pressure snapshot,
+    # model warmup, evolver sync. Fail-open — never blocks launch.
+    _run_startup_autopilot(console=console, _json=_json)
+
     if detach:
         _start_detached(api_cmd, name="swarmx-api", _json=_json)
         services.append({"name": "swarmx-api", "pid": "detached", "url": f"http://{host}:{port}"})
@@ -173,6 +178,18 @@ def cmd_start(
     else:
         for svc in services:
             safe_print(f"[success]Started:[/success] {svc['name']}  [dim]{svc.get('url', '')}[/dim]")
+
+
+def _run_startup_autopilot(*, console: object, _json: bool) -> None:
+    """Run the startup autopilot. Fail-open — never blocks launch."""
+    # [V6.1-ENH-01] Imports are deferred so import errors are non-fatal.
+    try:
+        from swarmx.startup import run_startup_autopilot_sync, format_startup_banner  # type: ignore[import]
+        summary = run_startup_autopilot_sync()
+        if not _json:
+            console.print(format_startup_banner(summary))  # type: ignore[union-attr]
+    except Exception as exc:
+        logger.debug("startup_autopilot_skipped", exc_info=exc)
 
 
 def _start_detached(cmd: list[str], *, name: str, cwd: Optional[str] = None, _json: bool = False) -> None:

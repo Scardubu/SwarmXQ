@@ -137,6 +137,25 @@ export interface RuntimeGovernorSnapshot {
   timestamp: string;
 }
 
+// [V6.1-ENH-01] Startup autopilot summary — emitted once per process launch.
+export interface StartupSummary {
+  /** ISO-8601 UTC timestamp of autopilot completion */
+  timestamp: string;
+  /** Overall startup status */
+  status: "ready" | "degraded" | "critical";
+  /** Warm user-facing narrative */
+  narrative: string;
+  pressureLevel: PressureLevel;
+  availableMb: number;
+  zramUsedPct: number;
+  concurrencyLimit: number;
+  ollamaReachable: boolean;
+  warmupDone: boolean;
+  evolverSynced: boolean;
+  evolverProposals: number;
+  durationMs: number;
+}
+
 export type WorkflowEventStatus = "running" | "success" | "failed" | "cancelled";
 
 export interface WorkflowEventData {
@@ -157,6 +176,8 @@ export type SwarmXEvent =
   | { type: "system:scs"; data: ScsSnapshot }
   // [V5.9-ENH-05] Runtime governor: pressure level, concurrency, token ceilings
   | { type: "system:governor"; data: RuntimeGovernorSnapshot }
+  // [V6.1-ENH-01] Startup autopilot summary — emitted once per process launch
+  | { type: "system:startup"; data: StartupSummary }
   | { type: "system:alert"; data: { severity: "warn" | "critical"; message: string; source: string; timestamp: number } }
   | { type: "cgroup:metrics"; data: CgroupScopeMetrics }
   | { type: "queue:metrics"; data: QueueMetrics }

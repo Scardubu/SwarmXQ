@@ -1,0 +1,97 @@
+"""tests/test_startup.py — targeted regression tests for startup autopilot.
+
+CHANGES V6.1:
+  [ENH-01] Covers summary serialisation, persistence, and banner formatting.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+from pathlib import Path
+
+from swarmx.startup import StartupSummary, format_startup_banner, load_startup_summary, run_startup_autopilot
+
+
+class _FakeCfg:
+    def __init__(self, home: Path) -> None:
+        self.home = home
+        self.ollama_url = "http://127.0.0.1:11434"
+        self.model_fast = "phi4-fast"
+        self.pressure_warn_mb = 1500
+        self.pressure_critical_mb = 800
+        self.pressure_check_interval_s = 5.0
+
+
+def test_startup_summary_to_dict_uses_camel_case() -> None:
+    summary = StartupSummary(
+        timestamp="2026-05-05T00:00:00+00:00",
+        status="ready",
+        narrative="All set.",
+        pressure_level="normal",
+        available_mb=2048,
+        zram_used_pct=0.25,
+        concurrency_limit=2,
+        ollama_reachable=True,
+        warmup_done=True,
+        evolver_synced=False,
+        evolver_proposals=0,
+        duration_ms=1234,
+    )
+
+    payload = summary.to_dict()
+
+    assert payload["pressureLevel"] == "normal"
+    assert payload["availableMb"] == 2048
+    assert payload["ollamaReachable"] is True
+    assert "pressure_level" not in payload
+
+
+def test_run_startup_autopilot_persists_summary(monkeypatch, tmp_path: Path) -> None:
+    cfg = _FakeCfg(tmp_path)
+
+    monkeypatch.setattr("swarmx.startup._check_pressure", lambda _cfg: ("high", 1024, 0.6, 1))
+
+    async def _fake_health(_cfg) -> bool:
+        return True
+
+    async def _fake_warmup(_cfg) -> bool:
+        return False
+
+    async def _fake_evolver(_cfg) -> tuple[bool, int]:
+        return True, 2
+
+    monkeypatch.setattr("swarmx.startup._check_health", _fake_health)
+    monkeypatch.setattr("swarmx.startup._warmup_models", _fake_warmup)
+    monkeypatch.setattr("swarmx.startup._sync_evolver", _fake_evolver)
+
+    summary = asyncio.run(run_startup_autopilot(cfg))
+    saved = load_startup_summary(tmp_path)
+    saved_path = tmp_path / "state" / "startup_summary.json"
+
+    assert summary.status == "ready"
+    assert saved_path.exists()
+    assert saved is not None
+    assert saved["pressureLevel"] == "high"
+    assert saved["warmupDone"] is False
+    assert json.loads(saved_path.read_text(encoding="utf-8"))["evolverProposals"] == 2
+
+
+def test_format_startup_banner_accepts_serialised_dict() -> None:
+    banner = format_startup_banner(
+        {
+            "status": "degraded",
+            "narrative": "Booted with caution.",
+            "availableMb": 900,
+            "zramUsedPct": 0.72,
+            "concurrencyLimit": 1,
+            "ollamaReachable": True,
+            "warmupDone": False,
+            "evolverSynced": True,
+            "evolverProposals": 1,
+            "durationMs": 850,
+        }
+    )
+
+    assert "Booted with caution." in banner
+    assert "900 MB free" in banner
+    assert "Evolver staged" in banner

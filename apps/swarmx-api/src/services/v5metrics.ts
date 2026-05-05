@@ -7,9 +7,11 @@
  */
 import type { FastifyInstance } from "fastify";
 import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import { broadcastEvent } from "../plugins/sse.js";
-import type { RuntimeGovernorSnapshot } from "../types/events.js";
+import type { RuntimeGovernorSnapshot, StartupSummary } from "../types/events.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -101,4 +103,32 @@ export function startV5MetricsPoller(server: FastifyInstance): void {
     { intervalMs: INTERVAL_MS, pythonExe, runtimeHome },
     "V5 metrics poller started"
   );
+}
+
+// ── Startup summary broadcast (V6.1-ENH-01) ──────────────────────────────────
+
+/**
+ * Read the startup_summary.json written by the Python startup autopilot and
+ * broadcast it as a "system:startup" SSE event. Called once after server boot.
+ * Fail-open — any error is logged and silently ignored.
+ */
+export function broadcastStartupSummary(server: FastifyInstance): void {
+  const runtimeHome =
+    process.env["SWARMX_HOME"] ??
+    `${process.env["HOME"] ?? process.env["USERPROFILE"] ?? ""}/.swarmx`;
+
+  const summaryPath = join(runtimeHome, "state", "startup_summary.json");
+
+  try {
+    const raw = readFileSync(summaryPath, "utf-8");
+    const summary = JSON.parse(raw) as StartupSummary;
+    broadcastEvent({ type: "system:startup", data: summary });
+    server.log.info(
+      { status: summary.status, pressureLevel: summary.pressureLevel, durationMs: summary.durationMs },
+      "Startup summary broadcast"
+    );
+  } catch (err) {
+    // startup_summary.json may not exist on first boot — this is expected
+    server.log.debug({ err }, "Startup summary not available (skipping broadcast)");
+  }
 }

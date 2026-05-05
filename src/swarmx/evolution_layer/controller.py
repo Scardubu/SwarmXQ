@@ -56,6 +56,14 @@ def run_cycle(repo: str | Path | None = None, cfg: SwarmConfig | None = None, *,
                 summary=summary,
             )
             stage_info["deployed"] = should_deploy
+        # [V6.1-ENH-02] Attach session baseline so post-cycle delta can be computed.
+        _baseline: dict[str, Any] = {}
+        try:
+            from swarmx.startup import load_startup_summary  # type: ignore[import]
+            _baseline = load_startup_summary(cfg.home) or {}
+        except Exception:
+            pass
+
         cycle = {
             "cycle_id": observation["cycle_id"],
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -73,6 +81,8 @@ def run_cycle(repo: str | Path | None = None, cfg: SwarmConfig | None = None, *,
                 "reason": cfg.model_reason,
                 "code": cfg.model_code,
             },
+            # [V6.1-ENH-02] Session baseline captured at startup autopilot time.
+            "session_baseline": _baseline,
         }
         _store_cycle(cfg, cycle)
         cycle_results.append(cycle)

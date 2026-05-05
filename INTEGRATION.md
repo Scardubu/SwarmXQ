@@ -77,6 +77,36 @@ Governor payload contract:
 
 Operational note: the API should not recompute governor policy independently when Python metrics are available. The Python runtime is the single source of truth for pressure thresholds and active limits.
 
+## Startup Autopilot Integration
+
+The startup autopilot is now part of the launch contract for `swarm up`.
+
+Cross-layer flow:
+
+1. [src/swarmx/startup.py](src/swarmx/startup.py) performs a fail-open launch pass for health, pressure, warmup, and evolver sync.
+2. The CLI persists a typed summary to `~/.swarmx/state/startup_summary.json` before the Fastify API starts.
+3. The API emits that summary as `system:startup` and the SSE layer replays the latest cached startup/governor/SCS snapshots to newly connected clients.
+4. The dashboard command bar and telemetry rail reduce `system:startup` into user-visible launch status.
+
+Startup payload contract:
+
+```json
+{
+  "timestamp": "2026-05-05T06:30:10+00:00",
+  "status": "ready",
+  "narrative": "The swarm is humming beautifully. All systems nominal — models warm, memory green, ready to go.",
+  "pressureLevel": "normal",
+  "availableMb": 2418,
+  "zramUsedPct": 0.22,
+  "concurrencyLimit": 2,
+  "ollamaReachable": true,
+  "warmupDone": true,
+  "evolverSynced": true,
+  "evolverProposals": 1,
+  "durationMs": 1840
+}
+```
+
 ## LLM provider configuration
 
 ### Ollama (default — local triadic dispatch)

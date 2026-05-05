@@ -131,6 +131,13 @@ observability:
   event_retention: 200
   mission_retention: 100
 
+# ── Startup autopilot ───────────────────────────────────────────────────────
+# [V6.1-ENH-01] Budgets for the launch-time health/pressure/warmup/evolver pass.
+startup:
+  health_timeout_s: 6.0
+  warmup_timeout_s: 10.0
+  evolver_timeout_s: 15.0
+
 
 # ── Memory ──────────────────────────────────────────────────────────────────
 # FIX v4.1-post: config.py reads memory.graph_limit and memory.search_limit

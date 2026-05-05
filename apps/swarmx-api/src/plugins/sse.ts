@@ -11,16 +11,41 @@ import type { SwarmXEvent } from "../types/events.js";
 // ── Subscriber registry ───────────────────────────────────────────────────────
 
 const subscribers = new Set<FastifyReply>();
+const STICKY_EVENT_TYPES: SwarmXEvent["type"][] = [
+  "system:startup",
+  "system:governor",
+  "system:scs",
+];
+const stickyEvents = new Map<SwarmXEvent["type"], SwarmXEvent>();
+
+function writeEvent(reply: FastifyReply, event: SwarmXEvent): void {
+  reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+}
+
+function rememberStickyEvent(event: SwarmXEvent): void {
+  if (STICKY_EVENT_TYPES.includes(event.type)) {
+    stickyEvents.set(event.type, event);
+  }
+}
+
+function replayStickyEvents(reply: FastifyReply): void {
+  for (const type of STICKY_EVENT_TYPES) {
+    const event = stickyEvents.get(type);
+    if (event) {
+      writeEvent(reply, event);
+    }
+  }
+}
 
 /**
  * Emit a single event to every connected SSE client.
  * Non-blocking — skips write if the response has already closed.
  */
 export function broadcastEvent(event: SwarmXEvent): void {
-  const data = JSON.stringify(event);
+  rememberStickyEvent(event);
   for (const reply of subscribers) {
     try {
-      reply.raw.write(`data: ${data}\n\n`);
+      writeEvent(reply, event);
     } catch {
       subscribers.delete(reply);
     }
@@ -47,6 +72,7 @@ export async function ssePlugin(server: FastifyInstance): Promise<void> {
 
       // Send an initial comment to confirm connection
       reply.raw.write(": connected\n\n");
+      replayStickyEvents(reply);
 
       subscribers.add(reply);
 

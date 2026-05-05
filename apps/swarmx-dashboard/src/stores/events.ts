@@ -14,6 +14,7 @@ import type {
   WorkflowEventData,
   WorkflowRunState,
   RuntimeGovernorSnapshot,
+  StartupSummary,
 } from "@swarmx/types";
 
 const MAX_LOG_ENTRIES = 10_000;
@@ -67,6 +68,9 @@ interface EventsState {
 
   // [V5.9-ENH-05] Runtime governor: pressure level, concurrency, token ceilings
   governorState: RuntimeGovernorSnapshot | null;
+
+  // [V6.1-ENH-01] Startup autopilot summary — populated once per process launch
+  startupSummary: StartupSummary | null;
 
   // Derived
   errorAgentCount: number;
@@ -233,6 +237,11 @@ function applyGovernorSnapshot(_state: EventsState, snap: RuntimeGovernorSnapsho
   return freshPatch({ governorState: snap });
 }
 
+// [V6.1-ENH-01] Startup summary reducer
+function applyStartupSummary(_state: EventsState, data: StartupSummary): EventsPatch {
+  return freshPatch({ startupSummary: data });
+}
+
 function applySystemOom(state: EventsState, agentId: string, count: number): EventsPatch {
   const agents = new Map(state.agents);
   const existing = agents.get(agentId);
@@ -291,6 +300,8 @@ function reduceEvent(state: EventsState, event: SwarmXEvent): EventsPatch {
       return applyScsSnapshot(state, event.data);
     case "system:governor":
       return applyGovernorSnapshot(state, event.data);
+    case "system:startup":
+      return applyStartupSummary(state, event.data);
     case "system:oom":
       return applySystemOom(state, event.data.agentId, event.data.count);
     case "cgroup:metrics":
@@ -333,6 +344,7 @@ export const useEventsStore = create<EventsState & EventsActions>()(
     scsScore: null,
     scsHistory: [],
     governorState: null,
+    startupSummary: null,
 
     setConnectionStatus: (status) => set({ connectionStatus: status }),
 

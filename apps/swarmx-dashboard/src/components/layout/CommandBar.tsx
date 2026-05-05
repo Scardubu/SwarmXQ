@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { useEventsStore } from "@/stores/events";
 import { useUIStore } from "@/stores/ui";
 import { Terminal, PanelRight } from "lucide-react";
-import type { PressureLevel } from "@swarmx/types";
+import type { PressureLevel, StartupSummary } from "@swarmx/types";
 
 /** Live WAT clock (UTC+1 / Africa/Lagos). */
 function useWATClock() {
@@ -78,6 +78,16 @@ function getPressureBadge(level: PressureLevel): { label: string; cls: string } 
   return                           { label: "MEM OK",       cls: "text-text-muted" };
 }
 
+function getStartupBadge(summary: StartupSummary): { label: string; cls: string } {
+  if (summary.status === "critical") {
+    return { label: "BOOT CRITICAL", cls: "border-status-error/35 bg-status-error/8 text-status-error" };
+  }
+  if (summary.status === "degraded") {
+    return { label: "BOOT DEGRADED", cls: "border-status-warning/35 bg-status-warning/8 text-status-warning" };
+  }
+  return { label: "BOOT READY", cls: "border-status-success/35 bg-status-success/8 text-status-success" };
+}
+
 interface CommandBarProps {
   readonly breadcrumb?: string;
 }
@@ -96,10 +106,13 @@ export function CommandBar({ breadcrumb = "Overview" }: CommandBarProps) {
   const errorCount = useEventsStore((s) => s.errorAgentCount);
   const scsScore = useEventsStore((s) => s.scsScore);
   const governorState = useEventsStore((s) => s.governorState);
+  // [V6.1-ENH-01] Startup narrative for health dot tooltip
+  const startupSummary = useEventsStore((s) => s.startupSummary);
   const toggleTerminal = useUIStore((s) => s.toggleTerminal);
   const terminalVisible = useUIStore((s) => s.terminalVisible);
   const toggleTelemetryRail = useUIStore((s) => s.toggleTelemetryRail);
   const telemetryRailVisible = useUIStore((s) => s.telemetryRailVisible);
+  const startupBadge = startupSummary ? getStartupBadge(startupSummary) : null;
 
   const watTime = useWATClock();
   const isMac = typeof navigator !== "undefined" && navigator.userAgent.includes("Mac");
@@ -112,8 +125,11 @@ export function CommandBar({ breadcrumb = "Overview" }: CommandBarProps) {
     errorLabel = "error";
   }
 
+  // [V6.1-ENH-01] Enrich health title with startup narrative when available
   const healthTitle =
-    scsScore === null
+    startupSummary != null
+      ? `${startupSummary.narrative} · SCS ${scsScore != null ? (scsScore * 100).toFixed(0) + "%" : "—"}`
+      : scsScore === null
       ? `System ${health}`
       : `System ${health} · SCS ${(scsScore * 100).toFixed(0)}%`;
 
@@ -198,6 +214,19 @@ export function CommandBar({ breadcrumb = "Overview" }: CommandBarProps) {
             aria-label={`Memory pressure: ${governorState.pressureLevel}`}
           >
             {getPressureBadge(governorState.pressureLevel).label}
+          </span>
+        )}
+
+        {startupSummary && startupBadge && (
+          <span
+            className={cn(
+              "hidden xl:inline-flex items-center rounded-full border px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wide",
+              startupBadge.cls,
+            )}
+            title={`${startupSummary.narrative} · ${startupSummary.durationMs} ms`}
+            aria-label={`Startup status: ${startupSummary.status}`}
+          >
+            {startupBadge.label}
           </span>
         )}
 

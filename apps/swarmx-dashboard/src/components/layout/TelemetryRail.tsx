@@ -5,7 +5,7 @@ import { cn, formatBps, formatPct } from "@/lib/utils";
 import { useEventsStore } from "@/stores/events";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Cpu, MemoryStick, HardDrive, Network, Bot, AlertCircle, Zap, Gauge } from "lucide-react";
+import { Cpu, MemoryStick, HardDrive, Network, Bot, AlertCircle, Zap, Gauge, Sparkles } from "lucide-react";
 
 // ── Micro sparkline (bar chart) ───────────────────────────────────────────────
 
@@ -180,7 +180,7 @@ function QueueSummary() {
     <div className="space-y-1">
       {[...queues.entries()].slice(0, 4).map(([name, q]) => (
         <div key={name} className="flex items-center justify-between">
-          <span className="text-[10px] font-mono text-text-muted truncate max-w-[100px]">
+          <span className="text-[10px] font-mono text-text-muted truncate max-w-25">
             {name}
           </span>
           <div className="flex items-center gap-2">
@@ -196,6 +196,64 @@ function QueueSummary() {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ── Startup autopilot card (V6.1-ENH-01) ─────────────────────────────────────
+
+function StartupCard() {
+  const startup = useEventsStore((s) => s.startupSummary);
+
+  if (!startup) return null;
+
+  const statusCls =
+    startup.status === "ready"
+      ? "text-status-success border-status-success/30 bg-status-success/6"
+      : startup.status === "critical"
+      ? "text-status-error border-status-error/30 bg-status-error/6"
+      : "text-status-warning border-status-warning/30 bg-status-warning/6";
+
+  const warmupLabel = startup.warmupDone ? "warm" : "cold";
+  const evolverLabel = startup.evolverSynced
+    ? startup.evolverProposals > 0
+      ? `${startup.evolverProposals} proposal${startup.evolverProposals === 1 ? "" : "s"}`
+      : "synced"
+    : "skipped";
+  const startupLabel = startup.status.toUpperCase();
+  const pressureLabel = startup.pressureLevel.toUpperCase();
+
+  return (
+    <div className={cn("rounded-md border px-2.5 py-2 space-y-1.5", statusCls)}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-mono tracking-widest">{startupLabel}</span>
+        <span className={cn("text-[9px] font-mono tracking-wide", governorTone(startup.pressureLevel))}>
+          {pressureLabel}
+        </span>
+      </div>
+      <div className="flex items-start gap-1.5">
+        <Sparkles className="h-3 w-3 shrink-0 mt-0.5 opacity-70" />
+        <p className="text-[10px] font-mono leading-snug">{startup.narrative}</p>
+      </div>
+      <div className="flex flex-wrap gap-x-2 gap-y-0.5">
+        <span className="text-[9px] font-mono text-text-muted">
+          ollama <span className={startup.ollamaReachable ? "text-status-success" : "text-status-error"}>
+            {startup.ollamaReachable ? "✓" : "✗"}
+          </span>
+        </span>
+        <span className="text-[9px] font-mono text-text-muted">
+          models <span className="text-text-secondary">{warmupLabel}</span>
+        </span>
+        <span className="text-[9px] font-mono text-text-muted">
+          evolver <span className="text-text-secondary">{evolverLabel}</span>
+        </span>
+        <span className="text-[9px] font-mono text-text-muted">
+          fanout <span className="text-text-secondary">x{startup.concurrencyLimit}</span>
+        </span>
+        <span className="text-[9px] font-mono text-text-muted">
+          <span className="text-text-secondary">{startup.durationMs} ms</span>
+        </span>
+      </div>
     </div>
   );
 }
@@ -354,7 +412,8 @@ export function TelemetryRail() {
           {/* Governor */}
           <section>
             <SectionLabel icon={Gauge} label="Governor" />
-            <div className="mt-1.5">
+            <div className="mt-1.5 space-y-1.5">
+              <StartupCard />
               <GovernorSummary />
             </div>
           </section>

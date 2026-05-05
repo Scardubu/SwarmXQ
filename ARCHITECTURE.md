@@ -143,6 +143,42 @@ The API rebroadcasts this snapshot as `system:governor`, and the dashboard rende
 
 ---
 
+## Startup Autopilot (V6.1 ENH-01)
+
+SwarmX now performs a deterministic launch-time autopilot before `swarm up` starts the API stack.
+
+Execution path:
+
+1. [src/swarmx/console/commands/up.py](src/swarmx/console/commands/up.py) invokes `run_startup_autopilot_sync()`.
+2. [src/swarmx/startup.py](src/swarmx/startup.py) runs four fail-open steps in parallel-aware fashion:
+         - Ollama reachability probe
+         - procfs pressure snapshot and concurrency resolution
+         - fast-model warmup ping
+         - dry-run evolution sync
+3. The resulting `StartupSummary` is persisted to `~/.swarmx/state/startup_summary.json`.
+4. The Fastify SSE layer caches and replays `system:startup`, `system:governor`, and `system:scs` so late-joining dashboards hydrate immediately.
+
+Startup summary contract:
+
+```json
+{
+        "timestamp": "2026-05-05T06:30:10+00:00",
+        "status": "ready",
+        "narrative": "The swarm is humming beautifully. All systems nominal — models warm, memory green, ready to go.",
+        "pressureLevel": "normal",
+        "availableMb": 2418,
+        "zramUsedPct": 0.22,
+        "concurrencyLimit": 2,
+        "ollamaReachable": true,
+        "warmupDone": true,
+        "evolverSynced": true,
+        "evolverProposals": 1,
+        "durationMs": 1840
+}
+```
+
+---
+
 ## Tool Registry (V5.9 — 24 tools)
 
 | Tool                 | Category      | Key safety feature                         |

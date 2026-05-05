@@ -75,6 +75,21 @@ The dashboard now renders governor state end-to-end:
 - the command bar shows a compact pressure badge (`MEM OK`, `MEM HIGH`, `MEM CRITICAL`)
 - the telemetry rail shows pressure tier, available RAM, ZRAM usage, active concurrency limit, and token ceilings
 
+## Startup Autopilot
+
+`swarm up` now runs a deterministic startup autopilot before the API comes online.
+
+- health probe against Ollama plus a fresh procfs pressure snapshot
+- lightweight warmup ping for the fast model
+- dry-run evolver sync with proposal count capture
+- persisted startup summary at `~/.swarmx/state/startup_summary.json`
+- typed `system:startup` SSE replay so dashboards that connect after boot still receive the latest launch state
+
+The dashboard surfaces that summary in two places:
+
+- a compact `BOOT READY` / `BOOT DEGRADED` / `BOOT CRITICAL` chip in the command bar
+- a startup card in the telemetry rail with narrative, pressure tier, warmup, evolver, and effective fanout
+
 ## Documentation
 
 - `ARCHITECTURE.md`
