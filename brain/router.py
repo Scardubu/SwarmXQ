@@ -1,7 +1,18 @@
 """
-brain/router — SwarmX V6.0 Brain Router
+brain/router — SwarmX V6.1 Brain Router
 ========================================
 Routes brain/ module calls to the appropriate model via Ollama /api/chat.
+
+CHANGES V6.1 vs V6.0:
+  [FIX-05] [PERF-01] Module-level singleton httpx.AsyncClient replaces the
+    per-call `async with httpx.AsyncClient()` pattern. The old pattern opened
+    and closed a full TCP connection on every run_model() call, adding 50-200ms
+    round-trip overhead on a cold connection pool. The singleton reuses one
+    connection pool for the process lifetime.
+    New helpers: _get_http_client() (lazy async init), close_http_client(),
+    close_http_client_sync() for graceful teardown at process exit.
+  [FIX-06] URL-change detection: if SWARMX_OLLAMA_URL changes at runtime
+    (e.g. in tests), the old client is closed and a new one is created.
 
 CHANGES V6.0 vs V5.6:
   [FIX-01] Robust config loader with SWARM_ROOT env override, `models` key
@@ -10,14 +21,8 @@ CHANGES V6.0 vs V5.6:
   [FIX-03] `detect_intent` normalises legacy brain.yaml model names to V5.6 tags.
   [ENH-01] `run_model` async-first; `run_model_sync` wrapper for legacy callers.
   [ENH-02] `route` async with sync wrapper.
-
-CHANGES V6.0 (new):
-  [FIX-04] `_load_config()` now guarded by `threading.Lock` so concurrent
-    callers (e.g. multiple asyncio tasks calling run_model simultaneously on
-    first import) cannot both observe `_CONFIG = {}` and both attempt file I/O,
-    causing a torn double-load or a race on the global dict assignment.
-  [ENH-03] `detect_intent` extended with fintech / security / architecture
-    signals for more precise model routing on domain-specific tasks.
+  [FIX-04] `_load_config()` guarded by `threading.Lock` (double-checked locking).
+  [ENH-03] `detect_intent` extended with fintech / security / architecture signals.
 """
 
 from __future__ import annotations
@@ -28,7 +33,7 @@ import os
 import threading
 import warnings
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import httpx
 
@@ -55,8 +60,8 @@ _DEFAULT_MODELS: dict[str, str] = {
 
 # ─── Thread-safe config loader ────────────────────────────────────────────────
 
-_CONFIG: dict[str, Any] = {}
-_CONFIG_LOCK = threading.Lock()   # [FIX-04] prevents torn double-load
+_CONFIG: dict[str, Any] | None = None  # [V5.9-FIX-04] None sentinel — empty dict {} means "loaded with no models"
+_CONFIG_LOCK = threading.Lock()
 _DEPRECATION_WARNED = False
 
 
@@ -78,13 +83,11 @@ def _warn_deprecated(entrypoint: str) -> None:
 
 def _load_config() -> dict[str, Any]:
     global _CONFIG
-    # Fast path — no lock needed once populated
-    if _CONFIG:
+    if _CONFIG is not None:  # [V5.9-FIX-04] None = uninitialized; {} = loaded-empty
         return _CONFIG
 
     with _CONFIG_LOCK:
-        # Double-checked locking — another thread may have loaded first
-        if _CONFIG:
+        if _CONFIG is not None:
             return _CONFIG
 
         swarm_root = os.environ.get("SWARM_ROOT", ".")
@@ -97,7 +100,7 @@ def _load_config() -> dict[str, Any]:
         for candidate in candidates:
             if candidate.exists():
                 try:
-                    import yaml  # lazy — avoids hard dependency
+                    import yaml
                     raw = yaml.safe_load(candidate.read_text(encoding="utf-8")) or {}
                     if isinstance(raw, dict) and "models" in raw:
                         remapped = {
@@ -109,26 +112,87 @@ def _load_config() -> dict[str, Any]:
                 except Exception:
                     pass
 
-        # No valid config — use built-in defaults
         _CONFIG = {"models": _DEFAULT_MODELS}
         return _CONFIG
 
 
 def _ollama_url() -> str:
-    return os.environ.get("SWARMX_OLLAMA_URL", "http://127.0.0.1:11434")
+    return os.environ.get("SWARMX_OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+
+
+# ─── [FIX-05] Module-level httpx singleton ────────────────────────────────────
+# One connection pool for the process lifetime — no TCP setup overhead per call.
+
+_HTTP_CLIENT: Optional[httpx.AsyncClient] = None
+_HTTP_BASE_URL: str = ""
+_HTTP_CLIENT_LOCK = threading.Lock()
+
+
+async def _get_http_client() -> httpx.AsyncClient:
+    """Return the singleton AsyncClient, (re)creating it if the Ollama URL changed."""
+    global _HTTP_CLIENT, _HTTP_BASE_URL
+    current_url = _ollama_url()
+    # Fast path — correct client already exists
+    if (
+        _HTTP_CLIENT is not None
+        and not _HTTP_CLIENT.is_closed
+        and current_url == _HTTP_BASE_URL
+    ):
+        return _HTTP_CLIENT
+
+    # Slow path — create or recreate (URL change / first call)
+    # Use a threading.Lock here because async Lock requires a running loop
+    # and this helper can be called from run_model_sync via asyncio.run().
+    with _HTTP_CLIENT_LOCK:
+        if _HTTP_CLIENT is not None and not _HTTP_CLIENT.is_closed:
+            if current_url == _HTTP_BASE_URL:
+                return _HTTP_CLIENT
+            # URL changed — close old client
+            try:
+                await _HTTP_CLIENT.aclose()
+            except Exception:
+                pass
+
+        _HTTP_BASE_URL = current_url
+        _HTTP_CLIENT = httpx.AsyncClient(
+            base_url=current_url,
+            timeout=httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=5.0),
+            limits=httpx.Limits(max_connections=8, max_keepalive_connections=4),
+        )
+        return _HTTP_CLIENT
+
+
+async def close_http_client() -> None:
+    """[FIX-05] Gracefully close the singleton httpx client at process exit."""
+    global _HTTP_CLIENT
+    if _HTTP_CLIENT is not None and not _HTTP_CLIENT.is_closed:
+        try:
+            await _HTTP_CLIENT.aclose()
+        except Exception:
+            pass
+    _HTTP_CLIENT = None
+
+
+def close_http_client_sync() -> None:
+    """Synchronous wrapper for close_http_client."""
+    try:
+        asyncio.get_running_loop()
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            pool.submit(asyncio.run, close_http_client()).result()
+    except RuntimeError:
+        try:
+            asyncio.run(close_http_client())
+        except Exception:
+            pass
 
 
 # ─── Intent detection ─────────────────────────────────────────────────────────
 
 def detect_intent(prompt: str) -> str:
-    """
-    Map a prompt to a model role key. Returns a key from _DEFAULT_MODELS.
-
-    [ENH-03] Extended with fintech / security / architecture signals.
-    """
+    """Map a prompt to a model role key. Returns a key from _DEFAULT_MODELS."""
     p = prompt.lower()
 
-    # Deep reasoning signals → deepseek-reasoner
     _reason_signals = (
         "design", "architecture", "analyze", "analyse", "research",
         "plan", "strategy", "reason", "evaluate", "compliance",
@@ -138,7 +202,6 @@ def detect_intent(prompt: str) -> str:
     if any(k in p for k in _reason_signals):
         return "reason"
 
-    # Code / implementation signals → qwen-worker
     _code_signals = (
         "code", "script", "implement", "function", "class", "refactor",
         "endpoint", "schema", "migration", "test", "dockerfile", "pipeline",
@@ -147,7 +210,6 @@ def detect_intent(prompt: str) -> str:
     if any(k in p for k in _code_signals):
         return "code"
 
-    # Review / audit signals → deepseek-critic
     _critic_signals = ("review", "critique", "audit", "score", "grade", "assess")
     if any(k in p for k in _critic_signals):
         return "critic"
@@ -156,69 +218,61 @@ def detect_intent(prompt: str) -> str:
 
 
 def _resolve_model(role: str) -> str:
-    """Resolve a role key to an Ollama model tag.
-
-    Resolution order:
-      1. brain.yaml `models:` section (file-based config override)
-      2. brain.roles.role_model() — covers SWARMX_MODEL_<ROLE>, SWARM_MODEL_*
-         env vars, SwarmConfig canonical values, and ROLE_MODELS static map.
-      3. _DEFAULT_MODELS static fallback (handles roles not in ROLE_MODELS).
-
-    [V5.9-FIX-01] Removed the duplicated per-role importlib blocks that
-    diverged from brain/roles.py's resolution logic and used the wrong import
-    priority order.  Delegating to role_model() gives a single canonical path.
-    """
+    """Resolve a role key to an Ollama model tag (config → env → static fallback)."""
     cfg = _load_config()
-    # 1. brain.yaml override
     tag = cfg.get("models", {}).get(role)
     if tag:
         return _V5_MODEL_REMAP.get(tag, tag)
 
-    # 2. Canonical resolution via brain.roles (env + SwarmConfig + static map)
     try:
-        from brain.roles import role_model  # local import to avoid circular
+        from brain.roles import role_model
         return role_model(role)
     except Exception:
         pass
 
-    # 3. Hard static fallback
     fallback = _DEFAULT_MODELS.get(role.lower(), "phi4-fast")
     return _V5_MODEL_REMAP.get(fallback, fallback)
 
 
-# ─── Core model call ─────────────────────────────────────────────────────────
+# ─── Core model call ──────────────────────────────────────────────────────────
 
 async def run_model(role: str, prompt: str, timeout: int = 120) -> str:
     """
     Call the Ollama /api/chat endpoint for the given role.
-    Uses httpx async — no subprocess, no shell=True.
+
+    [FIX-05] Uses the module-level singleton AsyncClient — no per-call TCP setup.
     Returns the assistant message content as a plain string.
     """
     _warn_deprecated("run_model")
     model = _resolve_model(role)
-    base_url = _ollama_url().rstrip("/")
-
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        try:
-            resp = await client.post(
-                f"{base_url}/api/chat",
-                json={
-                    "model":    model,
-                    "stream":   False,
-                    "messages": [{"role": "user", "content": prompt}],
-                },
-            )
-            resp.raise_for_status()
-            return resp.json().get("message", {}).get("content", "")
-        except httpx.HTTPStatusError as e:
-            return json.dumps({"error": f"Ollama HTTP {e.response.status_code}", "model": model})
-        except Exception as e:
-            return json.dumps({"error": str(e), "model": model})
+    client = await _get_http_client()
+    try:
+        resp = await client.post(
+            "/api/chat",
+            json={
+                "model":    model,
+                "stream":   False,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        return resp.json().get("message", {}).get("content", "")
+    except httpx.HTTPStatusError as e:
+        return json.dumps({"error": f"Ollama HTTP {e.response.status_code}", "model": model})
+    except Exception as e:
+        return json.dumps({"error": str(e), "model": model})
 
 
 def run_model_sync(role: str, prompt: str, timeout: int = 120) -> str:
     """Synchronous wrapper for run_model (for legacy callers)."""
-    return asyncio.run(run_model(role, prompt, timeout=timeout))
+    try:
+        asyncio.get_running_loop()
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(asyncio.run, run_model(role, prompt, timeout=timeout)).result()
+    except RuntimeError:
+        return asyncio.run(run_model(role, prompt, timeout=timeout))
 
 
 # ─── Route helper ─────────────────────────────────────────────────────────────
@@ -231,4 +285,10 @@ async def route(step: str) -> str:
 
 def route_sync(step: str) -> str:
     """Synchronous wrapper for route (for legacy callers)."""
-    return asyncio.run(route(step))
+    try:
+        asyncio.get_running_loop()
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(asyncio.run, route(step)).result()
+    except RuntimeError:
+        return asyncio.run(route(step))

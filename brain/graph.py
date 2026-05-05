@@ -100,6 +100,7 @@ class TaskGraph:
     def __init__(self, nodes: list[TaskNode]) -> None:
         self.nodes: dict[str, TaskNode] = {n.node_id: n for n in nodes}
         self._validate_ids()
+        self._topological_levels()  # [V5.9-FIX-05] Raise ValueError on cycle at construction time
 
     def _validate_ids(self) -> None:
         """Ensure all dependency references point to existing nodes."""

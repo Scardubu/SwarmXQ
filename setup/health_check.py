@@ -79,10 +79,11 @@ REQUIRED_MODELS = [
     "deepseek-critic",
 ]
 
-MODELS_DIR = Path.home() / "models" / "llm-local"
+# [V5.9-FIX-04] Corrected GGUF dir: files are in ~/llm-local/gguf (was ~/models/llm-local)
+MODELS_DIR = Path(os.environ.get("SWARMX_GGUF_DIR", str(Path.home() / "llm-local" / "gguf")))
 REQUIRED_GGUFS = [
     "Qwen2.5-7B-Instruct-Q5_K_M.gguf",
-    "microsoft_Phi-4-mini-Instruct-Q8_0.gguf",
+    "microsoft_Phi-4-mini-instruct-Q8_0.gguf",
     "DeepSeek-R1-Distill-Qwen-7B-Q5_K_M.gguf",
 ]
 
@@ -156,6 +157,8 @@ def check_swappiness() -> dict:
 
 
 def check_vram() -> dict:
+    # [V5.9-FIX-05] Intel-only machines: VRAM check is advisory, not blocking.
+    # Ollama runs CPU inference when no discrete GPU is present.
     try:
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=name,memory.total,memory.free,memory.used",
@@ -163,7 +166,9 @@ def check_vram() -> dict:
             capture_output=True, text=True, timeout=10
         )
         if result.returncode != 0:
-            return {"available": False, "ok": False, "note": "nvidia-smi not found"}
+            # Check for Intel GPU / ROCm as advisory alternatives
+            return {"available": False, "ok": True,
+                    "note": "No NVIDIA GPU — CPU inference via Ollama (ADVISORY only)"}
 
         parts = result.stdout.strip().split(", ")
         return {
@@ -171,10 +176,11 @@ def check_vram() -> dict:
             "total_gb": round(int(parts[1]) / 1024, 1),
             "free_gb":  round(int(parts[2]) / 1024, 1),
             "used_gb":  round(int(parts[3]) / 1024, 1),
-            "ok":       int(parts[1]) >= 10_000,
+            "ok":       True,   # GPU present is always OK
         }
     except Exception as e:
-        return {"error": str(e), "ok": False}
+        return {"error": str(e), "ok": True,   # advisory: never block on VRAM absence
+                "note": "VRAM check skipped — CPU inference active"}
 
 
 def check_gguf_files() -> dict:

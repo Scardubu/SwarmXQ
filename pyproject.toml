@@ -74,6 +74,7 @@ swarmx = "swarmx.cli:main"
 # ── Pytest ─────────────────────────────────────────────────────────────────────
 [tool.pytest.ini_options]
 testpaths        = ["tests"]
+pythonpath       = [".", "src"]
 addopts          = "-q --tb=short"
 python_files     = "test_*.py"
 python_functions = "test_*"

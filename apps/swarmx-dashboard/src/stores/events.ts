@@ -97,7 +97,7 @@ function applyWorkflowEvent(state: EventsState, data: WorkflowEventData): Events
     updatedAt: data.timestamp,
     error: data.error ?? null,
     result: previous?.result,
-    target: previous?.target,
+    ...(previous?.target !== undefined ? { target: previous.target } : {}),
   });
 
   return freshPatch({ workflowRuns });

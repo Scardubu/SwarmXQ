@@ -23,7 +23,8 @@ from .memory import (
     summarize_memories,
     summarize_runs,
 )
-from .policy import RISK_KEYWORDS, assess_action
+from .policy import assess_action
+from .risk import HIGH_RISK_KEYWORDS  # [V5.9-FIX-03] Import from risk.py — RISK_KEYWORDS was never in policy.py
 from .skills import save_generated_skill_catalog, synthesize_skills_from_summary
 from .storage import get_kv, list_missions, store_skill_record
 from .state import EvolutionProposal
@@ -663,9 +664,8 @@ class _EvolutionPolicyEngine:
 
     def get_active_rules(self) -> list[str]:
         rules: list[str] = []
-        for level, phrases in RISK_KEYWORDS.items():
-            for phrase in phrases:
-                rules.append(f"{level}:{phrase}")
+        for phrase in HIGH_RISK_KEYWORDS:  # [V5.9-FIX-03] HIGH_RISK_KEYWORDS is a flat set
+                rules.append(f"high:{phrase}")
         return rules
 
 
