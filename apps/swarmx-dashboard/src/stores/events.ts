@@ -187,8 +187,8 @@ function applySystemMetrics(state: EventsState, snap: SystemMetricsSnapshot): Ev
       load5m: snap.cpu.load5m,
       load15m: snap.cpu.load15m,
       perCore,
-      // Normalise coreCount so consumers don't need to fall back to perCore.length
-      coreCount: snap.cpu.coreCount ?? perCore.length || 1,
+      // [V5.9-FIX-02] Parenthesize fallback chain so esbuild accepts mixed nullish/or logic.
+      coreCount: snap.cpu.coreCount ?? (perCore.length || 1),
       temperatureCelsius: snap.cpu.temperatureCelsius ?? null,
     },
     memory: {

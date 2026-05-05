@@ -129,6 +129,12 @@ def _cache_expired() -> bool:
     return (time.monotonic() - _CACHE.timestamp) > _CACHE_TTL_S
 
 
+def reset_pressure_cache() -> None:
+    """Clear the module-level pressure snapshot cache for deterministic tests."""
+    global _CACHE
+    _CACHE = None
+
+
 def get_pressure(
     warn_mb: int = 1500,
     critical_mb: int = 800,

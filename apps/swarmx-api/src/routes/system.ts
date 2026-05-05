@@ -71,7 +71,9 @@ export async function systemRouter(server: FastifyInstance): Promise<void> {
     ]);
 
     const allReady = models.every((m) => m.status === "ready");
-    const ollamaReachable = models.length > 0 && models[0].status !== "error";
+    // [V5.9-FIX-02] Narrow the first model before dereferencing under exact optional checks.
+    const firstModel = models[0];
+    const ollamaReachable = firstModel !== undefined && firstModel.status !== "error";
 
     const memGb = {
       totalGb: +(mem.total / 1024 ** 3).toFixed(2),

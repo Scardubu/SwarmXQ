@@ -18,7 +18,13 @@ from swarmx.pressure import (
     get_pressure_async,
     level_from_config,
     concurrency_limit_from_config,
+    reset_pressure_cache,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_pressure_cache_fixture() -> None:
+    reset_pressure_cache()
 
 
 # ─── _read_meminfo ────────────────────────────────────────────────────────────

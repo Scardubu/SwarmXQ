@@ -395,9 +395,10 @@ export async function workflowsRouter(server: FastifyInstance): Promise<void> {
         status: "queued",
         repo: parsed.data.repo ?? DEFAULT_REPO,
         target: makeTarget(safeId, meta, parsed.data.target),
-        input: parsed.data.input,
         createdAt: now,
         updatedAt: now,
+        // [V5.9-FIX-02] Preserve exact optional property typing by omitting undefined input.
+        ...(parsed.data.input !== undefined ? { input: parsed.data.input } : {}),
       };
       await appendRunRecord(runRecord);
 
