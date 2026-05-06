@@ -11,6 +11,7 @@ from typing import Any
 import yaml
 
 from .config import SwarmConfig
+from .event_bus import EventKind  # [IEP-FIX] For EVOLUTION_BLOCKED_IEP telemetry
 from .evolution.critic_agent import CriticAgent
 from .evolution.critique_pipeline import CritiquePipeline
 from .evolution.redteam_agent import RedTeamAgent
@@ -28,6 +29,7 @@ from .risk import HIGH_RISK_KEYWORDS  # [V5.9-FIX-03] Import from risk.py — RI
 from .skills import save_generated_skill_catalog, synthesize_skills_from_summary
 from .storage import get_kv, list_missions, store_skill_record
 from .state import EvolutionProposal
+from .telemetry import emit_event  # [IEP-FIX] For IEP block telemetry
 from .utils import read_json, write_json
 
 logger = logging.getLogger(__name__)
@@ -35,6 +37,77 @@ logger = logging.getLogger(__name__)
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+# ── IEP Elite Invariants — field-level auto-apply lock ───────────────────────
+#
+# These field names are sourced directly from configs/guardrails.yaml
+# `never_auto_apply`. Any evolution proposal whose patch touches one of these
+# fields is permanently blocked from auto-apply, regardless of risk tier.
+#
+# Rationale: the blast-radius gate (LOW = auto-eligible) operates on risk tier
+# only. The IEP gate is a second, independent layer that operates on field
+# identity. A LOW-risk proposal that modifies `halt_over_hallucinate` must be
+# blocked even though its risk tier qualifies it for auto-apply.
+#
+# To add a new invariant: add the field name here AND to guardrails.yaml
+# never_auto_apply. The two lists must be kept in sync.
+
+_IEP_LOCKED_FIELDS: frozenset[str] = frozenset({
+    # crossover ceilings (multi-island exploration)
+    "crossover_probability_explore_ceiling",
+    "crossover_probability_exploit_floor",
+    "crossover_probability_explore",
+    "crossover_probability_exploit",
+    # critic gate
+    "critic_gate_max_passes",
+    # ensemble minimum
+    "latent_ensemble_min_variants",
+    # confidence gate
+    "halt_over_hallucinate",
+    # fix log ceiling
+    "fix_log_critical_ceiling",
+    "critical_ceiling",
+    # safety gates — top-level safety keys
+    "approval_required_for",
+    "credential_touch",
+    "production_deploy",
+    "auto_apply_risk_floor",
+    "allow_destructive_actions",
+    "secrets_hygiene",
+    # blast radius thresholds
+    "auto_apply_eligible",
+    "blast_radius",
+})
+
+
+def _iep_fields_touched(proposal: EvolutionProposal) -> set[str]:
+    """Return the set of IEP-locked field names present in a proposal's patch.
+
+    Performs a recursive key walk over the patch dict so nested fields
+    (e.g. patch["evolution"]["multi_island"]["crossover_probability_explore"])
+    are detected regardless of nesting depth.
+    """
+    if not isinstance(proposal.patch, dict):
+        return set()
+
+    touched: set[str] = set()
+
+    def _walk(node: Any) -> None:
+        if not isinstance(node, dict):
+            return
+        for key, value in node.items():
+            if key in _IEP_LOCKED_FIELDS:
+                touched.add(key)
+            _walk(value)
+
+    _walk(proposal.patch)
+    return touched
+
+
+def _touches_iep_invariant(proposal: EvolutionProposal) -> bool:
+    """Return True if this proposal's patch touches any IEP-locked field."""
+    return bool(_iep_fields_touched(proposal))
 
 
 # ── Divergent proposal generation — system prompt ─────────────────────────────
@@ -707,6 +780,54 @@ def apply_proposals(
             "applied": False,
             "score": proposal.score,
         }
+
+        # ── [IEP-FIX] Gate 0: IEP invariant field-level check ────────────────
+        # This gate runs BEFORE the critique pipeline and BEFORE the blast-radius
+        # tier check. A proposal touching any _IEP_LOCKED_FIELDS field is
+        # permanently blocked from auto-apply regardless of risk tier.
+        #
+        # This is the code enforcement of configs/guardrails.yaml never_auto_apply.
+        # The blast-radius gate (risk == "low") is a necessary but NOT sufficient
+        # condition for auto-apply when IEP invariants are involved.
+        if auto_apply:
+            iep_touched = _iep_fields_touched(proposal)
+            if iep_touched:
+                block_reason = (
+                    f"IEP invariant lock: proposal '{proposal.id}' touches permanently "
+                    f"locked field(s) {sorted(iep_touched)}. "
+                    f"These fields are listed in configs/guardrails.yaml never_auto_apply "
+                    f"and cannot be auto-applied at any risk tier. "
+                    f"Human approval required."
+                )
+                logger.warning("[IEP] %s", block_reason)
+                result.update({
+                    "rejected": True,
+                    "blocked_iep": True,
+                    "iep_fields_touched": sorted(iep_touched),
+                    "critique_reason": block_reason,
+                })
+                # Emit telemetry — operators must be able to see IEP blocks
+                try:
+                    emit_event(runtime_dir, EventKind.EVOLUTION_BLOCKED_IEP, {
+                        "proposal_id": proposal.id,
+                        "scope": proposal.scope,
+                        "risk": proposal.risk,
+                        "iep_fields": sorted(iep_touched),
+                        "reason": block_reason,
+                    })
+                except Exception:
+                    pass  # telemetry must never block the safety decision
+                store_memory(runtime_dir, {
+                    "kind": "evolution-iep-blocked",
+                    "summary": block_reason,
+                    "scope": proposal.scope,
+                    "proposal_id": proposal.id,
+                    "iep_fields": sorted(iep_touched),
+                    "tags": ["evolution", "iep", "blocked", proposal.scope],
+                })
+                applied.append(result)
+                continue  # Hard stop — do not proceed to critique or apply
+        # ── End IEP gate ──────────────────────────────────────────────────────
 
         approved, reason = pipeline.evaluate(
             proposal=proposal.to_dict(),
