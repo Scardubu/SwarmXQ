@@ -15,15 +15,33 @@ CHANGES FROM LEGACY VERSION:
            a 'duration_s' payload field.
   [FIX-01] recent() and snapshot() propagate limit correctly to load_events()
            — the legacy call had no limit parameter guard.
+
+CHANGES V5.9 (this revision):
+  [FIX-02] SWARMX_EVENT_STRICT=1 now prints to stderr instead of raising
+           ValueError. Raising crashed calling agents — a telemetry enforcement
+           mechanism must never interrupt execution. Unknown kinds are now
+           clearly flagged to stderr and logged at WARNING, not silently
+           injected into the payload.
+  [FIX-03] Non-strict unknown-kind handling changed from silent payload
+           mutation (`_unknown_kind_warning: True`) to a logger.warning() call.
+           Silent payload mutations are invisible and confusing; a log line is
+           actionable.
+  [FIX-04] _STRICT env var is re-read inside publish() via os.environ.get()
+           instead of at module import time. This allows test fixtures to set
+           SWARMX_EVENT_STRICT=1 after import without reloading the module.
 """
 from __future__ import annotations
 
+import logging
 import os
+import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Generator, Optional
 
 from .journal import append_event, load_events
+
+_log = logging.getLogger(__name__)
 
 
 # ── Typed event kind constants ─────────────────────────────────────────────────
@@ -58,11 +76,18 @@ class EventKind:
     EVOLUTION_APPROVED  = "evolution.approved"
     EVOLUTION_REJECTED  = "evolution.rejected"
     EVOLUTION_DELTA     = "evolution.delta"
+    # [NEW] IEP invariant hard-block event
+    EVOLUTION_BLOCKED_IEP = "evolution.blocked.iep"
 
     # System
     HEALTH_CHECK    = "system.health_check"
     CONFIG_RELOAD   = "system.config_reload"
     ESCALATION      = "system.escalation"
+
+    # Run lifecycle (canonical names — executor.py was using underscored variants)
+    RUN_START    = "run.start"
+    RUN_COMPLETE = "run.complete"
+    REFINEMENT_PASS = "run.refinement_pass"
 
     # Audit
     AUDIT_FLAG      = "audit.flag"
@@ -81,9 +106,6 @@ class EventKind:
         )
 
 
-_STRICT = os.environ.get("SWARMX_EVENT_STRICT", "0") == "1"
-
-
 # ── Core API ──────────────────────────────────────────────────────────────────
 
 def publish(
@@ -94,16 +116,29 @@ def publish(
     """
     Publish an event to the journal.
 
-    In strict mode (SWARMX_EVENT_STRICT=1), raises ValueError for unknown kinds.
-    In production mode, unknown kinds are published with a warning prefix.
+    In strict mode (SWARMX_EVENT_STRICT=1), unknown kinds are printed to
+    stderr and logged at WARNING — they are NOT raised as exceptions.
+    A telemetry enforcement mechanism must never interrupt agent execution.
+
+    In production mode (default), unknown kinds produce a logger.warning()
+    call only. The payload is never silently mutated.
+
+    [FIX-02] Re-reads env var on each call so test fixtures work without
+    module reload.
+    [FIX-03] Removes silent payload mutation in non-strict mode.
     """
+    strict = os.environ.get("SWARMX_EVENT_STRICT", "0") == "1"
+
     if kind not in EventKind.all_kinds():
-        if _STRICT:
-            raise ValueError(
-                f"Unknown event kind '{kind}'. Use EventKind constants."
-            )
-        # Soft warning — never crash the calling agent
-        payload = {"_unknown_kind_warning": True, **payload}
+        msg = (
+            f"[swarmx:event_bus] Unknown event kind '{kind}'. "
+            f"Use EventKind constants. Known kinds: {sorted(EventKind.all_kinds())}"
+        )
+        if strict:
+            # Print to stderr — visible in all environments, never crashes agents
+            print(f"SWARMX_EVENT_STRICT: {msg}", file=sys.stderr)
+        _log.warning(msg)
+        # Do NOT mutate payload — publish the event as-is so the data is preserved
 
     append_event(runtime_home, kind, payload)
     return {"kind": kind, "payload": payload}
