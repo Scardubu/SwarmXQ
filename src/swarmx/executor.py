@@ -7,6 +7,7 @@ from typing import Any
 
 from .config import SwarmConfig
 from .evaluator import island_tournament, rank_outputs
+from .event_bus import EventKind  # [FIX] Import EventKind constants — replaces bare string literals
 from .llm import choose_model, choose_model_for_task, generate, prompt_for_task
 from .memory import learn_from_run, load_recent_memories, store_checkpoint, store_run, summarize_evidence, summarize_memories
 from .risk import approval_required
@@ -165,8 +166,6 @@ def _derive_island_winner(artifacts: list[dict[str, Any]]) -> str | None:
          for a in run_candidates[:5]],
         ensure_ascii=False,
     )
-    # Island metadata mirrors the server.py island_candidates construction for
-    # consistency — same priors, same axes, different text digest.
     island_candidates = {
         "A": {
             "output": run_summary,
@@ -234,7 +233,9 @@ def execute_plan(repo: Path, plan: Plan, run_id: str, autonomous: bool, max_iter
     memory_summary = summarize_memories(load_recent_memories(cfg.home, limit=24))
     run_dir = cfg.home / "runs" / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
-    emit_event(cfg.home, "run_start", {"run_id": run_id, "target": plan.target, "workflow": plan.workflow, "stack": plan.stack})
+
+    # [FIX] Use EventKind constants — replaces bare string "run_start"
+    emit_event(cfg.home, EventKind.RUN_START, {"run_id": run_id, "target": plan.target, "workflow": plan.workflow, "stack": plan.stack})
 
     # V5 checkpoint: after_plan
     _write_v5_checkpoint(
@@ -276,10 +277,6 @@ def execute_plan(repo: Path, plan: Plan, run_id: str, autonomous: bool, max_iter
         review = _review_task_output(task.title, task.owner, draft, cfg)
         refined = draft
         refinement_notes: list[str] = []
-        # budget=1 means: one draft + one review, no extra refinement pass (correct)
-        # budget=2 means: draft, review, one refinement pass
-        # range(budget - 1) was correct in intent but off when budget=1 → 0 iterations (desired)
-        # Keeping the same range but making the intent explicit via a guard comment
         refinement_budget = max(1, min(max_iterations, cfg.evaluator_passes)) if active else 1
         for _pass in range(refinement_budget - 1):  # 0 passes at budget=1, N-1 passes at budget=N
             if not _needs_refinement(review, refined):
@@ -313,7 +310,10 @@ def execute_plan(repo: Path, plan: Plan, run_id: str, autonomous: bool, max_iter
         }
         task.artifacts.append(f"step-{idx + 1}")
         artifacts.append(artifact)
-        emit_event(cfg.home, "task_complete", {"run_id": run_id, "task": task.title, "owner": task.owner, "risk": task.risk.value})
+
+        # [FIX] Use EventKind.TASK_COMPLETE — replaces bare string "task_complete"
+        emit_event(cfg.home, EventKind.TASK_COMPLETE, {"run_id": run_id, "task": task.title, "owner": task.owner, "risk": task.risk.value})
+
         if cfg.persist_run_artifacts:
             write_json(run_dir / f"{idx + 1:02d}-{task.title}.json", artifact)
         # V5 checkpoint: after each task
@@ -349,7 +349,9 @@ def execute_plan(repo: Path, plan: Plan, run_id: str, autonomous: bool, max_iter
         refinement = generate(prompt=review_prompt, model=cfg.model_fast, system="You are a precise trace critic.", provider=cfg.provider, cfg=cfg)
         evidence.append(refinement)
         artifacts.append({"kind": "refinement", "pass": pass_idx + 1, "output": refinement, "winner": best_candidate.get("task")})
-        emit_event(cfg.home, "refinement_pass", {"run_id": run_id, "pass": pass_idx + 1})
+
+        # [FIX] Use EventKind.REFINEMENT_PASS — replaces bare string "refinement_pass"
+        emit_event(cfg.home, EventKind.REFINEMENT_PASS, {"run_id": run_id, "pass": pass_idx + 1})
 
     test_cmd, label = choose_test_command(repo)
     test_result = {"command": label, "exit_code": None, "stdout": "", "stderr": ""}
@@ -419,5 +421,7 @@ def execute_plan(repo: Path, plan: Plan, run_id: str, autonomous: bool, max_iter
         stage_index=len(plan.tasks) + 1,
     )
     store_checkpoint(cfg.home, run_id, {"status": status, "summary": summary, "metrics": metrics})
-    emit_event(cfg.home, "run_complete", {"run_id": run_id, "status": status, "workflow": plan.workflow, "island_winner": island_winner})
+
+    # [FIX] Use EventKind.RUN_COMPLETE — replaces bare string "run_complete"
+    emit_event(cfg.home, EventKind.RUN_COMPLETE, {"run_id": run_id, "status": status, "workflow": plan.workflow, "island_winner": island_winner})
     return record
