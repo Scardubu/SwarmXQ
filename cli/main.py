@@ -7,6 +7,8 @@ CHANGES:
   [FIX-01] _add() no longer silently swallows import failures at DEBUG level.
            A WARNING is now emitted to both the Python logger and stderr.
            Identical fix applied to swarmx.console.app — kept in sync.
+    [V5.9-ENH-06] Registered ``swarm up`` compatibility shim so the canonical
+                     ``cli`` entrypoint can launch API + dashboard stack directly.
 """
 from __future__ import annotations
 
@@ -128,4 +130,5 @@ _add("models", "cli.commands.models", help="Show model routing and local model s
 _add("frameworks", "cli.commands.frameworks", help="Show framework adapter matrix.")
 _add("config", "cli.commands.config", help="Show merged runtime configuration.")
 _add("dashboard", "cli.commands.dashboard", help="Start the SwarmX dashboard server.")
+_add("up", "cli.commands.up", help="Start / stop the SwarmX stack.")
 _add("mission", "cli.commands.mission", help="Create and queue missions.")

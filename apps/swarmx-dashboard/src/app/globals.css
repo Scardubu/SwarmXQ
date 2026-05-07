@@ -51,7 +51,8 @@
 
 @theme inline {
   --font-mono: var(--font-jetbrains-mono, "JetBrains Mono", "Cascadia Code", "Fira Code", ui-monospace, monospace);
-  --font-ui: var(--font-geist, "Geist Sans", "DM Sans", system-ui, sans-serif);
+  /* [V5.9-FIX-07] Match next/font GeistSans CSS variable to avoid unused preload warnings. */
+  --font-ui: var(--font-geist-sans, "Geist Sans", "DM Sans", system-ui, sans-serif);
 }
 
 :root {

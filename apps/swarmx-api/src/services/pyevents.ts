@@ -55,26 +55,29 @@ function toTimestamp(raw: RawJournalEvent): string {
 export function mapJournalEvent(raw: RawJournalEvent): SwarmXEvent | null {
   const p = raw.payload ?? {};
   const ts = toTimestamp(raw);
+  const taskLabel = String(p["goal"] ?? p["task"] ?? "");
 
   switch (raw.kind) {
     // ── Run lifecycle ───────────────────────────────────────────────────────
+    case "run.start":
     case "run.started":
       return {
         type: "run:started",
         data: {
-          jobId: String(p["job_id"] ?? ""),
+          jobId: String(p["job_id"] ?? p["run_id"] ?? ""),
           repo: String(p["repo"] ?? ""),
           target: String(p["target"] ?? ""),
           timestamp: ts,
         },
       };
 
+    case "run.complete":
     case "run.completed":
       return {
         type: "run:completed",
         data: {
-          jobId: String(p["job_id"] ?? ""),
-          runId: String(p["run_id"] ?? ""),
+          jobId: String(p["job_id"] ?? p["run_id"] ?? ""),
+          runId: String(p["run_id"] ?? p["job_id"] ?? ""),
           status: (["success", "partial", "failed", "error"].includes(String(p["status"]))
             ? p["status"]
             : "error") as "success" | "partial" | "failed" | "error",
@@ -99,7 +102,7 @@ export function mapJournalEvent(raw: RawJournalEvent): SwarmXEvent | null {
       return {
         type: "task:start",
         data: {
-          goal: String(p["goal"] ?? ""),
+          goal: taskLabel,
           timestamp: ts,
           ...(typeof p["step_index"] === "number" ? { stepIndex: p["step_index"] } : {}),
           ...(typeof p["run_id"] === "string" ? { runId: p["run_id"] } : {}),
@@ -110,7 +113,7 @@ export function mapJournalEvent(raw: RawJournalEvent): SwarmXEvent | null {
       return {
         type: "task:complete",
         data: {
-          goal: String(p["goal"] ?? ""),
+          goal: taskLabel,
           timestamp: ts,
           ...(typeof p["step_index"] === "number" ? { stepIndex: p["step_index"] } : {}),
           ...(typeof p["run_id"] === "string" ? { runId: p["run_id"] } : {}),
@@ -121,7 +124,7 @@ export function mapJournalEvent(raw: RawJournalEvent): SwarmXEvent | null {
       return {
         type: "task:failed",
         data: {
-          goal: String(p["goal"] ?? ""),
+          goal: taskLabel,
           timestamp: ts,
           ...(typeof p["step_index"] === "number" ? { stepIndex: p["step_index"] } : {}),
           ...(typeof p["run_id"] === "string" ? { runId: p["run_id"] } : {}),

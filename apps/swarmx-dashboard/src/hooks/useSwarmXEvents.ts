@@ -6,7 +6,9 @@ import { useEventsStore } from "@/stores/events";
 
 const SSE_URL = "/api/events";
 const HISTORY_URL = "/api/logs/events?limit=120";
-const RECONNECT_DELAY_MS = 2_000;
+// [V5.9-ENH-07] Exponential backoff: 1s → 2s → 4s → 8s → 16s (capped at 30s)
+const RECONNECT_BASE_MS = 1_000;
+const RECONNECT_MAX_MS = 30_000;
 const STALE_CHECK_INTERVAL_MS = 2_000;
 
 interface HistoricalEventsResponse {
@@ -31,6 +33,8 @@ export function useSwarmXEvents(): void {
   const esRef = useRef<EventSource | null>(null);
   const staleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // [V5.9-ENH-07] Exponential backoff attempt counter
+  const reconnectAttemptRef = useRef<number>(0);
 
   useEffect(() => {
     let destroyed = false;
@@ -57,7 +61,11 @@ export function useSwarmXEvents(): void {
       esRef.current = es;
 
       es.onopen = () => {
-        if (!destroyed) setConnectionStatus("connected");
+        if (!destroyed) {
+          setConnectionStatus("connected");
+          // [V5.9-ENH-07] Reset backoff on successful connection
+          reconnectAttemptRef.current = 0;
+        }
       };
 
       es.onmessage = (e: MessageEvent<string>) => {
@@ -75,7 +83,14 @@ export function useSwarmXEvents(): void {
         setConnectionStatus("disconnected");
         es.close();
         esRef.current = null;
-        reconnectTimerRef.current = setTimeout(connect, RECONNECT_DELAY_MS);
+        // [V5.9-ENH-07] Exponential backoff with jitter: base * 2^attempt, capped at 30s
+        const attempt = reconnectAttemptRef.current;
+        const backoff = Math.min(RECONNECT_BASE_MS * Math.pow(2, attempt), RECONNECT_MAX_MS);
+        // Add ±20% jitter to avoid thundering herd
+        const jitter = backoff * 0.2 * (Math.random() * 2 - 1);
+        const delay = Math.round(backoff + jitter);
+        reconnectAttemptRef.current = attempt + 1;
+        reconnectTimerRef.current = setTimeout(connect, delay);
       };
     }
 

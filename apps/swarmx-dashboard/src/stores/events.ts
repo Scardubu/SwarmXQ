@@ -19,6 +19,10 @@ import type {
 
 const MAX_LOG_ENTRIES = 10_000;
 const STALE_THRESHOLD_MS = 5_000;
+// [V5.9-ENH-08] Map size caps — prevent unbounded growth in long-running sessions
+const MAX_AGENTS = 500;
+const MAX_WORKFLOW_RUNS = 200;
+const MAX_CGROUP_SCOPES = 200;
 
 type SSEConnectionStatus = "connecting" | "connected" | "disconnected";
 
@@ -215,7 +219,9 @@ function applyWorkflowEvent(state: EventsState, data: WorkflowEventData): Events
     ...(previous?.target !== undefined ? { target: previous.target } : {}),
   });
 
-  return freshPatch({ workflowRuns });
+  // [V5.9-ENH-08] Cap workflow run Map size by updatedAt (handles ISO string or numeric)
+  const pruned = pruneMap(workflowRuns, MAX_WORKFLOW_RUNS, (r) => new Date(r.updatedAt).getTime() || 0);
+  return freshPatch({ workflowRuns: pruned });
 }
 
 function pushHistory(
@@ -246,6 +252,22 @@ function freshPatch(patch: Partial<EventsState>): EventsPatch {
   };
 }
 
+// [V5.9-ENH-08] Generic Map pruning: if size > max, remove the oldest entries by a
+// timestamp accessor. Falls back to removing the first-inserted keys when no ts accessor.
+function pruneMap<V>(
+  map: Map<string, V>,
+  max: number,
+  tsAccessor?: (v: V) => number
+): Map<string, V> {
+  if (map.size <= max) return map;
+  const entries = [...map.entries()];
+  const sorted = tsAccessor
+    ? entries.sort((a, b) => tsAccessor(a[1]) - tsAccessor(b[1]))
+    : entries;
+  const trimmed = sorted.slice(entries.length - max);
+  return new Map(trimmed);
+}
+
 function applyAgentUpdate(state: EventsState, incoming: AgentState): EventsPatch {
   const agents = new Map(state.agents);
   const existing = agents.get(incoming.id);
@@ -260,8 +282,10 @@ function applyAgentUpdate(state: EventsState, incoming: AgentState): EventsPatch
     skillTags: incoming.skillTags ?? existing?.skillTags ?? [],
     outputs: incoming.outputs ?? existing?.outputs ?? [],
   });
-  const { error, active, total } = countsByStatus(agents);
-  return freshPatch({ agents, errorAgentCount: error, activeAgentCount: active, totalAgentCount: total });
+  // [V5.9-ENH-08] Prune by last-seen timestamp to cap agent Map size
+  const pruned = pruneMap(agents, MAX_AGENTS, (a) => a.lastActive ?? 0);
+  const { error, active, total } = countsByStatus(pruned);
+  return freshPatch({ agents: pruned, errorAgentCount: error, activeAgentCount: active, totalAgentCount: total });
 }
 
 function applyAgentRemoval(state: EventsState, agentId: string): EventsPatch {
@@ -370,7 +394,9 @@ function applySystemOom(state: EventsState, agentId: string, count: number): Eve
 function applyCgroupMetrics(state: EventsState, scope: CgroupScopeMetrics): EventsPatch {
   const cgroupScopes = new Map(state.cgroupScopes);
   cgroupScopes.set(scope.agentId ?? scope.path, scope);
-  return freshPatch({ cgroupScopes });
+  // [V5.9-ENH-08] Cap cgroup scope Map size
+  const pruned = pruneMap(cgroupScopes, MAX_CGROUP_SCOPES);
+  return freshPatch({ cgroupScopes: pruned });
 }
 
 function applyLogEntry(state: EventsState, data: LogEventData): EventsPatch {

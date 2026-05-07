@@ -41,7 +41,8 @@ export function CommandPalette() {
   const toggleNav = useUIStore((s) => s.toggleNav);
   const toggleTelemetryRail = useUIStore((s) => s.toggleTelemetryRail);
 
-  const agents = useEventsStore((s) => [...s.agents.values()]);
+  const agentsMap = useEventsStore((s) => s.agents);
+  const agents = React.useMemo(() => [...agentsMap.values()], [agentsMap]);
   const router = useRouter();
 
   const runTerminalAction = useCallback(

@@ -284,7 +284,8 @@ function KeyValue({ label, value }: { readonly label: string; readonly value: st
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 function AgentsPageContent() {
-  const agents = useEventsStore((s) => [...s.agents.values()]);
+  const agentsMap = useEventsStore((s) => s.agents);
+  const agents = useMemo(() => [...agentsMap.values()], [agentsMap]);
   const searchParams = useSearchParams();
 
   const [searchQuery, setSearchQuery] = useState("");

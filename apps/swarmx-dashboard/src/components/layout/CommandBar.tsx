@@ -9,32 +9,47 @@ import type { PressureLevel, StartupSummary } from "@swarmx/types";
 
 /** Live WAT clock (UTC+1 / Africa/Lagos). */
 function useWATClock() {
-  const [time, setTime] = React.useState(() =>
-    new Date().toLocaleTimeString("en-NG", {
-      timeZone: "Africa/Lagos",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    })
-  );
+  const [time, setTime] = React.useState("--:--:--");
 
-  React.useEffect(() => {
-    const id = setInterval(() => {
-      setTime(
-        new Date().toLocaleTimeString("en-NG", {
-          timeZone: "Africa/Lagos",
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          hour12: false,
-        })
-      );
-    }, 1000);
-    return () => clearInterval(id);
+  const updateTime = React.useCallback(() => {
+    setTime(
+      new Date().toLocaleTimeString("en-NG", {
+        timeZone: "Africa/Lagos",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      })
+    );
   }, []);
 
+  React.useEffect(() => {
+    updateTime();
+    const id = setInterval(() => {
+      updateTime();
+    }, 1000);
+    return () => clearInterval(id);
+  }, [updateTime]);
+
   return time;
+}
+
+function useWATDateTitle() {
+  const [title, setTitle] = React.useState("West Africa Time (UTC+1)");
+
+  React.useEffect(() => {
+    setTitle(
+      `West Africa Time (UTC+1) — ${new Date().toLocaleDateString("en-NG", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+        timeZone: "Africa/Lagos",
+      })}`
+    );
+  }, []);
+
+  return title;
 }
 
 /** Health aggregate: SCS score takes precedence, then agent errors + CPU/mem. */
@@ -115,6 +130,7 @@ export function CommandBar({ breadcrumb = "Overview" }: CommandBarProps) {
   const startupBadge = startupSummary ? getStartupBadge(startupSummary) : null;
 
   const watTime = useWATClock();
+  const watDateTitle = useWATDateTitle();
   const isMac = typeof navigator !== "undefined" && navigator.userAgent.includes("Mac");
   let staleLabel = "stale";
   if (connectionStatus === "disconnected") {
@@ -234,13 +250,7 @@ export function CommandBar({ breadcrumb = "Overview" }: CommandBarProps) {
         <time
           className="hidden lg:block text-[10px] font-mono text-text-muted tabular-nums select-none"
           aria-label="Current time (WAT)"
-          title={`West Africa Time (UTC+1) — ${new Date().toLocaleDateString("en-NG", {
-            weekday: "long",
-            day: "numeric",
-            month: "long",
-            year: "numeric",
-            timeZone: "Africa/Lagos",
-          })}`}
+          title={watDateTitle}
           role="timer"
           aria-live="off"
         >
