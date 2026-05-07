@@ -74,6 +74,8 @@ The dashboard now renders governor state end-to-end:
 - `system:governor` SSE events are emitted by the API from Python runtime metrics
 - the command bar shows a compact pressure badge (`MEM OK`, `MEM HIGH`, `MEM CRITICAL`)
 - the telemetry rail shows pressure tier, available RAM, ZRAM usage, active concurrency limit, and token ceilings
+- Python lifecycle events (`mission`, `run`, `task`, `evolution`, `worker`) are bridged from `journal.jsonl` into the same Fastify SSE stream consumed by the Next.js dashboard
+- the dashboard bootstraps recent lifecycle history from `/api/logs/events` and then tails new activity over `/api/events`, so the Recent Events and Log Explorer panels hydrate immediately after refresh
 
 ## Startup Autopilot
 

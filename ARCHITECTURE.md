@@ -158,6 +158,19 @@ Execution path:
 3. The resulting `StartupSummary` is persisted to `~/.swarmx/state/startup_summary.json`.
 4. The Fastify SSE layer caches and replays `system:startup`, `system:governor`, and `system:scs` so late-joining dashboards hydrate immediately.
 
+### Python Event Bridge (V5.9 FIX-05)
+
+SwarmX now separates historical lifecycle hydration from live SSE delivery.
+
+Execution path:
+
+1. [apps/swarmx-api/src/routes/logs.ts](apps/swarmx-api/src/routes/logs.ts) reads the tail of `~/.swarmx/traces/journal.jsonl` and maps it into canonical `SwarmXEvent` payloads at `GET /api/logs/events`.
+2. [apps/swarmx-dashboard/src/hooks/useSwarmXEvents.ts](apps/swarmx-dashboard/src/hooks/useSwarmXEvents.ts) fetches that history once on load so Recent Events and the Log Explorer hydrate immediately after refresh.
+3. [apps/swarmx-api/src/services/pyevents.ts](apps/swarmx-api/src/services/pyevents.ts) primes its byte cursor to EOF on first successful open, then broadcasts only new journal entries into `/api/events`.
+4. [apps/swarmx-dashboard/src/stores/events.ts](apps/swarmx-dashboard/src/stores/events.ts) normalises `mission`, `run`, `task`, `evolution`, and `worker` lifecycle events into the unified log feed used by the dashboard overview and logs page.
+
+This avoids replaying the full journal over SSE on every API boot while preserving immediate visibility into recent Python-side activity.
+
 Startup summary contract:
 
 ```json

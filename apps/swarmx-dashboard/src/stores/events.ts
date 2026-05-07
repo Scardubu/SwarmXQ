@@ -88,6 +88,117 @@ type EventsPatch = Partial<EventsState> & Pick<EventsState, "lastEventAt" | "isS
 type ScsEventData = Extract<SwarmXEvent, { type: "system:scs" }>["data"];
 type LogEventData = Extract<SwarmXEvent, { type: "log:entry" }>["data"];
 
+const LIFECYCLE_LOG_UNIT = "swarmx-runtime";
+
+function logFingerprint(entry: Pick<LogEntry, "level" | "message" | "timestamp"> & { unit?: string; agentId?: string | null }): string {
+  return [
+    entry.timestamp,
+    entry.level,
+    entry.unit ?? "",
+    entry.agentId ?? "",
+    entry.message,
+  ].join("|");
+}
+
+function appendLog(state: EventsState, entry: LogEntry): EventsPatch {
+  const fingerprint = logFingerprint(entry);
+  const isDuplicate = state.logs.slice(-200).some((existing) => logFingerprint(existing) === fingerprint);
+  if (isDuplicate) {
+    return freshPatch({});
+  }
+
+  const logs =
+    state.logs.length >= MAX_LOG_ENTRIES
+      ? [...state.logs.slice(1), entry]
+      : [...state.logs, entry];
+
+  return freshPatch({ logs });
+}
+
+function lifecycleLogData(event: SwarmXEvent): LogEventData | null {
+  switch (event.type) {
+    case "mission:created":
+      return {
+        timestamp: event.data.timestamp,
+        level: "info",
+        unit: LIFECYCLE_LOG_UNIT,
+        message: `mission created · ${event.data.target}`,
+      };
+    case "run:started":
+      return {
+        timestamp: event.data.timestamp,
+        level: "info",
+        unit: LIFECYCLE_LOG_UNIT,
+        message: `run started · ${event.data.target}`,
+      };
+    case "run:completed":
+      return {
+        timestamp: event.data.timestamp,
+        level: event.data.status === "success" || event.data.status === "partial" ? "notice" : "error",
+        unit: LIFECYCLE_LOG_UNIT,
+        message: `run ${event.data.status} · ${event.data.runId}`,
+      };
+    case "task:start":
+      return {
+        timestamp: event.data.timestamp,
+        level: "info",
+        unit: LIFECYCLE_LOG_UNIT,
+        message: `task start${event.data.stepIndex != null ? ` #${event.data.stepIndex}` : ""} · ${event.data.goal}`,
+      };
+    case "task:complete":
+      return {
+        timestamp: event.data.timestamp,
+        level: "notice",
+        unit: LIFECYCLE_LOG_UNIT,
+        message: `task complete${event.data.stepIndex != null ? ` #${event.data.stepIndex}` : ""} · ${event.data.goal}`,
+      };
+    case "task:failed":
+      return {
+        timestamp: event.data.timestamp,
+        level: "error",
+        unit: LIFECYCLE_LOG_UNIT,
+        message: `task failed${event.data.stepIndex != null ? ` #${event.data.stepIndex}` : ""} · ${event.data.goal}`,
+      };
+    case "evolution:started":
+      return {
+        timestamp: event.data.timestamp,
+        level: "info",
+        unit: LIFECYCLE_LOG_UNIT,
+        message: `evolution started${event.data.repo ? ` · ${event.data.repo}` : ""}`,
+      };
+    case "evolution:completed":
+      return {
+        timestamp: event.data.timestamp,
+        level: "notice",
+        unit: LIFECYCLE_LOG_UNIT,
+        message: `evolution completed${event.data.proposalCount != null ? ` · ${event.data.proposalCount} proposal${event.data.proposalCount === 1 ? "" : "s"}` : ""}`,
+      };
+    case "worker:job_started":
+      return {
+        timestamp: event.data.timestamp,
+        level: "info",
+        unit: LIFECYCLE_LOG_UNIT,
+        message: `worker job started · ${event.data.kind ?? "task"}${event.data.target ? ` · ${event.data.target}` : ""}`,
+      };
+    case "worker:job_done":
+      return {
+        timestamp: event.data.timestamp,
+        level: "notice",
+        unit: LIFECYCLE_LOG_UNIT,
+        message: `worker job done · ${event.data.jobId}`,
+      };
+    case "worker:job_error":
+      return {
+        timestamp: event.data.timestamp,
+        level: "error",
+        unit: LIFECYCLE_LOG_UNIT,
+        message: `worker job error · ${event.data.jobId}${event.data.error ? ` · ${event.data.error}` : ""}`,
+      };
+    default:
+      return null;
+  }
+}
+
 function applyWorkflowEvent(state: EventsState, data: WorkflowEventData): EventsPatch {
   const workflowRuns = new Map(state.workflowRuns);
   const previous = workflowRuns.get(data.workflowId);
@@ -264,7 +375,7 @@ function applyCgroupMetrics(state: EventsState, scope: CgroupScopeMetrics): Even
 
 function applyLogEntry(state: EventsState, data: LogEventData): EventsPatch {
   const entry: LogEntry = {
-    id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    id: `log-${String(data.timestamp)}-${data.level}-${data.message}`,
     level: data.level,
     message: data.message,
     timestamp: data.timestamp,
@@ -277,11 +388,10 @@ function applyLogEntry(state: EventsState, data: LogEventData): EventsPatch {
   if (data.unit) {
     entry.unit = data.unit;
   }
-  const logs =
-    state.logs.length >= MAX_LOG_ENTRIES
-      ? [...state.logs.slice(1), entry]
-      : [...state.logs, entry];
-  return freshPatch({ logs });
+  if (data.agentId) {
+    entry.agentId = data.agentId;
+  }
+  return appendLog(state, entry);
 }
 
 function reduceEvent(state: EventsState, event: SwarmXEvent): EventsPatch {
@@ -308,6 +418,20 @@ function reduceEvent(state: EventsState, event: SwarmXEvent): EventsPatch {
       return applyCgroupMetrics(state, event.data);
     case "log:entry":
       return applyLogEntry(state, event.data);
+    case "mission:created":
+    case "run:started":
+    case "run:completed":
+    case "task:start":
+    case "task:complete":
+    case "task:failed":
+    case "evolution:started":
+    case "evolution:completed":
+    case "worker:job_started":
+    case "worker:job_done":
+    case "worker:job_error": {
+      const logData = lifecycleLogData(event);
+      return logData ? applyLogEntry(state, logData) : freshPatch({});
+    }
     case "workflow:started":
     case "workflow:completed":
     case "workflow:failed":

@@ -5,8 +5,14 @@ import type { SwarmXEvent } from "@swarmx/types";
 import { useEventsStore } from "@/stores/events";
 
 const SSE_URL = "/api/events";
+const HISTORY_URL = "/api/logs/events?limit=120";
 const RECONNECT_DELAY_MS = 2_000;
 const STALE_CHECK_INTERVAL_MS = 2_000;
+
+interface HistoricalEventsResponse {
+  events: SwarmXEvent[];
+  count: number;
+}
 
 /**
  * Establishes an SSE connection to /api/events and dispatches all events
@@ -28,6 +34,20 @@ export function useSwarmXEvents(): void {
 
   useEffect(() => {
     let destroyed = false;
+
+    async function bootstrapHistory() {
+      try {
+        const response = await fetch(HISTORY_URL, { cache: "no-store" });
+        if (!response.ok) return;
+        const payload = (await response.json()) as HistoricalEventsResponse;
+        for (const event of payload.events) {
+          if (destroyed) return;
+          handleEvent(event);
+        }
+      } catch {
+        // Historical bootstrap is best-effort only
+      }
+    }
 
     function connect() {
       if (destroyed) return;
@@ -60,6 +80,7 @@ export function useSwarmXEvents(): void {
     }
 
     connect();
+    void bootstrapHistory();
 
     // Stale data watchdog
     staleTimerRef.current = setInterval(() => {

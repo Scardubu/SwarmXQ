@@ -12,10 +12,9 @@ from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
-from rich.live import Live
 
-from swarmx.console.output import get_console, safe_print, emit_json, emit_error, make_spinner
-from swarmx.console.compat import is_json_mode, is_no_progress
+from swarmx.console.output import get_console, safe_print, emit_json, emit_error
+from swarmx.console.compat import is_json_mode
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +32,6 @@ def run(
 ) -> None:
     """Run a SwarmX mission against a target."""
     from swarmx.config import SwarmConfig
-    from swarmx.core.mission_manager import build_mission, save_mission
-    from swarmx.executor import execute_plan
 
     cfg = SwarmConfig()
     repo_path = repo.expanduser().resolve()
@@ -46,17 +43,16 @@ def run(
     _json = json_out or is_json_mode()
     c = get_console()
 
-    # Build the mission plan
-    if not _json and not quiet:
-        safe_print(f"[brand]Building mission:[/brand] [highlight]{target}[/highlight]")
-
-    try:
-        mission = build_mission(repo=repo_path, target=target, cfg=cfg, review_required=review)
-    except Exception as exc:
-        emit_error(f"Mission build failed: {exc}", code=3)
-        raise typer.Exit(code=3)
-
     if dry_run:
+        # Build and display the mission plan without executing.
+        if not _json and not quiet:
+            safe_print(f"[brand]Building mission:[/brand] [highlight]{target}[/highlight]")
+        try:
+            from swarmx.core.mission_manager import build_mission
+            mission = build_mission(repo=repo_path, target=target, cfg=cfg, review_required=review)
+        except Exception as exc:
+            emit_error(f"Mission build failed: {exc}", code=3)
+            raise typer.Exit(code=3)
         if _json:
             emit_json(mission)
         else:
@@ -64,32 +60,21 @@ def run(
             c.print(kv_panel({"id": mission.get("id", "?"), "target": target, "phases": len(mission.get("phases", []))}, title="Mission Plan (dry-run)"))
         return
 
-    # Execute (BUG-01: spinner isolated in Live block)
-    spinner = make_spinner(f"Running mission: {target[:60]}")
-    result: dict = {}
-    error: Exception | None = None
+    # Execute — delegate to the validated cli.run path (correct args, policy gate,
+    # telemetry, mission persistence, and V5 checkpoint writes).
+    # [V5.9-FIX-01] Prior code passed a bare dict to execute_plan and omitted the
+    # required run_id and autonomous args, bypassing the policy assessment gate.
+    from swarmx.cli import run as _cli_run
 
-    if not _json and not quiet and not is_no_progress():
-        with Live(spinner, console=c, refresh_per_second=8, transient=True):
-            try:
-                plan = mission.get("plan", {})
-                result = execute_plan(plan=plan, repo=repo_path, cfg=cfg)
-            except Exception as exc:
-                error = exc
-    else:
-        try:
-            plan = mission.get("plan", {})
-            result = execute_plan(plan=plan, repo=repo_path, cfg=cfg)
-        except Exception as exc:
-            error = exc
-
-    if error:
-        emit_error(f"Mission execution failed: {error}", code=4)
+    try:
+        exit_code = _cli_run(
+            repo=repo_path,
+            target=target,
+            review_required=review,
+        )
+    except Exception as exc:
+        emit_error(f"Mission execution failed: {exc}", code=4)
         raise typer.Exit(code=4)
 
-    save_mission(cfg.home, mission)
-
-    if _json:
-        emit_json({"status": "done", "mission_id": mission.get("id"), "result": result})
-    elif not quiet:
-        safe_print(f"[success]Mission complete:[/success] [highlight]{mission.get('id','?')}[/highlight]")
+    if exit_code != 0:
+        raise typer.Exit(code=exit_code)

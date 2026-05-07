@@ -282,6 +282,52 @@ export interface WorkflowEventData {
   error?: string
 }
 
+// ── Python lifecycle events (V5.9-FIX-05) ───────────────────────────────────
+
+export interface RunStartedData {
+  jobId: string
+  repo: string
+  target: string
+  timestamp: string
+}
+
+export interface RunCompletedData {
+  jobId: string
+  runId: string
+  status: 'success' | 'partial' | 'failed' | 'error'
+  timestamp: string
+}
+
+export interface MissionCreatedData {
+  missionId: string
+  repo: string
+  target: string
+  timestamp: string
+}
+
+export interface TaskEventData {
+  goal: string
+  stepIndex?: number
+  runId?: string
+  timestamp: string
+}
+
+export interface EvolutionEventData {
+  jobId: string
+  repo?: string
+  proposalCount?: number
+  timestamp: string
+}
+
+export interface WorkerJobEventData {
+  jobId: string
+  kind?: string
+  repo?: string
+  target?: string
+  error?: string
+  timestamp: string
+}
+
 // ── Startup Autopilot Summary (V6.1) ─────────────────────────────────────────
 // [V6.1-ENH-01] Emitted once per process launch via "system:startup" SSE event.
 // Persisted to SWARM_HOME/state/startup_summary.json between launches.
@@ -340,6 +386,18 @@ export type SwarmXEvent =
   | { type: 'cgroup:metrics'; data: CgroupScopeMetrics }
   // Structured log stream (journald)
   | { type: 'log:entry'; data: { timestamp: string; level: LogLevel; message: string; unit?: string; agentId?: string; traceId?: string } }
+  // Python mission/run/task lifecycle — bridged from journal.jsonl by Fastify
+  | { type: 'mission:created'; data: MissionCreatedData }
+  | { type: 'run:started'; data: RunStartedData }
+  | { type: 'run:completed'; data: RunCompletedData }
+  | { type: 'task:start'; data: TaskEventData }
+  | { type: 'task:complete'; data: TaskEventData }
+  | { type: 'task:failed'; data: TaskEventData }
+  | { type: 'evolution:started'; data: EvolutionEventData }
+  | { type: 'evolution:completed'; data: EvolutionEventData }
+  | { type: 'worker:job_started'; data: WorkerJobEventData }
+  | { type: 'worker:job_done'; data: WorkerJobEventData }
+  | { type: 'worker:job_error'; data: WorkerJobEventData }
   // Control plane signals
   | { type: 'control:pause'; data: Record<string, never> }
   | { type: 'control:resume'; data: Record<string, never> }

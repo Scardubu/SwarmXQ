@@ -22,6 +22,7 @@ from .executor import execute_plan
 from .framework_adapters import adapter_matrix, adapter_summary, preferred_orchestrator
 from .memory import load_recent_memories, load_recent_runs, store_checkpoint, summarize_memories, summarize_runs
 from .journal import append_event
+from .event_bus import EventKind  # [V5.9-FIX-05] typed event kinds — replaces bare strings
 from .metrics import build_metrics
 from .queue import append_job, queue_summary, update_job, enqueue_resume
 from .runtime import load_runtime_state, update_runtime_state
@@ -298,7 +299,7 @@ def run(repo: Path, target: str, autonomous: bool = False, max_iterations: int =
     plan_obj = build_plan(target=target, repo=repo, review_required=review_required or cfg.review_required, cfg=cfg)
     mission = build_mission(repo, target, cfg=cfg, review_required=review_required or cfg.review_required, autonomous=autonomous or cfg.autonomous)
     save_mission(cfg.home, mission)
-    append_event(cfg.home, "mission.created", {"mission_id": mission["id"], "repo": str(repo), "target": target})
+    append_event(cfg.home, EventKind.MISSION_CREATED, {"mission_id": mission["id"], "repo": str(repo), "target": target})
 
     # ── V4 Policy gate: assess every run before execution ─────────────────────
     policy_decision = assess_action("run", target, repo, cfg, review_required=review_required or cfg.review_required)
@@ -313,7 +314,7 @@ def run(repo: Path, target: str, autonomous: bool = False, max_iterations: int =
         risk_score=float({"low": 0.1, "medium": 0.5, "high": 0.8, "critical": 1.0}.get(policy_decision.risk, 0.5)),
         notes=", ".join(policy_decision.reasons) if not policy_decision.allowed else None,
     )
-    append_event(cfg.home, "policy.assessed", {
+    append_event(cfg.home, EventKind.POLICY_ASSESSED, {
         "action": "run",
         "target": target,
         "risk": policy_decision.risk,
@@ -338,7 +339,7 @@ def run(repo: Path, target: str, autonomous: bool = False, max_iterations: int =
 
     job = append_job(cfg.home, {"kind": "run", "repo": str(repo), "target": target, "payload": {"mission": mission}})
     update_job(cfg.home, job["id"], status="running", run_id=job["id"])
-    append_event(cfg.home, "run.started", {"job_id": job["id"], "repo": str(repo), "target": target})
+    append_event(cfg.home, EventKind.RUN_STARTED, {"job_id": job["id"], "repo": str(repo), "target": target})
 
     run_id = datetime.now(timezone.utc).strftime("run-%Y%m%d%H%M%S%f")
     record = execute_plan(repo=repo, plan=plan_obj, run_id=run_id, autonomous=autonomous or cfg.autonomous, max_iterations=max_iterations, cfg=cfg)
@@ -349,7 +350,7 @@ def run(repo: Path, target: str, autonomous: bool = False, max_iterations: int =
     activate_mission(cfg.home, mission["id"], status="completed", result=record.to_dict())
     update_job(cfg.home, job["id"], status=str(record.status), run_id=record.id, result=record.to_dict())
     update_runtime_state(cfg.home, status="idle", last_run_id=record.id, last_run_status=record.status)
-    append_event(cfg.home, "run.completed", {"job_id": job["id"], "run_id": record.id, "status": record.status})
+    append_event(cfg.home, EventKind.RUN_COMPLETED, {"job_id": job["id"], "run_id": record.id, "status": record.status})
     print(json.dumps({"mission": mission, "policy": policy_decision.to_dict(), **record.to_dict()}, indent=2, ensure_ascii=False))
     return 0 if record.status in {"success", "partial"} else 1
 
@@ -373,7 +374,7 @@ def evolve(repo: Path | None = None, auto_apply: bool = False, self_improve: boo
         risk_score=float({"low": 0.1, "medium": 0.5, "high": 0.8, "critical": 1.0}.get(policy_decision.risk, 0.5)),
         notes=", ".join(policy_decision.reasons) if not policy_decision.allowed else None,
     )
-    append_event(cfg.home, "policy.assessed", {
+    append_event(cfg.home, EventKind.POLICY_ASSESSED, {
         "action": "evolve",
         "risk": policy_decision.risk,
         "mode": policy_decision.mode,
@@ -387,7 +388,7 @@ def evolve(repo: Path | None = None, auto_apply: bool = False, self_improve: boo
 
     job = append_job(cfg.home, {"kind": "evolve", "repo": str(repo)})
     update_job(cfg.home, job["id"], status="running")
-    append_event(cfg.home, "evolution.started", {"job_id": job["id"], "repo": str(repo)})
+    append_event(cfg.home, EventKind.EVOLUTION_STARTED, {"job_id": job["id"], "repo": str(repo)})
 
     proposals = build_evolution_proposals(cfg.home, repo=repo, cfg=cfg)
     results = apply_proposals(cfg.home, proposals, auto_apply=auto_apply or cfg.auto_apply, cfg=cfg)
@@ -395,7 +396,7 @@ def evolve(repo: Path | None = None, auto_apply: bool = False, self_improve: boo
 
     update_job(cfg.home, job["id"], status="done", result=results)
     update_runtime_state(cfg.home, status="idle")
-    append_event(cfg.home, "evolution.completed", {"job_id": job["id"], "proposal_count": len(proposals)})
+    append_event(cfg.home, EventKind.EVOLUTION_COMPLETED, {"job_id": job["id"], "proposal_count": len(proposals)})
     layer_payload = None
     if self_improve or os.environ.get("SWARM_SELF_IMPROVE", "0") == "1":
         try:
@@ -516,6 +517,9 @@ def skills_cmd(repo: Path | None = None) -> int:
 
 def config_cmd() -> int:
     cfg = SwarmConfig()
+    # [V5.9-FIX-04] runtime_profile() reads dirs that may not exist on first
+    # invocation. Ensure() creates them idempotently before profiling.
+    cfg.ensure()
     bundle_root = _bundle_root()
     payload = {
         "version": __version__,
@@ -588,7 +592,7 @@ def mission_cmd(repo: str, target: str, review_required: bool = False, queue: bo
     repo_path = _repo_root(repo)
     mission = build_mission(repo_path, target, cfg=cfg, review_required=review_required, autonomous=cfg.autonomous)
     save_mission(cfg.home, mission)
-    append_event(cfg.home, "mission.created", {"mission_id": mission["id"], "repo": str(repo_path), "target": target})
+    append_event(cfg.home, EventKind.MISSION_CREATED, {"mission_id": mission["id"], "repo": str(repo_path), "target": target})
     if queue:
         job = append_job(cfg.home, {"kind": "mission", "repo": str(repo_path), "target": target, "payload": {"mission": mission}})
         update_job(cfg.home, job["id"], status="queued")
@@ -692,10 +696,11 @@ def risk_score_cmd(target: str, *, repo: Path) -> int:
     return 0
 
 
-def metrics_cmd() -> int:
+def metrics_cmd(home: str | None = None, fmt: str = "json") -> int:
     """Print V5 observable metrics as JSON to stdout."""
     from .metrics import build_v5_metrics
-    cfg = SwarmConfig()
+    # [V5.9-FIX-02] Accept --home and --format forwarded from v5metrics.ts pollers.
+    cfg = SwarmConfig(home=Path(home)) if home else SwarmConfig()
     cfg.ensure()
     payload = build_v5_metrics(cfg.home)
     print(json.dumps(payload, indent=2, ensure_ascii=False))
@@ -785,7 +790,11 @@ def _legacy_main(argv: list[str] | None = None) -> int:
     p_risk.add_argument("target", help="Mission target string")
     p_risk.add_argument("--repo", default=".")
 
-    sub.add_parser("metrics", help="Print V5 observable metrics as JSON")
+    # [V5.9-FIX-02] Register --home and --format so v5metrics.ts pollers
+    # that pass `metrics --home <path> --format json` are accepted.
+    p_metrics = sub.add_parser("metrics", help="Print V5 observable metrics as JSON")
+    p_metrics.add_argument("--home", default=None, help="Override SWARM_HOME for this invocation.")
+    p_metrics.add_argument("--format", default="json", choices=["json", "text"], dest="fmt", help="Output format (currently only json is supported).")
 
     p_search = sub.add_parser("search", help="Search memories and graph nodes")
     p_search.add_argument("query")
@@ -872,7 +881,7 @@ def _legacy_main(argv: list[str] | None = None) -> int:
     if args.command == "risk-score":
         return risk_score_cmd(args.target, repo=_repo_root(args.repo))
     if args.command == "metrics":
-        return metrics_cmd()
+        return metrics_cmd(home=getattr(args, "home", None), fmt=getattr(args, "fmt", "json"))
     if args.command in {"dashboard", "serve"}:
         cfg = SwarmConfig()
         cfg.ensure()

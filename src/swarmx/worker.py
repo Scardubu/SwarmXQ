@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import SwarmConfig
-from .event_bus import publish
+from .event_bus import EventKind, publish  # [V5.9-FIX-05] EventKind added for strict-mode compliance
 from .evolver import apply_proposals, build_evolution_proposals, run_skill_crystallization
 from .executor import execute_plan
 from .memory_graph import build_memory_graph, search_memory_graph
@@ -64,8 +64,8 @@ def _process_job(
     ).expanduser().resolve()
     target = str(job.get("target") or payload.get("target") or _DEF_TARGET)
 
-    publish(
-        cfg.home, "worker.job_started",
+    publish(  # [V5.9-FIX-05] EventKind constant replaces bare string
+        cfg.home, EventKind.WORKER_JOB_STARTED,
         {"job_id": job.get("id"), "kind": kind, "repo": str(repo_path), "target": target},
     )
     update_runtime_state(cfg.home, status="running", active_job=job)
@@ -175,13 +175,14 @@ def _process_job(
             else:
                 plan = build_plan(target=target, repo=repo_path, cfg=cfg)
 
+            # [V5.9-FIX-03] resume_cursor is consumed above to slice tasks;
+            # execute_plan signature does not accept it — passing it raised TypeError.
             record = execute_plan(
                 repo_path, plan,
                 run_id=run_id,
                 autonomous=bool(payload.get("autonomous", True)),
                 max_iterations=int(payload.get("max_iterations", cfg.max_iterations)),
                 cfg=cfg,
-                resume_cursor=resume_cursor,
             )
             result = {"run": record.to_dict(), "resumed_from": resume_cursor}
         except Exception as exc:
@@ -214,10 +215,10 @@ def _worker_loop(
                 try:
                     result = _process_job(runtime_home, job, cfg, repo)
                     update_job(runtime_home, job_id, status="done", result=result)
-                    publish(cfg.home, "worker.job_done", {"job_id": job_id, "result": result})
+                    publish(cfg.home, EventKind.WORKER_JOB_DONE, {"job_id": job_id, "result": result})  # [V5.9-FIX-05]
                 except Exception as exc:
                     update_job(runtime_home, job_id, status="error", result={"error": str(exc)})
-                    publish(cfg.home, "worker.job_error", {"job_id": job_id, "error": str(exc)})
+                    publish(cfg.home, EventKind.WORKER_JOB_ERROR, {"job_id": job_id, "error": str(exc)})  # [V5.9-FIX-05]
                 finally:
                     update_runtime_state(runtime_home, status="idle", active_job=None)
         except Exception:

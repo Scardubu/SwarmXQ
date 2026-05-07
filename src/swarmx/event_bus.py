@@ -98,6 +98,27 @@ class EventKind:
     PRESSURE_STATE_CHANGE  = "governance.pressure_state_change"
     GOVERNANCE_SNAPSHOT    = "governance.snapshot"
 
+    # [V5.9-FIX-04] Worker job lifecycle — previously published as bare strings
+    # which triggered strict-mode warnings on every job. Now canonical constants.
+    WORKER_JOB_STARTED = "worker.job_started"
+    WORKER_JOB_DONE    = "worker.job_done"
+    WORKER_JOB_ERROR   = "worker.job_error"
+
+    # [V5.9-FIX-04] Mission lifecycle — published by cli.py run() and worker.py
+    MISSION_CREATED    = "mission.created"
+
+    # [V5.9-FIX-04] Policy/governance events — published during run/evolve gates
+    POLICY_ASSESSED    = "policy.assessed"
+
+    # [V5.9-FIX-04] Run lifecycle aliases — cli.py uses run.started/run.completed
+    # (distinct from the executor's run.start/run.complete for granularity parity)
+    RUN_STARTED        = "run.started"
+    RUN_COMPLETED      = "run.completed"
+
+    # [V5.9-FIX-04] Evolution job lifecycle — published by cli.py evolve()
+    EVOLUTION_STARTED  = "evolution.started"
+    EVOLUTION_COMPLETED = "evolution.completed"
+
     @classmethod
     def all_kinds(cls) -> frozenset[str]:
         return frozenset(

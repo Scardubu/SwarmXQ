@@ -169,6 +169,53 @@ export interface WorkflowEventData {
   error?: string;
 }
 
+// [V5.9-FIX-05] Python lifecycle event payloads — bridged from swarmx journal to SSE.
+// Aligned with EventKind constants added in event_bus.py.
+
+export interface RunStartedData {
+  jobId: string;
+  repo: string;
+  target: string;
+  timestamp: string;
+}
+
+export interface RunCompletedData {
+  jobId: string;
+  runId: string;
+  status: "success" | "partial" | "failed" | "error";
+  timestamp: string;
+}
+
+export interface MissionCreatedData {
+  missionId: string;
+  repo: string;
+  target: string;
+  timestamp: string;
+}
+
+export interface TaskEventData {
+  goal: string;
+  stepIndex?: number;
+  runId?: string;
+  timestamp: string;
+}
+
+export interface EvolutionEventData {
+  jobId: string;
+  repo?: string;
+  proposalCount?: number;
+  timestamp: string;
+}
+
+export interface WorkerJobEventData {
+  jobId: string;
+  kind?: string;
+  repo?: string;
+  target?: string;
+  error?: string;
+  timestamp: string;
+}
+
 export type SwarmXEvent =
   | { type: "agent:update"; data: AgentState }
   | { type: "agent:remove"; data: { id: string } }
@@ -190,4 +237,16 @@ export type SwarmXEvent =
   | { type: "queue:drained"; data: { name: string } }
   | { type: "system:oom"; data: { agentId: string; cgroupPath: string; count: number } }
   | { type: "control:pause"; data: Record<string, never> }
-  | { type: "control:resume"; data: Record<string, never> };
+  | { type: "control:resume"; data: Record<string, never> }
+  // [V5.9-FIX-05] Python event bridge — run, task, mission, evolution, worker job events
+  | { type: "run:started";     data: RunStartedData }
+  | { type: "run:completed";   data: RunCompletedData }
+  | { type: "mission:created"; data: MissionCreatedData }
+  | { type: "task:start";      data: TaskEventData }
+  | { type: "task:complete";   data: TaskEventData }
+  | { type: "task:failed";     data: TaskEventData }
+  | { type: "evolution:started";   data: EvolutionEventData }
+  | { type: "evolution:completed"; data: EvolutionEventData }
+  | { type: "worker:job_started"; data: WorkerJobEventData }
+  | { type: "worker:job_done";    data: WorkerJobEventData }
+  | { type: "worker:job_error";   data: WorkerJobEventData };

@@ -38,6 +38,7 @@ import { startSystemInfoPoller } from "./services/systeminfo.js";
 import { startCgroupPoller } from "./services/cgroup.js";
 import { startJournaldStream } from "./services/journald.js";
 import { startV5MetricsPoller, broadcastStartupSummary } from "./services/v5metrics.js";
+import { startPyEventsPoller } from "./services/pyevents.js";  // [V5.9-FIX-05]
 
 const PORT = Number.parseInt(process.env["SWARMX_API_PORT"] ?? "3001", 10);
 const HOST = process.env["SWARMX_API_HOST"] ?? "127.0.0.1";
@@ -151,6 +152,7 @@ process.on("SIGINT",  () => void shutdown("SIGINT"));
 startSystemInfoPoller(server);
 startCgroupPoller(server);
 startV5MetricsPoller(server);
+startPyEventsPoller(server);  // [V5.9-FIX-05] bridge Python journal events to SSE
 // [V6.1-ENH-01] Broadcast the Python startup summary to SSE clients after boot
 broadcastStartupSummary(server);
 await startJournaldStream(server);
