@@ -4,11 +4,17 @@ SwarmX V6 is the self-improving operator layer on top of the existing control pl
 
 ## Model triad
 
-The bundled routing is aligned to this local triad:
+The bundled routing is aligned to this local triad (canonical tags):
 
-- `phi4-mini` — router / orchestrator
-- `deepseek-r1:7b` — reasoning / critique / architecture
-- `qwen2.5-coder` — execution / code / tool use
+- `phi4-fast` — router / orchestration complexity scoring
+- `deepseek-reasoner` — reasoning / critique / architecture
+- `qwen-worker` — execution / code / tool use
+
+Legacy tags are normalized at config load time:
+
+- `phi4-mini` -> `phi4-fast`
+- `deepseek-r1:7b` -> `deepseek-reasoner`
+- `qwen2.5-coder` -> `qwen-worker`
 
 Local GGUF filenames used by the bundle:
 
@@ -66,6 +72,20 @@ swarm evolve-layer --cycles 1
 - `swarm evolve-layer` — the V6 autonomous self-improvement cycle
 - `swarm status` — runtime state and telemetry
 - `swarm dashboard` — browser dashboard
+
+Runtime boundary notes:
+
+- Shell wrappers (`swarm-*.sh`) resolve through `swarm.sh` and prefer `python -m cli`.
+- Installed package scripts (`swarm`, `swarmx`) currently resolve through `swarmx.cli:main` for compatibility.
+
+## Execution Policy Coverage
+
+Execution policy is now enforced consistently across all execution surfaces:
+
+- `src/swarmx/cli.py` gates direct CLI execution before `execute_plan()`.
+- `src/swarmx/server.py` gates `/api/run` and returns `policy_blocked` with HTTP 403 on deny.
+- `src/swarmx/worker.py` gates `run/mission` and `resume` job paths.
+- `src/swarmx/execution_gate.py` is the shared fail-closed helper used by server and worker.
 
 ## Dashboard UX
 

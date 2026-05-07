@@ -1,4 +1,4 @@
-# SwarmX v4.0-FINAL — Integration Instructions
+# SwarmX V6.1 — Integration Instructions
 
 ## What changed in this bundle
 
@@ -77,6 +77,19 @@ Governor payload contract:
 
 Operational note: the API should not recompute governor policy independently when Python metrics are available. The Python runtime is the single source of truth for pressure thresholds and active limits.
 
+## Execution Policy Gate Integration
+
+Execution safety is enforced before every `execute_plan()` call.
+
+Cross-layer flow:
+
+1. [src/swarmx/execution_gate.py](src/swarmx/execution_gate.py) evaluates `assess_action()` and fail-closes on assessment errors.
+2. [src/swarmx/server.py](src/swarmx/server.py) uses the shared gate for `/api/run` and returns `policy_blocked` with HTTP 403 on deny.
+3. [src/swarmx/worker.py](src/swarmx/worker.py) uses the shared gate for `run/mission` and `resume` jobs.
+4. [src/swarmx/cli.py](src/swarmx/cli.py) retains direct CLI policy gating.
+
+Operational note: deny payloads include the full policy decision (`risk`, `tier`, `mode`, `human_gate`, `reasons`, `mitigations`) so API and dashboard clients can render actionable feedback.
+
 ## Startup Autopilot Integration
 
 The startup autopilot is now part of the launch contract for `swarm up`.
@@ -113,17 +126,19 @@ Startup payload contract:
 
 ```bash
 export SWARM_LLM_PROVIDER=ollama
-export SWARM_MODEL_FAST=phi4-mini       # Phi-4-mini   — orchestrator / router brain
-export SWARM_MODEL_REASON=deepseek-r1:7b  # DeepSeek-R1 — reasoning / planning
-export SWARM_MODEL_CODE=qwen2.5-coder-7b    # Qwen2.5-Coder-7B  — execution / coding / tools
+export SWARM_MODEL_FAST=phi4-fast            # router / orchestration complexity scoring
+export SWARM_MODEL_REASON=deepseek-reasoner  # reasoning / planning
+export SWARM_MODEL_CODE=qwen-worker          # execution / coding / tools
 ```
 
 Pull the triad:
 ```bash
-ollama pull phi4-mini
-ollama pull deepseek-r1:7b
-ollama pull qwen2.5-coder-7b
+ollama pull phi4-fast
+ollama pull deepseek-reasoner
+ollama pull qwen-worker
 ```
+
+Legacy model tags (`phi4-mini`, `deepseek-r1:7b`, `qwen2.5-coder`) remain accepted and are normalized at config load time.
 
 ### OpenAI-compatible
 
@@ -156,7 +171,7 @@ routing:
 ```
 ┌──────────────────────────────┐
 │  🧠 ORCHESTRATOR             │
-│  Phi-4-mini  (always-on)     │
+│  phi4-fast (always-on)       │
 │  routing · decisions · triage│
 └──────┬──────────────┬────────┘
        │              │
@@ -164,15 +179,15 @@ routing:
 ▼                              ▼
 ┌──────────────────┐  ┌──────────────────┐
 │  REASONING       │  │  EXECUTION       │
-│  DeepSeek-R1:7B  │  │  Qwen2.5-Coder-7B     │
+│  deepseek-reasoner │  │  qwen-worker   │
 │  planning · arch │  │  code · tools    │
 └──────────────────┘  └──────────────────┘
 ```
 
-Dispatch signal (resolved by Phi-4-mini before every task):
-- `code` → implement / refactor / test / tool_call → **Qwen2.5-Coder-7B**
-- `reason` → plan / research / architecture / analyse → **DeepSeek-R1:7B**
-- `router` → route / score / memory / status → **Phi-4-mini (direct)**
+Dispatch signal (resolved by `phi4-fast` before every task):
+- `code` → implement / refactor / test / tool_call → **qwen-worker**
+- `reason` → plan / research / architecture / analyse → **deepseek-reasoner**
+- `router` → route / score / memory / status → **phi4-fast (direct)**
 
 ## Adding a new workflow
 

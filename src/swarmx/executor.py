@@ -10,6 +10,7 @@ from .evaluator import island_tournament, rank_outputs
 from .event_bus import EventKind  # [FIX] Import EventKind constants — replaces bare string literals
 from .llm import choose_model, choose_model_for_task, generate, prompt_for_task
 from .memory import learn_from_run, load_recent_memories, store_checkpoint, store_run, summarize_evidence, summarize_memories
+from .pressure import PressureLevel, level_from_config  # [V5.9-ENH-PRESS-01]
 from .risk import approval_required
 from .state import Checkpoint, Plan, RunRecord
 from .storage import store_checkpoint_record, upsert_step_checkpoint
@@ -220,6 +221,30 @@ def _derive_confidence_level(blocked_tasks: list[str], test_result: dict[str, An
     return "HIGH"
 
 
+def _apply_pressure_iteration_cap(max_iterations: int, cfg: SwarmConfig, run_id: str) -> int:
+    """[V5.9-ENH-PRESS-01] Best-effort cap on refinement iterations under pressure.
+
+    CRITICAL pressure -> cap at 1 pass. HIGH pressure -> cap at 2 passes.
+    Never raises and never blocks execution.
+    """
+    try:
+        pressure = level_from_config(cfg)
+        capped = max_iterations
+        if pressure is PressureLevel.CRITICAL:
+            capped = min(max_iterations, 1)
+        elif pressure is PressureLevel.HIGH:
+            capped = min(max_iterations, 2)
+
+        emit_event(cfg.home, EventKind.HEALTH_CHECK, {
+            "pressure": pressure.value,
+            "max_iterations": capped,
+            "run_id": run_id,
+        })
+        return capped
+    except Exception:
+        return max_iterations
+
+
 def execute_plan(repo: Path, plan: Plan, run_id: str, autonomous: bool, max_iterations: int = 3, cfg: SwarmConfig | None = None) -> RunRecord:
     cfg = cfg or SwarmConfig()
     evidence: list[str] = []
@@ -228,6 +253,9 @@ def execute_plan(repo: Path, plan: Plan, run_id: str, autonomous: bool, max_iter
     blocked_tasks: list[str] = []
     status = "success"
     active = autonomous and cfg.autonomous
+
+    # [V5.9-ENH-PRESS-01] Cap refinement passes under memory pressure to avoid OOM.
+    max_iterations = _apply_pressure_iteration_cap(max_iterations, cfg, run_id)
 
     repo_summary = _repo_signal_summary(repo)
     memory_summary = summarize_memories(load_recent_memories(cfg.home, limit=24))

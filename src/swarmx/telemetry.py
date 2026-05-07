@@ -7,8 +7,11 @@ Improvements over v6-patched:
   [TEL-02] JSONL telemetry file auto-rotation based on SWARMX_TELEMETRY_MAX_BYTES
            env var (default: 10 MB). Prevents unbounded disk growth in long-running
            containers without requiring an external log shipper.
-  [TEL-03] emit_event now also publishes to the in-process event bus so the
-           Fastify API SSE stream receives real-time updates without polling.
+  [TEL-03] emit_event now appends to the JSONL journal (journal.append_event)
+           so the Fastify pyevents poller picks up events within ~2500 ms and
+           broadcasts them over SSE. NOTE: there is no in-process pub/sub bus
+           yet — the docstring previously overstated this as "in-process event
+           bus". An async in-memory bus is planned for Phase 3.
   [TEL-04] emit_event accepts an optional `run_id` parameter threaded through
            all structured records so operators can correlate events across runs.
   [TEL-05] All I/O is wrapped in try/except — telemetry failure NEVER raises
@@ -80,7 +83,7 @@ def emit_event(
     The event is simultaneously:
       1. Written as a JSON file to traces/ (for the Fastify API to index).
       2. Appended to traces/telemetry.jsonl (for log aggregators / rotation).
-      3. Published to the in-process journal for SSE fan-out [TEL-03].
+      3. Appended to traces/journal.jsonl for Fastify SSE fan-out [TEL-03].
       4. Logged via structlog when available [TEL-01].
 
     Never raises — all I/O is wrapped in try/except.
@@ -113,7 +116,10 @@ def emit_event(
     except Exception:
         pass
 
-    # ── 3. In-process journal for SSE fan-out ─────────────────────────────────
+    # ── 3. Journal append for Fastify SSE poller ──────────────────────────────
+    # [TEL-03] Writes to traces/journal.jsonl. The Fastify pyevents poller
+    # polls this file every ~2500 ms and broadcasts new entries over SSE.
+    # This is NOT an in-process pub/sub bus — it is file-backed fan-out.
     try:
         from .journal import append_event  # lazy import to avoid circular
         append_event(runtime_dir, kind, payload)

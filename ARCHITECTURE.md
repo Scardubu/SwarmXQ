@@ -1,6 +1,3 @@
-### `ARCHITECTURE.md` *(REWRITE — V5.9 accurate topology)*
-
-```markdown
 # SwarmX V5.9 Architecture
 
 SwarmX is a production-grade autonomous multi-agent swarm control plane combining
@@ -21,7 +18,7 @@ layered memory, proposal-based bounded evolution, and a self-improving overlay.
 ├─────────────────────────────────────────────────────────────────────────┤
 │  Orchestration Layer — orchestration/                                   │
 │    SwarmXOrchestrator (V5.8 async) · OllamaClient · TaskTrace           │
-│    tools.py (22 tools + circuit breaker + rate limiter)                 │
+│    tools.py (24 tools + circuit breaker + rate limiter)                 │
 │    swarmx_config.yaml (single config authority)                         │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  Memory Layer — memory/ · src/swarmx/memory/                            │
@@ -96,6 +93,19 @@ score_complexity()          ← phi4-fast  (30 s timeout; neutral 0.5 on timeout
                                 │
                         TaskTrace → disk  (atomic .tmp→rename, V5.8 ENH-02)
 ```
+
+---
+
+## Execution Policy Gate (V5.9 ENH-GATE-01)
+
+All execution paths now enforce policy assessment before `execute_plan()`:
+
+1. [src/swarmx/execution_gate.py](src/swarmx/execution_gate.py) provides `gate_execution()` as the shared fail-closed helper.
+2. [src/swarmx/cli.py](src/swarmx/cli.py) retains policy enforcement for direct CLI execution.
+3. [src/swarmx/server.py](src/swarmx/server.py) now gates `/api/run` and returns `403` with `policy_blocked` payloads when denied.
+4. [src/swarmx/worker.py](src/swarmx/worker.py) now gates both `run/mission` and `resume` job paths.
+
+This closes the prior safety gap where HTTP and background job execution could bypass policy checks.
 
 ---
 
@@ -340,7 +350,6 @@ SwarmX-1.5/
 8. TaskTrace written atomically (`.tmp` → rename) — no partial trace files on crash
 9. Memory failure never blocks orchestration (all store ops in try/except)
 10. Complexity scoring timeout (30 s) → neutral routing (0.5) — never blocks
-```
 
 ---
 

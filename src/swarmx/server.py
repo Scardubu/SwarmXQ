@@ -41,6 +41,7 @@ import yaml
 
 from .config import SwarmConfig
 from .evolver import apply_proposals, build_evolution_proposals, run_skill_crystallization
+from .execution_gate import gate_execution
 from .executor import execute_plan
 from .journal import append_event, load_events
 from .event_bus import snapshot as event_snapshot, recent as recent_events
@@ -582,6 +583,16 @@ class SwarmDashboardHandler(BaseHTTPRequestHandler):
             job = append_job(cfg.home, {"kind": "run", "repo": str(repo), "target": target})
             update_job(cfg.home, job["id"], status="running", run_id=data.get("run_id", job["id"]))
             append_event(cfg.home, "run.started", {"job_id": job["id"], "repo": str(repo), "target": target})
+            # [V5.9-ENH-GATE-01] Policy gate: assess risk before any execution.
+            # Previously missing — this path bypassed assess_action() entirely.
+            _policy = gate_execution(
+                "run", target, repo, cfg,
+                review_required=bool(data.get("review_required", False)),
+                job_id=job["id"],
+            )
+            if not _policy.allowed:
+                update_job(cfg.home, job["id"], status="blocked", result=_policy.to_dict())
+                return _json(self, {"error": "policy_blocked", "policy": _policy.to_dict()}, status=403)
             mission = build_mission(
                 repo, target, cfg=cfg,
                 review_required=bool(data.get("review_required", False)),

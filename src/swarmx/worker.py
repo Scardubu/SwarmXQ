@@ -18,6 +18,7 @@ from typing import Any
 from .config import SwarmConfig
 from .event_bus import EventKind, publish  # [V5.9-FIX-05] EventKind added for strict-mode compliance
 from .evolver import apply_proposals, build_evolution_proposals, run_skill_crystallization
+from .execution_gate import gate_execution  # [V5.9-ENH-GATE-01] shared policy gate
 from .executor import execute_plan
 from .memory_graph import build_memory_graph, search_memory_graph
 from .mission import build_mission, save_mission, activate_mission
@@ -87,6 +88,15 @@ def _process_job(
             review_required=bool(payload.get("review_required", False)),
             cfg=cfg,
         )
+        # [V5.9-ENH-GATE-01] Policy gate: previously missing on the worker path.
+        _policy = gate_execution(
+            kind, target, repo_path, cfg,
+            review_required=bool(payload.get("review_required", False)),
+            job_id=str(job.get("id") or ""),
+        )
+        if not _policy.allowed:
+            activate_mission(cfg.home, str(mission["id"]), status="blocked")
+            return {"error": "policy_blocked", "policy": _policy.to_dict(), "target": target}
         record = execute_plan(
             repo_path, plan,
             run_id=str(job.get("run_id") or job.get("id")),
@@ -177,14 +187,22 @@ def _process_job(
 
             # [V5.9-FIX-03] resume_cursor is consumed above to slice tasks;
             # execute_plan signature does not accept it — passing it raised TypeError.
-            record = execute_plan(
-                repo_path, plan,
-                run_id=run_id,
-                autonomous=bool(payload.get("autonomous", True)),
-                max_iterations=int(payload.get("max_iterations", cfg.max_iterations)),
-                cfg=cfg,
+            # [V5.9-ENH-GATE-01] Policy gate for resume path.
+            _policy = gate_execution(
+                "resume", target, repo_path, cfg,
+                job_id=run_id,
             )
-            result = {"run": record.to_dict(), "resumed_from": resume_cursor}
+            if not _policy.allowed:
+                result = {"error": "policy_blocked", "policy": _policy.to_dict(), "resumed_from": resume_cursor}
+            else:
+                record = execute_plan(
+                    repo_path, plan,
+                    run_id=run_id,
+                    autonomous=bool(payload.get("autonomous", True)),
+                    max_iterations=int(payload.get("max_iterations", cfg.max_iterations)),
+                    cfg=cfg,
+                )
+                result = {"run": record.to_dict(), "resumed_from": resume_cursor}
         except Exception as exc:
             result = {"error": str(exc), "resumed_from": resume_cursor}
 
