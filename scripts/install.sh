@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# SwarmX · scripts/install.sh · v2.1 · IEP-ELITE-MAX
+# SwarmX · scripts/install.sh · v2.2 · IEP-ELITE-MAX
 #
 # CHANGELOG:
+#   v2.2 [MODEL-04]    Installer triad updated to canonical tags (phi4-fast,
+#                      deepseek-reasoner, qwen-worker) to match runtime config.
+#        [MODEL-05]    Ollama pulls now skip when canonical tags already exist,
+#                      avoiding duplicate downloads on re-install.
+#        [MODEL-06]    RC-file exports updated to canonical SWARM_MODEL_* values.
 #   v2.1 [FIX-RC-01]   RC guard check corrected from "SwarmX vΩ.APEX" → "SwarmX v2.0"
 #                       so the guard actually fires on re-runs (was always false → duplicate blocks)
 #   v2.0 [MODEL-01]    Default model pull updated to Phi-4-mini, DeepSeek-R1:7B, Qwen2.5-Coder triad
@@ -27,8 +32,8 @@ CYAN()  { printf '\033[0;36m%s\033[0m' "$1"; }
 BOLD()  { printf '\033[1m%s\033[0m' "$1"; }
 
 echo ""
-echo "$(BOLD 'SwarmX Installer') · v2.1 · IEP-ELITE-MAX"
-echo "Model triad: $(CYAN 'Phi-4-mini') (router) · $(CYAN 'DeepSeek-R1:7B') (reason) · $(CYAN 'Qwen2.5-Coder') (code)"
+echo "$(BOLD 'SwarmX Installer') · v2.2 · IEP-ELITE-MAX"
+echo "Model triad: $(CYAN 'phi4-fast') (router) · $(CYAN 'deepseek-reasoner') (reason) · $(CYAN 'qwen-worker') (code)"
 echo "──────────────────────────────────────────────────────────"
 
 # ── Pre-flight checks ────────────────────────────────────────────────────────
@@ -112,13 +117,13 @@ RC_BLOCK=$(cat <<'RCBLOCK'
 # ── SwarmX v2.0 ────────────────────────────────────────────
 export SWARM_HOME="$HOME/.swarmx"
 export PATH="$HOME/.local/bin:$PATH"
-# Model triad: Phi-4-mini (orchestrator) · DeepSeek-R1 (reason) · Qwen2.5-Coder (code)
-export MODEL_FAST="phi4-mini"
-export MODEL_REASON="deepseek-r1:7b"
-export MODEL_CODE="qwen2.5-coder"
-export SWARM_MODEL_FAST="phi4-mini"
-export SWARM_MODEL_REASON="deepseek-r1:7b"
-export SWARM_MODEL_CODE="qwen2.5-coder"
+# Model triad: phi4-fast (orchestrator) · deepseek-reasoner (reason) · qwen-worker (code)
+export MODEL_FAST="phi4-fast"
+export MODEL_REASON="deepseek-reasoner"
+export MODEL_CODE="qwen-worker"
+export SWARM_MODEL_FAST="phi4-fast"
+export SWARM_MODEL_REASON="deepseek-reasoner"
+export SWARM_MODEL_CODE="qwen-worker"
 # ─────────────────────────────────────────────────────────────────
 RCBLOCK
 )
@@ -135,13 +140,15 @@ for RC in "$HOME/.zshrc" "$HOME/.bashrc"; do
       echo "  $(GREEN '[OK]') Patched $RC (backup saved)"
     else
       # Already patched — only update the model vars if they've changed
-      sed -i 's/MODEL_FAST=.*/MODEL_FAST="phi4-mini"/' "$RC" 2>/dev/null || true
-      sed -i 's/MODEL_CODE=.*/MODEL_CODE="qwen2.5-coder"/' "$RC" 2>/dev/null || true
-      sed -i 's/SWARM_MODEL_FAST=.*/SWARM_MODEL_FAST="phi4-mini"/' "$RC" 2>/dev/null || true
-      sed -i 's/SWARM_MODEL_CODE=.*/SWARM_MODEL_CODE="qwen2.5-coder"/' "$RC" 2>/dev/null || true
+      sed -i 's/MODEL_FAST=.*/MODEL_FAST="phi4-fast"/' "$RC" 2>/dev/null || true
+      sed -i 's/MODEL_REASON=.*/MODEL_REASON="deepseek-reasoner"/' "$RC" 2>/dev/null || true
+      sed -i 's/MODEL_CODE=.*/MODEL_CODE="qwen-worker"/' "$RC" 2>/dev/null || true
+      sed -i 's/SWARM_MODEL_FAST=.*/SWARM_MODEL_FAST="phi4-fast"/' "$RC" 2>/dev/null || true
+      sed -i 's/SWARM_MODEL_REASON=.*/SWARM_MODEL_REASON="deepseek-reasoner"/' "$RC" 2>/dev/null || true
+      sed -i 's/SWARM_MODEL_CODE=.*/SWARM_MODEL_CODE="qwen-worker"/' "$RC" 2>/dev/null || true
       if ! grep -q 'MODEL_REASON' "$RC"; then
-        echo 'export MODEL_REASON="deepseek-r1:7b"' >> "$RC"
-        echo 'export SWARM_MODEL_REASON="deepseek-r1:7b"' >> "$RC"
+        echo 'export MODEL_REASON="deepseek-reasoner"' >> "$RC"
+        echo 'export SWARM_MODEL_REASON="deepseek-reasoner"' >> "$RC"
       fi
       echo "  $(YELLOW '[UPDATED]') $RC — model vars refreshed (no duplicate block added)"
     fi
@@ -163,32 +170,36 @@ install_models() {
   if ! command -v ollama >/dev/null 2>&1; then
     echo "  $(YELLOW '[SKIP]') Ollama not found. Install from https://ollama.ai"
     echo "          Then pull models manually:"
-    echo "            ollama pull phi4-mini"
-    echo "            ollama pull deepseek-r1:7b"
-    echo "            ollama pull qwen2.5-coder"
+    echo "            ollama pull phi4-fast"
+    echo "            ollama pull deepseek-reasoner"
+    echo "            ollama pull qwen-worker"
     return
   fi
 
-  echo "  Pulling $(CYAN 'phi4-mini') (orchestrator / router brain)…"
-  if ollama pull phi4-mini 2>&1 | tail -1; then
-    echo "  $(GREEN '[OK]') phi4-mini ready"
-  else
-    echo "  $(YELLOW '[WARN]') phi4-mini pull failed — try: ollama pull phi4-mini"
-  fi
+  _ollama_has_model() {
+    local tag="$1"
+    ollama list 2>/dev/null | awk 'NR>1{print $1}' | grep -Fxq "$tag:latest"
+  }
 
-  echo "  Pulling $(CYAN 'deepseek-r1:7b') (reasoning engine)…"
-  if ollama pull deepseek-r1:7b 2>&1 | tail -1; then
-    echo "  $(GREEN '[OK]') deepseek-r1:7b ready"
-  else
-    echo "  $(YELLOW '[WARN]') deepseek-r1:7b pull failed — try: ollama pull deepseek-r1:7b"
-  fi
+  _ensure_model() {
+    local tag="$1"
+    local description="$2"
+    if _ollama_has_model "$tag"; then
+      echo "  $(GREEN '[OK]') $tag already present — skipping pull"
+      return 0
+    fi
 
-  echo "  Pulling $(CYAN 'qwen2.5-coder') (execution engine)…"
-  if ollama pull qwen2.5-coder 2>&1 | tail -1; then
-    echo "  $(GREEN '[OK]') qwen2.5-coder ready"
-  else
-    echo "  $(YELLOW '[WARN]') qwen2.5-coder pull failed — try: ollama pull qwen2.5-coder"
-  fi
+    echo "  Pulling $(CYAN "$tag") ($description)…"
+    if ollama pull "$tag" 2>&1 | tail -1; then
+      echo "  $(GREEN '[OK]') $tag ready"
+    else
+      echo "  $(YELLOW '[WARN]') $tag pull failed — try: ollama pull $tag"
+    fi
+  }
+
+  _ensure_model "phi4-fast" "orchestrator / router brain"
+  _ensure_model "deepseek-reasoner" "reasoning engine"
+  _ensure_model "qwen-worker" "execution engine"
 }
 
 install_models
@@ -201,9 +212,9 @@ echo "  source ~/.zshrc   # zsh"
 echo "  source ~/.bashrc  # bash"
 echo ""
 echo "Model triad status:"
-echo "  $(CYAN 'phi4-mini')       → MODEL_FAST / orchestrator"
-echo "  $(CYAN 'deepseek-r1:7b') → MODEL_REASON / reasoning engine"
-echo "  $(CYAN 'qwen2.5-coder')     → MODEL_CODE  / execution engine"
+echo "  $(CYAN 'phi4-fast')          → MODEL_FAST / orchestrator"
+echo "  $(CYAN 'deepseek-reasoner') → MODEL_REASON / reasoning engine"
+echo "  $(CYAN 'qwen-worker')       → MODEL_CODE  / execution engine"
 echo ""
 echo "Verify with: swarm doctor"
 echo "Gate check:  ./swarm-gate.sh --gate all --models"
