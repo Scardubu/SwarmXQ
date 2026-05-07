@@ -30,13 +30,18 @@ app = typer.Typer(
 
 # ── Service definitions ───────────────────────────────────────────────────────
 
-_DEFAULT_API_MODULE = "swarmx.api.server:app"
+# [V5.9-FIX-03] API is a Fastify Node.js server, not a Python ASGI module.
 _DEFAULT_API_HOST = "0.0.0.0"
 _DEFAULT_API_PORT = 3001
 
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[4]
+
+
+def _api_dist() -> Path:
+    """Absolute path to the compiled Fastify API entry point."""
+    return _repo_root() / "apps" / "swarmx-api" / "dist" / "server.js"
 
 
 def _dashboard_root() -> Path:
@@ -48,7 +53,8 @@ def _dashboard_workspace_root() -> Path:
 
 
 def _dashboard_command() -> list[str]:
-    return ["pnpm", "--filter", "@swarmx/dashboard", "dev"]
+    # [V5.9-FIX-03] Use production 'start' (next start) not 'dev' server.
+    return ["pnpm", "--filter", "@swarmx/dashboard", "start"]
 
 
 def _start_sidecar(cmd: list[str], *, name: str, cwd: str) -> subprocess.Popen[bytes]:
@@ -121,25 +127,29 @@ def cmd_start(
     services: list[dict[str, object]] = []
     dashboard_proc: subprocess.Popen[bytes] | None = None
 
-    # ── Resolve uvicorn ──────────────────────────────────────────────────────
-    try:
-        import uvicorn  # noqa: F401
-        has_uvicorn = True
-    except ImportError:
-        has_uvicorn = False
-
-    if not has_uvicorn:
-        emit_error("uvicorn is not installed. Run: pip install uvicorn[standard]", code=1)
+    # ── Resolve Node.js API server ──────────────────────────────────────────
+    # [V5.9-FIX-03] The API is Fastify (Node.js), not a Python ASGI application.
+    import shutil
+    node_bin = shutil.which("node")
+    if node_bin is None:
+        emit_error("node is not installed or not on PATH. Install Node.js 22+.", code=1)
         raise typer.Exit(code=1)
 
-    api_cmd = [
-        sys.executable, "-m", "uvicorn",
-        _DEFAULT_API_MODULE,
-        f"--host={host}",
-        f"--port={port}",
-        f"--workers={workers}",
-        "--log-level=info",
-    ]
+    api_dist = _api_dist()
+    if not api_dist.exists():
+        emit_error(
+            f"Compiled API not found at {api_dist}. "
+            "Run: pnpm --filter @swarmx/api build",
+            code=1,
+        )
+        raise typer.Exit(code=1)
+
+    api_env = {
+        **dict(os.environ),
+        "SWARMX_API_PORT": str(port),
+        "SWARMX_API_HOST": host,
+    }
+    api_cmd = [node_bin, str(api_dist)]
 
     dash_root = _dashboard_root()
     dash_workspace = _dashboard_workspace_root()
@@ -156,7 +166,7 @@ def cmd_start(
     _run_startup_autopilot(console=console, _json=_json)
 
     if detach:
-        _start_detached(api_cmd, name="swarmx-api", _json=_json)
+        _start_detached(api_cmd, name="swarmx-api", _json=_json, env=api_env)
         services.append({"name": "swarmx-api", "pid": "detached", "url": f"http://{host}:{port}"})
         if dashboard:
             _start_detached(dash_cmd, name="swarmx-dashboard", cwd=str(dash_workspace), _json=_json)
@@ -170,7 +180,7 @@ def cmd_start(
             if dashboard_proc is not None:
                 console.print("[dim]Dashboard sidecar logging to SWARMX_HOME/logs/swarmx-dashboard.log[/dim]")
             console.print("[dim]Press Ctrl+C to stop[/dim]")
-        _run_foreground(api_cmd, sidecar=dashboard_proc)
+        _run_foreground(api_cmd, sidecar=dashboard_proc, env=api_env)
         return
 
     if _json:
@@ -192,7 +202,14 @@ def _run_startup_autopilot(*, console: object, _json: bool) -> None:
         logger.debug("startup_autopilot_skipped", exc_info=exc)
 
 
-def _start_detached(cmd: list[str], *, name: str, cwd: Optional[str] = None, _json: bool = False) -> None:
+def _start_detached(
+    cmd: list[str],
+    *,
+    name: str,
+    cwd: Optional[str] = None,
+    _json: bool = False,
+    env: Optional[dict[str, str]] = None,
+) -> None:
     """Fork the process to the background, writing its PID to SWARMX_HOME/pids/."""
     from swarmx.config import SwarmConfig
     cfg = SwarmConfig()
@@ -210,6 +227,7 @@ def _start_detached(cmd: list[str], *, name: str, cwd: Optional[str] = None, _js
             stdout=log_fh,
             stderr=log_fh,
             cwd=cwd,
+            env=env,
             start_new_session=True,  # detach from terminal's process group
         )
     pid_file.write_text(str(proc.pid), encoding="utf-8")
@@ -217,9 +235,13 @@ def _start_detached(cmd: list[str], *, name: str, cwd: Optional[str] = None, _js
         get_console().print(f"[dim]{name} PID {proc.pid} → {log_file}[/dim]")
 
 
-def _run_foreground(cmd: list[str], sidecar: subprocess.Popen[bytes] | None = None) -> None:
+def _run_foreground(
+    cmd: list[str],
+    sidecar: subprocess.Popen[bytes] | None = None,
+    env: Optional[dict[str, str]] = None,
+) -> None:
     """Run a command in the foreground, forwarding signals."""
-    proc = subprocess.Popen(cmd)
+    proc = subprocess.Popen(cmd, env=env)
     try:
         proc.wait()
     except KeyboardInterrupt:

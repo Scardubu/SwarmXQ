@@ -34,13 +34,16 @@ interface UIActions {
   updateTerminalTab: (id: string, patch: Partial<Omit<TerminalTab, "id">>) => void;
 }
 
+// [V5.9-FIX-04] Use stable initial values so SSR and client produce identical
+// markup. generateSessionId() (Date.now + random) differs each render cycle.
+// New tabs added client-side via addTerminalTab() still get unique IDs.
 const DEFAULT_TAB: TerminalTab = {
   id: "main",
   label: "Main",
-  sessionId: generateSessionId(),
+  sessionId: "pty-main",
   lastExitCode: null,
   cwd: "~",
-  createdAt: Date.now(),
+  createdAt: 0,
 };
 
 export const useUIStore = create<UIState & UIActions>()(

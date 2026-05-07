@@ -132,7 +132,13 @@ export function XTerminal({ sessionId, agentId, active }: XTerminalProps) {
     fitRef.current = fitAddon;
 
     // PTY WebSocket connection
-    const wsUrl = `${globalThis.location.protocol === "https:" ? "wss" : "ws"}://${globalThis.location.host}/ws/terminal/${encodeURIComponent(sessionId)}`;
+    // [V5.9-FIX-05] Next.js rewrites() do NOT proxy WebSocket upgrades, so we
+    // must connect directly to the Fastify API host. NEXT_PUBLIC_API_URL (or the
+    // default http://localhost:3001) is resolved at build time by Next.js.
+    const _apiUrl = (process.env["NEXT_PUBLIC_API_URL"] ?? `${globalThis.location.protocol}//${globalThis.location.hostname}:3001`);
+    const _apiParsed = new URL(_apiUrl);
+    const _wsScheme = _apiParsed.protocol === "https:" ? "wss" : "ws";
+    const wsUrl = `${_wsScheme}://${_apiParsed.host}/ws/terminal/${encodeURIComponent(sessionId)}`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
