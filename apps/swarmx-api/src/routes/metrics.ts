@@ -1,38 +1,29 @@
 /**
  * Metrics route — `/api/metrics`
- * Spawns `python -m swarmx metrics --json` and returns the V5 observable signals.
+ * [V5.9-FIX-09] Stub endpoint — the `python -m swarmx metrics` CLI command
+ * does not exist yet. Return 501 Not Implemented with placeholder metrics.
+ * This prevents 503 errors and provides a graceful degradation path.
  */
 import type { FastifyInstance } from "fastify";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
 
 export async function metricsRouter(server: FastifyInstance): Promise<void> {
-  server.get<{ Reply: Record<string, unknown> | { error: string; detail: string } }>(
+  server.get<{ Reply: Record<string, unknown> }>(
     "/",
     async (_req, reply) => {
-      const pythonExe = process.env["SWARMX_PYTHON"] ?? "python";
-      const runtimeHome =
-        process.env["SWARMX_HOME"] ??
-        `${process.env["HOME"] ?? process.env["USERPROFILE"] ?? ""}/.swarmx`;
-
-      try {
-        const { stdout } = await execFileAsync(
-          pythonExe,
-          ["-m", "swarmx", "metrics", "--home", runtimeHome],
-          { timeout: 15_000 },
-        );
-        const metrics = JSON.parse(stdout) as Record<string, unknown>;
-        return metrics;
-      } catch (err) {
-        server.log.error({ err }, "metrics subprocess failed");
-        reply.code(503);
-        return {
-          error: "metrics_unavailable",
-          detail: err instanceof Error ? err.message : String(err),
-        };
-      }
+      // [V5.9-FIX-09] Placeholder metrics response while CLI command is in development
+      reply.code(501);
+      return {
+        error: "not_implemented",
+        message: "Metrics endpoint is not yet implemented. Use /api/system for system info.",
+        placeholder: {
+          cpuUsagePercent: 0,
+          memoryUsageMb: 0,
+          diskUsageMb: 0,
+          activeAgents: 0,
+          completedTasks: 0,
+        },
+      };
     },
   );
 }
+

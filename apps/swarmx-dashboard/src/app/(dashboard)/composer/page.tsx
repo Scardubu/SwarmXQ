@@ -25,6 +25,14 @@ interface ComposerState {
   sessionId: string;
 }
 
+// [V5.9-FIX-08] If Next.js rewrite proxy returns 5xx (for example while API is
+// restarting), retry against explicit API origin to avoid hard user-visible 500.
+function resolveDirectApiBaseUrl(): string {
+  const configured = process.env.NEXT_PUBLIC_SWARMX_API_URL?.trim();
+  if (configured) return configured.replace(/\/+$/, "");
+  return "http://127.0.0.1:3001";
+}
+
 const COMPOSER_RECENT_SCOPES_KEY = "swarmx:composer:recent-scopes";
 const DEFAULT_PROJECT_SCOPE =
   process.env.NEXT_PUBLIC_SWARMX_PROJECT_PATH ?? "/home/scar/Downloads/SwarmX-1.5";
@@ -45,7 +53,7 @@ function MessageBubble({ msg }: { readonly msg: ComposerMessage }) {
       <div
         className={cn(
           "h-6 w-6 rounded-full shrink-0 flex items-center justify-center mt-0.5",
-          isUser ? "bg-accent/20 text-accent" : "bg-[var(--color-accent-dim)] text-text-secondary"
+          isUser ? "bg-accent/20 text-accent" : "bg-(--color-accent-dim) text-text-secondary"
         )}
       >
         {isUser ? (
@@ -66,7 +74,7 @@ function MessageBubble({ msg }: { readonly msg: ComposerMessage }) {
           className={cn(
             "rounded-lg px-3 py-2 text-xs font-mono leading-relaxed",
             isUser
-              ? "bg-[var(--color-accent-dim)] text-accent border border-accent/20 text-right"
+              ? "bg-(--color-accent-dim) text-accent border border-accent/20 text-right"
               : "bg-bg-elevated text-text-secondary border border-border"
           )}
         >
@@ -105,7 +113,7 @@ function PresetPrompts({ onSelect }: { readonly onSelect: (p: string) => void })
             className={cn(
               "px-2 py-1 text-[10px] font-mono rounded border border-border",
               "text-text-secondary hover:text-text-primary hover:border-border-active",
-              "transition-colors duration-[var(--duration-micro)]"
+              "transition-colors duration-(--duration-micro)"
             )}
           >
             {p.length > 40 ? p.slice(0, 37) + "…" : p}
@@ -179,24 +187,32 @@ export default function ComposerPage() {
     setInput("");
 
     try {
-      const res = await fetch("/api/composer/chat", {
+      const payload = {
+        sessionId: state.sessionId,
+        message: content.trim(),
+        context: {
+          projectScope: projectScope.trim() || undefined,
+          recentProjects: recentScopes,
+          agents: [...agents.entries()].map(([id, a]) => ({
+            id,
+            name: a.name,
+            status: a.status,
+            role: a.role,
+          })),
+        },
+      };
+
+      const requestInit: RequestInit = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: state.sessionId,
-          message: content.trim(),
-          context: {
-            projectScope: projectScope.trim() || undefined,
-            recentProjects: recentScopes,
-            agents: [...agents.entries()].map(([id, a]) => ({
-              id,
-              name: a.name,
-              status: a.status,
-              role: a.role,
-            })),
-          },
-        }),
-      });
+        body: JSON.stringify(payload),
+      };
+
+      let res = await fetch("/api/composer/chat", requestInit);
+      if (!res.ok && res.status >= 500) {
+        const fallbackUrl = `${resolveDirectApiBaseUrl()}/api/composer/chat`;
+        res = await fetch(fallbackUrl, requestInit);
+      }
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
@@ -327,7 +343,7 @@ export default function ComposerPage() {
             ))}
             {state.isLoading && (
               <div className="flex items-center gap-3 px-4 py-3">
-                <div className="h-6 w-6 rounded-full bg-[var(--color-accent-dim)] flex items-center justify-center">
+                <div className="h-6 w-6 rounded-full bg-(--color-accent-dim) flex items-center justify-center">
                   <Bot className="h-3 w-3 text-text-secondary" />
                 </div>
                 <div className="flex items-center gap-1">

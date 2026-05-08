@@ -10,15 +10,13 @@ import logging
 import os
 import signal
 import subprocess
-import sys
-import time
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
-from swarmx.console.output import get_console, safe_print, emit_json, emit_error
 from swarmx.console.compat import is_json_mode
+from swarmx.console.output import emit_error, emit_json, get_console, safe_print
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +55,26 @@ def _dashboard_command() -> list[str]:
     return ["pnpm", "--filter", "@swarmx/dashboard", "start"]
 
 
-def _start_sidecar(cmd: list[str], *, name: str, cwd: str) -> subprocess.Popen[bytes]:
+def _dashboard_api_url(host: str, port: int) -> str:
+    """Return a stable API URL for dashboard rewrites.
+
+    Next.js runs server-side rewrites from the local host process, so wildcard
+    bind addresses should be normalized to loopback for reliable routing.
+    """
+    if host in {"0.0.0.0", "::", ""}:
+        return f"http://127.0.0.1:{port}"
+    if host == "localhost":
+        return f"http://127.0.0.1:{port}"
+    return f"http://{host}:{port}"
+
+
+def _start_sidecar(
+    cmd: list[str],
+    *,
+    name: str,
+    cwd: str,
+    env: dict[str, str] | None = None,
+) -> subprocess.Popen[bytes]:
     from swarmx.config import SwarmConfig
 
     cfg = SwarmConfig()
@@ -66,7 +83,7 @@ def _start_sidecar(cmd: list[str], *, name: str, cwd: str) -> subprocess.Popen[b
     log_file = log_dir / f"{name}.log"
     log_fh = log_file.open("ab")
     try:
-        proc = subprocess.Popen(cmd, stdout=log_fh, stderr=log_fh, cwd=cwd)
+        proc = subprocess.Popen(cmd, stdout=log_fh, stderr=log_fh, cwd=cwd, env=env)
     except Exception:
         log_fh.close()
         raise
@@ -149,6 +166,13 @@ def cmd_start(
         "SWARMX_API_PORT": str(port),
         "SWARMX_API_HOST": host,
     }
+    # [V5.9-FIX-07] Ensure dashboard rewrite target tracks the actual API bind.
+    # [V5.9-FIX-09] Optimize Composer timeout for faster fallback when Ollama unavailable.
+    dashboard_env = {
+        **dict(os.environ),
+        "SWARMX_API_URL": _dashboard_api_url(host, port),
+        "SWARMX_COMPOSER_TIMEOUT_MS": "5000",  # 5s instead of 90s when Ollama unreachable
+    }
     api_cmd = [node_bin, str(api_dist)]
 
     dash_root = _dashboard_root()
@@ -169,11 +193,22 @@ def cmd_start(
         _start_detached(api_cmd, name="swarmx-api", _json=_json, env=api_env)
         services.append({"name": "swarmx-api", "pid": "detached", "url": f"http://{host}:{port}"})
         if dashboard:
-            _start_detached(dash_cmd, name="swarmx-dashboard", cwd=str(dash_workspace), _json=_json)
+            _start_detached(
+                dash_cmd,
+                name="swarmx-dashboard",
+                cwd=str(dash_workspace),
+                _json=_json,
+                env=dashboard_env,
+            )
             services.append({"name": "swarmx-dashboard", "pid": "detached", "url": "http://localhost:3000"})
     else:
         if dashboard:
-            dashboard_proc = _start_sidecar(dash_cmd, name="swarmx-dashboard", cwd=str(dash_workspace))
+            dashboard_proc = _start_sidecar(
+                dash_cmd,
+                name="swarmx-dashboard",
+                cwd=str(dash_workspace),
+                env=dashboard_env,
+            )
             services.append({"name": "swarmx-dashboard", "pid": dashboard_proc.pid, "url": "http://localhost:3000"})
         if not _json:
             console.print(f"[brand]SwarmX[/brand] starting API on [highlight]http://{host}:{port}[/highlight]")
@@ -194,7 +229,7 @@ def _run_startup_autopilot(*, console: object, _json: bool) -> None:
     """Run the startup autopilot. Fail-open — never blocks launch."""
     # [V6.1-ENH-01] Imports are deferred so import errors are non-fatal.
     try:
-        from swarmx.startup import run_startup_autopilot_sync, format_startup_banner  # type: ignore[import]
+        from swarmx.startup import format_startup_banner, run_startup_autopilot_sync  # type: ignore[import]
         summary = run_startup_autopilot_sync()
         if not _json:
             console.print(format_startup_banner(summary))  # type: ignore[union-attr]
@@ -206,9 +241,9 @@ def _start_detached(
     cmd: list[str],
     *,
     name: str,
-    cwd: Optional[str] = None,
+    cwd: str | None = None,
     _json: bool = False,
-    env: Optional[dict[str, str]] = None,
+    env: dict[str, str] | None = None,
 ) -> None:
     """Fork the process to the background, writing its PID to SWARMX_HOME/pids/."""
     from swarmx.config import SwarmConfig
@@ -238,7 +273,7 @@ def _start_detached(
 def _run_foreground(
     cmd: list[str],
     sidecar: subprocess.Popen[bytes] | None = None,
-    env: Optional[dict[str, str]] = None,
+    env: dict[str, str] | None = None,
 ) -> None:
     """Run a command in the foreground, forwarding signals."""
     proc = subprocess.Popen(cmd, env=env)

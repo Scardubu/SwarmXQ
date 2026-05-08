@@ -2,7 +2,50 @@
 
 SwarmX V6 is the self-improving operator layer on top of the existing control plane. It keeps the bounded mission runtime, live dashboard, audit trail, and workflow engine, and adds an autonomous evolution overlay that can observe, critique, mutate, validate, and stage improvements without mutating the base system blindly.
 
-## Model triad
+## Quick Start
+
+### Prerequisites
+- Python 3.11+ with venv activated
+- Node.js 22+
+- Ollama running locally (or models available in registry)
+
+### Launch Full Stack (API + Dashboard)
+
+```bash
+cd SwarmX-1.5
+source .venv/bin/activate
+python -m cli up --dashboard --host 127.0.0.1 --port 3001
+```
+
+Then open the dashboard at **http://localhost:3000**
+
+### Environment Variables
+
+- `SWARMX_API_URL` — API endpoint for dashboard rewrites (default: `http://127.0.0.1:3001`)
+- `SWARMX_COMPOSER_TIMEOUT_MS` — Composer model timeout in ms (default: `5000`)
+- `SWARMX_OLLAMA_URL` — Ollama endpoint (default: `http://127.0.0.1:11434`)
+
+### Troubleshooting
+
+**Dashboard shows "404: This page could not be found"**
+- Ensure the API is running: `curl http://127.0.0.1:3001/health`
+- Check dashboard logs: `tail ~/.swarmx/logs/swarmx-dashboard.log`
+- Verify SWARMX_API_URL is set correctly (should be `http://127.0.0.1:3001`, not `localhost`)
+
+**Composer endpoint hangs or times out**
+- This is normal when Ollama is not running — the endpoint falls back to a fleet summary after 5 seconds
+- Start Ollama: `ollama serve`
+- Or reduce `SWARMX_COMPOSER_TIMEOUT_MS` environment variable
+
+**Port 3000 or 3001 already in use**
+```bash
+# Kill existing processes
+lsof -i :3000  # Find process on port 3000
+lsof -i :3001  # Find process on port 3001
+kill -9 <PID>
+```
+
+## Model Triad
 
 The bundled routing is aligned to this local triad (canonical tags):
 
