@@ -32,9 +32,9 @@ function useNavItems(): NavItem[] {
   const errorAgentCount = useEventsStore((s) => s.errorAgentCount);
   return [
     { id: "overview",   label: "Overview",     href: "/",          icon: LayoutDashboard, shortcut: "⌘1" },
-    { id: "agents",     label: "Agent Fleet",  href: "/agents",    icon: Bot,             shortcut: "⌘2", badgeCount: errorAgentCount },
-    { id: "workflows",  label: "Workflows",    href: "/workflows", icon: GitBranch,       shortcut: "⌘3" },
-    { id: "composer",   label: "Composer",     href: "/composer",  icon: PenLine,         shortcut: "⌘4" },
+    { id: "composer",   label: "Composer",     href: "/composer",  icon: PenLine,         shortcut: "⌘2" },
+    { id: "agents",     label: "Agent Fleet",  href: "/agents",    icon: Bot,             shortcut: "⌘3", badgeCount: errorAgentCount },
+    { id: "workflows",  label: "Workflows",    href: "/workflows", icon: GitBranch,       shortcut: "⌘4" },
     { id: "logs",       label: "Logs",         href: "/logs",      icon: ScrollText,      shortcut: "⌘5" },
     { id: "system",     label: "System",       href: "/system",    icon: Server,          shortcut: "⌘6" },
   ];
@@ -66,6 +66,7 @@ export function NavRail() {
             const isActive =
               item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
             const Icon = item.icon;
+            const isComposer = item.id === "composer";
 
             const itemContent = (
               <Link
@@ -77,6 +78,8 @@ export function NavRail() {
                   isActive
                     ? "text-accent bg-(--color-accent-dim) border-l-2 border-accent -ml-px pl-[7px] nav-item-active-glow"
                     : "text-text-secondary hover:text-text-primary hover:bg-bg-surface border-l-2 border-transparent -ml-px pl-[7px]"
+                  ,
+                  isComposer && !isActive && "text-accent/90"
                 )}
                 aria-current={isActive ? "page" : undefined}
               >
@@ -100,9 +103,16 @@ export function NavRail() {
 
                 {/* Keyboard shortcut — visible when expanded, no badge */}
                 {navExpanded && !item.badgeCount && (
-                  <span className="text-[9px] font-mono text-text-muted/50 shrink-0">
-                    {item.shortcut}
-                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {isComposer && (
+                      <span className="text-[8px] font-mono px-1 rounded border border-accent/30 text-accent/80">
+                        AI
+                      </span>
+                    )}
+                    <span className="text-[9px] font-mono text-text-muted/50 shrink-0">
+                      {item.shortcut}
+                    </span>
+                  </div>
                 )}
 
                 {/* Error badge */}

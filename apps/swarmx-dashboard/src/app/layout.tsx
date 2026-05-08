@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import { JetBrains_Mono } from "next/font/google";
-import { GeistSans } from "geist/font/sans";
+import { Geist, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
 const dashboardVersion =
@@ -12,7 +11,15 @@ const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
   variable: "--font-jetbrains-mono",
   display: "swap",
+  preload: false,
   weight: ["400", "500", "600"],
+});
+
+const geistSans = Geist({
+  subsets: ["latin"],
+  variable: "--font-geist-sans",
+  display: "swap",
+  preload: false,
 });
 
 export const metadata: Metadata = {
@@ -33,7 +40,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`h-full ${jetbrainsMono.variable} ${GeistSans.variable}`}
+      className={`h-full ${jetbrainsMono.variable} ${geistSans.variable}`}
       suppressHydrationWarning
     >
       <body className="h-full bg-bg-base text-text-primary antialiased">

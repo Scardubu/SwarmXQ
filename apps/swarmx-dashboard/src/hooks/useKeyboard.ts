@@ -12,9 +12,9 @@ const modKey = (e: KeyboardEvent) => (isMac ? e.metaKey : e.ctrlKey);
 
 const NAVIGATION_SHORTCUTS: Record<string, string> = {
   "1": "/",
-  "2": "/agents",
-  "3": "/workflows",
-  "4": "/composer",
+  "2": "/composer",
+  "3": "/agents",
+  "4": "/workflows",
   "5": "/logs",
   "6": "/system",
 };

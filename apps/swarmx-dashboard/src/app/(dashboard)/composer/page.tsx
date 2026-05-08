@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Send, Bot, Sparkles, RefreshCw } from "lucide-react";
+import { Send, Bot, Sparkles, RefreshCw, FolderOpen, Pin } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -24,6 +24,10 @@ interface ComposerState {
   isLoading: boolean;
   sessionId: string;
 }
+
+const COMPOSER_RECENT_SCOPES_KEY = "swarmx:composer:recent-scopes";
+const DEFAULT_PROJECT_SCOPE =
+  process.env.NEXT_PUBLIC_SWARMX_PROJECT_PATH ?? "/home/scar/Downloads/SwarmX-1.5";
 
 // ── Message bubble ────────────────────────────────────────────────────────────
 
@@ -119,15 +123,44 @@ export default function ComposerPage() {
   const [state, setState] = useState<ComposerState>({
     messages: [],
     isLoading: false,
-    sessionId: `composer-${Date.now()}`,
+    sessionId: "composer-main",
   });
   const [input, setInput] = useState("");
+  const [projectScope, setProjectScope] = useState(DEFAULT_PROJECT_SCOPE);
+  const [recentScopes, setRecentScopes] = useState<string[]>([]);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    try {
+      const raw = globalThis.localStorage.getItem(COMPOSER_RECENT_SCOPES_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as string[];
+      if (Array.isArray(parsed)) {
+        setRecentScopes(parsed.filter((value) => typeof value === "string" && value.length > 0).slice(0, 5));
+      }
+    } catch {
+      // Ignore malformed local storage.
+    }
+  }, []);
 
   // Scroll to bottom on new messages
   React.useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [state.messages.length]);
+
+  const saveProjectScope = React.useCallback((scope: string) => {
+    const trimmed = scope.trim();
+    if (!trimmed) return;
+    setRecentScopes((prev) => {
+      const next = [trimmed, ...prev.filter((item) => item !== trimmed)].slice(0, 5);
+      try {
+        globalThis.localStorage.setItem(COMPOSER_RECENT_SCOPES_KEY, JSON.stringify(next));
+      } catch {
+        // Storage failure is non-fatal.
+      }
+      return next;
+    });
+  }, []);
 
   const sendMessage = React.useCallback(async (content: string) => {
     if (!content.trim() || state.isLoading) return;
@@ -153,6 +186,8 @@ export default function ComposerPage() {
           sessionId: state.sessionId,
           message: content.trim(),
           context: {
+            projectScope: projectScope.trim() || undefined,
+            recentProjects: recentScopes,
             agents: [...agents.entries()].map(([id, a]) => ({
               id,
               name: a.name,
@@ -216,13 +251,57 @@ export default function ComposerPage() {
           size="sm"
           variant="ghost"
           onClick={() =>
-            setState({ messages: [], isLoading: false, sessionId: `composer-${Date.now()}` })
+            setState({ messages: [], isLoading: false, sessionId: "composer-main" })
           }
           className="gap-1.5"
         >
           <RefreshCw className="h-3 w-3" />
           New Session
         </Button>
+      </div>
+
+      <div className="border-b border-border bg-bg-surface/50 px-4 py-3 space-y-2">
+        <div className="flex items-center gap-2">
+          <FolderOpen className="h-3.5 w-3.5 text-accent" />
+          <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest">Project Scope</div>
+        </div>
+        <div className="flex gap-2">
+          <Input
+            value={projectScope}
+            onChange={(e) => setProjectScope(e.target.value)}
+            placeholder="/path/to/local/project"
+            className="flex-1 text-xs"
+          />
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            onClick={() => saveProjectScope(projectScope)}
+          >
+            <Pin className="h-3 w-3" />
+            Save
+          </Button>
+        </div>
+        {recentScopes.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {recentScopes.map((scope) => (
+              <button
+                key={scope}
+                type="button"
+                onClick={() => setProjectScope(scope)}
+                className={cn(
+                  "px-2 py-1 text-[10px] font-mono rounded border border-border",
+                  "text-text-secondary hover:text-text-primary hover:border-border-active",
+                  "transition-colors duration-(--duration-micro)"
+                )}
+                title={scope}
+              >
+                {scope.length > 42 ? `${scope.slice(0, 39)}...` : scope}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Messages */}

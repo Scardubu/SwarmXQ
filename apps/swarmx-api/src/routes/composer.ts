@@ -8,6 +8,8 @@ const chatSchema = z.object({
   message: z.string().min(1).max(8192),
   context: z
     .object({
+      projectScope: z.string().min(1).max(512).optional(),
+      recentProjects: z.array(z.string().min(1).max(512)).max(5).optional(),
       agents: z
         .array(
           z.object({
@@ -23,6 +25,22 @@ const chatSchema = z.object({
 });
 
 export async function composerRouter(server: FastifyInstance): Promise<void> {
+  // [V5.9-FIX-06] Resolve Ollama endpoint from canonical env vars used across
+  // SwarmX runtime components and normalize host-only values.
+  const resolveOllamaBaseUrl = (): string => {
+    const raw =
+      process.env["SWARMX_OLLAMA_BASE_URL"] ??
+      process.env["SWARMX_OLLAMA_URL"] ??
+      process.env["OLLAMA_HOST"] ??
+      "http://127.0.0.1:11434";
+    const candidate = raw.trim();
+    if (!candidate) return "http://127.0.0.1:11434";
+    if (candidate.startsWith("http://") || candidate.startsWith("https://")) {
+      return candidate.replace(/\/+$/, "");
+    }
+    return `http://${candidate.replace(/\/+$/, "")}`;
+  };
+
   server.post(
     "/chat",
     async (req: FastifyRequest, reply: FastifyReply) => {
@@ -31,14 +49,27 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
 
       const { message, context } = parsed.data;
 
-      // Build context from live registry
-      const agents = [...agentRegistry.values()].map((a) => ({
+      // Build context from live registry plus client-provided snapshot.
+      // [V5.9-FIX-06] Registry may be cold; merge in request context agents so
+      // Composer still reports useful fleet state.
+      const registryAgents = [...agentRegistry.values()].map((a) => ({
         id: a.id,
         name: a.name,
         status: a.status,
         role: a.role,
         currentTask: a.currentTask,
       }));
+      const contextAgents = (context?.agents ?? []).map((a) => ({
+        id: a.id,
+        name: a.name,
+        status: a.status as (typeof registryAgents)[number]["status"],
+        role: a.role,
+        currentTask: undefined,
+      }));
+      const merged = new Map<string, (typeof registryAgents)[number]>();
+      for (const a of contextAgents) merged.set(a.id, a);
+      for (const a of registryAgents) merged.set(a.id, { ...merged.get(a.id), ...a });
+      const agents = [...merged.values()];
 
       const runningCount = agents.filter((a) => a.status === "running").length;
       const errorCount = agents.filter(
@@ -48,6 +79,10 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       const systemPrompt = [
         "You are the SwarmX AI Composer — the intelligent operator interface for the SwarmX autonomous agent swarm.",
         "Your role: answer operator questions, provide swarm status analysis, and suggest next actions.",
+        context?.projectScope ? `Current project scope: ${context.projectScope}` : "",
+        context?.recentProjects && context.recentProjects.length > 0
+          ? `Recent local projects: ${context.recentProjects.join(", ")}`
+          : "",
         `Current fleet state: ${runningCount} running, ${errorCount} in error, ${agents.length} total registered.`,
         "Registered agents:",
         ...agents.slice(0, 12).map(
@@ -57,9 +92,15 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         "Be concise, accurate, and operator-focused.",
       ].filter((l) => l !== "").join("\n");
 
-      const ollamaBase =
-        process.env["SWARMX_OLLAMA_BASE_URL"] ?? "http://localhost:11434";
-      const model = process.env["SWARMX_COMPOSER_MODEL"] ?? "phi4-mini";
+      const ollamaBase = resolveOllamaBaseUrl();
+      const model =
+        process.env["SWARMX_COMPOSER_MODEL"] ??
+        process.env["SWARMX_MODEL_FAST"] ??
+        "phi4-fast";
+      const timeoutMs = Number.parseInt(
+        process.env["SWARMX_COMPOSER_TIMEOUT_MS"] ?? "90000",
+        10,
+      );
 
       let responseText: string;
       try {
@@ -74,7 +115,7 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
               { role: "user", content: message },
             ],
           }),
-          signal: AbortSignal.timeout(30_000),
+          signal: AbortSignal.timeout(Number.isFinite(timeoutMs) ? timeoutMs : 90_000),
         });
 
         if (!ollamaRes.ok) {
@@ -92,7 +133,8 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           data?.error ??
           "No response from model.";
       } catch (err) {
-        server.log.warn({ err }, "Ollama unavailable — using fleet summary fallback");
+        const reason = err instanceof Error ? err.message : "Unknown error";
+        server.log.warn({ err }, "Composer model call failed — using fleet summary fallback");
         responseText = [
           `SwarmX fleet summary (responding to: "${message}")`,
           "",
@@ -107,7 +149,10 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
             ),
           agents.length > 8 ? `  …and ${agents.length - 8} more` : "",
           "",
-          `Ollama unreachable — set SWARMX_OLLAMA_BASE_URL to enable AI responses.`,
+          `Composer model fallback reason: ${reason}`,
+          `Configured Ollama endpoint: ${ollamaBase}`,
+          `Configured model: ${model}`,
+          `Set SWARMX_COMPOSER_MODEL (or SWARMX_MODEL_FAST) to a model available in your local Ollama registry.`,
         ]
           .filter((l) => l !== "")
           .join("\n");
