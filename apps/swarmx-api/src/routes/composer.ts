@@ -4,7 +4,8 @@ import { agentRegistry } from "./agents.js";
 // Use built-in fetch (Node.js 18+ / TypeScript globalThis)
 
 const chatSchema = z.object({
-  sessionId: z.string().min(1).max(128),
+  // [V6.1-FIX-05] Allow manual API calls without sessionId; server generates one.
+  sessionId: z.string().min(1).max(128).optional(),
   message: z.string().min(1).max(8192),
   context: z
     .object({
@@ -48,6 +49,10 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
 
       const { message, context } = parsed.data;
+      // [V6.1-FIX-05] Normalize provided session ID or create a request-scoped fallback.
+      const sessionId =
+        parsed.data.sessionId?.trim() ||
+        `composer-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
       // Build context from live registry plus client-provided snapshot.
       // [V5.9-FIX-06] Registry may be cold; merge in request context agents so
@@ -158,7 +163,7 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           .join("\n");
       }
 
-      return { message: responseText, agentId: "swarmx-composer" };
+      return { message: responseText, agentId: "swarmx-composer", sessionId };
     }
   );
 }

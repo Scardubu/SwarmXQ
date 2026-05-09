@@ -163,7 +163,7 @@ def cmd_start(
 
     # [V6.1-FIX-03] Resolve Python executable for metrics poller and event bridge
     python_exe = shutil.which("python3") or shutil.which("python") or "python3"
-    
+
     api_env = {
         **dict(os.environ),
         "SWARMX_API_PORT": str(port),

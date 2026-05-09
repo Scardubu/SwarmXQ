@@ -39,6 +39,8 @@ const JOURNAL_PATH = join(RUNTIME_HOME, "traces", "journal.jsonl");
 // ── Byte-cursor state ─────────────────────────────────────────────────────────
 
 let _cursor = -1; // [V5.9-PERF-01] -1 means "prime to EOF on first successful read"
+// [V6.1-FIX-04] Avoid repetitive ENOENT debug logs before journal is created.
+let _journalMissingLogged = false;
 
 // ── Python kind → SwarmXEvent mapper ─────────────────────────────────────────
 
@@ -205,6 +207,7 @@ async function tick(log: FastifyInstance["log"]): Promise<void> {
   let fh: Awaited<ReturnType<typeof open>> | null = null;
   try {
     fh = await open(JOURNAL_PATH, "r");
+    _journalMissingLogged = false;
     const stat = await fh.stat();
 
     // [V5.9-PERF-01] On first successful open, prime to the current EOF so the
@@ -246,7 +249,21 @@ async function tick(log: FastifyInstance["log"]): Promise<void> {
       }
     }
   } catch (err) {
-    // File not found (journal not yet created) or read error — log at debug [PYE-02]
+    // [V6.1-FIX-04] File not found before first Python event is expected;
+    // emit only once to reduce startup log noise while staying fail-open.
+    const code =
+      typeof err === "object" && err !== null && "code" in err
+        ? String((err as { code?: unknown }).code)
+        : "";
+    if (code === "ENOENT") {
+      if (!_journalMissingLogged) {
+        _journalMissingLogged = true;
+        log.debug({ journalPath: JOURNAL_PATH }, "pyevents waiting for journal file");
+      }
+      return;
+    }
+
+    // Non-ENOENT read error — keep debug visibility [PYE-02]
     log.debug({ err }, "pyevents poll skipped");
   } finally {
     if (fh) {

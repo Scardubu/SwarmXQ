@@ -27,6 +27,10 @@ interface ComposerState {
   sessionId: string;
 }
 
+function makeComposerSessionId(): string {
+  return `composer-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function resolveDirectApiBaseUrl(): string {
   const configured = process.env.NEXT_PUBLIC_SWARMX_API_URL?.trim();
   if (configured) return configured.replace(/\/+$/, "");
@@ -241,7 +245,7 @@ export default function ComposerPage() {
   const [state, setState] = useState<ComposerState>({
     messages: [],
     isLoading: false,
-    sessionId: "composer-main",
+    sessionId: makeComposerSessionId(),
   });
   const [input, setInput] = useState("");
   const [projectScope, setProjectScope] = useState(DEFAULT_PROJECT_SCOPE);
@@ -278,6 +282,11 @@ export default function ComposerPage() {
   const sendMessage = React.useCallback(async (content: string) => {
     if (!content.trim() || state.isLoading) return;
 
+    const sessionId = state.sessionId.trim() || makeComposerSessionId();
+    if (sessionId !== state.sessionId) {
+      setState((prev) => ({ ...prev, sessionId }));
+    }
+
     const userMsg: ComposerMessage = {
       role: "user",
       content: content.trim(),
@@ -289,7 +298,7 @@ export default function ComposerPage() {
 
     try {
       const payload = {
-        sessionId: state.sessionId,
+        sessionId,
         message: content.trim(),
         context: {
           projectScope: projectScope.trim() || undefined,
@@ -317,10 +326,11 @@ export default function ComposerPage() {
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-      const data = await res.json() as { message: string; agentId?: string };
+      const data = await res.json() as { message: string; agentId?: string; sessionId?: string };
 
       setState((prev) => ({
         ...prev,
+        sessionId: data.sessionId?.trim() || prev.sessionId,
         messages: [
           ...prev.messages,
           {
@@ -376,7 +386,7 @@ export default function ComposerPage() {
         <Button
           size="sm"
           variant="ghost"
-          onClick={() => setState({ messages: [], isLoading: false, sessionId: `composer-${Date.now()}` })}
+          onClick={() => setState({ messages: [], isLoading: false, sessionId: makeComposerSessionId() })}
           className="gap-1.5 text-text-muted hover:text-text-primary"
         >
           <RefreshCw className="h-3 w-3" />
