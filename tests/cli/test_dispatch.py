@@ -28,6 +28,24 @@ def test_legacy_only_commands_stay_on_argparse(monkeypatch, premium_stub):
     assert premium_stub == [("legacy", ["plan", ".", "stabilize"])]
 
 
+def test_metrics_module_entry_uses_legacy_when_argv_is_none(monkeypatch, premium_stub):
+    """Regression for `python -m swarmx metrics ...` dispatch path.
+
+    When `cli.main()` is called with argv=None, it must inspect process args
+    and keep legacy-only commands (like `metrics`) on argparse.
+    """
+
+    monkeypatch.setattr(cli, "_legacy_main", lambda argv=None: premium_stub.append(("legacy", argv)) or 11)
+    monkeypatch.setattr(sys, "argv", ["python", "metrics", "--home", "/tmp/swarmx", "--format", "json"])
+
+    code = cli.main()
+
+    assert code == 11
+    assert premium_stub == [
+        ("legacy", ["metrics", "--home", "/tmp/swarmx", "--format", "json"])
+    ]
+
+
 def test_run_legacy_shape_prefers_legacy(monkeypatch, premium_stub):
     monkeypatch.setattr(cli, "_legacy_main", lambda argv=None: premium_stub.append(("legacy", argv)) or 9)
 
