@@ -44,7 +44,6 @@ const DEFAULT_PROJECT_SCOPE =
 // ── Dynamic preset prompts based on fleet state ───────────────────────────────
 
 function useDynamicPresets() {
-  const agents = useEventsStore((s) => [...s.agents.values()]);
   const queues = useEventsStore((s) => s.queues);
   const errors = useEventsStore((s) => s.errorAgentCount);
   const active = useEventsStore((s) => s.activeAgentCount);
@@ -81,7 +80,7 @@ function useDynamicPresets() {
     );
 
     return presets.slice(0, 6);
-  }, [agents, queues, errors, active]);
+  }, [queues, errors, active]);
 }
 
 // ── Typewriter welcome ────────────────────────────────────────────────────────
@@ -107,9 +106,11 @@ function WelcomeTypewriter() {
     }
 
     if (isDeleting && displayed === "") {
-      setIsDeleting(false);
-      setLineIndex((i) => (i + 1) % WELCOME_LINES.length);
-      return;
+      const next = setTimeout(() => {
+        setIsDeleting(false);
+        setLineIndex((i) => (i + 1) % WELCOME_LINES.length);
+      }, 0);
+      return () => clearTimeout(next);
     }
 
     const speed = isDeleting ? 28 : 52;

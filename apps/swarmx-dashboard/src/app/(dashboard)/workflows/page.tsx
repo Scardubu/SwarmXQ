@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { useEventsStore } from "@/stores/events";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -280,7 +280,8 @@ const YAMLEditor = React.lazy(() =>
 function WorkflowDetail({ workflowId }: { readonly workflowId: string }) {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"dag" | "yaml">("dag");
-  const [yamlContent, setYamlContent] = useState<string>("");
+  const [yamlDraft, setYamlDraft] = useState<string>("");
+  const [yamlTouched, setYamlTouched] = useState(false);
   const workflowRuns = useEventsStore((s) => s.workflowRuns);
 
   const { data: definition, isLoading } = useQuery<WorkflowDefinition>({
@@ -303,16 +304,14 @@ function WorkflowDetail({ workflowId }: { readonly workflowId: string }) {
     staleTime: 5_000,
   });
 
-  useEffect(() => {
-    if (definition?.rawYaml) setYamlContent(definition.rawYaml);
-  }, [definition?.rawYaml]);
-
   const historicalRun = (runsData?.runs ?? [])
     .filter((run) => run.workflowId === workflowId)
     .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0];
 
   const effectiveRun = workflowRuns.get(workflowId) ?? historicalRun;
   const effectiveStatus = effectiveRun ? listStatusFromRun(effectiveRun.status) : "idle";
+  const sourceYaml = definition?.rawYaml ?? "";
+  const effectiveYamlContent = yamlTouched ? yamlDraft : sourceYaml;
 
   const runMutation = useMutation({
     mutationFn: async () => {
@@ -357,7 +356,11 @@ function WorkflowDetail({ workflowId }: { readonly workflowId: string }) {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workflow", workflowId] }),
+    onSuccess: () => {
+      setYamlTouched(false);
+      setYamlDraft("");
+      queryClient.invalidateQueries({ queryKey: ["workflow", workflowId] });
+    },
   });
 
   if (isLoading) {
@@ -464,7 +467,7 @@ function WorkflowDetail({ workflowId }: { readonly workflowId: string }) {
             key={tab}
             type="button"
             onClick={() => setActiveTab(tab)}
-            aria-selected={activeTab === tab}
+            aria-pressed={activeTab === tab}
             aria-label={tab === "dag" ? "DAG View" : "YAML Source"}
             className={cn(
               "px-3 py-1.5 text-xs font-mono border-b-2 -mb-px",
@@ -489,16 +492,19 @@ function WorkflowDetail({ workflowId }: { readonly workflowId: string }) {
           <React.Suspense fallback={<div className="p-4 text-xs font-mono text-text-muted">Loading editor…</div>}>
             <div className="flex flex-col h-full">
               <YAMLEditor
-                value={yamlContent}
-                onChange={setYamlContent}
+                value={effectiveYamlContent}
+                onChange={(value) => {
+                  setYamlTouched(true);
+                  setYamlDraft(value);
+                }}
                 className="flex-1"
               />
               <div className="flex items-center justify-end gap-2 px-4 py-2 border-t border-border">
                 <Button
                   size="sm"
                   variant="default"
-                  onClick={() => saveMutation.mutate(yamlContent)}
-                  disabled={saveMutation.isPending || yamlContent === definition.rawYaml}
+                  onClick={() => saveMutation.mutate(effectiveYamlContent)}
+                  disabled={saveMutation.isPending || effectiveYamlContent === sourceYaml}
                 >
                   {saveMutation.isPending ? "Saving…" : "Save"}
                 </Button>

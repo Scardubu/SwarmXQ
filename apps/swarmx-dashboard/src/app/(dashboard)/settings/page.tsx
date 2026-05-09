@@ -1,13 +1,11 @@
 "use client";
 
 import React, { useState } from "react";
-import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Save, RefreshCw, ExternalLink } from "lucide-react";
+import { Save, ExternalLink } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -21,16 +19,6 @@ interface SwarmXConfig {
   agents: { maxConcurrent: number; defaultTimeout: number };
   terminal: { maxSessions: number; sessionTimeoutMs: number };
   llm: { defaultModel: string; maxTokens: number };
-}
-
-interface SettingsField<T> {
-  key: string;
-  label: string;
-  description: string;
-  type: "number" | "string" | "boolean";
-  get: (c: SwarmXConfig) => T;
-  set: (c: SwarmXConfig, v: T) => SwarmXConfig;
-  unit?: string;
 }
 
 // ── Settings Section ──────────────────────────────────────────────────────────

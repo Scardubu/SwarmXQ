@@ -224,7 +224,8 @@ class SkillCrystallizer:
             ]
             self.propose(evolution_proposals, runtime_dir=runtime_dir, auto_apply=auto_apply, cfg=cfg)
         except Exception as exc:
+            # [V6.1-FIX-12] Non-critical path: swallow submission errors and still
+            # return the analyzed count so callers know how many patterns were found.
             logger.warning("[CRYSTALLIZE] Proposal submission failed: %s", exc)
-            return 0
 
         return len(raw_proposals)

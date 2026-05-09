@@ -48,9 +48,11 @@ type StatusFilter = (typeof STATUS_FILTERS)[number]["value"];
 
 function AgentRow({
   agent,
+  nowMs,
   onSelect,
 }: {
   readonly agent: AgentState;
+  readonly nowMs: number;
   readonly onSelect: (a: AgentState) => void;
 }) {
   // Normalise the resource/resources alias — API may send either field
@@ -122,7 +124,7 @@ function AgentRow({
       {/* Duration */}
       <span className="text-[10px] font-mono text-text-muted text-right">
         {agent.startedAt
-          ? formatDuration(Date.now() - new Date(agent.startedAt).getTime())
+          ? formatDuration(nowMs - new Date(agent.startedAt).getTime())
           : "—"}
       </span>
     </button>
@@ -287,19 +289,26 @@ function AgentsPageContent() {
   const agentsMap = useEventsStore((s) => s.agents);
   const agents = useMemo(() => [...agentsMap.values()], [agentsMap]);
   const searchParams = useSearchParams();
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [selectedAgent, setSelectedAgent] = useState<AgentState | null>(null);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [ignoreUrlFocus, setIgnoreUrlFocus] = useState(false);
 
-  // Auto-focus agent from URL param (from command palette)
   React.useEffect(() => {
-    const focusId = searchParams.get("focus");
-    if (focusId) {
-      const agent = agents.find((a) => a.id === focusId);
-      if (agent) setSelectedAgent(agent);
-    }
-  }, [searchParams, agents]);
+    const id = setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const selectedAgent = useMemo(() => {
+    const focusId = ignoreUrlFocus ? null : searchParams.get("focus");
+    const effectiveId = selectedAgentId ?? focusId;
+    if (!effectiveId) return null;
+    return agents.find((a) => a.id === effectiveId) ?? null;
+  }, [agents, ignoreUrlFocus, searchParams, selectedAgentId]);
 
   const filtered = useMemo(() => {
     let list = agents;
@@ -388,13 +397,27 @@ function AgentsPageContent() {
           </div>
         ) : (
           filtered.map((agent) => (
-            <AgentRow key={agent.id} agent={agent} onSelect={setSelectedAgent} />
+            <AgentRow
+              key={agent.id}
+              agent={agent}
+              nowMs={nowMs}
+              onSelect={(chosen) => {
+                setIgnoreUrlFocus(true);
+                setSelectedAgentId(chosen.id);
+              }}
+            />
           ))
         )}
       </ScrollArea>
 
       {/* Agent detail sheet */}
-      <AgentDetailSheet agent={selectedAgent} onClose={() => setSelectedAgent(null)} />
+      <AgentDetailSheet
+        agent={selectedAgent}
+        onClose={() => {
+          setSelectedAgentId(null);
+          setIgnoreUrlFocus(true);
+        }}
+      />
     </div>
   );
 }

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from unittest.mock import patch
 
 import pytest
 
@@ -84,20 +85,37 @@ def test_execute_parallel_empty_steps():
 
 
 def test_execute_parallel_concurrent(benchmark=None):
-    """Steps execute concurrently — wall clock < serial sum."""
-    async def slow_step(step):
-        await asyncio.sleep(0.05)
-        return step
+    """Steps execute concurrently — wall clock < serial sum.
 
+    [V6.1-FIX-12] Patch agents.executor._SWARM_HOME to suppress event-bus
+    JSONL file I/O (adds 0.3-1.5 s on RAM-pressured systems with SWARM_HOME set).
+    Time the gather inside an already-running loop to exclude asyncio.run()
+    startup overhead.  4 x 0.1 s serial = 0.40 s; pure gather should be < 0.25 s.
+    """
+    import agents.executor as _ex
+
+    SLEEP = 0.1
     steps = ["s1", "s2", "s3", "s4"]
-    t0 = time.monotonic()
-    results = asyncio.run(execute_parallel(steps, slow_step))
-    elapsed = time.monotonic() - t0
+    elapsed_holder: list[float] = []
 
+    async def _inner():
+        async def slow_step(step):
+            await asyncio.sleep(SLEEP)
+            return step
+
+        t0 = time.monotonic()
+        results = await execute_parallel(steps, slow_step)
+        elapsed_holder.append(time.monotonic() - t0)
+        return results
+
+    with patch.object(_ex, "_SWARM_HOME", ""):
+        results = asyncio.run(_inner())
+
+    elapsed = elapsed_holder[0]
     assert len(results) == 4
     assert all(r["error"] is None for r in results)
-    # 4 × 0.05 s serial = 0.20 s; parallel should be < 0.15 s
-    assert elapsed < 0.18, f"Expected concurrent execution, took {elapsed:.3f}s"
+    # Serial: 4 x 0.1 s = 0.40 s; parallel gather (no event I/O) should be < 0.25 s
+    assert elapsed < 0.25, f"Expected concurrent execution, took {elapsed:.3f}s"
 
 
 def test_execute_parallel_sync_wrapper():
