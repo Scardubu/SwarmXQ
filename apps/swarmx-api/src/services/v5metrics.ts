@@ -30,6 +30,23 @@ interface V5MetricsPayload {
   governor_snapshot?: RuntimeGovernorSnapshot;
 }
 
+function parseMetricsPayload(rawStdout: string): V5MetricsPayload | null {
+  const trimmed = rawStdout.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  // [V6.1-FIX-10] CLI startup logs may be emitted before the JSON payload.
+  // Parse from the first JSON object delimiter instead of assuming clean stdout.
+  const jsonStart = trimmed.indexOf("{");
+  if (jsonStart < 0) {
+    return null;
+  }
+
+  const candidate = trimmed.slice(jsonStart);
+  return JSON.parse(candidate) as V5MetricsPayload;
+}
+
 function buildPythonPath(repoRoot: string): string {
   const segments = [
     join(repoRoot, "src"),
@@ -69,9 +86,8 @@ export function startV5MetricsPoller(server: FastifyInstance): void {
         }
       );
 
-      const trimmed = stdout.trim();
-      if (trimmed) {
-        const payload: V5MetricsPayload = JSON.parse(trimmed) as V5MetricsPayload;
+      const payload = parseMetricsPayload(stdout);
+      if (payload) {
 
         const history: number[] = Array.isArray(payload.scs_history)
           ? payload.scs_history.map(Number)

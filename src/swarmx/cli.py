@@ -910,8 +910,17 @@ def main(argv: list[str] | None = None) -> int:  # noqa: D401
     Falls back to the legacy argparse implementation so that the ``swarm`` /
     ``swarmx`` entry points keep working even when *typer* is not installed.
     """
-    if _prefer_legacy_cli(argv):
-        return _legacy_main(argv)
+    # [V6.1-FIX-09] `python -m swarmx <legacy-command>` enters here with
+    # argv=None, so inspect the process argv to preserve legacy-only commands
+    # (for example `metrics`) that are not registered in the premium Typer app.
+    effective_argv = argv
+    if effective_argv is None:
+        import sys
+
+        effective_argv = sys.argv[1:]
+
+    if _prefer_legacy_cli(effective_argv):
+        return _legacy_main(effective_argv)
     try:
         from swarmx.console.entry import main as _premium_main  # type: ignore[import]
 
