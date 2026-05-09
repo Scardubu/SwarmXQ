@@ -138,8 +138,8 @@ export function NavRail() {
                   "text-xs font-ui transition-all duration-(--duration-micro)",
                   "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
                   isActive
-                    ? "text-accent bg-(--color-accent-dim) border-l-2 border-accent -ml-px pl-[7px] nav-item-active-glow"
-                    : "text-text-secondary hover:text-text-primary hover:bg-bg-surface border-l-2 border-transparent -ml-px pl-[7px]",
+                    ? "text-accent bg-(--color-accent-dim) border-l-2 border-accent -ml-px pl-1.75 nav-item-active-glow"
+                    : "text-text-secondary hover:text-text-primary hover:bg-bg-surface border-l-2 border-transparent -ml-px pl-1.75",
                   isComposer && !isActive && "text-accent/90"
                 )}
                 aria-current={isActive ? "page" : undefined}
@@ -234,7 +234,7 @@ export function NavRail() {
           <div className="px-4 py-2 flex items-center gap-2">
             <Activity className="h-3 w-3 text-text-muted shrink-0" />
             <span className="text-[9px] font-mono text-text-muted">SCS</span>
-            <div className="flex-1 h-[3px] rounded-full bg-bg-elevated overflow-hidden">
+            <div className="flex-1 h-0.75 rounded-full bg-bg-elevated overflow-hidden">
               <div
                 className="h-full rounded-full transition-[width] duration-700 ease-out"
                 style={{

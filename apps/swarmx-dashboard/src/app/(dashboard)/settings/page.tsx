@@ -301,7 +301,7 @@ export default function SettingsPage() {
               href="https://github.com/swarmx/swarmx/blob/main/docs/CONFIG_REFERENCE.md"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs font-mono text-text-muted hover:text-accent transition-colors duration-[var(--duration-micro)]"
+              className="text-xs font-mono text-text-muted hover:text-accent transition-colors duration-(--duration-micro)"
             >
               Full configuration reference →
             </a>
@@ -322,7 +322,7 @@ export default function SettingsPage() {
               ] as const).map(({ keys, label }) => (
                 <div
                   key={label}
-                  className="flex items-center justify-between px-4 py-2 hover:bg-bg-elevated/40 transition-colors duration-[var(--duration-micro)]"
+                  className="flex items-center justify-between px-4 py-2 hover:bg-bg-elevated/40 transition-colors duration-(--duration-micro)"
                 >
                   <span className="text-xs font-mono text-text-secondary">{label}</span>
                   <div className="flex items-center gap-1">

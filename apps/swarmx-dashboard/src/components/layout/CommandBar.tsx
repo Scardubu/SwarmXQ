@@ -9,47 +9,42 @@ import type { PressureLevel, StartupSummary } from "@swarmx/types";
 
 /** Live WAT clock (UTC+1 / Africa/Lagos). */
 function useWATClock() {
-  const [time, setTime] = React.useState("--:--:--");
-
-  const updateTime = React.useCallback(() => {
-    setTime(
+  const formatWATTime = React.useCallback(
+    () =>
       new Date().toLocaleTimeString("en-NG", {
         timeZone: "Africa/Lagos",
         hour: "2-digit",
         minute: "2-digit",
         second: "2-digit",
         hour12: false,
-      })
-    );
-  }, []);
+      }),
+    []
+  );
+
+  const [time, setTime] = React.useState(() => formatWATTime());
 
   React.useEffect(() => {
-    updateTime();
     const id = setInterval(() => {
-      updateTime();
+      setTime(formatWATTime());
     }, 1000);
     return () => clearInterval(id);
-  }, [updateTime]);
+  }, [formatWATTime]);
 
   return time;
 }
 
 function useWATDateTitle() {
-  const [title, setTitle] = React.useState("West Africa Time (UTC+1)");
-
-  React.useEffect(() => {
-    setTitle(
+  return React.useMemo(
+    () =>
       `West Africa Time (UTC+1) — ${new Date().toLocaleDateString("en-NG", {
         weekday: "long",
         day: "numeric",
         month: "long",
         year: "numeric",
         timeZone: "Africa/Lagos",
-      })}`
-    );
-  }, []);
-
-  return title;
+      })}`,
+    []
+  );
 }
 
 /** Health aggregate: SCS score takes precedence, then agent errors + CPU/mem. */

@@ -182,6 +182,9 @@ Logs are stored in `~/.swarmx/logs/`:
 
 ```bash
 # API server logs
+# Foreground mode (`swarm up --dashboard`): API logs stream in the terminal
+# where you started the stack.
+# Detached mode (`swarm up --detach`):
 tail -f ~/.swarmx/logs/swarmx-api.log
 
 # Dashboard logs
