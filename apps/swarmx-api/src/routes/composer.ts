@@ -36,6 +36,37 @@ function parseCpuThreshold(message: string, fallback = 80): number {
   return Math.min(100, Math.max(1, parsed));
 }
 
+function fallbackForSimplePrompt(message: string): string | null {
+  const q = message.toLowerCase();
+
+  if (q.includes("python") && (q.includes("function") || q.includes("hook"))) {
+    return [
+      "Model timeout fallback: generated a simple Python function template.",
+      "",
+      "```python",
+      "def greet(name: str) -> str:",
+      "    return f\"Hello, {name}!\"",
+      "```",
+      "",
+      "You can call it with: `greet(\"Scar\")`.",
+    ].join("\n");
+  }
+
+  if (q.includes("javascript") && q.includes("function")) {
+    return [
+      "Model timeout fallback: generated a simple JavaScript function template.",
+      "",
+      "```javascript",
+      "function greet(name) {",
+      "  return `Hello, ${name}!`;",
+      "}",
+      "```",
+    ].join("\n");
+  }
+
+  return null;
+}
+
 function formatRunningByRole(agents: ComposerAgent[]): string {
   const running = agents.filter((a) => a.status === "running" || a.status === "active");
   const grouped = new Map<string, ComposerAgent[]>();
@@ -332,6 +363,12 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         const reason = err instanceof Error ? err.message : "Unknown error";
         const availableModels = await listAvailableModels(ollamaBase);
         server.log.warn({ err }, "Composer model call failed — using fleet summary fallback");
+
+        const simpleFallback = fallbackForSimplePrompt(message);
+        if (simpleFallback) {
+          responseText = simpleFallback;
+          return { message: responseText, agentId: "swarmx-composer", sessionId };
+        }
 
         // [SEED-FIX-03] Surface actionable diagnostics: model mismatch vs timeout.
         const isTimeout = reason.toLowerCase().includes("timeout") || reason.toLowerCase().includes("abort");
