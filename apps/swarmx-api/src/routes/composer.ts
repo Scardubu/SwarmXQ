@@ -3,6 +3,168 @@ import { z } from "zod";
 import { agentRegistry } from "./agents.js";
 // Use built-in fetch (Node.js 18+ / TypeScript globalThis)
 
+type ComposerAgent = {
+  id: string;
+  name: string | undefined;
+  status: string;
+  role: string | undefined;
+  currentTask: string | undefined;
+  resource?: {
+    cpuPercent?: number;
+  } | null;
+};
+
+function detectLocalIntent(message: string): "running_by_role" | "high_cpu" | "available_agents" | null {
+  const q = message.toLowerCase();
+  if ((q.includes("running agents") || q.includes("active agents")) && q.includes("grouped by role")) {
+    return "running_by_role";
+  }
+  if ((q.includes("available") || q.includes("availble")) && q.includes("agent")) {
+    return "available_agents";
+  }
+  if (q.includes("cpu") && (q.includes("above") || q.includes("over") || q.includes("greater than"))) {
+    return "high_cpu";
+  }
+  return null;
+}
+
+function parseCpuThreshold(message: string, fallback = 80): number {
+  const match = message.match(/(above|over|greater than)\s*(\d{1,3})\s*%?/i);
+  if (!match) return fallback;
+  const parsed = Number.parseInt(match[2] ?? "", 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(100, Math.max(1, parsed));
+}
+
+function formatRunningByRole(agents: ComposerAgent[]): string {
+  const running = agents.filter((a) => a.status === "running" || a.status === "active");
+  const grouped = new Map<string, ComposerAgent[]>();
+  for (const agent of running) {
+    const role = (agent.role?.trim() || "unassigned").toLowerCase();
+    const bucket = grouped.get(role);
+    if (bucket) {
+      bucket.push(agent);
+    } else {
+      grouped.set(role, [agent]);
+    }
+  }
+
+  const lines: string[] = [];
+  lines.push("SwarmX live fleet summary (grouped by role)");
+  lines.push(`Active/running agents: ${running.length}`);
+  lines.push(`Total registered: ${agents.length}`);
+
+  if (running.length === 0) {
+    lines.push("");
+    lines.push("No active agents are currently running.");
+    return lines.join("\n");
+  }
+
+  const sortedRoles = [...grouped.keys()].sort((left, right) => left.localeCompare(right));
+  for (const role of sortedRoles) {
+    const members = grouped.get(role) ?? [];
+    lines.push("");
+    lines.push(`Role: ${role} (${members.length})`);
+    for (const member of members) {
+      const name = member.name ?? member.id;
+      const task = member.currentTask?.trim() || "no current task reported";
+      lines.push(`  • ${name} — ${task}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+function formatHighCpuAgents(agents: ComposerAgent[], threshold: number): string {
+  const over = agents
+    .map((agent) => ({
+      agent,
+      cpu: agent.resource?.cpuPercent ?? 0,
+    }))
+    .filter((entry) => entry.cpu > threshold)
+    .sort((left, right) => right.cpu - left.cpu);
+
+  const lines: string[] = [];
+  lines.push(`Agents with CPU usage above ${threshold}%`);
+  lines.push(`Matches: ${over.length}`);
+  lines.push(`Total registered: ${agents.length}`);
+
+  if (over.length === 0) {
+    lines.push("");
+    lines.push("No agents currently exceed the CPU threshold.");
+    return lines.join("\n");
+  }
+
+  lines.push("");
+  for (const entry of over) {
+    const a = entry.agent;
+    const name = a.name ?? a.id;
+    const task = a.currentTask?.trim() || "no current task reported";
+    lines.push(`  • ${name} (${entry.cpu.toFixed(1)}%) — ${task}`);
+  }
+
+  return lines.join("\n");
+}
+
+function formatAvailableAgents(agents: ComposerAgent[]): string {
+  const lines: string[] = [];
+  const idle = agents.filter((a) => a.status === "idle");
+  const running = agents.filter((a) => a.status === "running" || a.status === "active");
+  const unavailable = agents.filter((a) => a.status === "error" || a.status === "fatal");
+
+  const byRole = new Map<string, ComposerAgent[]>();
+  for (const agent of agents) {
+    const role = (agent.role?.trim() || "unassigned").toLowerCase();
+    const bucket = byRole.get(role);
+    if (bucket) {
+      bucket.push(agent);
+    } else {
+      byRole.set(role, [agent]);
+    }
+  }
+
+  lines.push("SwarmX available agents summary");
+  lines.push(`Total registered: ${agents.length}`);
+  lines.push(`Idle/available: ${idle.length}`);
+  lines.push(`Active/running: ${running.length}`);
+  lines.push(`Unavailable (error/fatal): ${unavailable.length}`);
+
+  if (agents.length === 0) {
+    lines.push("");
+    lines.push("No agents are currently registered.");
+    return lines.join("\n");
+  }
+
+  const roles = [...byRole.keys()].sort((a, b) => a.localeCompare(b));
+  for (const role of roles) {
+    const members = byRole.get(role) ?? [];
+    lines.push("");
+    lines.push(`Role: ${role} (${members.length})`);
+    for (const member of members) {
+      const name = member.name ?? member.id;
+      lines.push(`  • ${name} [${member.status}]`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+async function listAvailableModels(ollamaBase: string): Promise<string[]> {
+  try {
+    const tagsRes = await fetch(`${ollamaBase}/api/tags`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!tagsRes.ok) return [];
+    const tagsJson = (await tagsRes.json()) as { models?: Array<{ name?: string }> };
+    const names = (tagsJson.models ?? [])
+      .map((m) => m.name?.trim())
+      .filter((n): n is string => Boolean(n));
+    return [...new Set(names)];
+  } catch {
+    return [];
+  }
+}
+
 const chatSchema = z.object({
   // [V6.1-FIX-05] Allow manual API calls without sessionId; server generates one.
   sessionId: z.string().min(1).max(128).optional(),
@@ -98,18 +260,42 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       ].filter((l) => l !== "").join("\n");
 
       const ollamaBase = resolveOllamaBaseUrl();
-      const model =
+      // [SEED-FIX-01] Resolve model and normalize name — Ollama requires the tag
+      // suffix (e.g. "phi4-fast:latest") when a model was pulled with an explicit
+      // tag. If the configured name has no colon, append ":latest" automatically.
+      const rawModel: string =
         process.env["SWARMX_COMPOSER_MODEL"] ??
         process.env["SWARMX_MODEL_FAST"] ??
         "phi4-fast";
-      // [V6.1-FIX-08] Default 10s timeout is a balance: allow some model slowness,
-      // but fallback to fleet summary fast enough for responsive UX. Overridable via env.
+      const model = rawModel.includes(":") ? rawModel : `${rawModel}:latest`;
+      // [SEED-FIX-02] Increase default composer timeout to 45s. The original 8s
+      // floor was too aggressive for cold Ollama model loads (first inference after
+      // boot requires loading weights into VRAM, which can take 15–40s on CPU-only
+      // hosts). Overridable via SWARMX_COMPOSER_TIMEOUT_MS env var.
       const timeoutMs = Number.parseInt(
-        process.env["SWARMX_COMPOSER_TIMEOUT_MS"] ?? "10000",
+        process.env["SWARMX_COMPOSER_TIMEOUT_MS"] ?? "45000",
         10,
       );
 
       let responseText: string;
+
+      // [V6.1-FIX-12] Fast deterministic answers for operational prompts that
+      // can be computed directly from live fleet state (no model dependency).
+      const localIntent = detectLocalIntent(message);
+      if (localIntent === "running_by_role") {
+        responseText = formatRunningByRole(agents);
+        return { message: responseText, agentId: "swarmx-composer", sessionId };
+      }
+      if (localIntent === "high_cpu") {
+        const threshold = parseCpuThreshold(message, 80);
+        responseText = formatHighCpuAgents(agents, threshold);
+        return { message: responseText, agentId: "swarmx-composer", sessionId };
+      }
+      if (localIntent === "available_agents") {
+        responseText = formatAvailableAgents(agents);
+        return { message: responseText, agentId: "swarmx-composer", sessionId };
+      }
+
       try {
         const ollamaRes = await fetch(`${ollamaBase}/api/chat`, {
           method: "POST",
@@ -141,7 +327,15 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           "No response from model.";
       } catch (err) {
         const reason = err instanceof Error ? err.message : "Unknown error";
+        const availableModels = await listAvailableModels(ollamaBase);
         server.log.warn({ err }, "Composer model call failed — using fleet summary fallback");
+
+        // [SEED-FIX-03] Surface actionable diagnostics: model mismatch vs timeout.
+        const isTimeout = reason.toLowerCase().includes("timeout") || reason.toLowerCase().includes("abort");
+        const modelMismatch = availableModels.length > 0 && !availableModels.some(
+          (m) => m === model || m.startsWith(rawModel + ":"),
+        );
+
         responseText = [
           `SwarmX fleet summary (responding to: "${message}")`,
           "",
@@ -159,7 +353,17 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           `Composer model fallback reason: ${reason}`,
           `Configured Ollama endpoint: ${ollamaBase}`,
           `Configured model: ${model}`,
-          `Set SWARMX_COMPOSER_MODEL (or SWARMX_MODEL_FAST) to a model available in your local Ollama registry.`,
+          availableModels.length > 0
+            ? `Available local models: ${availableModels.join(", ")}`
+            : "Available local models: (unavailable - could not query /api/tags)",
+          `Configured Ollama endpoint: ${ollamaBase}`,
+          `Configured model: ${model} (resolved from: ${rawModel})`,
+          `Composer model fallback reason: ${reason}`,
+          modelMismatch
+            ? `⚠ Model "${model}" not found — try: SWARMX_COMPOSER_MODEL=${availableModels[0] ?? "phi4-fast:latest"}`
+            : isTimeout
+            ? `⏱ Timeout after ${timeoutMs}ms — increase via SWARMX_COMPOSER_TIMEOUT_MS env var`
+            : `Set SWARMX_COMPOSER_MODEL (or SWARMX_MODEL_FAST) to a model available in your local Ollama registry.`,
         ]
           .filter((l) => l !== "")
           .join("\n");

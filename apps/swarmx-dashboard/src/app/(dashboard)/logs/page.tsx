@@ -196,6 +196,18 @@ export default function LogsPage() {
       </div>
 
       {/* Log lines */}
+      {/* [V6.1-FIX-11] Keep header outside scrolling container to avoid
+          sticky scroll-linked positioning warnings on Firefox/APZ. */}
+      {filtered.length > 0 && (
+        <div className="flex items-center gap-2 px-3 py-1 border-b border-border bg-bg-surface z-10 shrink-0">
+          <span className="text-[9px] font-mono text-text-muted uppercase tracking-wide shrink-0 w-28">Time (WAT)</span>
+          <span className="text-[9px] font-mono text-text-muted uppercase tracking-wide shrink-0 w-7">Lvl</span>
+          <span className="text-[9px] font-mono text-text-muted uppercase tracking-wide shrink-0 max-w-25">Unit</span>
+          <span className="text-[9px] font-mono text-text-muted uppercase tracking-wide shrink-0 w-20">Agent</span>
+          <span className="text-[9px] font-mono text-text-muted uppercase tracking-wide">Message</span>
+        </div>
+      )}
+
       <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto bg-bg-base"
@@ -212,14 +224,6 @@ export default function LogsPage() {
           </div>
         ) : (
           <>
-            {/* Column header — mirrors LogLine layout */}
-            <div className="flex items-center gap-2 px-3 py-1 border-b border-border sticky top-0 bg-bg-surface z-10">
-              <span className="text-[9px] font-mono text-text-muted uppercase tracking-wide shrink-0 w-28">Time (WAT)</span>
-              <span className="text-[9px] font-mono text-text-muted uppercase tracking-wide shrink-0 w-7">Lvl</span>
-              <span className="text-[9px] font-mono text-text-muted uppercase tracking-wide shrink-0 max-w-25">Unit</span>
-              <span className="text-[9px] font-mono text-text-muted uppercase tracking-wide shrink-0 w-20">Agent</span>
-              <span className="text-[9px] font-mono text-text-muted uppercase tracking-wide">Message</span>
-            </div>
             {filtered.map((entry, i) => (
               <LogLine key={entry.id ?? `${entry.timestamp}-${i}`} entry={entry} />
             ))}

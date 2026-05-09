@@ -21,30 +21,40 @@ function useWATClock() {
     []
   );
 
-  const [time, setTime] = React.useState(() => formatWATTime());
+  // [V6.1-FIX-09] Avoid SSR/client text drift from second-level clock rendering.
+  const [time, setTime] = React.useState("--:--:--");
 
   React.useEffect(() => {
+    const init = window.setTimeout(() => setTime(formatWATTime()), 0);
     const id = setInterval(() => {
       setTime(formatWATTime());
     }, 1000);
-    return () => clearInterval(id);
+    return () => {
+      clearTimeout(init);
+      clearInterval(id);
+    };
   }, [formatWATTime]);
 
   return time;
 }
 
 function useWATDateTitle() {
-  return React.useMemo(
-    () =>
-      `West Africa Time (UTC+1) — ${new Date().toLocaleDateString("en-NG", {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-        timeZone: "Africa/Lagos",
-      })}`,
-    []
-  );
+  // [V6.1-FIX-09] Keep initial title deterministic across SSR/client hydration.
+  const [title, setTitle] = React.useState("West Africa Time (UTC+1)");
+
+  React.useEffect(() => {
+    const next = `West Africa Time (UTC+1) — ${new Date().toLocaleDateString("en-NG", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      timeZone: "Africa/Lagos",
+    })}`;
+    const init = window.setTimeout(() => setTitle(next), 0);
+    return () => clearTimeout(init);
+  }, []);
+
+  return title;
 }
 
 /** Health aggregate: SCS score takes precedence, then agent errors + CPU/mem. */

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useMemo, useState } from "react";
+import React, { Suspense, useMemo, useState, useCallback } from "react";
 import { cn, formatPct, formatBytes } from "@/lib/utils";
 import { useEventsStore } from "@/stores/events";
 import { useSearchParams } from "next/navigation";
@@ -17,6 +17,7 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { Search, Terminal as TerminalIcon } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import type { AgentState } from "@swarmx/types";
 import { useUIStore } from "@/stores/ui";
 
@@ -289,14 +290,27 @@ function AgentsPageContent() {
   const agentsMap = useEventsStore((s) => s.agents);
   const agents = useMemo(() => [...agentsMap.values()], [agentsMap]);
   const searchParams = useSearchParams();
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  // [V6.1-FIX-10] Prevent SSR/client hydration text mismatch from Date.now().
+  const [nowMs, setNowMs] = useState(0);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [ignoreUrlFocus, setIgnoreUrlFocus] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const connectionStatus = useEventsStore((s) => s.connectionStatus);
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      const base = process.env.NEXT_PUBLIC_SWARMX_API_URL ?? "http://127.0.0.1:3001";
+      await fetch(`${base}/api/agents`);
+    } catch { /* best-effort */ }
+    setTimeout(() => setIsRefreshing(false), 800);
+  }, []);
 
   React.useEffect(() => {
+    setNowMs(Date.now());
     const id = setInterval(() => {
       setNowMs(Date.now());
     }, 1000);
@@ -345,9 +359,24 @@ function AgentsPageContent() {
       <div className="px-4 pt-4 pb-2 space-y-3 border-b border-border">
         <div className="flex items-center justify-between">
           <h1 className="text-sm font-mono font-semibold text-text-primary">Agent Fleet</h1>
-          <span className="text-xs font-mono text-text-muted tabular-nums" data-metric>
-            {filtered.length} of {agents.length}
-          </span>
+          <div className="flex items-center gap-2">
+            {connectionStatus !== "connected" && (
+              <span className="text-[9px] font-mono text-status-warning uppercase tracking-wide">
+                {connectionStatus === "connecting" ? "connecting…" : "disconnected"}
+              </span>
+            )}
+            <span className="text-xs font-mono text-text-muted tabular-nums" data-metric>
+              {filtered.length} of {agents.length}
+            </span>
+            <button
+              onClick={() => void handleRefresh()}
+              disabled={isRefreshing}
+              className="p-1 rounded hover:bg-bg-elevated transition-colors disabled:opacity-50"
+              aria-label="Refresh agent list"
+            >
+              <RefreshCw className={cn("h-3 w-3 text-text-muted", isRefreshing && "animate-spin")} />
+            </button>
+          </div>
         </div>
 
         {/* Status filter tabs */}

@@ -22,7 +22,7 @@ Then open the dashboard at **http://localhost:3000**
 ### Environment Variables
 
 - `SWARMX_API_URL` — API endpoint for dashboard rewrites (default: `http://127.0.0.1:3001`)
-- `SWARMX_COMPOSER_TIMEOUT_MS` — Composer model timeout in ms (default: `10000` API, `5000` when using `swarm up`)
+- `SWARMX_COMPOSER_TIMEOUT_MS` — Composer model timeout in ms (default: `45000` in API)
 - `SWARMX_OLLAMA_URL` — Ollama endpoint (default: `http://127.0.0.1:11434`)
 - `SWARMX_DASHBOARD_ORIGIN` — CORS allowlist for browser requests (default: auto-configured by `swarm up`)
   - For local dev: `http://localhost:3000,http://127.0.0.1:3000` (auto-set)
@@ -47,9 +47,15 @@ SwarmX uses **environment-driven CORS** to protect the API from unauthorized cro
 - Verify SWARMX_API_URL is set correctly (should be `http://127.0.0.1:3001`, not `localhost`)
 
 **Composer endpoint hangs or times out**
-- This is normal when Ollama is not running — the endpoint falls back to a fleet summary after 5 seconds
+- Cold model loads can take 15–40s on first request; API default timeout is 45s and then falls back to a fleet summary
 - Start Ollama: `ollama serve`
-- Or reduce `SWARMX_COMPOSER_TIMEOUT_MS` environment variable
+- Ensure `SWARMX_COMPOSER_MODEL` (or `SWARMX_MODEL_FAST`) resolves to an installed Ollama tag (`:latest` is auto-appended when omitted)
+- Tune timeout with `SWARMX_COMPOSER_TIMEOUT_MS` if your host is slower/faster
+
+**Agent fleet shows 0 agents after startup**
+- API now seeds agent registry from `agents/catalog.yaml` on boot so dashboard starts with idle agents
+- If catalog file is unavailable, a static built-in catalog snapshot is used (fail-open)
+- Send `SIGHUP` to API process to force a catalog re-seed without full restart
 
 **Port 3000 or 3001 already in use**
 ```bash

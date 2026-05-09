@@ -77,7 +77,7 @@ python -m cli up --dashboard --host 127.0.0.1 --port 3002
 | `NODE_ENV` | `development` | Node environment (dev/production) |
 | `TZ` | `Africa/Lagos` | Timezone for dashboard (WAT) |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama LLM backend URL |
-| `SWARMX_COMPOSER_TIMEOUT_MS` | `10000` (API), `5000` (dashboard via `swarm up`) | Composer model timeout in milliseconds. Lower values trigger faster fallback to fleet summary when model unavailable. |
+| `SWARMX_COMPOSER_TIMEOUT_MS` | `45000` (API default) | Composer model timeout in milliseconds. Increase on slow/cold hosts, decrease for faster fallback behavior. |
 | `SWARMX_REPO_ROOT` | Auto-detected | Absolute path to SwarmX repository; auto-set by `swarm up`. Required for metrics subprocess PYTHONPATH composition. |
 | `SWARMX_PYTHON` | `sys.executable` | Python interpreter for metrics poller and CLI sidecars; auto-detected from active venv by `swarm up`. |
 | `VERBOSE` | (not set) | Enable verbose logging in startup script |
@@ -121,6 +121,27 @@ ollama serve
 # Or check the connection
 curl http://localhost:11434/api/version
 ```
+
+### Composer fallback despite models being installed
+
+If Composer falls back even when models are installed:
+
+```bash
+# Verify installed model tags
+ollama list
+
+# Recommended explicit setting (tag included)
+export SWARMX_COMPOSER_MODEL=phi4-fast:latest
+```
+
+Notes:
+- API auto-normalizes model names by appending `:latest` when omitted.
+- First inference after startup can be slower due to model load.
+
+### Agent list initially empty
+
+The API seeds the in-memory agent registry from `agents/catalog.yaml` on startup.
+If the catalog is missing, it falls back to a static internal snapshot so the dashboard still renders agents as `idle`.
 
 ### "Cross-Origin Request Blocked" in Browser
 
