@@ -102,8 +102,10 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         process.env["SWARMX_COMPOSER_MODEL"] ??
         process.env["SWARMX_MODEL_FAST"] ??
         "phi4-fast";
+      // [V6.1-FIX-08] Default 10s timeout is a balance: allow some model slowness,
+      // but fallback to fleet summary fast enough for responsive UX. Overridable via env.
       const timeoutMs = Number.parseInt(
-        process.env["SWARMX_COMPOSER_TIMEOUT_MS"] ?? "90000",
+        process.env["SWARMX_COMPOSER_TIMEOUT_MS"] ?? "10000",
         10,
       );
 

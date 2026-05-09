@@ -174,6 +174,7 @@ def cmd_start(
         "SWARMX_API_HOST": host,
         "SWARMX_PYTHON": python_exe,  # [V6.1-FIX-03] Pass resolved python to metrics poller
         "SWARMX_REPO_ROOT": str(repo_root),
+        "SWARMX_COMPOSER_TIMEOUT_MS": "5000",  # [V6.1-FIX-08] 5s timeout for Composer fallback
     }
     if not api_env.get("SWARMX_DASHBOARD_ORIGIN"):
         # [V6.1-FIX-02] Local `next start` runs in production mode; seed loopback dashboard origins
