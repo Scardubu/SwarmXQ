@@ -22,12 +22,14 @@ Then open the dashboard at **http://localhost:3000**
 ### Environment Variables
 
 - `SWARMX_API_URL` — API endpoint for dashboard rewrites (default: `http://127.0.0.1:3001`)
-- `SWARMX_COMPOSER_TIMEOUT_MS` — Composer model timeout in ms (default: `5000`)
+- `SWARMX_COMPOSER_TIMEOUT_MS` — Composer model timeout in ms (default: `10000` API, `5000` when using `swarm up`)
 - `SWARMX_OLLAMA_URL` — Ollama endpoint (default: `http://127.0.0.1:11434`)
 - `SWARMX_DASHBOARD_ORIGIN` — CORS allowlist for browser requests (default: auto-configured by `swarm up`)
   - For local dev: `http://localhost:3000,http://127.0.0.1:3000` (auto-set)
   - For production: Set explicitly, e.g. `https://swarmx.example.com`
   - See [CORS Configuration Guide](docs/CORS_CONFIGURATION.md) for details
+- `SWARMX_REPO_ROOT` — Absolute path to SwarmX repository (auto-detected by `swarm up`, [V6.1-FIX-06])
+- `SWARMX_PYTHON` — Python interpreter for metrics poller (auto-detected from active venv, [V6.1-FIX-06])
 
 ### CORS Configuration
 

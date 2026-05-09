@@ -77,7 +77,9 @@ python -m cli up --dashboard --host 127.0.0.1 --port 3002
 | `NODE_ENV` | `development` | Node environment (dev/production) |
 | `TZ` | `Africa/Lagos` | Timezone for dashboard (WAT) |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama LLM backend URL |
-| `SWARMX_COMPOSER_TIMEOUT_MS` | `5000` | Composer model timeout |
+| `SWARMX_COMPOSER_TIMEOUT_MS` | `10000` (API), `5000` (dashboard via `swarm up`) | Composer model timeout in milliseconds. Lower values trigger faster fallback to fleet summary when model unavailable. |
+| `SWARMX_REPO_ROOT` | Auto-detected | Absolute path to SwarmX repository; auto-set by `swarm up`. Required for metrics subprocess PYTHONPATH composition. |
+| `SWARMX_PYTHON` | `sys.executable` | Python interpreter for metrics poller and CLI sidecars; auto-detected from active venv by `swarm up`. |
 | `VERBOSE` | (not set) | Enable verbose logging in startup script |
 
 ### Setting Environment Variables

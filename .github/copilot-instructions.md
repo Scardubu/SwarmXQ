@@ -641,7 +641,7 @@ stages:
 **Key conventions:**
 - All routes under `/api/<resource>` with Fastify router prefix.
 - Input validation via **Zod** — no raw `request.body` access.
-- **SSE** for real-time swarm events (`/api/sse`); **WebSocket** for terminal
+- **SSE** for real-time swarm events (`/api/events` canonical, `/api/sse` compatibility alias, [V6.1-FIX-07]); **WebSocket** for terminal
   streams (`/api/ws`).
 - `broadcastEvent()` from `plugins/sse.ts` is the only way to push to dashboard.
 - `agentRegistry: Map<string, AgentState>` is the in-memory agent state.
@@ -690,7 +690,7 @@ add shared types there, not duplicated across apps.
 ```typescript
 // Always clean up EventSource on unmount
 useEffect(() => {
-  const source = new EventSource("/api/sse");
+  const source = new EventSource("/api/events");  // canonical; /api/sse also works (compatibility alias)
   source.addEventListener("agent:update", (e) => {
     const state: AgentState = JSON.parse(e.data);
     useAgentStore.getState().updateAgent(state);
