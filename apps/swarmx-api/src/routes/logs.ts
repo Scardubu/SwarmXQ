@@ -17,6 +17,17 @@ const EVENTS_LIMIT = Number.parseInt(
 );
 
 export async function logsRouter(server: FastifyInstance): Promise<void> {
+  // [V6.1-ENH-02] Expose a base route so manual probes of /api/logs return the
+  // available log surfaces instead of a misleading 404.
+  server.get("/", async () => ({
+    endpoints: {
+      files: "/api/logs/files",
+      events: "/api/logs/events",
+    },
+    logDir: LOG_DIR,
+    swarmHome: SWARMX_HOME,
+  }));
+
   server.get("/files", async () => {
     try {
       const files = (await readdir(LOG_DIR)).filter((f) => f.endsWith(".log") || f.endsWith(".jsonl"));

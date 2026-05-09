@@ -8,7 +8,7 @@
 import type { FastifyInstance } from "fastify";
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { broadcastEvent } from "../plugins/sse.js";
 import type { RuntimeGovernorSnapshot, StartupSummary } from "../types/events.js";
@@ -30,6 +30,16 @@ interface V5MetricsPayload {
   governor_snapshot?: RuntimeGovernorSnapshot;
 }
 
+function buildPythonPath(repoRoot: string): string {
+  const segments = [
+    join(repoRoot, "src"),
+    repoRoot,
+    process.env["PYTHONPATH"] ?? "",
+  ].filter((value) => value.length > 0);
+
+  return segments.join(delimiter);
+}
+
 export function startV5MetricsPoller(server: FastifyInstance): void {
   const INTERVAL_MS = Number.parseInt(
     process.env["SWARMX_V5_POLL_INTERVAL_MS"] ?? "15000",
@@ -37,9 +47,14 @@ export function startV5MetricsPoller(server: FastifyInstance): void {
   );
   // [V6.1-FIX-03] Prefer python3, fallback to python, then SWARMX_PYTHON env var
   const pythonExe = process.env["SWARMX_PYTHON"] ?? "python3";
+  const repoRoot = resolve(process.env["SWARMX_REPO_ROOT"] ?? process.cwd());
   const runtimeHome =
     process.env["SWARMX_HOME"] ??
     `${process.env["HOME"] ?? process.env["USERPROFILE"] ?? ""}/.swarmx`;
+  const pythonEnv = {
+    ...process.env,
+    PYTHONPATH: buildPythonPath(repoRoot),
+  };
 
   const tick = async (): Promise<void> => {
     // ── SCS metrics ─────────────────────────────────────────────────────────
@@ -47,7 +62,11 @@ export function startV5MetricsPoller(server: FastifyInstance): void {
       const { stdout } = await execFileAsync(
         pythonExe,
         ["-m", "swarmx", "metrics", "--home", runtimeHome, "--format", "json"],
-        { timeout: 12_000 }
+        {
+          timeout: 12_000,
+          cwd: repoRoot,
+          env: pythonEnv,
+        }
       );
 
       const trimmed = stdout.trim();
@@ -101,7 +120,7 @@ export function startV5MetricsPoller(server: FastifyInstance): void {
   }, 5_000);
 
   server.log.info(
-    { intervalMs: INTERVAL_MS, pythonExe, runtimeHome },
+    { intervalMs: INTERVAL_MS, pythonExe, repoRoot, runtimeHome },
     "V5 metrics poller started"
   );
 }
