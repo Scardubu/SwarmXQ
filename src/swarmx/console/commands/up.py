@@ -174,19 +174,22 @@ def cmd_start(
         "SWARMX_API_HOST": host,
         "SWARMX_PYTHON": python_exe,  # [V6.1-FIX-03] Pass resolved python to metrics poller
         "SWARMX_REPO_ROOT": str(repo_root),
-        "SWARMX_COMPOSER_TIMEOUT_MS": "5000",  # [V6.1-FIX-08] 5s timeout for Composer fallback
     }
+    # [V6.1-FIX-16] Do not force a short Composer timeout in `swarm up`.
+    # Respect operator-provided env overrides; otherwise align with API default.
+    if not api_env.get("SWARMX_COMPOSER_TIMEOUT_MS"):
+        api_env["SWARMX_COMPOSER_TIMEOUT_MS"] = "45000"
     if not api_env.get("SWARMX_DASHBOARD_ORIGIN"):
         # [V6.1-FIX-02] Local `next start` runs in production mode; seed loopback dashboard origins
         # so direct API fallbacks (127.0.0.1/localhost) can pass CORS preflight checks.
         api_env["SWARMX_DASHBOARD_ORIGIN"] = "http://127.0.0.1:3000,http://localhost:3000"
     # [V5.9-FIX-07] Ensure dashboard rewrite target tracks the actual API bind.
-    # [V5.9-FIX-09] Optimize Composer timeout for faster fallback when Ollama unavailable.
     dashboard_env = {
         **dict(os.environ),
         "SWARMX_API_URL": _dashboard_api_url(host, port),
-        "SWARMX_COMPOSER_TIMEOUT_MS": "5000",  # 5s instead of 90s when Ollama unreachable
     }
+    if not dashboard_env.get("SWARMX_COMPOSER_TIMEOUT_MS"):
+        dashboard_env["SWARMX_COMPOSER_TIMEOUT_MS"] = "45000"
     api_cmd = [node_bin, str(api_dist)]
 
     dash_root = _dashboard_root()

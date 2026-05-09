@@ -216,7 +216,7 @@ curl -i http://127.0.0.1:3001/health
 curl -i http://localhost:11434/api/version
 
 # 3. Increase timeout (if needed)
-export SWARMX_COMPOSER_TIMEOUT_MS=10000  # 10 seconds
+export SWARMX_COMPOSER_TIMEOUT_MS=45000  # 45 seconds (default)
 python -m cli up --dashboard
 
 # 4. Check logs

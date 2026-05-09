@@ -281,11 +281,9 @@ async function seedFromCatalog(server: FastifyInstance): Promise<number> {
 }
 
 export function startAgentSeedService(server: FastifyInstance): void {
-  setTimeout(() => {
-    void seedFromCatalog(server).catch((err) => {
-      server.log.warn({ err }, "[agentSeed] Initial seed failed");
-    });
-  }, 500);
+  void seedFromCatalog(server).catch((err) => {
+    server.log.warn({ err }, "[agentSeed] Initial seed failed");
+  });
 
   process.on("SIGHUP", () => {
     server.log.info("[agentSeed] SIGHUP received — reloading agent catalog");
