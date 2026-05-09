@@ -16,8 +16,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import { Search, Terminal as TerminalIcon } from "lucide-react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Search, Terminal as TerminalIcon } from "lucide-react";
 import type { AgentState } from "@swarmx/types";
 import { useUIStore } from "@/stores/ui";
 
@@ -290,8 +289,8 @@ function AgentsPageContent() {
   const agentsMap = useEventsStore((s) => s.agents);
   const agents = useMemo(() => [...agentsMap.values()], [agentsMap]);
   const searchParams = useSearchParams();
-  // [V6.1-FIX-10] Prevent SSR/client hydration text mismatch from Date.now().
-  const [nowMs, setNowMs] = useState(0);
+  // [V6.1-FIX-10] Local client state for uptime rendering.
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -310,7 +309,6 @@ function AgentsPageContent() {
   }, []);
 
   React.useEffect(() => {
-    setNowMs(Date.now());
     const id = setInterval(() => {
       setNowMs(Date.now());
     }, 1000);

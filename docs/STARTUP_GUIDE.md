@@ -137,6 +137,8 @@ export SWARMX_COMPOSER_MODEL=phi4-fast:latest
 Notes:
 - API auto-normalizes model names by appending `:latest` when omitted.
 - First inference after startup can be slower due to model load.
+- Verify effective timeout in your shell before startup:
+   `echo ${SWARMX_COMPOSER_TIMEOUT_MS:-45000}`
 
 ### Agent list initially empty
 

@@ -272,10 +272,13 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       // floor was too aggressive for cold Ollama model loads (first inference after
       // boot requires loading weights into VRAM, which can take 15–40s on CPU-only
       // hosts). Overridable via SWARMX_COMPOSER_TIMEOUT_MS env var.
-      const timeoutMs = Number.parseInt(
+      const configuredTimeout = Number.parseInt(
         process.env["SWARMX_COMPOSER_TIMEOUT_MS"] ?? "45000",
         10,
       );
+      const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0
+        ? configuredTimeout
+        : 45_000;
 
       let responseText: string;
 
@@ -352,13 +355,10 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           "",
           `Composer model fallback reason: ${reason}`,
           `Configured Ollama endpoint: ${ollamaBase}`,
-          `Configured model: ${model}`,
+          `Configured model: ${model} (resolved from: ${rawModel})`,
           availableModels.length > 0
             ? `Available local models: ${availableModels.join(", ")}`
             : "Available local models: (unavailable - could not query /api/tags)",
-          `Configured Ollama endpoint: ${ollamaBase}`,
-          `Configured model: ${model} (resolved from: ${rawModel})`,
-          `Composer model fallback reason: ${reason}`,
           modelMismatch
             ? `⚠ Model "${model}" not found — try: SWARMX_COMPOSER_MODEL=${availableModels[0] ?? "phi4-fast:latest"}`
             : isTimeout
