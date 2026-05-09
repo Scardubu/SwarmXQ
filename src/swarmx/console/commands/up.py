@@ -161,10 +161,14 @@ def cmd_start(
         )
         raise typer.Exit(code=1)
 
+    # [V6.1-FIX-03] Resolve Python executable for metrics poller and event bridge
+    python_exe = shutil.which("python3") or shutil.which("python") or "python3"
+    
     api_env = {
         **dict(os.environ),
         "SWARMX_API_PORT": str(port),
         "SWARMX_API_HOST": host,
+        "SWARMX_PYTHON": python_exe,  # [V6.1-FIX-03] Pass resolved python to metrics poller
     }
     if not api_env.get("SWARMX_DASHBOARD_ORIGIN"):
         # [V6.1-FIX-02] Local `next start` runs in production mode; seed loopback dashboard origins

@@ -35,7 +35,8 @@ export function startV5MetricsPoller(server: FastifyInstance): void {
     process.env["SWARMX_V5_POLL_INTERVAL_MS"] ?? "15000",
     10
   );
-  const pythonExe = process.env["SWARMX_PYTHON"] ?? "python";
+  // [V6.1-FIX-03] Prefer python3, fallback to python, then SWARMX_PYTHON env var
+  const pythonExe = process.env["SWARMX_PYTHON"] ?? "python3";
   const runtimeHome =
     process.env["SWARMX_HOME"] ??
     `${process.env["HOME"] ?? process.env["USERPROFILE"] ?? ""}/.swarmx`;
