@@ -71,7 +71,7 @@ function AgentRow({
       onClick={() => onSelect(agent)}
       className={cn(
         "w-full grid items-center gap-3 px-4 py-2.5 text-left",
-        "hover:bg-bg-elevated transition-colors duration-(--duration-micro)",
+        "hover:bg-bg-elevated transition-all duration-(--duration-micro) group",
         "focus-visible:outline-none focus-visible:ring-inset focus-visible:ring-1 focus-visible:ring-accent",
         "border-b border-border last:border-0",
         "grid-cols-[1.5rem_1fr_5rem_5rem_5rem_7rem_4rem]"
@@ -383,7 +383,7 @@ function AgentsPageContent() {
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-40 gap-2">
             <span className="text-xs font-mono text-text-muted">
-              {agents.length === 0 ? "No agents registered" : "No agents match filter"}
+              {agents.length === 0 ? "No agents have checked in yet — is the swarm running?" : "Nothing matches that filter — try broadening your search"}
             </span>
           </div>
         ) : (

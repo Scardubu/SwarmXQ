@@ -55,9 +55,14 @@ const IS_PRODUCTION = (process.env["NODE_ENV"] ?? "production") === "production"
 function buildAllowedOrigins(): (string | RegExp)[] {
   const origins: (string | RegExp)[] = [];
 
-  const dashboardOrigin = process.env["SWARMX_DASHBOARD_ORIGIN"]?.trim().replace(/\/$/, "");
-  if (dashboardOrigin) {
-    origins.push(dashboardOrigin);
+  const rawDashboardOrigins = process.env["SWARMX_DASHBOARD_ORIGIN"];
+  if (rawDashboardOrigins) {
+    for (const origin of rawDashboardOrigins.split(",")) {
+      const trimmed = origin.trim().replace(/\/$/, "");
+      if (trimmed) {
+        origins.push(trimmed);
+      }
+    }
   }
 
   if (!IS_PRODUCTION) {
@@ -66,6 +71,14 @@ function buildAllowedOrigins(): (string | RegExp)[] {
     origins.push("http://127.0.0.1:3000");
     origins.push("http://localhost:3001");
     origins.push("http://127.0.0.1:3001");
+  }
+
+  // [API-FIX-04] Local production runs often use next start with NODE_ENV=production.
+  // If no explicit origin was configured and API is loopback-only, allow local dashboard origins.
+  const isLoopbackHost = HOST === "127.0.0.1" || HOST === "0.0.0.0" || HOST === "localhost" || HOST === "::" || HOST === "::1";
+  if (origins.length === 0 && isLoopbackHost) {
+    origins.push("http://localhost:3000");
+    origins.push("http://127.0.0.1:3000");
   }
 
   return origins;

@@ -24,6 +24,18 @@ Then open the dashboard at **http://localhost:3000**
 - `SWARMX_API_URL` — API endpoint for dashboard rewrites (default: `http://127.0.0.1:3001`)
 - `SWARMX_COMPOSER_TIMEOUT_MS` — Composer model timeout in ms (default: `5000`)
 - `SWARMX_OLLAMA_URL` — Ollama endpoint (default: `http://127.0.0.1:11434`)
+- `SWARMX_DASHBOARD_ORIGIN` — CORS allowlist for browser requests (default: auto-configured by `swarm up`)
+  - For local dev: `http://localhost:3000,http://127.0.0.1:3000` (auto-set)
+  - For production: Set explicitly, e.g. `https://swarmx.example.com`
+  - See [CORS Configuration Guide](docs/CORS_CONFIGURATION.md) for details
+
+### CORS Configuration
+
+SwarmX uses **environment-driven CORS** to protect the API from unauthorized cross-origin requests:
+
+- **Local Development:** `swarm up` automatically configures CORS for `localhost:3000` — no manual env setup needed ✅
+- **Production:** Set `SWARMX_DASHBOARD_ORIGIN` to your dashboard domain and `NODE_ENV=production` for strict validation
+- **Troubleshooting:** See [CORS Configuration Guide](docs/CORS_CONFIGURATION.md) for browser errors and solutions
 
 ### Troubleshooting
 

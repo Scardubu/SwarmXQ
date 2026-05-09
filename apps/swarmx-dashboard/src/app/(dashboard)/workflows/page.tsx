@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { cn } from "@/lib/utils";
+import { cn, formatRelativeTime } from "@/lib/utils";
 import { useEventsStore } from "@/stores/events";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -23,11 +23,11 @@ interface WorkflowStep {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function workflowDataStatus(status: WorkflowListItem["status"]): string {
-  if (status === "queued") return "queued";
-  if (status === "running") return "active";
-  if (status === "success") return "success";
-  if (status === "cancelled") return "warning";
-  if (status === "error") return "error";
+  if (status === "queued")    return "queued";
+  if (status === "running")   return "active";
+  if (status === "success")   return "success";
+  if (status === "cancelled") return "idle";       // winding down, not an error
+  if (status === "error")     return "error";
   return "idle";
 }
 
@@ -67,9 +67,16 @@ function listStatusFromRun(status: WorkflowRunState["status"]): WorkflowListItem
 
 function formatWorkflowTimestamp(timestamp?: string): string {
   if (!timestamp) return "No runs yet";
+  const ms = Date.parse(timestamp);
+  if (Number.isNaN(ms)) return timestamp;
+  return formatRelativeTime(ms);
+}
+
+function formatWorkflowTimestampAbsolute(timestamp?: string): string {
+  if (!timestamp) return "";
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return timestamp;
-  return date.toLocaleString();
+  return date.toLocaleString("en-NG", { timeZone: "Africa/Lagos" });
 }
 
 function agentStepDataStatus(status: string | undefined): string {
@@ -133,11 +140,19 @@ function WorkflowListPanel({
 
   if (!workflows || workflows.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-32 gap-2 px-4">
-        <GitBranch className="h-6 w-6 text-text-muted" />
-        <span className="text-xs font-mono text-text-muted text-center">
-          No workflows found in workflows/ directory
-        </span>
+      <div className="flex flex-col items-center justify-center h-40 gap-3 px-4">
+        <div className="relative h-8 w-8">
+          <div className="absolute inset-0 rounded-full border border-dashed border-border" style={{ animation: "orbit-cw 6s linear infinite" }} />
+          <div className="absolute inset-2 flex items-center justify-center">
+            <GitBranch className="h-3 w-3 text-text-muted" />
+          </div>
+        </div>
+        <div className="text-center space-y-1">
+          <span className="text-xs font-mono text-text-muted block">No workflows yet</span>
+          <span className="text-[10px] font-mono text-text-muted/60 block leading-relaxed">
+            Drop a <code className="text-accent/70">.yaml</code> file into your <code className="text-accent/70">workflows/</code> directory to get started
+          </span>
+        </div>
       </div>
     );
   }
@@ -163,9 +178,11 @@ function WorkflowListPanel({
           onClick={() => onSelect(wf.id)}
           className={cn(
             "w-full flex items-center gap-3 px-3 py-2.5 text-left",
-            "hover:bg-bg-elevated transition-colors duration-(--duration-micro)",
+            "w-full flex items-center gap-3 px-3 py-2.5 text-left",
+            "hover:bg-bg-elevated transition-all duration-(--duration-micro)",
             "focus-visible:outline-none focus-visible:ring-inset focus-visible:ring-1 focus-visible:ring-accent",
-            selected === wf.id && "bg-(--color-accent-dim)"
+            "border-l-2",
+            selected === wf.id ? "bg-(--color-accent-dim) border-accent pl-[10px]" : "border-transparent"
           )}
           aria-pressed={selected === wf.id}
           aria-label={`Select workflow: ${wf.name}`}
@@ -184,7 +201,10 @@ function WorkflowListPanel({
                 {wf.status}
               </Badge>
               {wf.lastRun && (
-                <span className="text-[10px] font-mono text-text-muted truncate">
+                <span
+                  className="text-[10px] font-mono text-text-muted truncate"
+                  title={formatWorkflowTimestampAbsolute(wf.lastRun)}
+                >
                   {formatWorkflowTimestamp(wf.lastRun)}
                 </span>
               )}
@@ -419,7 +439,7 @@ function WorkflowDetail({ workflowId }: { readonly workflowId: string }) {
         <div className="grid grid-cols-1 gap-3 border-b border-border bg-bg-surface/60 px-4 py-3 md:grid-cols-3">
           <div className="rounded border border-border bg-bg-base/70 px-3 py-2">
             <div className="text-[10px] font-mono uppercase tracking-wider text-text-muted">Last Update</div>
-            <div className="mt-1 text-xs font-mono text-text-primary">{formatWorkflowTimestamp(effectiveRun.updatedAt)}</div>
+            <div className="mt-1 text-xs font-mono text-text-primary" title={formatWorkflowTimestampAbsolute(effectiveRun.updatedAt)}>{formatWorkflowTimestamp(effectiveRun.updatedAt)}</div>
           </div>
           <div className="rounded border border-border bg-bg-base/70 px-3 py-2">
             <div className="text-[10px] font-mono uppercase tracking-wider text-text-muted">Trace</div>
@@ -500,16 +520,18 @@ function WorkflowDetail({ workflowId }: { readonly workflowId: string }) {
 
 export default function WorkflowsPage() {
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
+  const handleSelect = React.useCallback((id: string) => setSelectedWorkflowId(id), []);
 
   return (
     <div className="flex h-full">
       {/* Sidebar */}
       <aside className="w-64 shrink-0 border-r border-border flex flex-col">
-        <div className="px-4 py-3 border-b border-border">
+        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
           <h1 className="text-sm font-mono font-semibold text-text-primary">Workflows</h1>
+          <span className="ai-chip">DAG</span>
         </div>
         <ScrollArea className="flex-1">
-          <WorkflowListPanel selected={selectedWorkflowId} onSelect={setSelectedWorkflowId} />
+          <WorkflowListPanel selected={selectedWorkflowId} onSelect={handleSelect} />
         </ScrollArea>
       </aside>
 
@@ -518,11 +540,17 @@ export default function WorkflowsPage() {
         {selectedWorkflowId ? (
           <WorkflowDetail workflowId={selectedWorkflowId} />
         ) : (
-          <div className="flex flex-col items-center justify-center h-full gap-3">
-            <GitBranch className="h-8 w-8 text-text-muted" />
-            <span className="text-xs font-mono text-text-muted">
-              Select a workflow to inspect
-            </span>
+          <div className="flex flex-col items-center justify-center h-full gap-4">
+            <div className="relative h-12 w-12">
+              <div className="absolute inset-0 rounded-full border border-dashed border-border" style={{ animation: "orbit-cw 8s linear infinite" }} />
+              <div className="absolute inset-3 flex items-center justify-center">
+                <GitBranch className="h-4 w-4 text-text-muted" />
+              </div>
+            </div>
+            <div className="text-center space-y-1">
+              <span className="text-xs font-mono text-text-muted block">Nothing selected</span>
+              <span className="text-[10px] font-mono text-text-muted/60 block">Choose a workflow from the left to inspect its DAG and run history</span>
+            </div>
           </div>
         )}
       </div>

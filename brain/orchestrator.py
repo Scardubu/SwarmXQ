@@ -46,6 +46,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import sys
 import warnings
@@ -112,10 +113,29 @@ def _get_store() -> Any:
 # Previously _make_orchestrator() was called on every run_task() invocation,
 # spinning up and immediately tearing down a fresh httpx.AsyncClient each time.
 
-_orch_lock = asyncio.Lock()  # created at import time — always on the main thread
+# [ENH-02] One OllamaClient (one httpx connection pool) per process lifetime.
+# [FIX-LAZY-LOCK] asyncio.Lock lazily created inside the running event loop.
+# Creating asyncio.Lock() at module import time emits DeprecationWarning in
+# Python 3.10+ and raises RuntimeError in 3.12+ when no loop is running.
+# Mirrors the fix already applied in brain/memory.py [FIX-03].
+
+_orch_lock: asyncio.Lock | None = None
 _ollama: Any = None
 _orch: Any = None
 
+
+def _get_orch_lock() -> asyncio.Lock:
+    """Return the asyncio.Lock, creating it lazily inside the running event loop."""
+    global _orch_lock
+    if _orch_lock is None:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError as exc:
+            raise RuntimeError(
+                "brain.orchestrator._get_orch() must be called from an async context."
+            ) from exc
+        _orch_lock = asyncio.Lock()
+    return _orch_lock
 
 def _add_orchestration_to_path() -> None:
     """Ensure the canonical orchestration/ directory is on sys.path."""
@@ -135,14 +155,14 @@ async def _get_orch() -> tuple[Any, Any]:
     if _orch is not None:
         return _orch, _ollama
 
-    async with _orch_lock:
+    async with _get_orch_lock():
         # Double-checked locking — another coroutine may have initialised first
         if _orch is not None:
             return _orch, _ollama
 
         _add_orchestration_to_path()
         from orchestrator import (  # type: ignore[import]
-            OllamaClient, SwarmXOrchestrator, load_config, load_schemas, _init_cache,
+            OllamaClient, SwarmXOrchestrator, _init_cache, load_config, load_schemas,
         )
         load_config()
         load_schemas()
@@ -228,10 +248,8 @@ async def shutdown() -> None:
     """
     global _ollama, _orch
     if _ollama is not None:
-        try:
+        with contextlib.suppress(Exception):
             await _ollama.close()
-        except Exception:
-            pass
     _ollama = None
     _orch = None
 
@@ -253,10 +271,8 @@ def shutdown_sync() -> None:
             pool.submit(asyncio.run, shutdown()).result()
     except RuntimeError:
         # No running loop — safe to call asyncio.run() directly
-        try:
+        with contextlib.suppress(Exception):
             asyncio.run(shutdown())
-        except Exception:
-            pass
 
 
 def reset_singleton() -> None:

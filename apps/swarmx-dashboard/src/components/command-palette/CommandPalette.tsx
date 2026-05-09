@@ -191,7 +191,7 @@ function CommandPaletteInner({
 
       <Command.List className="max-h-100 overflow-y-auto p-1">
         <Command.Empty className="text-center text-xs font-mono text-text-muted py-8">
-          No commands match.
+          No matches — but the swarm is always listening.
         </Command.Empty>
 
         {/* Navigation */}

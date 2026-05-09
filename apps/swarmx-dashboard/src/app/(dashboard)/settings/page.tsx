@@ -306,6 +306,39 @@ export default function SettingsPage() {
               Full configuration reference →
             </a>
           </div>
+
+          {/* Keyboard shortcuts reference */}
+          <SettingsSection title="Keyboard Shortcuts">
+            <div className="divide-y divide-border">
+              {([
+                { keys: ["⌘", "K"],      label: "Open command palette" },
+                { keys: ["⌘", "1–6"],    label: "Jump to section" },
+                { keys: ["⌘", "B"],      label: "Toggle sidebar" },
+                { keys: ["⌘", "`"],      label: "Toggle terminal strip" },
+                { keys: ["⌘", "T"],      label: "New terminal tab" },
+                { keys: ["⌘", "⇧", "T"], label: "Toggle telemetry rail" },
+                { keys: ["⌘", "⇧", "`"], label: "Fullscreen terminal" },
+                { keys: ["↵"],           label: "Submit composer message" },
+              ] as const).map(({ keys, label }) => (
+                <div
+                  key={label}
+                  className="flex items-center justify-between px-4 py-2 hover:bg-bg-elevated/40 transition-colors duration-[var(--duration-micro)]"
+                >
+                  <span className="text-xs font-mono text-text-secondary">{label}</span>
+                  <div className="flex items-center gap-1">
+                    {keys.map((k) => (
+                      <kbd
+                        key={k}
+                        className="kbd-pill"
+                      >
+                        {k}
+                      </kbd>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </SettingsSection>
         </div>
       </ScrollArea>
     </div>

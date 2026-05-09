@@ -166,6 +166,10 @@ def cmd_start(
         "SWARMX_API_PORT": str(port),
         "SWARMX_API_HOST": host,
     }
+    if not api_env.get("SWARMX_DASHBOARD_ORIGIN"):
+        # [V6.1-FIX-02] Local `next start` runs in production mode; seed loopback dashboard origins
+        # so direct API fallbacks (127.0.0.1/localhost) can pass CORS preflight checks.
+        api_env["SWARMX_DASHBOARD_ORIGIN"] = "http://127.0.0.1:3000,http://localhost:3000"
     # [V5.9-FIX-07] Ensure dashboard rewrite target tracks the actual API bind.
     # [V5.9-FIX-09] Optimize Composer timeout for faster fallback when Ollama unavailable.
     dashboard_env = {

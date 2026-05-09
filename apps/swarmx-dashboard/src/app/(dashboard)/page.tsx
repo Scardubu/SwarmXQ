@@ -11,20 +11,36 @@ import {
 } from "recharts";
 import { cn, formatPct, formatBps } from "@/lib/utils";
 import { useEventsStore } from "@/stores/events";
+import type { AgentState, LogEntry } from "@swarmx/types";
+import { Zap, TrendingUp, TrendingDown, Minus, AlertTriangle, CheckCircle2, Brain } from "lucide-react";
 
-type AgentStatus = ReturnType<typeof useEventsStore.getState>["agents"] extends Map<string, infer T>
-  ? T extends { status: infer S }
-    ? S
-    : never
-  : never;
+// ── Type helpers ──────────────────────────────────────────────────────────────
 
-function agentDataStatus(status: AgentStatus): string {
-  if (status === "running") return "active";
-  if (status === "idle") return "idle";
-  if (status === "queued") return "queued";
-  if (status === "error" || status === "fatal") return "error";
+/** Map AgentStatus → CSS data-status value (passes through for all defined statuses). */
+function agentDataStatus(status: AgentState["status"]): string {
+  // active / running → green pulse
+  if (status === "running" || status === "active" || status === "activating") return "active";
+  // terminal success
   if (status === "success") return "success";
+  // pending / waiting
+  if (status === "queued") return "queued";
+  // slow-down
   if (status === "throttled") return "throttled";
+  // reload cycle
+  if (status === "reload" || status === "reloading") return "reloading";
+  // winding down
+  if (status === "deactivating" || status === "paused") return "idle";
+  // fatal / OOM / killed — use the exact CSS selector values
+  if (
+    status === "fatal" ||
+    status === "failed_permanent" ||
+    status === "oom_killed" ||
+    status === "oom" ||
+    status === "killed"
+  ) return "fatal";
+  // standard error / failed
+  if (status === "error" || status === "failed") return "error";
+  // idle / unknown
   return "idle";
 }
 
@@ -36,14 +52,14 @@ function layerDataStatus(status: string): string {
 }
 
 function logTimestampColor(level: string): string {
-  if (level === "error" || level === "critical") return "text-status-error";
-  if (level === "warn") return "text-status-warning";
+  if (level === "error" || level === "critical" || level === "fatal") return "text-status-error";
+  if (level === "warn" || level === "warning") return "text-status-warning";
   return "text-text-muted";
 }
 
 function logMessageColor(level: string): string {
-  if (level === "error" || level === "critical") return "text-status-error";
-  if (level === "warn") return "text-status-warning";
+  if (level === "error" || level === "critical" || level === "fatal") return "text-status-error";
+  if (level === "warn" || level === "warning") return "text-status-warning";
   return "text-text-secondary";
 }
 
@@ -57,8 +73,129 @@ function formatErrorCount(errors: number): string {
   return `${errors} ${errors === 1 ? "error" : "errors"}`;
 }
 
-function metricsOrNull<T,>(value: T | null | undefined): T | null {
-  return value ?? null;
+// ── AI Insight Engine ─────────────────────────────────────────────────────────
+
+interface Insight {
+  id: string;
+  type: "info" | "warn" | "error" | "success";
+  message: string;
+  action?: string;
+  href?: string;
+}
+
+function useInsights(): Insight[] {
+  const active = useEventsStore((s) => s.activeAgentCount);
+  const errors = useEventsStore((s) => s.errorAgentCount);
+  const total = useEventsStore((s) => s.totalAgentCount);
+  const metrics = useEventsStore((s) => s.systemMetrics);
+  const agents = useEventsStore((s) => [...s.agents.values()]);
+  const queues = useEventsStore((s) => s.queues);
+  const scsScore = useEventsStore((s) => s.scsScore);
+
+  return useMemo(() => {
+    const ins: Insight[] = [];
+
+    if (errors > 0) {
+      ins.push({
+        id: "agent-errors",
+        type: "error",
+        message: `${errors} agent${errors === 1 ? "" : "s"} need${errors === 1 ? "s" : ""} your attention`,
+        action: "Triage →",
+        href: "/agents?focus=error",
+      });
+    }
+
+    // Use properly-typed resource alias — AgentState has resource/resources both pointing to AgentResourceSnapshot
+    const throttled = agents.filter((a) => {
+      const res = a.resources ?? a.resource ?? null;
+      return (res?.cpuThrottledPercent ?? 0) > 15;
+    });
+    if (throttled.length > 0) {
+      ins.push({
+        id: "throttled",
+        type: "warn",
+        message: `${throttled.length} agent${throttled.length === 1 ? " is" : "s are"} CPU-throttled — consider scaling`,
+        action: "View →",
+        href: "/agents",
+      });
+    }
+
+    const totalWaiting = [...(queues?.values() ?? [])].reduce((a, q) => a + q.waiting, 0);
+    if (totalWaiting > 20) {
+      ins.push({
+        id: "queue-pressure",
+        type: "warn",
+        message: `Queue depth at ${totalWaiting} — swarm is under pressure`,
+      });
+    }
+
+    const memPct = metrics ? (metrics.memory.usedMb / metrics.memory.totalMb) * 100 : 0;
+    if (memPct > 88) {
+      ins.push({
+        id: "mem-pressure",
+        type: "error",
+        message: `Memory at ${Math.round(memPct)}% — OOM risk elevated`,
+      });
+    }
+
+    if (scsScore !== null && scsScore >= 0.92 && errors === 0 && active > 0) {
+      ins.push({
+        id: "swarm-optimal",
+        type: "success",
+        message: `Swarm coherence ${Math.round(scsScore * 100)}% — fleet is firing on all cylinders`,
+      });
+    }
+
+    if (total === 0 && ins.length === 0) {
+      ins.push({
+        id: "idle-fleet",
+        type: "info",
+        message: "Fleet is standing by — run `swarm up` to deploy agents",
+      });
+    }
+
+    return ins.slice(0, 3);
+  }, [active, errors, total, metrics, agents, queues, scsScore]);
+}
+
+// ── Insight Strip ─────────────────────────────────────────────────────────────
+
+function InsightStrip() {
+  const insights = useInsights();
+  if (insights.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-1.5 insight-strip">
+      {insights.map((ins) => (
+        <div
+          key={ins.id}
+          className={cn(
+            "flex items-center justify-between px-4 py-2 rounded-lg border text-[11px] font-mono",
+            ins.type === "error" && "insight-error",
+            ins.type === "warn" && "insight-warn",
+            ins.type === "success" && "insight-success",
+            ins.type === "info" && "insight-info"
+          )}
+        >
+          <div className="flex items-center gap-2">
+            {ins.type === "error" && <AlertTriangle className="h-3 w-3 shrink-0" />}
+            {ins.type === "warn"  && <AlertTriangle className="h-3 w-3 shrink-0" />}
+            {ins.type === "success" && <CheckCircle2 className="h-3 w-3 shrink-0" />}
+            {ins.type === "info"  && <Brain className="h-3 w-3 shrink-0" />}
+            <span>{ins.message}</span>
+          </div>
+          {ins.action && ins.href && (
+            <a
+              href={ins.href}
+              className="shrink-0 ml-4 underline underline-offset-2 opacity-80 hover:opacity-100 transition-opacity"
+            >
+              {ins.action}
+            </a>
+          )}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 // ── Section shell ─────────────────────────────────────────────────────────────
@@ -70,6 +207,7 @@ function Panel({
   loading,
   live,
   variant,
+  badge,
 }: {
   readonly title: string;
   readonly children: React.ReactNode;
@@ -77,11 +215,12 @@ function Panel({
   readonly loading?: boolean;
   readonly live?: boolean;
   readonly variant?: "default" | "warn" | "danger";
+  readonly badge?: React.ReactNode;
 }) {
   return (
     <section
       className={cn(
-        "flex flex-col bg-bg-surface border border-border rounded-lg overflow-hidden panel-enter",
+        "flex flex-col bg-bg-surface border border-border rounded-lg overflow-hidden panel-enter card-interactive",
         live && "live-panel-edge",
         variant === "danger" && "panel-variant-danger",
         variant === "warn" && "panel-variant-warn",
@@ -107,6 +246,7 @@ function Panel({
           <span className="text-[11px] font-mono font-semibold text-text-muted uppercase tracking-widest">
             {title}
           </span>
+          {badge}
         </div>
         {loading && (
           <span className="text-[9px] font-mono text-text-muted animate-pulse">loading…</span>
@@ -117,6 +257,14 @@ function Panel({
       </div>
     </section>
   );
+}
+
+// ── Trend indicator ───────────────────────────────────────────────────────────
+
+function TrendIcon({ delta }: { readonly delta: number }) {
+  if (delta > 2)  return <TrendingUp   className="h-3 w-3 text-status-error"   aria-label="Increasing" />;
+  if (delta < -2) return <TrendingDown className="h-3 w-3 text-status-success" aria-label="Decreasing" />;
+  return              <Minus       className="h-3 w-3 text-text-muted"     aria-label="Stable" />;
 }
 
 // ── Status dot matrix — all agents ────────────────────────────────────────────
@@ -131,15 +279,20 @@ function AgentStatusMatrix() {
 
   if (agents.length === 0) {
     return (
-      <div className="space-y-3">
+      <div className="space-y-4">
         <div className="flex items-baseline gap-2">
           <div className="h-8 w-12 skeleton rounded" />
           <div className="h-4 w-20 skeleton rounded" />
         </div>
-        <div className="grid grid-cols-8 gap-1.5">
-          {Array.from({ length: 16 }).map((_, index) => (
-            <div key={`agent-skeleton-${index + 1}`} className="h-4 w-4 skeleton rounded-full" />
-          ))}
+        <div className="flex flex-col items-center gap-3 py-6">
+          <div className="relative h-10 w-10">
+            <div className="absolute inset-0 rounded-full border border-dashed border-border animate-spin" style={{ animationDuration: "8s" }} />
+            <div className="absolute inset-2 rounded-full border border-border/40" />
+          </div>
+          <span className="text-[11px] font-mono text-text-muted text-center leading-relaxed">
+            Your fleet is standing by.<br />
+            <span className="text-text-muted/60">Run <code className="text-accent/80">swarm up</code> to deploy agents.</span>
+          </span>
         </div>
       </div>
     );
@@ -149,11 +302,21 @@ function AgentStatusMatrix() {
     <div className="space-y-3">
       {/* Summary numbers */}
       <div className="flex items-baseline gap-3">
-        <span className="text-2xl font-mono font-semibold text-text-primary tabular-nums" data-metric>
+        <span className="text-2xl font-mono font-semibold text-text-primary tabular-nums num-enter" data-metric>
           {active}
         </span>
         <span className="text-xs font-mono text-text-muted">/ {total} running</span>
-        {errors > 0 && <span className="ml-auto text-xs font-mono text-status-error">{formatErrorCount(errors)}</span>}
+        {errors > 0 && (
+          <span className="ml-auto text-xs font-mono text-status-error alert-wiggle">
+            {formatErrorCount(errors)}
+          </span>
+        )}
+        {errors === 0 && active > 0 && (
+          <span className="ml-auto ai-chip">
+            <Zap className="h-2 w-2" />
+            optimal
+          </span>
+        )}
       </div>
 
       {/* Dot matrix */}
@@ -205,13 +368,18 @@ function ControlPlaneHealth() {
     );
   }
 
+  const allHealthy = CONTROL_PLANE_LAYERS.every((l) => {
+    const state = layers.get(l.id);
+    return !state || state.status === "healthy";
+  });
+
   return (
     <div className="space-y-1.5">
       {CONTROL_PLANE_LAYERS.map((layer) => {
         const state = layers.get(layer.id);
         const status = state?.status ?? "unknown";
         return (
-          <div key={layer.id} className="flex items-center gap-2.5">
+          <div key={layer.id} className="flex items-center gap-2.5 group">
             <span
               className="status-dot h-2 w-2 shrink-0"
               data-status={layerDataStatus(status)}
@@ -220,17 +388,29 @@ function ControlPlaneHealth() {
               {layer.label}
             </span>
             <div className="flex-1 h-px bg-border" />
-            <span className="text-[10px] font-mono text-text-muted capitalize">
+            <span className="text-[10px] font-mono text-text-muted capitalize group-hover:text-text-secondary transition-colors">
               {status}
             </span>
             {state?.latencyP50Ms != null && (
-              <span className="text-[10px] font-mono text-text-muted tabular-nums" data-metric>
+              <span
+                className={cn(
+                  "text-[10px] font-mono tabular-nums w-12 text-right",
+                  state.latencyP50Ms > 500 ? "text-status-warning" : "text-text-muted"
+                )}
+                data-metric
+              >
                 {state.latencyP50Ms}ms
               </span>
             )}
           </div>
         );
       })}
+      {allHealthy && layers.size > 0 && (
+        <div className="pt-1.5 flex items-center gap-1.5">
+          <span className="status-dot h-1.5 w-1.5" data-status="active" />
+          <span className="text-[10px] font-mono text-status-success">All layers nominal</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -248,17 +428,26 @@ function ResourceGauge({ label, value, max, unit, warn, critical }: {
   const pct = max > 0 ? (value / max) * 100 : 0;
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-1 group">
       <div className="flex items-center justify-between">
         <span className="text-[10px] font-mono text-text-muted uppercase tracking-wide">
           {label}
         </span>
-        <span className="text-xs font-mono text-text-secondary tabular-nums" data-metric>
-          {Math.round(pct)}%
-          <span className="text-text-muted ml-1 text-[9px]">
-            {Math.round(value)}/{Math.round(max)}{unit}
+        <div className="flex items-center gap-1.5">
+          <TrendIcon delta={pct >= critical ? 5 : pct >= warn ? 2 : -3} />
+          <span
+            className={cn(
+              "text-xs font-mono text-text-secondary tabular-nums",
+              pct >= critical ? "text-status-error" : pct >= warn ? "text-status-warning" : ""
+            )}
+            data-metric
+          >
+            {Math.round(pct)}%
+            <span className="text-text-muted ml-1 text-[9px]">
+              {Math.round(value)}/{Math.round(max)}{unit}
+            </span>
           </span>
-        </span>
+        </div>
       </div>
       <progress
         className={resourceMeterClass(pct, warn, critical)}
@@ -290,7 +479,7 @@ function SystemResourcePanel() {
     <div className="space-y-3">
       <ResourceGauge
         label="CPU"
-        value={metrics.cpu.load1m * 100 / (metrics.cpu.coreCount ?? metrics.cpu.perCore?.length ?? 1)}
+        value={(metrics.cpu.load1m / (metrics.cpu.coreCount ?? 1)) * 100}
         max={100}
         unit="%"
         warn={60}
@@ -312,7 +501,7 @@ function SystemResourcePanel() {
         warn={60}
         critical={80}
       />
-      <div className="pt-1 grid grid-cols-2 gap-x-4 gap-y-0.5">
+      <div className="pt-1 grid grid-cols-2 gap-x-4 gap-y-0.5 border-t border-border">
         <MetricCell label="Disk R" value={formatBps(metrics.disk.readBytesPerSec)} />
         <MetricCell label="Disk W" value={formatBps(metrics.disk.writeBytesPerSec)} />
         <MetricCell label="Net RX" value={formatBps(metrics.network.rxBytesPerSec)} />
@@ -338,8 +527,11 @@ function QueueDepthPanel() {
 
   if (queues.size === 0) {
     return (
-      <div className="space-y-2">
-        {[1, 2, 3].map((item) => <div key={`queue-skeleton-${item}`} className="h-5 skeleton rounded" />)}
+      <div className="flex flex-col items-center gap-2 py-4">
+        <span className="text-xs font-mono text-text-muted">No active queues</span>
+        <span className="text-[10px] font-mono text-text-muted/60">
+          Jobs will appear here once the swarm is running
+        </span>
       </div>
     );
   }
@@ -356,7 +548,7 @@ function QueueDepthPanel() {
         </div>
       </div>
       {[...queues.entries()].map(([name, q]) => (
-        <div key={name} className="flex items-center justify-between py-0.5">
+        <div key={name} className="flex items-center justify-between py-0.5 group hover:bg-bg-elevated/50 rounded px-1 -mx-1 transition-colors">
           <span className="text-[10px] font-mono text-text-secondary truncate max-w-25">
             {name}
           </span>
@@ -383,13 +575,14 @@ function QueueDepthPanel() {
 // ── Recent events feed ────────────────────────────────────────────────────────
 
 function RecentEventsFeed() {
-  const logs = useEventsStore((s) => s.logs.slice(-8));
+  const logs = useEventsStore((s) => s.logs.slice(-8) as LogEntry[]);
   const reversed = useMemo(() => [...logs].reverse(), [logs]);
 
   if (reversed.length === 0) {
     return (
-      <div className="flex items-center justify-center h-20">
-        <span className="text-xs font-mono text-text-muted">No events yet</span>
+      <div className="flex flex-col items-center justify-center h-20 gap-1.5">
+        <span className="text-xs font-mono text-text-muted">Quiet out there…</span>
+        <span className="text-[10px] font-mono text-text-muted/50">Events will stream in real-time</span>
       </div>
     );
   }
@@ -397,7 +590,7 @@ function RecentEventsFeed() {
   return (
     <div className="space-y-1">
       {reversed.map((log, i) => (
-        <div key={(log as { id?: string }).id ?? `${log.timestamp}-${i}`} className="flex items-start gap-2">
+        <div key={log.id ?? `${log.timestamp}-${i}`} className="flex items-start gap-2 group">
           <span
             className={cn(
               "text-[9px] font-mono shrink-0 mt-0.5 tabular-nums",
@@ -413,7 +606,7 @@ function RecentEventsFeed() {
           </span>
           <span
             className={cn(
-              "text-[10px] font-mono truncate",
+              "text-[10px] font-mono truncate group-hover:text-text-primary transition-colors",
               logMessageColor(log.level)
             )}
           >
@@ -429,19 +622,18 @@ function RecentEventsFeed() {
 
 function OOMEvents() {
   const agents = useEventsStore((s) => [...s.agents.values()]);
-  // Normalise resource/resources alias — mirrors agents/page.tsx normalization
+  // AgentState.oomCount is set by applySystemOom; AgentResourceSnapshot.oomEvents is set per-resource
   const oomAgents = agents.filter((a) => {
-    const res = (a as { resources?: { oomEvents?: number }; resource?: { oomEvents?: number } }).resources
-      ?? (a as { resource?: { oomEvents?: number } }).resource
-      ?? null;
-    return (res?.oomEvents ?? (a as { oomCount?: number }).oomCount ?? 0) > 0;
+    const oomFromCount = a.oomCount ?? 0;
+    const oomFromResource = a.resources?.oomEvents ?? a.resource?.oomEvents ?? 0;
+    return oomFromCount > 0 || oomFromResource > 0;
   });
 
   if (oomAgents.length === 0) {
     return (
       <div className="flex items-center gap-2 py-1">
         <span className="status-dot h-1.5 w-1.5" data-status="active" />
-        <span className="text-xs font-mono text-status-success">No OOM events detected</span>
+        <span className="text-xs font-mono text-status-success">No OOM events — memory is holding up nicely</span>
       </div>
     );
   }
@@ -449,10 +641,7 @@ function OOMEvents() {
   return (
     <div className="space-y-1.5">
       {oomAgents.map((a) => {
-        const res = (a as { resources?: { oomEvents?: number }; resource?: { oomEvents?: number } }).resources
-          ?? (a as { resource?: { oomEvents?: number } }).resource
-          ?? null;
-        const count = res?.oomEvents ?? (a as { oomCount?: number }).oomCount;
+        const count = a.oomCount ?? a.resources?.oomEvents ?? a.resource?.oomEvents ?? 0;
         return (
           <div key={a.id} className="flex items-center justify-between py-0.5">
             <div className="flex items-center gap-2 min-w-0">
@@ -473,12 +662,6 @@ function OOMEvents() {
 
 // ── Health radar ─────────────────────────────────────────────────────────────
 
-/**
- * Composite health score (0–100) synthesised from:
- *   - agent error ratio (40 pts)
- *   - CPU load (30 pts)
- *   - memory pressure (30 pts)
- */
 function useHealthScore() {
   const active = useEventsStore((s) => s.activeAgentCount);
   const errors = useEventsStore((s) => s.errorAgentCount);
@@ -490,9 +673,11 @@ function useHealthScore() {
       ? Math.round(40 * (1 - errors / Math.max(total, 1)))
       : 40;
 
+    // load1m is absolute process count; divide by core count to get utilisation ratio
     const cpuLoad = metrics?.cpu.load1m ?? 0;
-    const cpuCores = metrics?.cpu.coreCount ?? metrics?.cpu.perCore?.length ?? 1;
-    const cpuScore = Math.round(30 * Math.max(0, 1 - (cpuLoad / cpuCores) / 0.9));
+    const coreCount = metrics?.cpu.coreCount ?? 1;
+    const cpuRatio = coreCount > 0 ? cpuLoad / coreCount : 0;
+    const cpuScore = Math.round(30 * Math.max(0, 1 - cpuRatio / 0.9));
 
     const memPct = metrics && metrics.memory.totalMb > 0
       ? metrics.memory.usedMb / metrics.memory.totalMb
@@ -504,22 +689,26 @@ function useHealthScore() {
     let grade = "Critical";
     let tone = "tone-critical";
     let fill = "var(--color-status-fatal)";
+    let tagline = "Swarm needs attention";
 
     if (total_score >= 90) {
       grade = "Optimal";
       tone = "tone-optimal";
       fill = "var(--color-status-active)";
+      tagline = "Peak performance";
     } else if (total_score >= 70) {
       grade = "Healthy";
       tone = "tone-healthy";
       fill = "var(--color-status-success)";
+      tagline = "All systems go";
     } else if (total_score >= 50) {
       grade = "Degraded";
       tone = "tone-degraded";
       fill = "var(--color-status-queued)";
+      tagline = "Needs monitoring";
     }
 
-    return { score: total_score, grade, tone, fill, agentScore, cpuScore, memScore, hasData: metrics != null || active > 0 };
+    return { score: total_score, grade, tone, fill, tagline, agentScore, cpuScore, memScore, hasData: metrics != null || active > 0 };
   }, [active, errors, total, metrics]);
 }
 
@@ -533,6 +722,15 @@ function HealthRadar() {
   return (
     <div className="flex items-center gap-4">
       <div className="relative shrink-0 health-radar-frame">
+        {h.score >= 90 && (
+          <div
+            className="absolute inset-0 rounded-full"
+            style={{
+              animation: "pulse-ring 3s ease-out infinite",
+              borderRadius: "50%",
+            }}
+          />
+        )}
         <ResponsiveContainer width={84} height={84}>
           <RadialBarChart
             cx="50%"
@@ -560,7 +758,8 @@ function HealthRadar() {
         <div className={cn("text-sm font-mono font-semibold", h.tone)}>
           {h.grade}
         </div>
-        <div className="space-y-0.5">
+        <div className="text-[10px] font-mono text-text-muted">{h.tagline}</div>
+        <div className="space-y-0.5 pt-0.5">
           <ScoreLine label="Agents"  pts={h.agentScore} max={40} />
           <ScoreLine label="CPU"     pts={h.cpuScore}   max={30} />
           <ScoreLine label="Memory"  pts={h.memScore}   max={30} />
@@ -591,9 +790,6 @@ function ScoreLine({ label, pts, max }: { readonly label: string; readonly pts: 
 
 // ── Queue pressure chart ──────────────────────────────────────────────────────
 
-/**
- * Samples queue depth every 10 s and keeps the last 30 readings for a sparkline.
- */
 function useQueuePressureHistory(sampleMs = 10_000, maxPoints = 30) {
   const queues = useEventsStore((s) => s.queues);
   const [history, setHistory] = React.useState<{ t: number; waiting: number; active: number }[]>([]);
@@ -608,7 +804,6 @@ function useQueuePressureHistory(sampleMs = 10_000, maxPoints = 30) {
     sample();
     const id = setInterval(sample, sampleMs);
     return () => clearInterval(id);
-
   }, [queues, sampleMs, maxPoints]);
 
   return history;
@@ -630,11 +825,11 @@ function QueuePressureChart() {
       <AreaChart data={history} margin={{ top: 2, right: 2, bottom: 0, left: 0 }}>
         <defs>
           <linearGradient id="grad-waiting" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--color-status-queued)" stopOpacity={0.4} />
+            <stop offset="0%"   stopColor="var(--color-status-queued)" stopOpacity={0.4} />
             <stop offset="100%" stopColor="var(--color-status-queued)" stopOpacity={0} />
           </linearGradient>
           <linearGradient id="grad-active" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--color-accent)" stopOpacity={0.4} />
+            <stop offset="0%"   stopColor="var(--color-accent)" stopOpacity={0.4} />
             <stop offset="100%" stopColor="var(--color-accent)" stopOpacity={0} />
           </linearGradient>
         </defs>
@@ -648,8 +843,9 @@ function QueuePressureChart() {
             color: "var(--color-text-secondary)",
           }}
           labelFormatter={(_, payload) => {
-            const t = (payload?.[0]?.payload as { t?: number } | undefined)?.t;
-            if (!t) return "";
+            const item = payload?.[0]?.payload as { t?: number } | undefined;
+            const t = item?.t;
+            if (t == null) return "";
             return new Date(t).toLocaleTimeString("en-NG", {
               hour: "2-digit",
               minute: "2-digit",
@@ -685,10 +881,7 @@ function QueuePressureChart() {
 function OOMPanel() {
   const agents = useEventsStore((s) => [...s.agents.values()]);
   const hasOOM = agents.some((a) => {
-    const res = (a as { resources?: { oomEvents?: number }; resource?: { oomEvents?: number } }).resources
-      ?? (a as { resource?: { oomEvents?: number } }).resource
-      ?? null;
-    return (res?.oomEvents ?? (a as { oomCount?: number }).oomCount ?? 0) > 0;
+    return (a.oomCount ?? 0) > 0 || (a.resources?.oomEvents ?? a.resource?.oomEvents ?? 0) > 0;
   });
 
   return (
@@ -703,10 +896,14 @@ function OOMPanel() {
 export default function OverviewPage() {
   return (
     <div className="p-4 space-y-4">
+      {/* AI Insight strip */}
+      <InsightStrip />
+
       {/* Bento top strip: Health Radar + 4 quick stats */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-        <div className="md:col-span-1 bg-bg-surface border border-border rounded-lg px-4 py-3">
-          <div className="text-[10px] font-mono text-text-muted uppercase tracking-wide mb-2">
+        <div className="md:col-span-1 bg-bg-surface border border-border rounded-lg px-4 py-3 card-interactive panel-enter">
+          <div className="text-[10px] font-mono text-text-muted uppercase tracking-wide mb-2 flex items-center gap-1.5">
+            <span className="status-dot h-1.5 w-1.5" data-status="active" />
             System Health
           </div>
           <HealthRadar />
@@ -771,7 +968,7 @@ function QuickStatCard() {
   const metrics = useEventsStore((s) => s.systemMetrics);
   const queues = useEventsStore((s) => s.queues);
 
-  const cpuLoad = metricsOrNull(metrics?.cpu.load1m);
+  const cpuLoad = metrics?.cpu.load1m ?? null;
   const memPct = metrics == null || metrics.memory.totalMb <= 0
     ? null
     : (metrics.memory.usedMb / metrics.memory.totalMb) * 100;
@@ -784,24 +981,28 @@ function QuickStatCard() {
       sub: `${total} total`,
       alert: errors > 0,
       alertText: `${errors} errors`,
+      icon: "🤖",
     },
     {
       label: "CPU Load",
-      value: cpuLoad == null ? "–" : formatPct((cpuLoad * 100) / (metrics?.cpu.coreCount ?? metrics?.cpu.perCore?.length ?? 1)),
-      sub: metrics ? `${metrics.cpu.coreCount ?? metrics.cpu.perCore?.length ?? "?"} cores` : undefined,
-      alert: cpuLoad != null && cpuLoad > 0.8,
+      value: cpuLoad == null ? "–" : formatPct((cpuLoad / (metrics?.cpu.coreCount ?? 1)) * 100),
+      sub: metrics ? `${metrics.cpu.coreCount ?? 1} cores` : undefined,
+      alert: cpuLoad != null && (cpuLoad / (metrics?.cpu.coreCount ?? 1)) > 0.8,
+      icon: "⚡",
     },
     {
       label: "Memory",
       value: memPct == null ? "–" : formatPct(memPct),
       sub: metrics ? `${Math.round(metrics.memory.usedMb / 1024)} / ${Math.round(metrics.memory.totalMb / 1024)} GB` : undefined,
       alert: memPct != null && memPct > 85,
+      icon: "🧠",
     },
     {
       label: "Queued Jobs",
       value: totalWaiting.toString(),
       sub: `${queues.size} queues`,
       alert: false,
+      icon: "📋",
     },
   ] as const;
 
@@ -813,18 +1014,20 @@ function QuickStatCard() {
         <div
           key={card.label}
           className={cn(
-            "bg-bg-surface border border-border rounded-lg px-4 py-3 panel-enter",
+            "bg-bg-surface border border-border rounded-lg px-4 py-3 panel-enter card-interactive",
             staggerClass[idx],
             card.alert && "panel-variant-warn"
           )}
         >
-          <div className="text-[10px] font-mono text-text-muted uppercase tracking-wide mb-1">
-            {card.label}
+          <div className="flex items-center justify-between mb-1">
+            <div className="text-[10px] font-mono text-text-muted uppercase tracking-wide">
+              {card.label}
+            </div>
           </div>
           <div className="flex items-baseline gap-2">
             <span
               className={cn(
-                "text-xl font-mono font-semibold tabular-nums count-enter",
+                "text-xl font-mono font-semibold tabular-nums num-enter",
                 card.alert ? "text-status-warning" : "text-text-primary"
               )}
               data-metric

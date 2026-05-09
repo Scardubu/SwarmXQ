@@ -182,7 +182,7 @@ export function CommandBar({ breadcrumb = "Overview" }: CommandBarProps) {
         aria-label="Open command palette"
       >
         <Terminal className="h-3 w-3 shrink-0" />
-        <span className="flex-1 text-left">Run command…</span>
+        <span className="flex-1 text-left">{errorCount > 0 ? `Triage ${errorCount} error${errorCount > 1 ? "s" : ""} →` : "Run command…"}</span>
         <kbd className="ml-1 rounded bg-bg-elevated px-1 text-[10px] border border-border shrink-0">
           {isMac ? "⌘K" : "Ctrl+K"}
         </kbd>

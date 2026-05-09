@@ -128,7 +128,25 @@ def set_per_tool_rate_limit(tool_name: str, limit_per_min: int) -> None:
     """
     _PER_TOOL_RATE_LIMITS[tool_name] = max(1, int(limit_per_min))
 
+def set_circuit_breaker_thresholds(
+    open_threshold: Optional[int] = None,
+    reset_s: Optional[float] = None,
+) -> None:
+    """
+    Set circuit-breaker globals from config (called by orchestrator at startup).
 
+    Args:
+        open_threshold: Number of consecutive failures before tripping (min 1).
+        reset_s:        Seconds before a tripped circuit enters half-open (min 1.0).
+
+    Both parameters are optional — pass only the ones you want to override.
+    This replaces the env-var-only path so YAML tuning takes effect at runtime.
+    """
+    global _CB_OPEN_THRESHOLD, _CB_RESET_S
+    if open_threshold is not None:
+        _CB_OPEN_THRESHOLD = max(1, int(open_threshold))
+    if reset_s is not None:
+        _CB_RESET_S = max(1.0, float(reset_s))
 def _cb_check(tool_name: str) -> Optional[ToolResult]:
     """
     [V5.7-ENH-02] Returns an error ToolResult if the circuit is open, else None.
@@ -156,7 +174,11 @@ def _cb_check(tool_name: str) -> Optional[ToolResult]:
 
 
 def _cb_record(tool_name: str, success: bool) -> None:
-    """[V5.7-ENH-02] Update circuit breaker state after a tool call completes."""
+    """[V5.7-ENH-02] Update circuit breaker state after a tool call completes.
+
+    [NEW] Emits EventKind.TOOL_CB_OPEN to the event bus on the exact transition
+    from closed → open, giving the dashboard a visibility event for circuit trips.
+    """
     state = _CIRCUIT_BREAKER.setdefault(
         tool_name,
         {"consecutive_failures": 0, "open": False, "opened_at": 0.0},
@@ -169,6 +191,20 @@ def _cb_record(tool_name: str, success: bool) -> None:
         if state["consecutive_failures"] >= _CB_OPEN_THRESHOLD and not state["open"]:
             state["open"] = True
             state["opened_at"] = time.monotonic()
+            # [NEW] Publish circuit-open event for TUI / dashboard observability.
+            # EventKind.TOOL_CB_OPEN was declared in event_bus.py but never emitted.
+            _swarm_home = os.environ.get("SWARM_HOME", "")
+            if _swarm_home:
+                try:
+                    from pathlib import Path as _Path
+                    from swarmx.event_bus import publish as _pub, EventKind as _EK  # type: ignore
+                    _pub(_Path(_swarm_home), _EK.TOOL_CB_OPEN, {
+                        "tool":       tool_name,
+                        "failures":   state["consecutive_failures"],
+                        "reset_in_s": _CB_RESET_S,
+                    })
+                except Exception:
+                    pass
 
 
 def configure_dispatch_log(path: Optional[str]) -> None:

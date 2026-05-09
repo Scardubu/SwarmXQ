@@ -73,8 +73,10 @@ type LevelFilter = (typeof LEVEL_FILTERS)[number]["value"];
 
 function passesLevelFilter(level: LogLevel, filter: LevelFilter): boolean {
   if (filter === "all") return true;
-  const ORDER: LogLevel[] = ["debug","info","notice","warn","error","critical","alert","emergency"];
+  // Complete severity order — fatal sits above error, below critical
+  const ORDER: LogLevel[] = ["debug", "info", "notice", "warn", "error", "fatal", "critical", "alert", "emergency"];
   const idx = ORDER.indexOf(level);
+  if (idx === -1) return true; // unknown level → always show
   const threshold = filter === "warn" ? ORDER.indexOf("warn") : ORDER.indexOf("error");
   return idx >= threshold;
 }
@@ -205,7 +207,7 @@ export default function LogsPage() {
         {filtered.length === 0 ? (
           <div className="flex items-center justify-center h-40">
             <span className="text-xs font-mono text-text-muted">
-              {logs.length === 0 ? "Waiting for log events…" : "No logs match filter"}
+              {logs.length === 0 ? "The swarm is quiet — logs will stream here in real-time once agents are active" : "No logs match your filter — try a broader search"}
             </span>
           </div>
         ) : (
@@ -219,7 +221,7 @@ export default function LogsPage() {
               <span className="text-[9px] font-mono text-text-muted uppercase tracking-wide">Message</span>
             </div>
             {filtered.map((entry, i) => (
-              <LogLine key={(entry as { id?: string }).id ?? `${entry.timestamp}-${i}`} entry={entry} />
+              <LogLine key={entry.id ?? `${entry.timestamp}-${i}`} entry={entry} />
             ))}
             {/* Scroll anchor */}
             <div id="log-bottom" />
