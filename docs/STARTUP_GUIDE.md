@@ -79,6 +79,7 @@ python -m cli up --dashboard --host 127.0.0.1 --port 3002
 | `TZ` | `Africa/Lagos` | Timezone for dashboard (WAT) |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama LLM backend URL |
 | `SWARMX_COMPOSER_TIMEOUT_MS` | `60000` (API default) | Composer model timeout in milliseconds. Increase on slow/cold hosts, decrease for faster fallback behavior. |
+| `SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS` | `45000` | Cap used for short prompts (<=180 chars). Keeps interactive queries responsive without forcing premature 30s fallbacks. |
 | `SWARMX_COMPOSER_NUM_PREDICT` | `256` | Composer response token ceiling; lower values reduce latency on constrained hosts. |
 | `SWARMX_COMPOSER_KEEP_ALIVE` | `10m` | Composer model keep-alive window passed to Ollama chat calls to reduce repeated cold starts. |
 | `SWARMX_COMPOSER_TIMEOUT_HISTO_LOG_EVERY` | `3` | Log compact composer timeout histogram every N timeout fallbacks (`0` or negative logs every timeout). |

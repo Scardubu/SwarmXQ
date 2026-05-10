@@ -24,7 +24,9 @@ triad:
     quant: Q8_0
     role: orchestrator                                   # routing, classification, fast evaluation
     context_window: 4096    # safe production ceiling; model supports 131072 natively
-    num_predict: 384        # tighter router ceiling for faster first-token response
+    # [V6.1-PERF-06] Align router ceiling with API composer defaults to reduce
+    # first-response latency and avoid over-generation under memory pressure.
+    num_predict: 256        # tighter router ceiling for faster first-token response
     keep_alive: 300         # keep hot longer between bursts to reduce cold starts
     temperature: 0.2
     top_p: 0.90

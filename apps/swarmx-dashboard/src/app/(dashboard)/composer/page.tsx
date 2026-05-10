@@ -43,6 +43,21 @@ const COMPOSER_RECENT_SCOPES_KEY = "swarmx:composer:recent-scopes";
 const DEFAULT_PROJECT_SCOPE =
   process.env.NEXT_PUBLIC_SWARMX_PROJECT_PATH ?? "/home/scar/Downloads/SwarmX-1.5";
 
+function loadRecentScopes(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = globalThis.localStorage.getItem(COMPOSER_RECENT_SCOPES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((v): v is string => typeof v === "string" && v.length > 0)
+      .slice(0, 5);
+  } catch {
+    return [];
+  }
+}
+
 // ── Dynamic preset prompts based on fleet state ───────────────────────────────
 
 function useDynamicPresets() {
@@ -293,19 +308,10 @@ export default function ComposerPage() {
   });
   const [input, setInput] = useState("");
   const [projectScope, setProjectScope] = useState(DEFAULT_PROJECT_SCOPE);
-  const [recentScopes, setRecentScopes] = useState<string[]>([]);
+  // [V5.9-FIX-08] Initialize localStorage-backed state lazily to avoid
+  // synchronous setState inside effects (React compiler cascade warning).
+  const [recentScopes, setRecentScopes] = useState<string[]>(() => loadRecentScopes());
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
-
-  React.useEffect(() => {
-    try {
-      const raw = globalThis.localStorage.getItem(COMPOSER_RECENT_SCOPES_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as string[];
-      if (Array.isArray(parsed)) {
-        setRecentScopes(parsed.filter((v) => typeof v === "string" && v.length > 0).slice(0, 5));
-      }
-    } catch { /* Ignore */ }
-  }, []);
 
   React.useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -559,7 +565,10 @@ export default function ComposerPage() {
             {state.messages.map((msg, i) => (
               <MessageBubble key={`${msg.timestamp}-${i}`} msg={msg} />
             ))}
-            {state.isLoading && <ThinkingIndicator startedAt={state.loadingStartedAt ?? Date.now()} />}
+            {/* [V5.9-FIX-09] Avoid impure Date.now() calls during render. */}
+            {state.isLoading && state.loadingStartedAt !== null && (
+              <ThinkingIndicator startedAt={state.loadingStartedAt} />
+            )}
             <div ref={messagesEndRef} />
           </div>
         )}

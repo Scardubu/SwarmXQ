@@ -91,6 +91,9 @@ export SWARMX_COMPOSER_NUM_PREDICT=256
 # Composer timeout: keep high enough for cold starts, not infinite
 export SWARMX_COMPOSER_TIMEOUT_MS=60000
 
+# Short prompt cap: avoid premature fallbacks for short interactive queries
+export SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS=45000
+
 # Keep router warm between bursts to avoid repeated reload latency
 export SWARMX_COMPOSER_KEEP_ALIVE=10m
 

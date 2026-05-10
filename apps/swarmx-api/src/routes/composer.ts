@@ -234,6 +234,38 @@ function fallbackForSimplePrompt(message: string): string | null {
   return null;
 }
 
+function normalizeModelTag(model: string): string {
+  const trimmed = model.trim();
+  if (!trimmed) return "";
+  return trimmed.includes(":") ? trimmed : `${trimmed}:latest`;
+}
+
+function pickBestDiscoveredModel(
+  discoveredModels: string[],
+  preferredModels: string[],
+): string | null {
+  if (discoveredModels.length === 0) return null;
+
+  const normalizedDiscovered = discoveredModels.map((m) => m.trim()).filter(Boolean);
+  const byLower = new Map(normalizedDiscovered.map((m) => [m.toLowerCase(), m]));
+
+  for (const preferred of preferredModels) {
+    const normalized = normalizeModelTag(preferred);
+    if (!normalized) continue;
+    const direct = byLower.get(normalized.toLowerCase());
+    if (direct) return direct;
+
+    const base = normalized.split(":")[0]?.toLowerCase() ?? "";
+    if (!base) continue;
+    const sameBase = normalizedDiscovered.find(
+      (candidate) => candidate.split(":")[0]?.toLowerCase() === base,
+    );
+    if (sameBase) return sameBase;
+  }
+
+  return normalizedDiscovered[0] ?? null;
+}
+
 function formatRunningByRole(agents: ComposerAgent[]): string {
   const running = agents.filter((a) => isActiveStatus(a.status));
   const grouped = new Map<string, ComposerAgent[]>();
@@ -459,6 +491,15 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         ? configuredNumPredict
         : 256;
       const composerKeepAlive = process.env["SWARMX_COMPOSER_KEEP_ALIVE"]?.trim() || "10m";
+      // [V6.1-FIX-18] Allow a dedicated cap for short prompts. The prior fixed
+      // 30s cap caused avoidable fallbacks during cold loads on constrained hosts.
+      const configuredShortPromptTimeout = Number.parseInt(
+        process.env["SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS"] ?? "45000",
+        10,
+      );
+      const shortPromptTimeoutMs = Number.isFinite(configuredShortPromptTimeout) && configuredShortPromptTimeout > 0
+        ? configuredShortPromptTimeout
+        : 45_000;
 
       let responseText: string;
 
@@ -468,7 +509,7 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       // [V6.1-PERF-04] Keep short interactive prompts from stalling too long
       // behind cold model loads; long prompts retain the configured timeout.
       const isShortPrompt = message.trim().length <= 180;
-      const effectiveTimeoutMs = isShortPrompt ? Math.min(timeoutMs, 30_000) : timeoutMs;
+      const effectiveTimeoutMs = isShortPrompt ? Math.min(timeoutMs, shortPromptTimeoutMs) : timeoutMs;
       // [V6.1-ENH-03] Route-level preflight decision telemetry for quick
       // operator diagnosis under latency pressure.
       server.log.info(
@@ -527,7 +568,13 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         preflightModels.length > 0 &&
         !preflightModels.some((m) => m === model || m.startsWith(`${rawModel}:`))
       ) {
-        selectedModel = preflightModels[0] ?? model;
+        selectedModel = pickBestDiscoveredModel(preflightModels, [
+          model,
+          rawModel,
+          process.env["SWARMX_MODEL_FAST"] ?? "",
+          "phi4-fast:latest",
+          "phi4-fast",
+        ]) ?? model;
         server.log.warn(
           { configuredModel: model, selectedModel, discoveredModelCount: preflightModels.length },
           "composer_model_autoselect",
