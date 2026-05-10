@@ -78,6 +78,7 @@ python -m cli up --dashboard --host 127.0.0.1 --port 3002
 | `TZ` | `Africa/Lagos` | Timezone for dashboard (WAT) |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama LLM backend URL |
 | `SWARMX_COMPOSER_TIMEOUT_MS` | `45000` (API default) | Composer model timeout in milliseconds. Increase on slow/cold hosts, decrease for faster fallback behavior. |
+| `SWARMX_COMPOSER_TIMEOUT_HISTO_LOG_EVERY` | `3` | Log compact composer timeout histogram every N timeout fallbacks (`0` or negative logs every timeout). |
 | `SWARMX_V5_POLL_TIMEOUT_MS` | `25000` | Timeout for `python -m swarmx metrics` subprocess used by API poller. Increase on slow hosts to avoid SIGTERM skips. |
 | `SWARMX_REPO_ROOT` | Auto-detected | Absolute path to SwarmX repository; auto-set by `swarm up`. Required for metrics subprocess PYTHONPATH composition. |
 | `SWARMX_PYTHON` | `sys.executable` | Python interpreter for metrics poller and CLI sidecars; auto-detected from active venv by `swarm up`. |
@@ -140,8 +141,24 @@ Notes:
 - First inference after startup can be slower due to model load.
 - Presence checks like `are you there?` and `ping` are handled locally from fleet state and do not require model inference.
 - Idle-assignment questions (`how many are idle and why no tasks?`) are handled locally and include assignment guidance.
+- API now emits `composer_preflight` logs for each composer request with route-level decision (`local` vs `model`) and timeout/model context.
 - Verify effective timeout in your shell before startup:
    `echo ${SWARMX_COMPOSER_TIMEOUT_MS:-45000}`
+
+### Composer latency diagnostics (preflight + timeout histogram)
+
+When tuning under load, use these logs from the API process:
+
+- `composer_preflight`: shows whether request was routed locally or to model, with model tag and timeout.
+- `Composer model call failed — using fleet summary fallback`: includes `elapsedMs`, `timeoutCount`, and compact `timeoutHistogram` every N timeouts.
+
+Example tuning:
+
+```bash
+export SWARMX_COMPOSER_TIMEOUT_MS=55000
+export SWARMX_COMPOSER_TIMEOUT_HISTO_LOG_EVERY=2
+bash scripts/startup-enhanced.sh --dashboard
+```
 
 ### Repeated "V5 metrics poll skipped" logs
 

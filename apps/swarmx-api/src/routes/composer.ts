@@ -14,6 +14,48 @@ type ComposerAgent = {
   } | null;
 };
 
+type TimeoutBucket = "lt5s" | "lt15s" | "lt30s" | "lt45s" | "gte45s";
+
+const TIMEOUT_HISTOGRAM_LOG_EVERY = Number.parseInt(
+  process.env["SWARMX_COMPOSER_TIMEOUT_HISTO_LOG_EVERY"] ?? "3",
+  10,
+);
+
+const composerTimeoutHistogram: Record<TimeoutBucket, number> = {
+  lt5s: 0,
+  lt15s: 0,
+  lt30s: 0,
+  lt45s: 0,
+  gte45s: 0,
+};
+
+let composerTimeoutCount = 0;
+
+function timeoutBucketFor(elapsedMs: number): TimeoutBucket {
+  if (elapsedMs < 5_000) return "lt5s";
+  if (elapsedMs < 15_000) return "lt15s";
+  if (elapsedMs < 30_000) return "lt30s";
+  if (elapsedMs < 45_000) return "lt45s";
+  return "gte45s";
+}
+
+function timeoutHistogramCompact(): string {
+  return [
+    `lt5s:${composerTimeoutHistogram.lt5s}`,
+    `lt15s:${composerTimeoutHistogram.lt15s}`,
+    `lt30s:${composerTimeoutHistogram.lt30s}`,
+    `lt45s:${composerTimeoutHistogram.lt45s}`,
+    `gte45s:${composerTimeoutHistogram.gte45s}`,
+  ].join("|");
+}
+
+function shouldLogHistogram(): boolean {
+  if (!Number.isFinite(TIMEOUT_HISTOGRAM_LOG_EVERY) || TIMEOUT_HISTOGRAM_LOG_EVERY <= 0) {
+    return true;
+  }
+  return composerTimeoutCount % TIMEOUT_HISTOGRAM_LOG_EVERY === 0;
+}
+
 function detectLocalIntent(
   message: string,
 ): "running_by_role" | "high_cpu" | "available_agents" | "simple_copy" | "python_calculator" | "presence_ping" | "idle_unassigned" | null {
@@ -434,6 +476,21 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       // [V6.1-FIX-12] Fast deterministic answers for operational prompts that
       // can be computed directly from live fleet state (no model dependency).
       const localIntent = detectLocalIntent(message);
+      // [V6.1-ENH-03] Route-level preflight decision telemetry for quick
+      // operator diagnosis under latency pressure.
+      server.log.info(
+        {
+          decision: localIntent ? "local" : "model",
+          localIntent: localIntent ?? "none",
+          msgChars: message.length,
+          model,
+          timeoutMs,
+          runningCount,
+          errorCount,
+          totalAgents: agents.length,
+        },
+        "composer_preflight",
+      );
       if (localIntent === "running_by_role") {
         responseText = formatRunningByRole(agents);
         return { message: responseText, agentId: "swarmx-composer", sessionId };
@@ -464,7 +521,9 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         return { message: responseText, agentId: "swarmx-composer", sessionId };
       }
 
+      let modelAttemptStartedAt = 0;
       try {
+        modelAttemptStartedAt = Date.now();
         const ollamaRes = await fetch(`${ollamaBase}/api/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -493,10 +552,32 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           data?.message?.content?.trim() ??
           data?.error ??
           "No response from model.";
+        server.log.debug(
+          { elapsedMs: Date.now() - modelAttemptStartedAt, model, timeoutMs },
+          "composer_model_call_ok",
+        );
       } catch (err) {
         const reason = err instanceof Error ? err.message : "Unknown error";
+        const elapsedMs = modelAttemptStartedAt > 0 ? Date.now() - modelAttemptStartedAt : 0;
+        const isTimeout = reason.toLowerCase().includes("timeout") || reason.toLowerCase().includes("abort");
+        if (isTimeout) {
+          const bucket = timeoutBucketFor(elapsedMs);
+          composerTimeoutHistogram[bucket] += 1;
+          composerTimeoutCount += 1;
+        }
         const availableModels = await listAvailableModels(ollamaBase);
-        server.log.warn({ err }, "Composer model call failed — using fleet summary fallback");
+        server.log.warn(
+          {
+            err,
+            model,
+            timeoutMs,
+            elapsedMs,
+            isTimeout,
+            timeoutCount: composerTimeoutCount,
+            ...(isTimeout && shouldLogHistogram() ? { timeoutHistogram: timeoutHistogramCompact() } : {}),
+          },
+          "Composer model call failed — using fleet summary fallback",
+        );
 
         const simpleFallback = fallbackForSimplePrompt(message);
         if (simpleFallback) {
@@ -505,7 +586,6 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         }
 
         // [SEED-FIX-03] Surface actionable diagnostics: model mismatch vs timeout.
-        const isTimeout = reason.toLowerCase().includes("timeout") || reason.toLowerCase().includes("abort");
         const modelMismatch = availableModels.length > 0 && !availableModels.some(
           (m) => m === model || m.startsWith(rawModel + ":"),
         );
