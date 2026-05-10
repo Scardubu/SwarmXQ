@@ -34,7 +34,7 @@ async function probeOllamaModels(): Promise<ModelReadiness[]> {
   const listedTags = (await getAvailableModels()).map((t) => t.toLowerCase());
   if (listedTags.length === 0) {
     for (const m of CANONICAL_MODEL_TRIAD) {
-      results.push({ role: m.role, tag: m.tag, gguf: m.gguf, status: "error", error: "Ollama unreachable or no models available" });
+      results.push({ role: m.role, tag: m.tag, gguf: m.gguf, status: "missing", error: "No installed models discovered" });
     }
     return results;
   }

@@ -4,6 +4,7 @@ import { agentRegistry } from "./agents.js";
 import {
   getOllamaBaseUrl,
   getAvailableModels,
+  getConfiguredModels,
   checkOllamaHealth,
 } from "../services/ollama.js";
 
@@ -439,6 +440,7 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         process.env["SWARMX_MODEL_FAST"] ??
         "phi4-fast";
       const model = rawModel.includes(":") ? rawModel : `${rawModel}:latest`;
+      let selectedModel = model;
       // [SEED-FIX-02] Increase default composer timeout to 60s. The original 8s
       // floor was too aggressive for cold Ollama model loads (first inference after
       // boot requires loading weights into VRAM, which can take 15–40s on CPU-only
@@ -511,6 +513,20 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         return { message: responseText, agentId: "swarmx-composer", sessionId };
       }
 
+      // [V6.1-FIX-15] If the configured tag is stale but installed models are
+      // discoverable, route to the first discovered model to avoid avoidable 404s.
+      const preflightModels = await listAvailableModels();
+      if (
+        preflightModels.length > 0 &&
+        !preflightModels.some((m) => m === model || m.startsWith(`${rawModel}:`))
+      ) {
+        selectedModel = preflightModels[0] ?? model;
+        server.log.warn(
+          { configuredModel: model, selectedModel, discoveredModelCount: preflightModels.length },
+          "composer_model_autoselect",
+        );
+      }
+
       let modelAttemptStartedAt = 0;
       try {
         modelAttemptStartedAt = Date.now();
@@ -518,7 +534,7 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            model,
+            model: selectedModel,
             stream: false,
             keep_alive: composerKeepAlive,
             options: {
@@ -559,8 +575,9 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           composerTimeoutHistogram[bucket] += 1;
           composerTimeoutCount += 1;
         }
-        const [availableModels, ollamaHealth] = await Promise.all([
+        const [availableModels, configuredModels, ollamaHealth] = await Promise.all([
           listAvailableModels(),
+          getConfiguredModels(),
           checkOllamaHealth(),
         ]);
         server.log.warn(
@@ -586,6 +603,7 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         const modelMismatch = availableModels.length > 0 && !availableModels.some(
           (m) => m === model || m.startsWith(rawModel + ":"),
         );
+        const noInstalledModels = availableModels.length === 0 && ollamaHealth.methodUsed === "http";
 
         responseText = [
           `SwarmX fleet summary (responding to: "${message}")`,
@@ -605,11 +623,17 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           `Configured Ollama endpoint: ${ollamaBase}`,
           `Model discovery source: ${ollamaHealth.methodUsed}`,
           `Configured model: ${model} (resolved from: ${rawModel})`,
+          selectedModel !== model ? `Selected model for request: ${selectedModel}` : "",
           availableModels.length > 0
             ? `Available local models: ${availableModels.join(", ")}`
+            : noInstalledModels
+            ? "Available local models: (none installed on this Ollama endpoint)"
             : "Available local models: (unavailable - could not query /api/tags)",
+          configuredModels.length > 0 ? `Configured model candidates: ${configuredModels.join(", ")}` : "",
           modelMismatch
             ? `⚠ Model "${model}" not found — try: SWARMX_COMPOSER_MODEL=${availableModels[0] ?? "phi4-fast:latest"}`
+            : noInstalledModels
+            ? "Install at least one model on this Ollama endpoint, then set SWARMX_COMPOSER_MODEL to that exact tag."
             : isTimeout
             ? `⏱ Timeout after ${timeoutMs}ms — increase via SWARMX_COMPOSER_TIMEOUT_MS env var`
             : `Set SWARMX_COMPOSER_MODEL (or SWARMX_MODEL_FAST) to a model available in your local Ollama registry.`,

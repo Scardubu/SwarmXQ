@@ -16,6 +16,7 @@ export interface OllamaServiceConfig {
   isHealthy: boolean;
   modelListMethod: "http" | "subprocess" | "static";
   cachedModels: string[];
+  configuredModels: string[];
   lastCheckTime: number;
   lastError?: string;
 }
@@ -49,7 +50,10 @@ function normalizeEndpoint(raw: string): string {
 /**
  * Probe HTTP endpoint for Ollama /api/tags.
  */
-async function probeHttpModels(baseUrl: string, timeoutMs: number = 3000): Promise<string[]> {
+async function probeHttpModels(
+  baseUrl: string,
+  timeoutMs: number = 3000,
+): Promise<{ reachable: boolean; models: string[] }> {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -58,17 +62,17 @@ async function probeHttpModels(baseUrl: string, timeoutMs: number = 3000): Promi
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
-      if (!res.ok) return [];
+      if (!res.ok) return { reachable: false, models: [] };
       const json = (await res.json()) as { models?: Array<{ name?: string }> };
       const names = (json.models ?? [])
         .map((m) => m.name?.trim())
         .filter((n): n is string => Boolean(n));
-      return [...new Set(names)].sort();
+      return { reachable: true, models: [...new Set(names)].sort() };
     } finally {
       clearTimeout(timeoutId);
     }
   } catch {
-    return [];
+    return { reachable: false, models: [] };
   }
 }
 
@@ -112,26 +116,47 @@ function getStaticModels(): string[] {
  */
 async function discoverModels(
   endpoints: string[],
-): Promise<{ models: string[]; method: "http" | "subprocess" | "static"; endpoint: string }> {
+): Promise<{
+  models: string[];
+  configuredModels: string[];
+  method: "http" | "subprocess" | "static";
+  endpoint: string;
+}> {
   const primaryEndpoint = normalizeEndpoint(endpoints[0] ?? "http://127.0.0.1:11434");
+  const configuredModels = getStaticModels();
 
   // Try each HTTP endpoint
   for (const endpoint of endpoints) {
     const normalized = normalizeEndpoint(endpoint);
-    const models = await probeHttpModels(normalized, 3000);
-    if (models.length > 0) {
-      return { models, method: "http", endpoint: normalized };
+    const httpProbe = await probeHttpModels(normalized, 3000);
+    if (httpProbe.reachable) {
+      return {
+        models: httpProbe.models,
+        configuredModels,
+        method: "http",
+        endpoint: normalized,
+      };
     }
   }
 
   // Fallback: subprocess
   const subprocessModels = probeSubprocessModels();
   if (subprocessModels.length > 0) {
-    return { models: subprocessModels, method: "subprocess", endpoint: primaryEndpoint };
+    return {
+      models: subprocessModels,
+      configuredModels,
+      method: "subprocess",
+      endpoint: primaryEndpoint,
+    };
   }
 
-  // Final fallback: static list
-  return { models: getStaticModels(), method: "static", endpoint: primaryEndpoint };
+  // Final fallback: static config candidates only (no verified installed models).
+  return {
+    models: [],
+    configuredModels,
+    method: "static",
+    endpoint: primaryEndpoint,
+  };
 }
 
 /**
@@ -153,6 +178,7 @@ export async function getOllamaConfig(): Promise<OllamaServiceConfig> {
     isHealthy: discovery.method !== "static",
     modelListMethod: discovery.method,
     cachedModels: discovery.models,
+    configuredModels: discovery.configuredModels,
     lastCheckTime: now,
   };
 
@@ -174,6 +200,14 @@ export async function getOllamaBaseUrl(): Promise<string> {
 export async function getAvailableModels(): Promise<string[]> {
   const config = await getOllamaConfig();
   return config.cachedModels;
+}
+
+/**
+ * Get configured model candidates from environment/static defaults.
+ */
+export async function getConfiguredModels(): Promise<string[]> {
+  const config = await getOllamaConfig();
+  return config.configuredModels;
 }
 
 /**
