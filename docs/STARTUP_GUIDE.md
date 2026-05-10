@@ -78,7 +78,9 @@ python -m cli up --dashboard --host 127.0.0.1 --port 3002
 | `NODE_ENV` | `development` | Node environment (dev/production) |
 | `TZ` | `Africa/Lagos` | Timezone for dashboard (WAT) |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama LLM backend URL |
-| `SWARMX_COMPOSER_TIMEOUT_MS` | `45000` (API default) | Composer model timeout in milliseconds. Increase on slow/cold hosts, decrease for faster fallback behavior. |
+| `SWARMX_COMPOSER_TIMEOUT_MS` | `60000` (API default) | Composer model timeout in milliseconds. Increase on slow/cold hosts, decrease for faster fallback behavior. |
+| `SWARMX_COMPOSER_NUM_PREDICT` | `384` | Composer response token ceiling; lower values reduce latency on constrained hosts. |
+| `SWARMX_COMPOSER_KEEP_ALIVE` | `10m` | Composer model keep-alive window passed to Ollama chat calls to reduce repeated cold starts. |
 | `SWARMX_COMPOSER_TIMEOUT_HISTO_LOG_EVERY` | `3` | Log compact composer timeout histogram every N timeout fallbacks (`0` or negative logs every timeout). |
 | `SWARMX_V5_POLL_TIMEOUT_MS` | `25000` | Timeout for `python -m swarmx metrics` subprocess used by API poller. Increase on slow hosts to avoid SIGTERM skips. |
 | `SWARMX_REPO_ROOT` | Auto-detected | Absolute path to SwarmX repository; auto-set by `swarm up`. Required for metrics subprocess PYTHONPATH composition. |
@@ -159,7 +161,7 @@ Notes:
 - Idle-assignment questions (`how many are idle and why no tasks?`) are handled locally and include assignment guidance.
 - API now emits `composer_preflight` logs for each composer request with route-level decision (`local` vs `model`) and timeout/model context.
 - Verify effective timeout in your shell before startup:
-   `echo ${SWARMX_COMPOSER_TIMEOUT_MS:-45000}`
+   `echo ${SWARMX_COMPOSER_TIMEOUT_MS:-60000}`
 
 ### Composer latency diagnostics (preflight + timeout histogram)
 

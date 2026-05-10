@@ -439,17 +439,25 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         process.env["SWARMX_MODEL_FAST"] ??
         "phi4-fast";
       const model = rawModel.includes(":") ? rawModel : `${rawModel}:latest`;
-      // [SEED-FIX-02] Increase default composer timeout to 45s. The original 8s
+      // [SEED-FIX-02] Increase default composer timeout to 60s. The original 8s
       // floor was too aggressive for cold Ollama model loads (first inference after
       // boot requires loading weights into VRAM, which can take 15–40s on CPU-only
       // hosts). Overridable via SWARMX_COMPOSER_TIMEOUT_MS env var.
       const configuredTimeout = Number.parseInt(
-        process.env["SWARMX_COMPOSER_TIMEOUT_MS"] ?? "45000",
+        process.env["SWARMX_COMPOSER_TIMEOUT_MS"] ?? "60000",
         10,
       );
       const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0
         ? configuredTimeout
-        : 45_000;
+        : 60_000;
+      const configuredNumPredict = Number.parseInt(
+        process.env["SWARMX_COMPOSER_NUM_PREDICT"] ?? "384",
+        10,
+      );
+      const composerNumPredict = Number.isFinite(configuredNumPredict) && configuredNumPredict > 0
+        ? configuredNumPredict
+        : 384;
+      const composerKeepAlive = process.env["SWARMX_COMPOSER_KEEP_ALIVE"]?.trim() || "10m";
 
       let responseText: string;
 
@@ -465,6 +473,8 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           msgChars: message.length,
           model,
           timeoutMs,
+          numPredict: composerNumPredict,
+          keepAlive: composerKeepAlive,
           runningCount,
           errorCount,
           totalAgents: agents.length,
@@ -510,6 +520,10 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           body: JSON.stringify({
             model,
             stream: false,
+            keep_alive: composerKeepAlive,
+            options: {
+              num_predict: composerNumPredict,
+            },
             messages: [
               { role: "system", content: systemPrompt },
               { role: "user", content: message },

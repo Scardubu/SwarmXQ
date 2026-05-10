@@ -180,23 +180,35 @@ async def _warmup_models(cfg: Any) -> bool:
     import httpx
 
     ollama_url: str = getattr(cfg, "ollama_url", "http://127.0.0.1:11434")
-    fast_model: str = getattr(cfg, "model_fast", "phi4-fast")
+    fast_model_raw: str = getattr(cfg, "model_fast", "phi4-fast")
+    fast_models = [fast_model_raw]
+    if ":" not in fast_model_raw:
+        # [V6.1-FIX-14] Some hosts only expose explicit tagged names.
+        fast_models.append(f"{fast_model_raw}:latest")
     budget_s = _warmup_budget_s()
     warmup_prompt = "Hi"   # minimal — just opens the connection
 
     try:
         async with asyncio.timeout(budget_s):
             async with httpx.AsyncClient(timeout=budget_s) as client:
-                resp = await client.post(
-                    f"{ollama_url}/api/chat",
-                    json={
-                        "model":  fast_model,
-                        "stream": False,
-                        "messages": [{"role": "user", "content": warmup_prompt}],
-                        "options": {"num_predict": 1},
-                    },
-                )
-                return resp.status_code == 200
+                for fast_model in fast_models:
+                    resp = await client.post(
+                        f"{ollama_url}/api/generate",
+                        json={
+                            "model": fast_model,
+                            "prompt": warmup_prompt,
+                            "stream": False,
+                            "keep_alive": "10m",
+                            "options": {
+                                "num_predict": 1,
+                                "temperature": 0,
+                                "num_ctx": 256,
+                            },
+                        },
+                    )
+                    if resp.status_code == 200:
+                        return True
+                return False
     except Exception as exc:
         log.debug("startup_warmup_failed", reason=_exc_reason(exc))
         return False
@@ -231,11 +243,18 @@ def _run_evolver_sync(cfg: Any) -> dict[str, Any]:
 
 # ── Narrative builder ─────────────────────────────────────────────────────────
 
-def _build_narrative(status: str, pressure: str) -> str:
-    return _NARRATIVES.get(
+def _build_narrative(status: str, pressure: str, warmup_done: bool) -> str:
+    base = _NARRATIVES.get(
         (status, pressure),
         _NARRATIVES.get(("degraded", "normal"), "SwarmX is starting up."),
     )
+    # [V6.1-FIX-14] Avoid announcing "models warm" when warmup timed out.
+    if not warmup_done:
+        return (
+            "Swarm core is ready. Model warmup is still pending, so the first"
+            " composer/model call may be slower than usual."
+        )
+    return base
 
 
 def _overall_status(ollama_ok: bool, pressure: str) -> str:
@@ -283,7 +302,7 @@ async def run_startup_autopilot(cfg: Any | None = None) -> StartupSummary:
 
     duration_ms = int((time.monotonic() - t0) * 1000)
     status = _overall_status(ollama_ok, pressure_level)
-    narrative = _build_narrative(status, pressure_level)
+    narrative = _build_narrative(status, pressure_level, warmup_done)
 
     summary = StartupSummary(
         timestamp=datetime.now(timezone.utc).isoformat(),
