@@ -28,13 +28,13 @@ Production hardening changelog:
 
 from __future__ import annotations
 
-import json
-import os
-import signal
-import threading
 from dataclasses import asdict, is_dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
+import os
 from pathlib import Path
+import signal
+import threading
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
