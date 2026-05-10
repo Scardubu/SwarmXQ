@@ -406,6 +406,27 @@ const chatSchema = z.object({
     .optional(),
 });
 
+// [V6.1-ENH-04] Structured Composer response metadata enables dashboard-level
+// degraded/offline UX without brittle text parsing.
+type ComposerResponseMode = "local" | "model" | "fallback";
+
+interface ComposerResponseDiagnostics {
+  reason?: string;
+  ollamaReachable?: boolean;
+  ollamaEndpoint?: string;
+  model?: string;
+  selectedModel?: string;
+  timeoutMs?: number;
+}
+
+interface ComposerResponsePayload {
+  message: string;
+  agentId: string;
+  sessionId: string;
+  mode: ComposerResponseMode;
+  diagnostics?: ComposerResponseDiagnostics;
+}
+
 export async function composerRouter(server: FastifyInstance): Promise<void> {
   // [V6.1-FIX-13] Use centralized Ollama service
   const resolveOllamaBaseUrl = getOllamaBaseUrl;
@@ -421,6 +442,18 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       const sessionId =
         parsed.data.sessionId?.trim() ||
         `composer-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+      const mkResponse = (
+        responseMessage: string,
+        mode: ComposerResponseMode,
+        diagnostics?: ComposerResponseDiagnostics,
+      ): ComposerResponsePayload => ({
+        message: responseMessage,
+        agentId: "swarmx-composer",
+        sessionId,
+        mode,
+        ...(diagnostics ? { diagnostics } : {}),
+      });
 
       // Build context from live registry plus client-provided snapshot.
       // [V5.9-FIX-06] Registry may be cold; merge in request context agents so
@@ -502,6 +535,8 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         : 45_000;
 
       let responseText: string;
+      let usedSummaryFallback = false;
+      let fallbackDiagnostics: ComposerResponseDiagnostics | null = null;
 
       // [V6.1-FIX-12] Fast deterministic answers for operational prompts that
       // can be computed directly from live fleet state (no model dependency).
@@ -529,32 +564,32 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       );
       if (localIntent === "running_by_role") {
         responseText = formatRunningByRole(agents);
-        return { message: responseText, agentId: "swarmx-composer", sessionId };
+        return mkResponse(responseText, "local");
       }
       if (localIntent === "high_cpu") {
         const threshold = parseCpuThreshold(message, 80);
         responseText = formatHighCpuAgents(agents, threshold);
-        return { message: responseText, agentId: "swarmx-composer", sessionId };
+        return mkResponse(responseText, "local");
       }
       if (localIntent === "available_agents") {
         responseText = formatAvailableAgents(agents);
-        return { message: responseText, agentId: "swarmx-composer", sessionId };
+        return mkResponse(responseText, "local");
       }
       if (localIntent === "idle_unassigned") {
         responseText = formatIdleUnassigned(agents);
-        return { message: responseText, agentId: "swarmx-composer", sessionId };
+        return mkResponse(responseText, "local");
       }
       if (localIntent === "presence_ping") {
         responseText = formatPresencePing(agents);
-        return { message: responseText, agentId: "swarmx-composer", sessionId };
+        return mkResponse(responseText, "local");
       }
       if (localIntent === "simple_copy") {
         responseText = formatSimpleCopy(message);
-        return { message: responseText, agentId: "swarmx-composer", sessionId };
+        return mkResponse(responseText, "local");
       }
       if (localIntent === "python_calculator") {
         responseText = formatPythonCalculator();
-        return { message: responseText, agentId: "swarmx-composer", sessionId };
+        return mkResponse(responseText, "local");
       }
 
       // [V6.1-PERF-05] Resolve Ollama endpoint only for model-routed prompts.
@@ -634,6 +669,14 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           getConfiguredModels(),
           checkOllamaHealth(),
         ]);
+        fallbackDiagnostics = {
+          reason,
+          ollamaReachable: ollamaHealth.reachable,
+          ollamaEndpoint: ollamaHealth.endpoint,
+          model,
+          selectedModel,
+          timeoutMs: effectiveTimeoutMs,
+        };
         server.log.warn(
           {
             err,
@@ -650,7 +693,12 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         const simpleFallback = fallbackForSimplePrompt(message);
         if (simpleFallback) {
           responseText = simpleFallback;
-          return { message: responseText, agentId: "swarmx-composer", sessionId };
+          return mkResponse(responseText, "fallback", {
+            reason,
+            timeoutMs: effectiveTimeoutMs,
+            model,
+            selectedModel,
+          });
         }
 
         // [SEED-FIX-03] Surface actionable diagnostics: model mismatch vs timeout.
@@ -694,9 +742,23 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         ]
           .filter((l) => l !== "")
           .join("\n");
+        usedSummaryFallback = true;
       }
 
-      return { message: responseText, agentId: "swarmx-composer", sessionId };
+      if (usedSummaryFallback) {
+        return mkResponse(responseText, "fallback", fallbackDiagnostics ?? {
+          reason: "model_path_unavailable",
+          model,
+          selectedModel,
+          timeoutMs: effectiveTimeoutMs,
+        });
+      }
+
+      return mkResponse(responseText, "model", {
+        model,
+        selectedModel,
+        timeoutMs: effectiveTimeoutMs,
+      });
     }
   );
 }

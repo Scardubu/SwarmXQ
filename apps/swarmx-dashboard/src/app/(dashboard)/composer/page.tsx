@@ -20,6 +20,15 @@ interface ComposerMessage {
   timestamp: number;
   agentId?: string;
   isError?: boolean;
+  mode?: "local" | "model" | "fallback";
+  diagnostics?: {
+    reason?: string;
+    ollamaReachable?: boolean;
+    ollamaEndpoint?: string;
+    model?: string;
+    selectedModel?: string;
+    timeoutMs?: number;
+  };
 }
 
 interface ComposerState {
@@ -28,6 +37,17 @@ interface ComposerState {
   sessionId: string;
   loadingStartedAt: number | null;
 }
+
+interface ComposerApiResponse {
+  message: string;
+  agentId?: string;
+  sessionId?: string;
+  mode?: "local" | "model" | "fallback";
+  diagnostics?: ComposerMessage["diagnostics"];
+}
+
+// [V6.1-ENH-04] Use API-provided mode + diagnostics to render explicit
+// model-offline/fallback guidance and operator retry affordances.
 
 function makeComposerSessionId(): string {
   return `composer-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -300,6 +320,7 @@ function PresetChips({ onSelect }: { readonly onSelect: (p: string) => void }) {
 export default function ComposerPage() {
   const agents = useEventsStore((s) => s.agents);
   const governorState = useEventsStore((s) => s.governorState);
+  const startupSummary = useEventsStore((s) => s.startupSummary);
   const [state, setState] = useState<ComposerState>({
     messages: [],
     isLoading: false,
@@ -307,6 +328,7 @@ export default function ComposerPage() {
     loadingStartedAt: null,
   });
   const [input, setInput] = useState("");
+  const [lastPrompt, setLastPrompt] = useState("");
   const [projectScope, setProjectScope] = useState(DEFAULT_PROJECT_SCOPE);
   // [V5.9-FIX-08] Initialize localStorage-backed state lazily to avoid
   // synchronous setState inside effects (React compiler cascade warning).
@@ -342,6 +364,7 @@ export default function ComposerPage() {
       content: content.trim(),
       timestamp: Date.now(),
     };
+    setLastPrompt(content.trim());
 
     setState((prev) => ({
       ...prev,
@@ -386,7 +409,7 @@ export default function ComposerPage() {
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-      const data = await res.json() as { message: string; agentId?: string; sessionId?: string };
+      const data = await res.json() as ComposerApiResponse;
 
       setState((prev) => ({
         ...prev,
@@ -398,6 +421,8 @@ export default function ComposerPage() {
             content: data.message,
             timestamp: Date.now(),
             ...(data.agentId !== undefined && { agentId: data.agentId }),
+            ...(data.mode !== undefined && { mode: data.mode }),
+            ...(data.diagnostics !== undefined && { diagnostics: data.diagnostics }),
           },
         ],
         isLoading: false,
@@ -454,6 +479,10 @@ export default function ComposerPage() {
   const runningCount = [...agents.values()].filter((a) => a.status === "running").length;
   const pressureLevel = governorState?.pressureLevel;
   const isDegraded = pressureLevel === "high" || pressureLevel === "critical";
+  const isModelOffline = startupSummary?.ollamaReachable === false;
+  const lastAssistant = [...state.messages].reverse().find((m) => m.role === "assistant");
+  const showFallbackHint = lastAssistant?.mode === "fallback";
+  const canRetryLastPrompt = !state.isLoading && lastPrompt.trim().length > 0;
 
   return (
     <div className="flex flex-col h-full">
@@ -475,6 +504,11 @@ export default function ComposerPage() {
           {isDegraded && (
             <span className="rounded border border-yellow-500/30 bg-yellow-500/10 px-1.5 py-0.5 text-[9px] font-mono text-yellow-200">
               DEGRADED MODE
+            </span>
+          )}
+          {isModelOffline && (
+            <span className="rounded border border-red-500/30 bg-red-500/10 px-1.5 py-0.5 text-[9px] font-mono text-red-300">
+              MODEL OFFLINE
             </span>
           )}
         </div>
@@ -537,6 +571,34 @@ export default function ComposerPage() {
 
       {/* Messages */}
       <ScrollArea className="flex-1" aria-label="Composer conversation">
+        {(isModelOffline || showFallbackHint) && (
+          <div className="mx-4 mt-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-[10px] font-mono text-yellow-100">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <p>
+                  {isModelOffline
+                    ? "Ollama is currently unreachable. Composer will continue with local fleet summaries."
+                    : "Model path fell back to a fleet summary for the last response."}
+                </p>
+                {lastAssistant?.diagnostics?.ollamaEndpoint && (
+                  <p className="text-yellow-200/90">
+                    Endpoint: {lastAssistant.diagnostics.ollamaEndpoint}
+                  </p>
+                )}
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => sendMessage(lastPrompt)}
+                disabled={!canRetryLastPrompt}
+                className="h-7 border-yellow-400/30 bg-yellow-500/5 text-yellow-100 hover:bg-yellow-500/15"
+              >
+                Retry
+              </Button>
+            </div>
+          </div>
+        )}
         {state.messages.length === 0 ? (
           <div className="space-y-4">
             {/* Welcome state */}
