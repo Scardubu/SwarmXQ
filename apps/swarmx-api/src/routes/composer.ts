@@ -16,7 +16,7 @@ type ComposerAgent = {
 
 function detectLocalIntent(
   message: string,
-): "running_by_role" | "high_cpu" | "available_agents" | "simple_copy" | "python_calculator" | "presence_ping" | null {
+): "running_by_role" | "high_cpu" | "available_agents" | "simple_copy" | "python_calculator" | "presence_ping" | "idle_unassigned" | null {
   const q = message.toLowerCase();
   if (
     q === "are you there" ||
@@ -35,6 +35,12 @@ function detectLocalIntent(
   if ((q.includes("available") || q.includes("availble")) && q.includes("agent")) {
     return "available_agents";
   }
+  if (
+    q.includes("idle") &&
+    (q.includes("why") || q.includes("assigned") || q.includes("tasks") || q.includes("standby"))
+  ) {
+    return "idle_unassigned";
+  }
   if (q.includes("cpu") && (q.includes("above") || q.includes("over") || q.includes("greater than"))) {
     return "high_cpu";
   }
@@ -50,9 +56,46 @@ function detectLocalIntent(
   return null;
 }
 
+function isActiveStatus(status: string): boolean {
+  return status === "running" || status === "active";
+}
+
+function isErrorStatus(status: string): boolean {
+  return status === "error" || status === "fatal";
+}
+
+function formatIdleUnassigned(agents: ComposerAgent[]): string {
+  const active = agents.filter((a) => isActiveStatus(a.status));
+  const idle = agents.filter((a) => a.status === "idle");
+  const errored = agents.filter((a) => isErrorStatus(a.status));
+
+  const lines: string[] = [];
+  lines.push("SwarmX fleet assignment summary");
+  lines.push(`Active agents: ${active.length}`);
+  lines.push(`Idle agents: ${idle.length}`);
+  lines.push(`Error agents: ${errored.length}`);
+  lines.push(`Total registered: ${agents.length}`);
+  lines.push("");
+
+  if (idle.length === 0) {
+    lines.push("No agents are idle right now.");
+    return lines.join("\n");
+  }
+
+  lines.push("Why agents are idle:");
+  lines.push("- No workflow or mission is currently queued/running, so idle agents stay on standby by design.");
+  lines.push("- Agent seeding initializes availability only; task assignment begins when a mission/workflow is dispatched.");
+  lines.push("- Execution policy and risk gates can intentionally defer task starts until explicit run requests.");
+  lines.push("");
+  lines.push("Next action:");
+  lines.push("- Start a run from Composer or Workflows to transition eligible agents from idle to active.");
+
+  return lines.join("\n");
+}
+
 function formatPresencePing(agents: ComposerAgent[]): string {
-  const active = agents.filter((a) => a.status === "running" || a.status === "active").length;
-  const error = agents.filter((a) => a.status === "error" || a.status === "fatal").length;
+  const active = agents.filter((a) => isActiveStatus(a.status)).length;
+  const error = agents.filter((a) => isErrorStatus(a.status)).length;
   const total = agents.length;
 
   return [
@@ -145,7 +188,7 @@ function fallbackForSimplePrompt(message: string): string | null {
 }
 
 function formatRunningByRole(agents: ComposerAgent[]): string {
-  const running = agents.filter((a) => a.status === "running" || a.status === "active");
+  const running = agents.filter((a) => isActiveStatus(a.status));
   const grouped = new Map<string, ComposerAgent[]>();
   for (const agent of running) {
     const role = (agent.role?.trim() || "unassigned").toLowerCase();
@@ -217,8 +260,8 @@ function formatHighCpuAgents(agents: ComposerAgent[], threshold: number): string
 function formatAvailableAgents(agents: ComposerAgent[]): string {
   const lines: string[] = [];
   const idle = agents.filter((a) => a.status === "idle");
-  const running = agents.filter((a) => a.status === "running" || a.status === "active");
-  const unavailable = agents.filter((a) => a.status === "error" || a.status === "fatal");
+  const running = agents.filter((a) => isActiveStatus(a.status));
+  const unavailable = agents.filter((a) => isErrorStatus(a.status));
 
   const byRole = new Map<string, ComposerAgent[]>();
   for (const agent of agents) {
@@ -346,10 +389,8 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       for (const a of registryAgents) merged.set(a.id, { ...merged.get(a.id), ...a });
       const agents = [...merged.values()];
 
-      const runningCount = agents.filter((a) => a.status === "running").length;
-      const errorCount = agents.filter(
-        (a) => a.status === "error" || a.status === "fatal",
-      ).length;
+      const runningCount = agents.filter((a) => isActiveStatus(a.status)).length;
+      const errorCount = agents.filter((a) => isErrorStatus(a.status)).length;
 
       const systemPrompt = [
         "You are the SwarmX AI Composer — the intelligent operator interface for the SwarmX autonomous agent swarm.",
@@ -404,6 +445,10 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       }
       if (localIntent === "available_agents") {
         responseText = formatAvailableAgents(agents);
+        return { message: responseText, agentId: "swarmx-composer", sessionId };
+      }
+      if (localIntent === "idle_unassigned") {
+        responseText = formatIdleUnassigned(agents);
         return { message: responseText, agentId: "swarmx-composer", sessionId };
       }
       if (localIntent === "presence_ping") {
