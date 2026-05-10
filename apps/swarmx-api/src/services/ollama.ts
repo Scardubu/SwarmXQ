@@ -13,6 +13,8 @@ import { execSync } from "node:child_process";
 
 export interface OllamaServiceConfig {
   baseUrl: string;
+  // [V6.1-FIX-17] Health means HTTP reachability of the configured endpoint.
+  // Subprocess fallback can discover model tags, but cannot satisfy API calls.
   isHealthy: boolean;
   modelListMethod: "http" | "subprocess" | "static";
   cachedModels: string[];
@@ -21,13 +23,27 @@ export interface OllamaServiceConfig {
   lastError?: string;
 }
 
-const DEFAULT_ENDPOINTS = [
-  process.env["OLLAMA_HOST"]?.trim() || "",
-  process.env["SWARMX_OLLAMA_URL"]?.trim() || "",
-  process.env["SWARMX_OLLAMA_BASE_URL"]?.trim() || "",
-  "http://127.0.0.1:11434",
-  "http://localhost:11434",
-].filter(Boolean);
+function getDefaultEndpoints(): string[] {
+  // [V6.1-FIX-17] Resolve endpoints per discovery cycle so runtime env changes
+  // (restart scripts, port remaps) are honored without module reload.
+  const ordered = [
+    process.env["OLLAMA_HOST"]?.trim() || "",
+    process.env["SWARMX_OLLAMA_URL"]?.trim() || "",
+    process.env["SWARMX_OLLAMA_BASE_URL"]?.trim() || "",
+    "http://127.0.0.1:11434",
+    "http://localhost:11434",
+  ].filter(Boolean);
+
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const endpoint of ordered) {
+    const normalized = normalizeEndpoint(endpoint);
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    deduped.push(normalized);
+  }
+  return deduped;
+}
 
 const CACHE_TTL_MS = 15_000; // 15 seconds
 
@@ -119,6 +135,7 @@ async function discoverModels(
 ): Promise<{
   models: string[];
   configuredModels: string[];
+  httpReachable: boolean;
   method: "http" | "subprocess" | "static";
   endpoint: string;
 }> {
@@ -133,6 +150,7 @@ async function discoverModels(
       return {
         models: httpProbe.models,
         configuredModels,
+        httpReachable: true,
         method: "http",
         endpoint: normalized,
       };
@@ -145,6 +163,7 @@ async function discoverModels(
     return {
       models: subprocessModels,
       configuredModels,
+      httpReachable: false,
       method: "subprocess",
       endpoint: primaryEndpoint,
     };
@@ -154,6 +173,7 @@ async function discoverModels(
   return {
     models: [],
     configuredModels,
+    httpReachable: false,
     method: "static",
     endpoint: primaryEndpoint,
   };
@@ -170,12 +190,12 @@ export async function getOllamaConfig(): Promise<OllamaServiceConfig> {
     return cachedConfig;
   }
 
-  const endpoints = DEFAULT_ENDPOINTS;
+  const endpoints = getDefaultEndpoints();
   const discovery = await discoverModels(endpoints);
 
   cachedConfig = {
     baseUrl: normalizeEndpoint(discovery.endpoint),
-    isHealthy: discovery.method !== "static",
+    isHealthy: discovery.httpReachable,
     modelListMethod: discovery.method,
     cachedModels: discovery.models,
     configuredModels: discovery.configuredModels,

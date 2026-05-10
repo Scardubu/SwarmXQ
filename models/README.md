@@ -76,3 +76,29 @@ export SWARM_MODEL_CODE="my-code-model"       # overrides the execution slot
 ```
 
 These take precedence over `registry.yaml` values and `swarmx.defaults.yaml`.
+
+---
+
+## Low-Latency Tuning (Recommended)
+
+For faster first-response behavior on constrained hosts, keep Composer and
+startup warmup aligned with local Ollama performance:
+
+```bash
+# Composer model path (API): reduce response ceiling for faster completion
+export SWARMX_COMPOSER_NUM_PREDICT=256
+
+# Composer timeout: keep high enough for cold starts, not infinite
+export SWARMX_COMPOSER_TIMEOUT_MS=60000
+
+# Keep router warm between bursts to avoid repeated reload latency
+export SWARMX_COMPOSER_KEEP_ALIVE=10m
+
+# Startup script probe timeout (prevents hanging on half-open sockets)
+export SWARMX_STARTUP_CURL_MAX_TIME=8
+```
+
+Practical guidance:
+- Lower `SWARMX_COMPOSER_NUM_PREDICT` first when chasing latency spikes.
+- Increase `SWARMX_COMPOSER_TIMEOUT_MS` only if cold-load timeouts persist.
+- Avoid very long keep-alive windows on low-RAM hosts if memory pressure rises.

@@ -53,7 +53,7 @@ def _health_budget_s() -> float:
 
 
 def _warmup_budget_s() -> float:
-    return _startup_timeout("warmup_timeout_s", "SWARM_STARTUP_WARMUP_TIMEOUT_S", 10.0)
+    return _startup_timeout("warmup_timeout_s", "SWARM_STARTUP_WARMUP_TIMEOUT_S", 20.0)
 
 
 def _evolver_budget_s() -> float:

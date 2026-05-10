@@ -453,12 +453,12 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         ? configuredTimeout
         : 60_000;
       const configuredNumPredict = Number.parseInt(
-        process.env["SWARMX_COMPOSER_NUM_PREDICT"] ?? "384",
+        process.env["SWARMX_COMPOSER_NUM_PREDICT"] ?? "256",
         10,
       );
       const composerNumPredict = Number.isFinite(configuredNumPredict) && configuredNumPredict > 0
         ? configuredNumPredict
-        : 384;
+        : 256;
       const composerKeepAlive = process.env["SWARMX_COMPOSER_KEEP_ALIVE"]?.trim() || "10m";
 
       let responseText: string;
@@ -466,6 +466,10 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       // [V6.1-FIX-12] Fast deterministic answers for operational prompts that
       // can be computed directly from live fleet state (no model dependency).
       const localIntent = detectLocalIntent(message);
+      // [V6.1-PERF-04] Keep short interactive prompts from stalling too long
+      // behind cold model loads; long prompts retain the configured timeout.
+      const isShortPrompt = message.trim().length <= 180;
+      const effectiveTimeoutMs = isShortPrompt ? Math.min(timeoutMs, 30_000) : timeoutMs;
       // [V6.1-ENH-03] Route-level preflight decision telemetry for quick
       // operator diagnosis under latency pressure.
       server.log.info(
@@ -474,7 +478,7 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           localIntent: localIntent ?? "none",
           msgChars: message.length,
           model,
-          timeoutMs,
+          timeoutMs: effectiveTimeoutMs,
           numPredict: composerNumPredict,
           keepAlive: composerKeepAlive,
           runningCount,
@@ -545,7 +549,7 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
               { role: "user", content: message },
             ],
           }),
-          signal: AbortSignal.timeout(Number.isFinite(timeoutMs) ? timeoutMs : 90_000),
+          signal: AbortSignal.timeout(Number.isFinite(effectiveTimeoutMs) ? effectiveTimeoutMs : 90_000),
         });
 
         if (!ollamaRes.ok) {
@@ -563,7 +567,7 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           data?.error ??
           "No response from model.";
         server.log.debug(
-          { elapsedMs: Date.now() - modelAttemptStartedAt, model, timeoutMs },
+          { elapsedMs: Date.now() - modelAttemptStartedAt, model, timeoutMs: effectiveTimeoutMs },
           "composer_model_call_ok",
         );
       } catch (err) {
@@ -584,7 +588,7 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           {
             err,
             model,
-            timeoutMs,
+            timeoutMs: effectiveTimeoutMs,
             elapsedMs,
             isTimeout,
             timeoutCount: composerTimeoutCount,
@@ -635,7 +639,7 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
             : noInstalledModels
             ? "Install at least one model on this Ollama endpoint, then set SWARMX_COMPOSER_MODEL to that exact tag."
             : isTimeout
-            ? `⏱ Timeout after ${timeoutMs}ms — increase via SWARMX_COMPOSER_TIMEOUT_MS env var`
+            ? `⏱ Timeout after ${effectiveTimeoutMs}ms — increase via SWARMX_COMPOSER_TIMEOUT_MS env var`
             : `Set SWARMX_COMPOSER_MODEL (or SWARMX_MODEL_FAST) to a model available in your local Ollama registry.`,
         ]
           .filter((l) => l !== "")

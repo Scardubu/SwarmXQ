@@ -21,6 +21,7 @@ readonly ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 readonly STARTUP_LOG="${STARTUP_LOG:-${SWARM_HOME:-.swarmx}/logs/startup-enhanced.log}"
 readonly DEFAULT_TIMEOUT=300  # seconds
 readonly OLLAMA_URL="${OLLAMA_HOST:-http://localhost:11434}"
+readonly CURL_MAX_TIME="${SWARMX_STARTUP_CURL_MAX_TIME:-8}"
 readonly API_HOST="${SWARMX_API_HOST:-127.0.0.1}"
 readonly API_PORT="${SWARMX_API_PORT:-3001}"
 readonly DASHBOARD_PORT="3000"
@@ -200,7 +201,8 @@ check_ollama() {
     return 0
   fi
   
-  if curl -s --connect-timeout 5 "$OLLAMA_URL/api/version" >/dev/null 2>&1; then
+  # [V6.1-FIX-17] Bound total request time to avoid hangs on half-open sockets.
+  if curl -s --connect-timeout 5 --max-time "$CURL_MAX_TIME" "$OLLAMA_URL/api/version" >/dev/null 2>&1; then
     log_success "Ollama is responding"
     return 0
   else
@@ -406,7 +408,7 @@ verify_startup() {
   while [ $attempt -le $max_attempts ]; do
     # Check API health
     if [[ "$api_ready" == false ]]; then
-      if curl -s --connect-timeout 2 "http://$API_HOST:$API_PORT/health" >/dev/null 2>&1; then
+      if curl -s --connect-timeout 2 --max-time 3 "http://$API_HOST:$API_PORT/health" >/dev/null 2>&1; then
         log_success "API is responding on port $API_PORT"
         api_ready=true
       fi
@@ -414,7 +416,7 @@ verify_startup() {
     
     # Check Dashboard health
     if [[ "$dashboard_ready" == false ]]; then
-      if curl -s --connect-timeout 2 "http://127.0.0.1:$DASHBOARD_PORT" >/dev/null 2>&1; then
+      if curl -s --connect-timeout 2 --max-time 3 "http://127.0.0.1:$DASHBOARD_PORT" >/dev/null 2>&1; then
         log_success "Dashboard is responding on port $DASHBOARD_PORT"
         dashboard_ready=true
       fi

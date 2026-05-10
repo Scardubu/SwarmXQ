@@ -135,7 +135,7 @@ observability:
 # [V6.1-ENH-01] Budgets for the launch-time health/pressure/warmup/evolver pass.
 startup:
   health_timeout_s: 6.0
-  warmup_timeout_s: 10.0
+  warmup_timeout_s: 20.0
   evolver_timeout_s: 15.0
 
 
