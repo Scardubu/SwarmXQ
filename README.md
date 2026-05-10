@@ -12,7 +12,7 @@ SwarmX V6 is the self-improving operator layer on top of the existing control pl
 ### Launch Full Stack (API + Dashboard)
 
 ```bash
-cd SwarmX-1.5
+cd SwarmXQ
 source .venv/bin/activate
 python -m cli up --dashboard --host 127.0.0.1 --port 3001
 ```
@@ -22,7 +22,7 @@ Then open the dashboard at **http://localhost:3000**
 ### Environment Variables
 
 - `SWARMX_API_URL` — API endpoint for dashboard rewrites (default: `http://127.0.0.1:3001`)
-- `SWARMX_COMPOSER_TIMEOUT_MS` — Composer model timeout in ms (default: `45000` in API)
+- `SWARMX_COMPOSER_TIMEOUT_MS` — Composer model timeout in ms (default: `60000` in API)
 - `SWARMX_V5_POLL_TIMEOUT_MS` — Metrics poll subprocess timeout in ms (default: `25000`)
 - `SWARMX_OLLAMA_URL` — Ollama endpoint (default: `http://127.0.0.1:11434`)
 - `SWARMX_DASHBOARD_ORIGIN` — CORS allowlist for browser requests (default: auto-configured by `swarm up`)

@@ -178,7 +178,7 @@ def cmd_start(
     # [V6.1-FIX-16] Do not force a short Composer timeout in `swarm up`.
     # Respect operator-provided env overrides; otherwise align with API default.
     if not api_env.get("SWARMX_COMPOSER_TIMEOUT_MS"):
-        api_env["SWARMX_COMPOSER_TIMEOUT_MS"] = "45000"
+        api_env["SWARMX_COMPOSER_TIMEOUT_MS"] = "60000"
     if not api_env.get("SWARMX_DASHBOARD_ORIGIN"):
         # [V6.1-FIX-02] Local `next start` runs in production mode; seed loopback dashboard origins
         # so direct API fallbacks (127.0.0.1/localhost) can pass CORS preflight checks.
@@ -189,7 +189,7 @@ def cmd_start(
         "SWARMX_API_URL": _dashboard_api_url(host, port),
     }
     if not dashboard_env.get("SWARMX_COMPOSER_TIMEOUT_MS"):
-        dashboard_env["SWARMX_COMPOSER_TIMEOUT_MS"] = "45000"
+        dashboard_env["SWARMX_COMPOSER_TIMEOUT_MS"] = "60000"
     api_cmd = [node_bin, str(api_dist)]
 
     dash_root = _dashboard_root()

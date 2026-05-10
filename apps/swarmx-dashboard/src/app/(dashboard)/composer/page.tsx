@@ -208,7 +208,7 @@ function ThinkingIndicator({ startedAt }: { readonly startedAt: number }) {
   const elapsedSec = Math.floor(elapsedMs / 1000);
 
   return (
-    <div className="flex items-start gap-3 px-4 py-3 panel-enter">
+    <div className="flex items-start gap-3 px-4 py-3 panel-enter" role="status" aria-live="polite">
       <div className="h-6 w-6 rounded-full bg-(--color-accent-dim) flex items-center justify-center shrink-0 mt-0.5">
         <Bot className="h-3 w-3 text-accent animate-pulse" />
       </div>
@@ -253,6 +253,7 @@ function PresetChips({ onSelect }: { readonly onSelect: (p: string) => void }) {
             <button
               key={p.prompt}
               onClick={() => onSelect(p.prompt)}
+              aria-label={`Use preset prompt: ${p.label}`}
               className={cn(
                 "composer-suggestion-chip",
                 p.highlight && "border-accent/30 bg-accent/5 text-accent/80"
@@ -461,6 +462,7 @@ export default function ComposerPage() {
           size="sm"
           variant="ghost"
           onClick={() => setState({ messages: [], isLoading: false, sessionId: makeComposerSessionId(), loadingStartedAt: null })}
+          aria-label="Start a new Composer session"
           className="gap-1.5 text-text-muted hover:text-text-primary"
         >
           <RefreshCw className="h-3 w-3" />
@@ -514,7 +516,7 @@ export default function ComposerPage() {
       </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1" aria-label="Composer conversation">
         {state.messages.length === 0 ? (
           <div className="space-y-4">
             {/* Welcome state */}
@@ -539,7 +541,7 @@ export default function ComposerPage() {
             <PresetChips onSelect={sendMessage} />
           </div>
         ) : (
-          <div className="py-2">
+          <div className="py-2" role="log" aria-live="polite" aria-relevant="additions text">
             {state.messages.map((msg, i) => (
               <MessageBubble key={`${msg.timestamp}-${i}`} msg={msg} />
             ))}
@@ -560,6 +562,7 @@ export default function ComposerPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask about your agents, workflows, or system state…"
+              aria-label="Composer message input"
               className="flex-1 resize-none text-xs pr-4"
               disabled={state.isLoading}
               onKeyDown={(e) => {

@@ -15,7 +15,7 @@ SwarmX V6.1 implements a production-grade Cross-Origin Resource Sharing (CORS) p
 ### For Local Development
 
 ```bash
-cd SwarmX-1.5
+cd SwarmXQ
 source .venv/bin/activate
 python -m cli up --dashboard --host 127.0.0.1 --port 3001
 ```
