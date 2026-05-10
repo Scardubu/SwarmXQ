@@ -256,7 +256,7 @@ bash scripts/startup-enhanced.sh --dashboard
 
 # Or force-stop all services
 pkill -f "python -m cli up"
-pkill -f "next dev"
+pkill -f "next start|@swarmx/dashboard"
 ```
 
 ## Production Deployment
