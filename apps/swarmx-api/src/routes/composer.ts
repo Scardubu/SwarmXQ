@@ -14,7 +14,9 @@ type ComposerAgent = {
   } | null;
 };
 
-function detectLocalIntent(message: string): "running_by_role" | "high_cpu" | "available_agents" | "simple_copy" | null {
+function detectLocalIntent(
+  message: string,
+): "running_by_role" | "high_cpu" | "available_agents" | "simple_copy" | "python_calculator" | null {
   const q = message.toLowerCase();
   if ((q.includes("running agents") || q.includes("active agents")) && q.includes("grouped by role")) {
     return "running_by_role";
@@ -31,6 +33,9 @@ function detectLocalIntent(message: string): "running_by_role" | "high_cpu" | "a
   ) {
     return "simple_copy";
   }
+  if (q.includes("python") && q.includes("calculator") && (q.includes("simple") || q.includes("write") || q.includes("build"))) {
+    return "python_calculator";
+  }
   return null;
 }
 
@@ -41,6 +46,36 @@ function formatSimpleCopy(message: string): string {
   }
 
   return "I can help with short operator copy, fleet status, and direct swarm questions right away.";
+}
+
+function formatPythonCalculator(): string {
+  return [
+    "Here is a simple Python calculator you can run locally:",
+    "",
+    "```python",
+    "def add(a: float, b: float) -> float:",
+    "    return a + b",
+    "",
+    "def subtract(a: float, b: float) -> float:",
+    "    return a - b",
+    "",
+    "def multiply(a: float, b: float) -> float:",
+    "    return a * b",
+    "",
+    "def divide(a: float, b: float) -> float:",
+    "    if b == 0:",
+    "        raise ValueError(\"Cannot divide by zero\")",
+    "    return a / b",
+    "",
+    "if __name__ == \"__main__\":",
+    "    first = float(input(\"First number: \"))",
+    "    second = float(input(\"Second number: \"))",
+    "    print(\"Add:\", add(first, second))",
+    "    print(\"Subtract:\", subtract(first, second))",
+    "    print(\"Multiply:\", multiply(first, second))",
+    "    print(\"Divide:\", divide(first, second))",
+    "```",
+  ].join("\n");
 }
 
 function parseCpuThreshold(message: string, fallback = 80): number {
@@ -346,6 +381,10 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       }
       if (localIntent === "simple_copy") {
         responseText = formatSimpleCopy(message);
+        return { message: responseText, agentId: "swarmx-composer", sessionId };
+      }
+      if (localIntent === "python_calculator") {
+        responseText = formatPythonCalculator();
         return { message: responseText, agentId: "swarmx-composer", sessionId };
       }
 
