@@ -139,6 +139,7 @@ Notes:
 - API auto-normalizes model names by appending `:latest` when omitted.
 - First inference after startup can be slower due to model load.
 - Presence checks like `are you there?` and `ping` are handled locally from fleet state and do not require model inference.
+- Idle-assignment questions (`how many are idle and why no tasks?`) are handled locally and include assignment guidance.
 - Verify effective timeout in your shell before startup:
    `echo ${SWARMX_COMPOSER_TIMEOUT_MS:-45000}`
 

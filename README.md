@@ -51,6 +51,7 @@ SwarmX uses **environment-driven CORS** to protect the API from unauthorized cro
 - Cold model loads can take 15–40s on first request; API default timeout is 45s and then falls back to a fleet summary
 - Common operator prompts (for example, simple welcome/greeting copy) are now answered locally without waiting for model warmup
 - Presence checks like `are you there?` and `ping` are answered locally from live fleet state
+- Idle-assignment prompts like `how many are idle and why are they not assigned tasks?` are answered locally with assignment guidance
 - Simple code prompts like a small Python calculator are also answered locally without waiting for model warmup
 - Start Ollama: `ollama serve`
 - Ensure `SWARMX_COMPOSER_MODEL` (or `SWARMX_MODEL_FAST`) resolves to an installed Ollama tag (`:latest` is auto-appended when omitted)
