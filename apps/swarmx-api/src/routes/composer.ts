@@ -431,7 +431,6 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         "Be concise, accurate, and operator-focused.",
       ].filter((l) => l !== "").join("\n");
 
-      const ollamaBase = await resolveOllamaBaseUrl();
       // [SEED-FIX-01] Resolve model and normalize name — Ollama requires the tag
       // suffix (e.g. "phi4-fast:latest") when a model was pulled with an explicit
       // tag. If the configured name has no colon, append ":latest" automatically.
@@ -516,6 +515,10 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         responseText = formatPythonCalculator();
         return { message: responseText, agentId: "swarmx-composer", sessionId };
       }
+
+      // [V6.1-PERF-05] Resolve Ollama endpoint only for model-routed prompts.
+      // Local intents should never block on model discovery or Ollama health.
+      const ollamaBase = await resolveOllamaBaseUrl();
 
       // [V6.1-FIX-15] If the configured tag is stale but installed models are
       // discoverable, route to the first discovered model to avoid avoidable 404s.

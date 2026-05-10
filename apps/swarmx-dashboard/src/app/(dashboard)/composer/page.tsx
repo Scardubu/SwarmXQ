@@ -204,6 +204,7 @@ function ThinkingIndicator({ startedAt }: { readonly startedAt: number }) {
   }, [startedAt]);
 
   const showSlowHint = elapsedMs >= 8000;
+  const showDegradedHint = elapsedMs >= 30000;
   const showFallbackHint = elapsedMs >= 20000;
   const elapsedSec = Math.floor(elapsedMs / 1000);
 
@@ -225,6 +226,11 @@ function ThinkingIndicator({ startedAt }: { readonly startedAt: number }) {
           <div className="max-w-136 rounded-lg border border-accent/20 bg-accent/5 px-3 py-2 text-[10px] font-mono text-text-secondary">
             Cold model loads can take a little longer on this host.
             {showFallbackHint ? " If the model stays cold, SwarmX will fall back to a direct fleet summary." : ""}
+          </div>
+        )}
+        {showDegradedHint && (
+          <div className="max-w-136 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-[10px] font-mono text-yellow-200">
+            The model path is degraded right now. You can still ask operational fleet questions for instant local answers.
           </div>
         )}
       </div>
@@ -278,6 +284,7 @@ function PresetChips({ onSelect }: { readonly onSelect: (p: string) => void }) {
 
 export default function ComposerPage() {
   const agents = useEventsStore((s) => s.agents);
+  const governorState = useEventsStore((s) => s.governorState);
   const [state, setState] = useState<ComposerState>({
     messages: [],
     isLoading: false,
@@ -439,6 +446,8 @@ export default function ComposerPage() {
   };
 
   const runningCount = [...agents.values()].filter((a) => a.status === "running").length;
+  const pressureLevel = governorState?.pressureLevel;
+  const isDegraded = pressureLevel === "high" || pressureLevel === "critical";
 
   return (
     <div className="flex flex-col h-full">
@@ -457,6 +466,11 @@ export default function ComposerPage() {
               ? `${runningCount} agent${runningCount === 1 ? "" : "s"} available`
               : "Fleet standing by"}
           </span>
+          {isDegraded && (
+            <span className="rounded border border-yellow-500/30 bg-yellow-500/10 px-1.5 py-0.5 text-[9px] font-mono text-yellow-200">
+              DEGRADED MODE
+            </span>
+          )}
         </div>
         <Button
           size="sm"
@@ -597,6 +611,11 @@ export default function ComposerPage() {
         <p className="text-[9px] font-mono text-text-muted mt-1.5 text-center">
           ↵ Enter · Sessions are ephemeral · Context includes live fleet state
         </p>
+        {isDegraded && (
+          <p className="text-[9px] font-mono text-yellow-200/90 mt-1 text-center" aria-live="polite">
+            Model responses may fallback under pressure. Operational status queries remain instant.
+          </p>
+        )}
       </div>
     </div>
   );
