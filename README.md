@@ -23,6 +23,7 @@ Then open the dashboard at **http://localhost:3000**
 
 - `SWARMX_API_URL` — API endpoint for dashboard rewrites (default: `http://127.0.0.1:3001`)
 - `SWARMX_COMPOSER_TIMEOUT_MS` — Composer model timeout in ms (default: `45000` in API)
+- `SWARMX_V5_POLL_TIMEOUT_MS` — Metrics poll subprocess timeout in ms (default: `25000`)
 - `SWARMX_OLLAMA_URL` — Ollama endpoint (default: `http://127.0.0.1:11434`)
 - `SWARMX_DASHBOARD_ORIGIN` — CORS allowlist for browser requests (default: auto-configured by `swarm up`)
   - For local dev: `http://localhost:3000,http://127.0.0.1:3000` (auto-set)
@@ -49,10 +50,16 @@ SwarmX uses **environment-driven CORS** to protect the API from unauthorized cro
 **Composer endpoint hangs or times out**
 - Cold model loads can take 15–40s on first request; API default timeout is 45s and then falls back to a fleet summary
 - Common operator prompts (for example, simple welcome/greeting copy) are now answered locally without waiting for model warmup
+- Presence checks like `are you there?` and `ping` are answered locally from live fleet state
 - Simple code prompts like a small Python calculator are also answered locally without waiting for model warmup
 - Start Ollama: `ollama serve`
 - Ensure `SWARMX_COMPOSER_MODEL` (or `SWARMX_MODEL_FAST`) resolves to an installed Ollama tag (`:latest` is auto-appended when omitted)
 - Tune timeout with `SWARMX_COMPOSER_TIMEOUT_MS` if your host is slower/faster
+
+**V5 metrics poll logs repeated "poll skipped" with SIGTERM**
+- On slower hosts, `python -m swarmx metrics` can exceed the poll timeout
+- Increase the subprocess timeout: `export SWARMX_V5_POLL_TIMEOUT_MS=30000`
+- The poller now avoids overlapping subprocesses and skips while an existing poll is still running
 
 **Agent fleet shows 0 agents after startup**
 - API now seeds agent registry from `agents/catalog.yaml` on boot so dashboard starts with idle agents

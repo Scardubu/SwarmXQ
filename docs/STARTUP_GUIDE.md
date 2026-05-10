@@ -78,6 +78,7 @@ python -m cli up --dashboard --host 127.0.0.1 --port 3002
 | `TZ` | `Africa/Lagos` | Timezone for dashboard (WAT) |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama LLM backend URL |
 | `SWARMX_COMPOSER_TIMEOUT_MS` | `45000` (API default) | Composer model timeout in milliseconds. Increase on slow/cold hosts, decrease for faster fallback behavior. |
+| `SWARMX_V5_POLL_TIMEOUT_MS` | `25000` | Timeout for `python -m swarmx metrics` subprocess used by API poller. Increase on slow hosts to avoid SIGTERM skips. |
 | `SWARMX_REPO_ROOT` | Auto-detected | Absolute path to SwarmX repository; auto-set by `swarm up`. Required for metrics subprocess PYTHONPATH composition. |
 | `SWARMX_PYTHON` | `sys.executable` | Python interpreter for metrics poller and CLI sidecars; auto-detected from active venv by `swarm up`. |
 | `VERBOSE` | (not set) | Enable verbose logging in startup script |
@@ -137,8 +138,18 @@ export SWARMX_COMPOSER_MODEL=phi4-fast:latest
 Notes:
 - API auto-normalizes model names by appending `:latest` when omitted.
 - First inference after startup can be slower due to model load.
+- Presence checks like `are you there?` and `ping` are handled locally from fleet state and do not require model inference.
 - Verify effective timeout in your shell before startup:
    `echo ${SWARMX_COMPOSER_TIMEOUT_MS:-45000}`
+
+### Repeated "V5 metrics poll skipped" logs
+
+If you see frequent metrics poll skips with subprocess `SIGTERM`, increase the poll timeout:
+
+```bash
+export SWARMX_V5_POLL_TIMEOUT_MS=30000
+bash scripts/startup-enhanced.sh --dashboard
+```
 
 ### Agent list initially empty
 

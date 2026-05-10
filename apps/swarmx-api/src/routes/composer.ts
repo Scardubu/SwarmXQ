@@ -16,8 +16,19 @@ type ComposerAgent = {
 
 function detectLocalIntent(
   message: string,
-): "running_by_role" | "high_cpu" | "available_agents" | "simple_copy" | "python_calculator" | null {
+): "running_by_role" | "high_cpu" | "available_agents" | "simple_copy" | "python_calculator" | "presence_ping" | null {
   const q = message.toLowerCase();
+  if (
+    q === "are you there" ||
+    q === "are you there?" ||
+    q === "you there" ||
+    q === "you there?" ||
+    q === "ping" ||
+    q === "hello" ||
+    q === "hi"
+  ) {
+    return "presence_ping";
+  }
   if ((q.includes("running agents") || q.includes("active agents")) && q.includes("grouped by role")) {
     return "running_by_role";
   }
@@ -37,6 +48,22 @@ function detectLocalIntent(
     return "python_calculator";
   }
   return null;
+}
+
+function formatPresencePing(agents: ComposerAgent[]): string {
+  const active = agents.filter((a) => a.status === "running" || a.status === "active").length;
+  const error = agents.filter((a) => a.status === "error" || a.status === "fatal").length;
+  const total = agents.length;
+
+  return [
+    'SwarmX fleet summary (responding to: "are you there?")',
+    `Active agents: ${active}`,
+    `Error agents: ${error}`,
+    `Total registered: ${total}`,
+    total > 0
+      ? `  • ${agents[0]?.name ?? agents[0]?.id} [${agents[0]?.status}] — ${agents[0]?.currentTask ?? "standby"}`
+      : "No agents are currently registered.",
+  ].join("\n");
 }
 
 function formatSimpleCopy(message: string): string {
@@ -377,6 +404,10 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       }
       if (localIntent === "available_agents") {
         responseText = formatAvailableAgents(agents);
+        return { message: responseText, agentId: "swarmx-composer", sessionId };
+      }
+      if (localIntent === "presence_ping") {
+        responseText = formatPresencePing(agents);
         return { message: responseText, agentId: "swarmx-composer", sessionId };
       }
       if (localIntent === "simple_copy") {

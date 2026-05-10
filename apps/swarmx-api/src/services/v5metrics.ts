@@ -62,6 +62,15 @@ export function startV5MetricsPoller(server: FastifyInstance): void {
     process.env["SWARMX_V5_POLL_INTERVAL_MS"] ?? "15000",
     10
   );
+  // [V6.1-FIX-18] Metrics command may exceed 12s on constrained hosts.
+  // Keep timeout configurable and safely above common cold-path latency.
+  const configuredTimeoutMs = Number.parseInt(
+    process.env["SWARMX_V5_POLL_TIMEOUT_MS"] ?? "25000",
+    10
+  );
+  const POLL_TIMEOUT_MS = Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0
+    ? configuredTimeoutMs
+    : 25_000;
   // [V6.1-FIX-03] Prefer python3, fallback to python, then SWARMX_PYTHON env var
   const pythonExe = process.env["SWARMX_PYTHON"] ?? "python3";
   const repoRoot = resolve(process.env["SWARMX_REPO_ROOT"] ?? process.cwd());
@@ -72,15 +81,24 @@ export function startV5MetricsPoller(server: FastifyInstance): void {
     ...process.env,
     PYTHONPATH: buildPythonPath(repoRoot),
   };
+  let pollInFlight = false;
 
   const tick = async (): Promise<void> => {
+    // [V6.1-FIX-18] Avoid overlapping metric polls when the previous subprocess
+    // is still running (prevents timer pileups and forced SIGTERM churn).
+    if (pollInFlight) {
+      server.log.debug("V5 metrics poll skipped (previous poll still in-flight)");
+      return;
+    }
+    pollInFlight = true;
+
     // ── SCS metrics ─────────────────────────────────────────────────────────
     try {
       const { stdout } = await execFileAsync(
         pythonExe,
         ["-m", "swarmx", "metrics", "--home", runtimeHome, "--format", "json"],
         {
-          timeout: 12_000,
+          timeout: POLL_TIMEOUT_MS,
           cwd: repoRoot,
           env: pythonEnv,
         }
@@ -117,6 +135,8 @@ export function startV5MetricsPoller(server: FastifyInstance): void {
       }
     } catch (err) {
       server.log.debug({ err }, "V5 metrics poll skipped");
+    } finally {
+      pollInFlight = false;
     }
   };
 
@@ -136,7 +156,7 @@ export function startV5MetricsPoller(server: FastifyInstance): void {
   }, 5_000);
 
   server.log.info(
-    { intervalMs: INTERVAL_MS, pythonExe, repoRoot, runtimeHome },
+    { intervalMs: INTERVAL_MS, timeoutMs: POLL_TIMEOUT_MS, pythonExe, repoRoot, runtimeHome },
     "V5 metrics poller started"
   );
 }
