@@ -48,6 +48,7 @@ SwarmX uses **environment-driven CORS** to protect the API from unauthorized cro
 
 **Composer endpoint hangs or times out**
 - Cold model loads can take 15–40s on first request; API default timeout is 45s and then falls back to a fleet summary
+- Common operator prompts (for example, simple welcome/greeting copy) are now answered locally without waiting for model warmup
 - Start Ollama: `ollama serve`
 - Ensure `SWARMX_COMPOSER_MODEL` (or `SWARMX_MODEL_FAST`) resolves to an installed Ollama tag (`:latest` is auto-appended when omitted)
 - Tune timeout with `SWARMX_COMPOSER_TIMEOUT_MS` if your host is slower/faster

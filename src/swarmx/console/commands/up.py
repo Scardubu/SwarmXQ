@@ -1,7 +1,7 @@
 """``swarm up`` — start the SwarmX stack.
 
 Starts the API server, background workers, and (optionally) the dashboard
-dev server. Respects the SWARMX_HOME runtime directory and the config at
+server. Respects the SWARMX_HOME runtime directory and the config at
 ``configs/swarmx.defaults.yaml``.
 """
 from __future__ import annotations
@@ -100,7 +100,7 @@ def up_callback(
     host: Annotated[str, typer.Option("--host", "-H", help="Bind host for the API.")] = _DEFAULT_API_HOST,
     port: Annotated[int, typer.Option("--port", "-p", help="Port for the API.")] = _DEFAULT_API_PORT,
     workers: Annotated[int, typer.Option("--workers", "-w", help="Number of Uvicorn workers.")] = 1,
-    dashboard: Annotated[bool, typer.Option("--dashboard/--no-dashboard", help="Also start the Next.js dashboard dev server.")] = False,
+    dashboard: Annotated[bool, typer.Option("--dashboard/--no-dashboard", help="Also start the Next.js dashboard server.")] = False,
     detach: Annotated[bool, typer.Option("--detach", "-d", help="Run in background (detach from terminal).")]= False,
     json_out: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
@@ -134,7 +134,7 @@ def cmd_start(
     host: Annotated[str, typer.Option("--host", "-H", help="Bind host for the API.")] = _DEFAULT_API_HOST,
     port: Annotated[int, typer.Option("--port", "-p", help="Port for the API.")] = _DEFAULT_API_PORT,
     workers: Annotated[int, typer.Option("--workers", "-w", help="Number of Uvicorn workers.")] = 1,
-    dashboard: Annotated[bool, typer.Option("--dashboard/--no-dashboard", help="Also start the Next.js dashboard dev server.")] = False,
+    dashboard: Annotated[bool, typer.Option("--dashboard/--no-dashboard", help="Also start the Next.js dashboard server.")] = False,
     detach: Annotated[bool, typer.Option("--detach", "-d", help="Run in background (detach from terminal).")] = False,
     json_out: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:

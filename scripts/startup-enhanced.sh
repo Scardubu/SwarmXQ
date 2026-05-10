@@ -307,7 +307,7 @@ ${GREEN}${BOLD}✓ SwarmX Stack Ready${NC}
   ${BOLD}Quick Commands:${NC}
     • View logs: tail -f ~/.swarmx/logs/swarmx-*.log
     • Health check: curl http://$API_HOST:$API_PORT/health
-    • Stop services: pkill -f 'swarmx|next dev'
+    • Stop services: pkill -f 'swarmx|next start|@swarmx/dashboard'
 
   ${BOLD}Troubleshooting:${NC}
     • CORS errors? Check: docs/CORS_CONFIGURATION.md

@@ -14,7 +14,7 @@ type ComposerAgent = {
   } | null;
 };
 
-function detectLocalIntent(message: string): "running_by_role" | "high_cpu" | "available_agents" | null {
+function detectLocalIntent(message: string): "running_by_role" | "high_cpu" | "available_agents" | "simple_copy" | null {
   const q = message.toLowerCase();
   if ((q.includes("running agents") || q.includes("active agents")) && q.includes("grouped by role")) {
     return "running_by_role";
@@ -25,7 +25,22 @@ function detectLocalIntent(message: string): "running_by_role" | "high_cpu" | "a
   if (q.includes("cpu") && (q.includes("above") || q.includes("over") || q.includes("greater than"))) {
     return "high_cpu";
   }
+  if (
+    (q.includes("welcome message") || q.includes("greeting message") || q.includes("intro message")) &&
+    (q.includes("simple") || q.includes("short") || q.includes("quick") || q.includes("write"))
+  ) {
+    return "simple_copy";
+  }
   return null;
+}
+
+function formatSimpleCopy(message: string): string {
+  const q = message.toLowerCase();
+  if (q.includes("welcome message") || q.includes("greeting message") || q.includes("intro message")) {
+    return "Welcome to SwarmX. Your fleet is ready, your tools are online, and you can start from here.";
+  }
+
+  return "I can help with short operator copy, fleet status, and direct swarm questions right away.";
 }
 
 function parseCpuThreshold(message: string, fallback = 80): number {
@@ -327,6 +342,10 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       }
       if (localIntent === "available_agents") {
         responseText = formatAvailableAgents(agents);
+        return { message: responseText, agentId: "swarmx-composer", sessionId };
+      }
+      if (localIntent === "simple_copy") {
+        responseText = formatSimpleCopy(message);
         return { message: responseText, agentId: "swarmx-composer", sessionId };
       }
 

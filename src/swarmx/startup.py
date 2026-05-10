@@ -59,6 +59,13 @@ def _warmup_budget_s() -> float:
 def _evolver_budget_s() -> float:
     return _startup_timeout("evolver_timeout_s", "SWARM_STARTUP_EVOLVER_TIMEOUT_S", 15.0)
 
+
+def _exc_reason(exc: Exception) -> str:
+    reason = str(exc).strip()
+    if reason:
+        return reason
+    return exc.__class__.__name__
+
 # ── Narrative copy table ──────────────────────────────────────────────────────
 # Key: (overall_status, pressure_level) → user-facing string.
 # Internal = concise logs; external = warm, confident, slightly playful.
@@ -158,7 +165,7 @@ def _check_pressure(cfg: Any) -> tuple[str, int, float, int]:
         limit = concurrency_limit_from_config(cfg)
         return snap.level.value, snap.available_mb, snap.zram_used_pct, limit
     except Exception as exc:
-        log.debug("startup_pressure_check_skipped", reason=str(exc))
+        log.debug("startup_pressure_check_skipped", reason=_exc_reason(exc))
         return "normal", 0, 0.0, 1
 
 
@@ -191,7 +198,7 @@ async def _warmup_models(cfg: Any) -> bool:
                 )
                 return resp.status_code == 200
     except Exception as exc:
-        log.debug("startup_warmup_failed", reason=str(exc))
+        log.debug("startup_warmup_failed", reason=_exc_reason(exc))
         return False
 
 
@@ -210,7 +217,7 @@ async def _sync_evolver(cfg: Any) -> tuple[bool, int]:
             proposals = len(result.get("cycles", [{}])[0].get("candidates", []))
             return True, proposals
     except Exception as exc:
-        log.debug("startup_evolver_sync_failed", reason=str(exc))
+        log.debug("startup_evolver_sync_failed", reason=_exc_reason(exc))
         return False, 0
 
 

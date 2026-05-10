@@ -32,34 +32,38 @@ import json
 import os
 import signal
 import threading
+from dataclasses import asdict, is_dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 import yaml
 
+from . import __version__
 from .config import SwarmConfig
-from .evolver import apply_proposals, build_evolution_proposals, run_skill_crystallization
+from .event_bus import recent as recent_events
+from .event_bus import snapshot as event_snapshot
+from .evolver import (apply_proposals, build_evolution_proposals,
+                      run_skill_crystallization)
 from .execution_gate import gate_execution
 from .executor import execute_plan
 from .journal import append_event, load_events
-from .event_bus import snapshot as event_snapshot, recent as recent_events
-from .mission import build_mission, save_mission, mission_list, activate_mission
-from .policy import assess_mission
 from .memory import load_recent_memories, load_recent_runs
-from .metrics import build_metrics
 from .memory_graph import build_memory_graph, search_memory_graph
-from .storage import list_jobs, list_memories
-from .worker import start_worker
+from .metrics import build_metrics
+from .mission import (activate_mission, build_mission, mission_list,
+                      save_mission)
 from .planner import build_plan, detect_stack
+from .policy import assess_mission
 from .queue import append_job, queue_summary, update_job
-from .runtime import build_snapshot, ensure_runtime_dirs, load_runtime_state, update_runtime_state
+from .runtime import (build_snapshot, ensure_runtime_dirs, load_runtime_state,
+                      update_runtime_state)
 from .skills import skill_library
+from .storage import list_jobs
 from .tooling import detect_tools
+from .worker import start_worker
 from .workflows import workflow_summary
-from . import __version__
-
 
 # ── Static file MIME types ─────────────────────────────────────────────────────
 
@@ -201,6 +205,25 @@ def _bundle_list(folder: Path, suffixes: tuple[str, ...]) -> list[str]:
     return sorted(dict.fromkeys(out))
 
 
+# [V6.1-FIX-18] Keep proposal serialization consistent across overview and
+# IEP signal synthesis while staying type-safe for static analysis.
+def _proposal_to_dict(proposal: Any) -> dict[str, Any]:
+    if isinstance(proposal, dict):
+        return proposal
+
+    to_dict = getattr(proposal, "to_dict", None)
+    if callable(to_dict):
+        value = to_dict()
+        if isinstance(value, dict):
+            return value
+        return {"value": str(value)}
+
+    if is_dataclass(proposal) and not isinstance(proposal, type):
+        return asdict(proposal)
+
+    return {"value": str(proposal)}
+
+
 def _agent_details(bundle_root: Path) -> list[dict[str, Any]]:
     catalog_path = bundle_root / "agents" / "catalog.yaml"
     if not catalog_path.exists():
@@ -237,7 +260,7 @@ def _build_iep_elite(
     All fields are consumed by the dashboard's renderIepStatus() function.
     Values are derived from real runtime state — no synthetic data.
     """
-    proposal_dicts = [p.to_dict() if hasattr(p, "to_dict") else dict(p) for p in proposals]
+    proposal_dicts = [_proposal_to_dict(p) for p in proposals]
     high_risk = [p for p in proposal_dicts if str(p.get("risk", "")).lower() in {"critical", "high"}]
     critic_findings = len(high_risk)
 
@@ -309,7 +332,7 @@ def _overview(repo: Path, cfg: SwarmConfig) -> dict[str, Any]:
         (r for r in reversed(runs) if str(r.get("status", "")).lower() in {"running", "pending", "active"}),
         None,
     )
-    proposal_dicts = [p.to_dict() if hasattr(p, "to_dict") else dict(p) for p in proposals]
+    proposal_dicts = [_proposal_to_dict(p) for p in proposals]
     iep_elite = _build_iep_elite(state, proposals, runs, metrics)
     return {
         "repo":             str(repo),
@@ -522,9 +545,7 @@ class SwarmDashboardHandler(BaseHTTPRequestHandler):
                         }, sort_keys=True)
                         if marker != last_marker:
                             payload = json.dumps(snapshot, ensure_ascii=False)
-                            self.wfile.write(
-                                f"event: snapshot\ndata: {payload}\n\n".encode("utf-8")
-                            )
+                            self.wfile.write(f"event: snapshot\ndata: {payload}\n\n".encode())
                             self.wfile.flush()
                             last_marker = marker
                         time.sleep(max(float(getattr(cfg, "live_stream_interval", 2.0)), 0.5))

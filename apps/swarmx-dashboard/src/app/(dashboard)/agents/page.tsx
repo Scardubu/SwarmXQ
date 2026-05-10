@@ -287,6 +287,7 @@ function KeyValue({ label, value }: { readonly label: string; readonly value: st
 
 function AgentsPageContent() {
   const agentsMap = useEventsStore((s) => s.agents);
+  const replaceAgents = useEventsStore((s) => s.replaceAgents);
   const agents = useMemo(() => [...agentsMap.values()], [agentsMap]);
   const searchParams = useSearchParams();
   // [V6.1-FIX-10] Local client state for uptime rendering.
@@ -303,10 +304,15 @@ function AgentsPageContent() {
     setIsRefreshing(true);
     try {
       const base = process.env.NEXT_PUBLIC_SWARMX_API_URL ?? "http://127.0.0.1:3001";
-      await fetch(`${base}/api/agents`);
+      const res = await fetch(`${base}/api/agents`, { cache: "no-store" });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const data = await res.json() as { agents?: AgentState[] };
+      replaceAgents(data.agents ?? []);
     } catch { /* best-effort */ }
     setTimeout(() => setIsRefreshing(false), 800);
-  }, []);
+  }, [replaceAgents]);
 
   React.useEffect(() => {
     const id = setInterval(() => {

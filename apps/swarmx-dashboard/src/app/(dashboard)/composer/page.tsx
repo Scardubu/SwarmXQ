@@ -25,6 +25,7 @@ interface ComposerState {
   messages: ComposerMessage[];
   isLoading: boolean;
   sessionId: string;
+  loadingStartedAt: number | null;
 }
 
 function makeComposerSessionId(): string {
@@ -182,17 +183,28 @@ function MessageBubble({ msg }: { readonly msg: ComposerMessage }) {
 
 // ── Thinking indicator ────────────────────────────────────────────────────────
 
-function ThinkingIndicator() {
+function ThinkingIndicator({ elapsedMs }: { readonly elapsedMs: number }) {
+  const showSlowHint = elapsedMs >= 8000;
+  const showFallbackHint = elapsedMs >= 20000;
+
   return (
-    <div className="flex items-center gap-3 px-4 py-3 panel-enter">
-      <div className="h-6 w-6 rounded-full bg-(--color-accent-dim) flex items-center justify-center shrink-0">
+    <div className="flex items-start gap-3 px-4 py-3 panel-enter">
+      <div className="h-6 w-6 rounded-full bg-(--color-accent-dim) flex items-center justify-center shrink-0 mt-0.5">
         <Bot className="h-3 w-3 text-accent animate-pulse" />
       </div>
-      <div className="flex items-center gap-1.5 bg-bg-elevated border border-border rounded-lg px-3 py-2">
-        <div className="think-dot" />
-        <div className="think-dot" />
-        <div className="think-dot" />
-        <span className="text-[10px] font-mono text-text-muted ml-1">thinking…</span>
+      <div className="space-y-2">
+        <div className="flex items-center gap-1.5 bg-bg-elevated border border-border rounded-lg px-3 py-2">
+          <div className="think-dot" />
+          <div className="think-dot" />
+          <div className="think-dot" />
+          <span className="text-[10px] font-mono text-text-muted ml-1">thinking…</span>
+        </div>
+        {showSlowHint && (
+          <div className="max-w-136 rounded-lg border border-accent/20 bg-accent/5 px-3 py-2 text-[10px] font-mono text-text-secondary">
+            Cold model loads can take a little longer on this host.
+            {showFallbackHint ? " If the model stays cold, SwarmX will fall back to a direct fleet summary." : ""}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -247,6 +259,7 @@ export default function ComposerPage() {
     messages: [],
     isLoading: false,
     sessionId: makeComposerSessionId(),
+    loadingStartedAt: null,
   });
   const [input, setInput] = useState("");
   const [projectScope, setProjectScope] = useState(DEFAULT_PROJECT_SCOPE);
@@ -294,7 +307,12 @@ export default function ComposerPage() {
       timestamp: Date.now(),
     };
 
-    setState((prev) => ({ ...prev, messages: [...prev.messages, userMsg], isLoading: true }));
+    setState((prev) => ({
+      ...prev,
+      messages: [...prev.messages, userMsg],
+      isLoading: true,
+      loadingStartedAt: Date.now(),
+    }));
     setInput("");
 
     try {
@@ -342,6 +360,7 @@ export default function ComposerPage() {
           },
         ],
         isLoading: false,
+        loadingStartedAt: null,
       }));
     } catch (err) {
       setState((prev) => ({
@@ -355,6 +374,7 @@ export default function ComposerPage() {
           },
         ],
         isLoading: false,
+        loadingStartedAt: null,
       }));
     }
   }, [state.sessionId, state.isLoading, agents, projectScope, recentScopes]);
@@ -387,7 +407,7 @@ export default function ComposerPage() {
         <Button
           size="sm"
           variant="ghost"
-          onClick={() => setState({ messages: [], isLoading: false, sessionId: makeComposerSessionId() })}
+          onClick={() => setState({ messages: [], isLoading: false, sessionId: makeComposerSessionId(), loadingStartedAt: null })}
           className="gap-1.5 text-text-muted hover:text-text-primary"
         >
           <RefreshCw className="h-3 w-3" />
@@ -470,7 +490,7 @@ export default function ComposerPage() {
             {state.messages.map((msg, i) => (
               <MessageBubble key={`${msg.timestamp}-${i}`} msg={msg} />
             ))}
-            {state.isLoading && <ThinkingIndicator />}
+            {state.isLoading && <ThinkingIndicator elapsedMs={Date.now() - (state.loadingStartedAt ?? Date.now())} />}
             <div ref={messagesEndRef} />
           </div>
         )}

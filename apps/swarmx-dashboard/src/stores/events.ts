@@ -84,6 +84,7 @@ interface EventsState {
 
 interface EventsActions {
   handleEvent: (event: SwarmXEvent) => void;
+  replaceAgents: (agents: AgentState[]) => void;
   setConnectionStatus: (status: SSEConnectionStatus) => void;
   checkStale: () => void;
 }
@@ -295,6 +296,25 @@ function applyAgentRemoval(state: EventsState, agentId: string): EventsPatch {
   return freshPatch({ agents, errorAgentCount: error, activeAgentCount: active, totalAgentCount: total });
 }
 
+function replaceAgentsSnapshot(state: EventsState, incoming: AgentState[]): EventsPatch {
+  const agents = new Map<string, AgentState>();
+  for (const agent of incoming) {
+    agents.set(agent.id, {
+      ...agent,
+      systemdState: statusToSystemdState(agent.status),
+      systemdUnit: agent.systemdUnit ?? `swarmx-agent-${agent.id}.service`,
+      cgroupPath: agent.cgroupPath ?? `/sys/fs/cgroup/swarmx.slice/agent-${agent.id}.scope`,
+      resource: agent.resource ?? agent.resources ?? null,
+      oomCount: agent.oomCount ?? 0,
+      skillTags: agent.skillTags ?? [],
+      outputs: agent.outputs ?? [],
+    });
+  }
+  const pruned = pruneMap(agents, MAX_AGENTS, (agent) => agent.lastActive ?? 0);
+  const { error, active, total } = countsByStatus(pruned);
+  return freshPatch({ agents: pruned, errorAgentCount: error, activeAgentCount: active, totalAgentCount: total });
+}
+
 function applyQueueMetrics(state: EventsState, queue: QueueMetrics): EventsPatch {
   const queues = new Map(state.queues);
   queues.set(queue.name, queue);
@@ -495,6 +515,12 @@ export const useEventsStore = create<EventsState & EventsActions>()(
     scsHistory: [],
     governorState: null,
     startupSummary: null,
+
+    // [V6.1-FIX-17] Allow explicit agent snapshot hydration for polling/manual refresh
+    // paths so the dashboard can recover when SSE is stale or briefly disconnected.
+    replaceAgents: (agents) => {
+      set((state) => replaceAgentsSnapshot(state, agents));
+    },
 
     setConnectionStatus: (status) => set({ connectionStatus: status }),
 

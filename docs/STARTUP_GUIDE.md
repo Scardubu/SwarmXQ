@@ -316,7 +316,7 @@ python -m cli up --dashboard --host 127.0.0.1 --port 3001
 
 # Terminal 2: Start Dashboard dev server (auto-reloads on TypeScript/CSS changes)
 cd apps/swarmx-dashboard
-npm run dev
+pnpm dev
 ```
 
 Navigate to `http://localhost:3000` (dev server) for auto-reload.
