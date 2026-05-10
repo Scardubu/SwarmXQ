@@ -315,12 +315,127 @@ function PresetChips({ onSelect }: { readonly onSelect: (p: string) => void }) {
   );
 }
 
+// ── API health poll ───────────────────────────────────────────────────────────
+
+interface ApiHealthState {
+  apiOnline: boolean | null;   // null = not yet checked
+  ollamaOnline: boolean | null;
+  latencyMs: number | null;
+  lastChecked: number | null;
+}
+
+/**
+ * [V6.1-ENH-05] Polls /health every 12 s to surface API + Ollama liveness
+ * separately from the SSE startup summary so operators can distinguish
+ * "API offline" from "API online, model backend offline".
+ */
+function useApiHealth(pollIntervalMs = 12_000): ApiHealthState {
+  const [health, setHealth] = React.useState<ApiHealthState>({
+    apiOnline: null,
+    ollamaOnline: null,
+    latencyMs: null,
+    lastChecked: null,
+  });
+
+  React.useEffect(() => {
+    const baseUrl = resolveDirectApiBaseUrl();
+    let cancelled = false;
+
+    async function probe() {
+      if (cancelled) return;
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const t0 = Date.now();
+        const res = await fetch(`${baseUrl}/api/system/health`, {
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        const latencyMs = Date.now() - t0;
+        if (cancelled) return;
+        if (res.ok || res.status === 503) {
+          const data = await res.json() as { ollama?: { reachable?: boolean } };
+          setHealth({
+            apiOnline: true,
+            ollamaOnline: data?.ollama?.reachable ?? null,
+            latencyMs,
+            lastChecked: Date.now(),
+          });
+        } else {
+          setHealth((prev) => ({ ...prev, apiOnline: false, latencyMs, lastChecked: Date.now() }));
+        }
+      } catch {
+        if (!cancelled) {
+          setHealth((prev) => ({ ...prev, apiOnline: false, latencyMs: null, lastChecked: Date.now() }));
+        }
+      }
+    }
+
+    void probe();
+    const id = setInterval(() => { void probe(); }, pollIntervalMs);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [pollIntervalMs]);
+
+  return health;
+}
+
+// ── API status badge ──────────────────────────────────────────────────────────
+
+function ApiStatusDot({ health }: { readonly health: ApiHealthState }) {
+  if (health.apiOnline === null) return null; // not yet probed
+
+  if (!health.apiOnline) {
+    return (
+      <span
+        title="SwarmX API unreachable — check port 3001"
+        className="flex items-center gap-1 rounded border border-red-500/40 bg-red-500/10 px-1.5 py-0.5 text-[9px] font-mono text-red-300"
+      >
+        <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
+        API OFFLINE
+      </span>
+    );
+  }
+
+  if (health.ollamaOnline === false) {
+    // API is up but Ollama backend is down — already surfaced via MODEL OFFLINE badge
+    return (
+      <span
+        title={`API online${health.latencyMs !== null ? ` · ${health.latencyMs}ms` : ""}. Ollama unreachable.`}
+        className="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[9px] font-mono text-text-muted"
+      >
+        <span className="h-1.5 w-1.5 rounded-full bg-yellow-400" />
+        API
+        {health.latencyMs !== null && (
+          <span className="opacity-60">{health.latencyMs}ms</span>
+        )}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      title={`API online${health.latencyMs !== null ? ` · ${health.latencyMs}ms` : ""}. Ollama reachable.`}
+      className="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[9px] font-mono text-text-muted"
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
+      API
+      {health.latencyMs !== null && (
+        <span className="opacity-60">{health.latencyMs}ms</span>
+      )}
+    </span>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ComposerPage() {
   const agents = useEventsStore((s) => s.agents);
   const governorState = useEventsStore((s) => s.governorState);
   const startupSummary = useEventsStore((s) => s.startupSummary);
+  const apiHealth = useApiHealth();
   const [state, setState] = useState<ComposerState>({
     messages: [],
     isLoading: false,
@@ -512,16 +627,19 @@ export default function ComposerPage() {
             </span>
           )}
         </div>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => setState({ messages: [], isLoading: false, sessionId: makeComposerSessionId(), loadingStartedAt: null })}
-          aria-label="Start a new Composer session"
-          className="gap-1.5 text-text-muted hover:text-text-primary"
-        >
-          <RefreshCw className="h-3 w-3" />
-          New Session
-        </Button>
+        <div className="flex items-center gap-2">
+          <ApiStatusDot health={apiHealth} />
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setState({ messages: [], isLoading: false, sessionId: makeComposerSessionId(), loadingStartedAt: null })}
+            aria-label="Start a new Composer session"
+            className="gap-1.5 text-text-muted hover:text-text-primary"
+          >
+            <RefreshCw className="h-3 w-3" />
+            New Session
+          </Button>
+        </div>
       </div>
 
       {/* Project scope */}
@@ -571,6 +689,14 @@ export default function ComposerPage() {
 
       {/* Messages */}
       <ScrollArea className="flex-1" aria-label="Composer conversation">
+        {apiHealth.apiOnline === false && (
+          <div className="mx-4 mt-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-[10px] font-mono text-red-200">
+            <p>
+              SwarmX API is unreachable. Confirm it is running on port 3001:{" "}
+              <span className="font-semibold">curl http://127.0.0.1:3001/health</span>
+            </p>
+          </div>
+        )}
         {(isModelOffline || showFallbackHint) && (
           <div className="mx-4 mt-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-[10px] font-mono text-yellow-100">
             <div className="flex items-start justify-between gap-3">

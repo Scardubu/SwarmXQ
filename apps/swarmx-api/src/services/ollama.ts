@@ -9,7 +9,10 @@
  *
  * [V6.1-FIX-13] Replaces brittle per-route Ollama discovery with robust service.
  */
-import { execSync } from "node:child_process";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
+
+const execAsync = promisify(exec);
 
 export interface OllamaServiceConfig {
   baseUrl: string;
@@ -93,15 +96,18 @@ async function probeHttpModels(
 }
 
 /**
- * Subprocess fallback: `ollama list | grep -v 'NAME' | awk '{print $1}'`
+ * Subprocess fallback: `ollama list` — async to avoid blocking the event loop.
+ * [V6.1-FIX-18] Replaced execSync (event-loop-blocking) with promisified exec.
  */
-function probeSubprocessModels(): string[] {
+async function probeSubprocessModels(): Promise<string[]> {
   try {
-    const output = execSync("ollama list 2>/dev/null || true", {
-      encoding: "utf-8",
-      timeout: 3000,
-    }).trim();
-    const lines = output.split("\n").slice(1); // Skip header
+    const { stdout } = await Promise.race([
+      execAsync("ollama list 2>/dev/null || true", { timeout: 3000 }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("subprocess timeout")), 3500),
+      ),
+    ]);
+    const lines = stdout.trim().split("\n").slice(1); // Skip header
     const names = lines
       .map((line) => line.split(/\s+/)[0]?.trim())
       .filter((n): n is string => Boolean(n) && n !== "NAME");
@@ -128,7 +134,9 @@ function getStaticModels(): string[] {
 }
 
 /**
- * Main discovery: try HTTP, then subprocess, then static.
+ * Main discovery: probe all HTTP endpoints in parallel, then subprocess, then static.
+ * [V6.1-FIX-18] Replaced sequential per-endpoint await (could block 3s × N) with
+ * Promise.allSettled() fan-out capped by a 4 s global race to prevent event-loop stall.
  */
 async function discoverModels(
   endpoints: string[],
@@ -139,26 +147,37 @@ async function discoverModels(
   method: "http" | "subprocess" | "static";
   endpoint: string;
 }> {
+  const GLOBAL_HTTP_TIMEOUT_MS = 4_000;
   const primaryEndpoint = normalizeEndpoint(endpoints[0] ?? "http://127.0.0.1:11434");
   const configuredModels = getStaticModels();
 
-  // Try each HTTP endpoint
-  for (const endpoint of endpoints) {
-    const normalized = normalizeEndpoint(endpoint);
-    const httpProbe = await probeHttpModels(normalized, 3000);
-    if (httpProbe.reachable) {
+  // Probe all endpoints in parallel, capped at 4 s total.
+  type ProbeResult = PromiseSettledResult<{ reachable: boolean; models: string[] }>;
+  const httpResults: ProbeResult[] = await Promise.race([
+    Promise.allSettled(
+      endpoints.map((e) => probeHttpModels(normalizeEndpoint(e), 2500)),
+    ),
+    new Promise<ProbeResult[]>((resolve) =>
+      setTimeout(() => resolve([]), GLOBAL_HTTP_TIMEOUT_MS),
+    ),
+  ]);
+
+  // Return the first successful HTTP result, preserving endpoint order priority.
+  for (let i = 0; i < httpResults.length; i++) {
+    const result = httpResults[i];
+    if (result?.status === "fulfilled" && result.value.reachable) {
       return {
-        models: httpProbe.models,
+        models: result.value.models,
         configuredModels,
         httpReachable: true,
         method: "http",
-        endpoint: normalized,
+        endpoint: normalizeEndpoint(endpoints[i] ?? primaryEndpoint),
       };
     }
   }
 
-  // Fallback: subprocess
-  const subprocessModels = probeSubprocessModels();
+  // Fallback: subprocess (async — no event-loop block).
+  const subprocessModels = await probeSubprocessModels();
   if (subprocessModels.length > 0) {
     return {
       models: subprocessModels,
@@ -169,7 +188,7 @@ async function discoverModels(
     };
   }
 
-  // Final fallback: static config candidates only (no verified installed models).
+  // Final fallback: static config candidates only.
   return {
     models: [],
     configuredModels,
@@ -252,4 +271,30 @@ export async function checkOllamaHealth(): Promise<{
 export function invalidateOllamaCache(): void {
   cachedConfig = null;
   lastDiscoveryTime = 0;
+}
+
+/**
+ * Fast health probe — single endpoint check with 2 s timeout.
+ * [V6.1-FIX-18] Used by /health route so it never blocks on full discovery.
+ * Returns result directly without touching the discovery cache.
+ */
+export async function fastHealthProbe(): Promise<{
+  reachable: boolean;
+  endpoint: string;
+  latencyMs: number;
+}> {
+  const endpoints = getDefaultEndpoints();
+  const primary = endpoints[0] ?? "http://127.0.0.1:11434";
+  const t0 = Date.now();
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    const res = await fetch(`${primary}/api/version`, {
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return { reachable: res.ok, endpoint: primary, latencyMs: Date.now() - t0 };
+  } catch {
+    return { reachable: false, endpoint: primary, latencyMs: Date.now() - t0 };
+  }
 }

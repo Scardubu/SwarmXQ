@@ -7,7 +7,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import si from "systeminformation";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { getAvailableModels, checkOllamaHealth } from "../services/ollama.js";
+import { getAvailableModels, fastHealthProbe } from "../services/ollama.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -51,12 +51,24 @@ export async function systemRouter(server: FastifyInstance): Promise<void> {
   // ── GET /api/system/health ──────────────────────────────────────────────────
   // [V5.9-ENH-01] Structured health check: Ollama liveness, model triad readiness,
   // memory headroom, and runtime config summary.
+  // [V6.1-FIX-18] Uses fastHealthProbe() for liveness so /health never blocks on
+  // the full multi-endpoint discovery cycle (which can exceed 10 s under pressure).
   server.get("/health", async (_req: FastifyRequest, reply: FastifyReply) => {
-    // [V6.1-FIX-13] Probe Ollama using centralized service + gather system memory in parallel
-    const [models, mem, ollamaHealth] = await Promise.all([
-      probeOllamaModels(),
+    const MODEL_PROBE_TIMEOUT_MS = 5_000;
+
+    // Run fast liveness probe + system mem in parallel; cap model probe independently.
+    const [ollamaHealth, mem, models] = await Promise.all([
+      fastHealthProbe(),
       si.mem(),
-      checkOllamaHealth(),
+      Promise.race([
+        probeOllamaModels(),
+        new Promise<ModelReadiness[]>((resolve) =>
+          setTimeout(
+            () => resolve(CANONICAL_MODEL_TRIAD.map((m) => ({ ...m, status: "error" as ModelStatus, error: "probe timeout" }))),
+            MODEL_PROBE_TIMEOUT_MS,
+          ),
+        ),
+      ]),
     ]);
     const ollamaUrl = ollamaHealth.endpoint;
 
@@ -87,6 +99,7 @@ export async function systemRouter(server: FastifyInstance): Promise<void> {
       ollama: {
         url: ollamaUrl,
         reachable: ollamaReachable,
+        latencyMs: ollamaHealth.latencyMs,
       },
       models,
       memory: memGb,
