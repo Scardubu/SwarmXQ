@@ -23,13 +23,21 @@ import { useUIStore } from "@/stores/ui";
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function agentDataStatus(status: AgentState["status"]): string {
-  if (status === "running") return "active";
+  if (status === "running" || status === "active") return "active";
   if (status === "idle") return "idle";
   if (status === "queued") return "queued";
-  if (status === "error" || status === "fatal") return "error";
+  if (status === "error" || status === "fatal" || status === "failed" || status === "failed_permanent") return "error";
   if (status === "success") return "success";
   if (status === "throttled") return "throttled";
   return "idle";
+}
+
+function isRunningStatus(status: AgentState["status"]): boolean {
+  return status === "running" || status === "active";
+}
+
+function isErrorStatus(status: AgentState["status"]): boolean {
+  return status === "error" || status === "fatal" || status === "failed" || status === "failed_permanent";
 }
 
 // ── Status filter tabs ────────────────────────────────────────────────────────
@@ -332,7 +340,11 @@ function AgentsPageContent() {
     let list = agents;
     if (statusFilter !== "all") {
       list = list.filter((a) =>
-        statusFilter === "error" ? (a.status === "error" || a.status === "fatal") : a.status === statusFilter
+        statusFilter === "error"
+          ? isErrorStatus(a.status)
+          : statusFilter === "running"
+          ? isRunningStatus(a.status)
+          : a.status === statusFilter
       );
     }
     if (searchQuery.trim()) {
@@ -350,10 +362,10 @@ function AgentsPageContent() {
   const counts = useMemo(() => {
     return {
       all: agents.length,
-      running: agents.filter((a) => a.status === "running").length,
+      running: agents.filter((a) => isRunningStatus(a.status)).length,
       idle: agents.filter((a) => a.status === "idle").length,
       queued: agents.filter((a) => a.status === "queued").length,
-      error: agents.filter((a) => a.status === "error" || a.status === "fatal").length,
+      error: agents.filter((a) => isErrorStatus(a.status)).length,
     };
   }, [agents]);
 

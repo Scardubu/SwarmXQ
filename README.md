@@ -169,6 +169,7 @@ The dashboard now renders governor state end-to-end:
 - the telemetry rail shows pressure tier, available RAM, ZRAM usage, active concurrency limit, and token ceilings
 - Python lifecycle events (`mission`, `run`, `task`, `evolution`, `worker`) are bridged from `journal.jsonl` into the same Fastify SSE stream consumed by the Next.js dashboard
 - the dashboard bootstraps recent lifecycle history from `/api/logs/events` and then tails new activity over `/api/events`, so the Recent Events and Log Explorer panels hydrate immediately after refresh
+- the Agents page now normalizes `active` and `running` states (and error variants) consistently across status dots, filters, and counters
 
 ## Startup Autopilot
 
