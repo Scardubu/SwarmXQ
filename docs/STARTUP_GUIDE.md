@@ -16,6 +16,7 @@ bash scripts/startup-enhanced.sh --dashboard
 ✅ Checks Node.js 22+ is installed  
 ✅ Verifies pnpm is available  
 ✅ Checks port 3000 and 3001 availability (kills stale processes if needed)  
+✅ Evicts stale SwarmX API/dashboard instances from current and legacy roots before launch  
 ✅ Verifies Ollama is running (non-blocking; continues without it)  
 ✅ Auto-seeds CORS origins for localhost (`http://localhost:3000`)  
 ✅ Starts API server on `http://127.0.0.1:3001`  
@@ -112,6 +113,21 @@ kill -9 <PID>
 python -m cli up --dashboard --host 127.0.0.1 --port 3002
 ```
 
+### Deterministic restart hygiene (new)
+
+`startup-enhanced.sh` now performs an explicit old-instance eviction pass before port checks.
+
+What it evicts:
+- prior `python -m cli up` and `swarm.sh up` sessions
+- stale Fastify API runtime (`swarmx-api/dist/server.js`)
+- stale dashboard runtime (`@swarmx/dashboard` / `next start --port 3000`)
+
+Scope guard:
+- eviction is limited to processes associated with this repository root or the legacy `SwarmX-1.5` root hint.
+
+Operational result:
+- repeated restarts are deterministic even after interrupted runs.
+
 ### "Ollama is not responding"
 
 This is non-blocking — the API will start anyway. To fix:
@@ -151,6 +167,7 @@ When tuning under load, use these logs from the API process:
 
 - `composer_preflight`: shows whether request was routed locally or to model, with model tag and timeout.
 - `Composer model call failed — using fleet summary fallback`: includes `elapsedMs`, `timeoutCount`, and compact `timeoutHistogram` every N timeouts.
+- Composer fallback output now includes `Model discovery source` (`http`, `subprocess`, or `static`) so operators can tell whether `/api/tags`, `ollama list`, or static config was used.
 
 Example tuning:
 

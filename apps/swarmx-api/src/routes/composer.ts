@@ -1,7 +1,11 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
 import { agentRegistry } from "./agents.js";
-// Use built-in fetch (Node.js 18+ / TypeScript globalThis)
+import {
+  getOllamaBaseUrl,
+  getAvailableModels,
+  checkOllamaHealth,
+} from "../services/ollama.js";
 
 type ComposerAgent = {
   id: string;
@@ -342,20 +346,9 @@ function formatAvailableAgents(agents: ComposerAgent[]): string {
   return lines.join("\n");
 }
 
-async function listAvailableModels(ollamaBase: string): Promise<string[]> {
-  try {
-    const tagsRes = await fetch(`${ollamaBase}/api/tags`, {
-      signal: AbortSignal.timeout(2000),
-    });
-    if (!tagsRes.ok) return [];
-    const tagsJson = (await tagsRes.json()) as { models?: Array<{ name?: string }> };
-    const names = (tagsJson.models ?? [])
-      .map((m) => m.name?.trim())
-      .filter((n): n is string => Boolean(n));
-    return [...new Set(names)];
-  } catch {
-    return [];
-  }
+async function listAvailableModels(): Promise<string[]> {
+  // [V6.1-FIX-13] Delegate to centralized resilient service
+  return getAvailableModels();
 }
 
 const chatSchema = z.object({
@@ -381,21 +374,8 @@ const chatSchema = z.object({
 });
 
 export async function composerRouter(server: FastifyInstance): Promise<void> {
-  // [V5.9-FIX-06] Resolve Ollama endpoint from canonical env vars used across
-  // SwarmX runtime components and normalize host-only values.
-  const resolveOllamaBaseUrl = (): string => {
-    const raw =
-      process.env["SWARMX_OLLAMA_BASE_URL"] ??
-      process.env["SWARMX_OLLAMA_URL"] ??
-      process.env["OLLAMA_HOST"] ??
-      "http://127.0.0.1:11434";
-    const candidate = raw.trim();
-    if (!candidate) return "http://127.0.0.1:11434";
-    if (candidate.startsWith("http://") || candidate.startsWith("https://")) {
-      return candidate.replace(/\/+$/, "");
-    }
-    return `http://${candidate.replace(/\/+$/, "")}`;
-  };
+  // [V6.1-FIX-13] Use centralized Ollama service
+  const resolveOllamaBaseUrl = getOllamaBaseUrl;
 
   server.post(
     "/chat",
@@ -450,7 +430,7 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         "Be concise, accurate, and operator-focused.",
       ].filter((l) => l !== "").join("\n");
 
-      const ollamaBase = resolveOllamaBaseUrl();
+      const ollamaBase = await resolveOllamaBaseUrl();
       // [SEED-FIX-01] Resolve model and normalize name — Ollama requires the tag
       // suffix (e.g. "phi4-fast:latest") when a model was pulled with an explicit
       // tag. If the configured name has no colon, append ":latest" automatically.
@@ -565,7 +545,10 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           composerTimeoutHistogram[bucket] += 1;
           composerTimeoutCount += 1;
         }
-        const availableModels = await listAvailableModels(ollamaBase);
+        const [availableModels, ollamaHealth] = await Promise.all([
+          listAvailableModels(),
+          checkOllamaHealth(),
+        ]);
         server.log.warn(
           {
             err,
@@ -606,6 +589,7 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           "",
           `Composer model fallback reason: ${reason}`,
           `Configured Ollama endpoint: ${ollamaBase}`,
+          `Model discovery source: ${ollamaHealth.methodUsed}`,
           `Configured model: ${model} (resolved from: ${rawModel})`,
           availableModels.length > 0
             ? `Available local models: ${availableModels.join(", ")}`

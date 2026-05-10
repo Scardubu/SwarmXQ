@@ -19,6 +19,7 @@ interface ComposerMessage {
   content: string;
   timestamp: number;
   agentId?: string;
+  isError?: boolean;
 }
 
 interface ComposerState {
@@ -134,6 +135,7 @@ function WelcomeTypewriter() {
 
 function MessageBubble({ msg }: { readonly msg: ComposerMessage }) {
   const isUser = msg.role === "user";
+  const isError = msg.isError === true;
   const time = new Date(msg.timestamp).toLocaleTimeString("en-NG", {
     hour: "2-digit",
     minute: "2-digit",
@@ -146,11 +148,17 @@ function MessageBubble({ msg }: { readonly msg: ComposerMessage }) {
       <div
         className={cn(
           "h-6 w-6 rounded-full shrink-0 flex items-center justify-center mt-0.5",
-          isUser ? "bg-accent/20 text-accent" : "bg-(--color-accent-dim) text-text-secondary"
+          isUser
+            ? "bg-accent/20 text-accent"
+            : isError
+            ? "bg-red-500/10 text-red-400"
+            : "bg-(--color-accent-dim) text-text-secondary"
         )}
       >
         {isUser ? (
           <span className="text-[9px] font-mono font-bold">YOU</span>
+        ) : isError ? (
+          <AlertCircle className="h-3 w-3" />
         ) : (
           <Bot className="h-3 w-3" />
         )}
@@ -168,6 +176,8 @@ function MessageBubble({ msg }: { readonly msg: ComposerMessage }) {
             "rounded-lg px-3 py-2 text-xs font-mono leading-relaxed",
             isUser
               ? "bg-(--color-accent-dim) text-accent border border-accent/20 text-right"
+              : isError
+              ? "bg-red-950/30 text-red-300 border border-red-500/30"
               : "bg-bg-elevated text-text-secondary border border-border"
           )}
         >
@@ -183,9 +193,19 @@ function MessageBubble({ msg }: { readonly msg: ComposerMessage }) {
 
 // ── Thinking indicator ────────────────────────────────────────────────────────
 
-function ThinkingIndicator({ elapsedMs }: { readonly elapsedMs: number }) {
+// [V5.9-FIX-01] ThinkingIndicator now self-ticks elapsed time so slow-hint
+// and fallback-hint actually surface after 8 s and 20 s respectively.
+function ThinkingIndicator({ startedAt }: { readonly startedAt: number }) {
+  const [elapsedMs, setElapsedMs] = React.useState(() => Date.now() - startedAt);
+
+  React.useEffect(() => {
+    const id = setInterval(() => setElapsedMs(Date.now() - startedAt), 1000);
+    return () => clearInterval(id);
+  }, [startedAt]);
+
   const showSlowHint = elapsedMs >= 8000;
   const showFallbackHint = elapsedMs >= 20000;
+  const elapsedSec = Math.floor(elapsedMs / 1000);
 
   return (
     <div className="flex items-start gap-3 px-4 py-3 panel-enter">
@@ -197,7 +217,9 @@ function ThinkingIndicator({ elapsedMs }: { readonly elapsedMs: number }) {
           <div className="think-dot" />
           <div className="think-dot" />
           <div className="think-dot" />
-          <span className="text-[10px] font-mono text-text-muted ml-1">thinking…</span>
+          <span className="text-[10px] font-mono text-text-muted ml-1">
+            thinking{elapsedSec > 2 ? ` · ${elapsedSec}s` : "…"}
+          </span>
         </div>
         {showSlowHint && (
           <div className="max-w-136 rounded-lg border border-accent/20 bg-accent/5 px-3 py-2 text-[10px] font-mono text-text-secondary">
@@ -315,6 +337,10 @@ export default function ComposerPage() {
     }));
     setInput("");
 
+    // [V5.9-FIX-02] 90-second hard abort; avoids infinite loading on cold models.
+    const abortCtrl = new AbortController();
+    const abortTimer = setTimeout(() => abortCtrl.abort(), 90_000);
+
     try {
       const payload = {
         sessionId,
@@ -335,6 +361,7 @@ export default function ComposerPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        signal: abortCtrl.signal,
       };
 
       let res = await fetch("/api/composer/chat", requestInit);
@@ -363,19 +390,45 @@ export default function ComposerPage() {
         loadingStartedAt: null,
       }));
     } catch (err) {
+      // [V5.9-FIX-03] Classify error type for actionable operator feedback.
+      let errorText: string;
+      if (err instanceof DOMException && err.name === "AbortError") {
+        errorText =
+          "Request timed out after 90 s.\n\nThe model may still be loading on the host. Try again in a few seconds, or check that Ollama is running:\n  curl http://localhost:11434/api/tags";
+      } else if (err instanceof Error && /HTTP 503/.test(err.message)) {
+        errorText =
+          "API returned 503 — the model service is temporarily unavailable.\n\nOllama may be loading or swapping a model. Wait a moment then retry.";
+      } else if (err instanceof Error && /HTTP 502/.test(err.message)) {
+        errorText =
+          "API gateway error (502). The orchestration backend may be restarting.\n\nRun: bash scripts/startup-enhanced.sh --dashboard";
+      } else if (err instanceof Error && /HTTP 429/.test(err.message)) {
+        errorText =
+          "Rate limit reached (429). Too many requests in a short window. Wait a few seconds and try again.";
+      } else if (err instanceof Error && /HTTP 4\d\d/.test(err.message)) {
+        errorText = `Request rejected by API: ${err.message}.\n\nCheck that the session payload is valid and the API version matches the dashboard.`;
+      } else if (err instanceof TypeError && /fetch|network/i.test(err.message)) {
+        errorText =
+          "Could not reach the SwarmX API.\n\nConfirm the API is running at port 3001:\n  curl http://127.0.0.1:3001/health";
+      } else {
+        errorText = `Swarm brain error: ${err instanceof Error ? err.message : "unknown error"}.\n\nCheck API logs for details.`;
+      }
+
       setState((prev) => ({
         ...prev,
         messages: [
           ...prev.messages,
           {
             role: "assistant",
-            content: `Couldn't reach the swarm brain: ${err instanceof Error ? err.message : "Unknown error"}.\n\nMake sure the API server is running at the configured endpoint.`,
+            content: errorText,
             timestamp: Date.now(),
+            isError: true,
           },
         ],
         isLoading: false,
         loadingStartedAt: null,
       }));
+    } finally {
+      clearTimeout(abortTimer);
     }
   }, [state.sessionId, state.isLoading, agents, projectScope, recentScopes]);
 
@@ -490,7 +543,7 @@ export default function ComposerPage() {
             {state.messages.map((msg, i) => (
               <MessageBubble key={`${msg.timestamp}-${i}`} msg={msg} />
             ))}
-            {state.isLoading && <ThinkingIndicator elapsedMs={Date.now() - (state.loadingStartedAt ?? Date.now())} />}
+            {state.isLoading && <ThinkingIndicator startedAt={state.loadingStartedAt ?? Date.now()} />}
             <div ref={messagesEndRef} />
           </div>
         )}

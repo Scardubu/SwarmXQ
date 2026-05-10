@@ -203,6 +203,10 @@ kill -9 <PID>
 python -m cli up --dashboard --port 3002  # Use different port if 3001 is needed elsewhere
 ```
 
+Startup hygiene note:
+- `scripts/startup-enhanced.sh --dashboard` now performs a stale-instance eviction pass before port checks.
+- It targets old SwarmX API/dashboard sessions from the current repository and legacy `SwarmX-1.5` path hint to make restarts deterministic.
+
 ### Dashboard Shows "504: Gateway Timeout"
 
 **Root Cause:** API unreachable or taking >90 seconds to respond.
@@ -222,6 +226,9 @@ python -m cli up --dashboard
 # 4. Check logs
 tail -100f ~/.swarmx/logs/swarmx-*.log
 ```
+
+Composer diagnostics note:
+- Fallback responses now include `Model discovery source` to indicate whether model availability came from direct Ollama HTTP (`http`), CLI fallback (`subprocess`), or static env defaults (`static`).
 
 ### CORS Works Locally But Not in Production
 

@@ -7,6 +7,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import si from "systeminformation";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { getAvailableModels, checkOllamaHealth } from "../services/ollama.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -27,27 +28,16 @@ interface ModelReadiness {
   error?: string;
 }
 
-async function probeOllamaModels(ollamaUrl: string): Promise<ModelReadiness[]> {
+async function probeOllamaModels(): Promise<ModelReadiness[]> {
+  // [V6.1-FIX-13] Use centralized resilient service
   const results: ModelReadiness[] = [];
-
-  let listedTags: string[] = [];
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    const resp = await fetch(`${ollamaUrl}/api/tags`, { signal: controller.signal });
-    clearTimeout(timeoutId);
-    if (resp.ok) {
-      const body = (await resp.json()) as { models?: Array<{ name: string }> };
-      listedTags = (body.models ?? []).map((m) => m.name.toLowerCase());
-    }
-  } catch {
-    // Ollama unreachable — report all as error below
+  const listedTags = (await getAvailableModels()).map((t) => t.toLowerCase());
+  if (listedTags.length === 0) {
     for (const m of CANONICAL_MODEL_TRIAD) {
-      results.push({ role: m.role, tag: m.tag, gguf: m.gguf, status: "error", error: "Ollama unreachable" });
+      results.push({ role: m.role, tag: m.tag, gguf: m.gguf, status: "error", error: "Ollama unreachable or no models available" });
     }
     return results;
   }
-
   for (const m of CANONICAL_MODEL_TRIAD) {
     const found = listedTags.some(
       (t) => t === m.tag.toLowerCase() || t.startsWith(m.tag.toLowerCase() + ":"),
@@ -62,18 +52,16 @@ export async function systemRouter(server: FastifyInstance): Promise<void> {
   // [V5.9-ENH-01] Structured health check: Ollama liveness, model triad readiness,
   // memory headroom, and runtime config summary.
   server.get("/health", async (_req: FastifyRequest, reply: FastifyReply) => {
-    const ollamaUrl = process.env["SWARMX_OLLAMA_URL"] ?? "http://127.0.0.1:11434";
-
-    // Probe Ollama + gather system memory in parallel
-    const [models, mem] = await Promise.all([
-      probeOllamaModels(ollamaUrl),
+    // [V6.1-FIX-13] Probe Ollama using centralized service + gather system memory in parallel
+    const [models, mem, ollamaHealth] = await Promise.all([
+      probeOllamaModels(),
       si.mem(),
+      checkOllamaHealth(),
     ]);
+    const ollamaUrl = ollamaHealth.endpoint;
 
     const allReady = models.every((m) => m.status === "ready");
-    // [V5.9-FIX-02] Narrow the first model before dereferencing under exact optional checks.
-    const firstModel = models[0];
-    const ollamaReachable = firstModel !== undefined && firstModel.status !== "error";
+    const ollamaReachable = ollamaHealth.reachable;
 
     const memGb = {
       totalGb: +(mem.total / 1024 ** 3).toFixed(2),

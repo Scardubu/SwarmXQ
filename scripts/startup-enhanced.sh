@@ -24,6 +24,7 @@ readonly OLLAMA_URL="${OLLAMA_HOST:-http://localhost:11434}"
 readonly API_HOST="${SWARMX_API_HOST:-127.0.0.1}"
 readonly API_PORT="${SWARMX_API_PORT:-3001}"
 readonly DASHBOARD_PORT="3000"
+readonly LEGACY_ROOT_HINT="/SwarmX-1.5"
 
 # ─── Flags ───────────────────────────────────────────────────────────────────
 CHECK_ONLY=false
@@ -81,6 +82,20 @@ check_port_available() {
   return 0  # Port is available
 }
 
+wait_for_port_free() {
+  local port="$1"
+  local max_wait_s="${2:-6}"
+  local elapsed=0
+  while lsof -Pi :$port -sTCP:LISTEN -t >/dev/null 2>&1; do
+    if [[ $elapsed -ge $max_wait_s ]]; then
+      return 1
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+  return 0
+}
+
 # ─── Helper: Kill Process on Port ────────────────────────────────────────────
 kill_port() {
   local port="$1"
@@ -99,11 +114,11 @@ kill_port() {
     if [ $attempt -eq 1 ]; then
       log_info "Sending SIGTERM to PID $pid..."
       kill -15 "$pid" 2>/dev/null || true
-      sleep 2
+      wait_for_port_free "$port" 3 || true
     elif [ $attempt -eq 2 ]; then
       log_warning "SIGTERM timeout, sending SIGKILL to PID $pid..."
       kill -9 "$pid" 2>/dev/null || true
-      sleep 1
+      wait_for_port_free "$port" 2 || true
     else
       log_error "Failed to free port $port after $max_attempts attempts"
       return 1
@@ -113,6 +128,67 @@ kill_port() {
   done
   
   return 1
+}
+
+# ─── Startup Hygiene: stale instance eviction ───────────────────────────────
+evict_stale_instances() {
+  log_info "Running startup hygiene (old-instance eviction)..."
+
+  local patterns=(
+    "python -m cli up"
+    "swarm.sh up"
+    "swarmx-api/dist/server.js"
+    "@swarmx/dashboard"
+    "next start --port 3000"
+  )
+
+  local evicted=0
+  local current_pid="$$"
+  local parent_pid="${PPID:-0}"
+
+  for pattern in "${patterns[@]}"; do
+    while IFS= read -r pid; do
+      [[ -z "$pid" ]] && continue
+      [[ "$pid" == "$current_pid" ]] && continue
+      [[ "$pid" == "$parent_pid" ]] && continue
+
+      local cmd
+      cmd=$(ps -p "$pid" -o args= 2>/dev/null || true)
+      [[ -z "$cmd" ]] && continue
+
+      # Only evict known SwarmX roots (current repo or legacy sibling root).
+      if [[ "$cmd" != *"$ROOT_DIR"* && "$cmd" != *"$LEGACY_ROOT_HINT"* ]]; then
+        continue
+      fi
+
+      log_warning "Evicting stale process PID=$pid ($cmd)"
+      kill -15 "$pid" 2>/dev/null || true
+      evicted=$((evicted + 1))
+    done < <(pgrep -f "$pattern" 2>/dev/null || true)
+  done
+
+  # Force kill any lingering matched processes.
+  for pattern in "${patterns[@]}"; do
+    while IFS= read -r pid; do
+      [[ -z "$pid" ]] && continue
+      [[ "$pid" == "$current_pid" ]] && continue
+      [[ "$pid" == "$parent_pid" ]] && continue
+      local cmd
+      cmd=$(ps -p "$pid" -o args= 2>/dev/null || true)
+      [[ -z "$cmd" ]] && continue
+      if [[ "$cmd" != *"$ROOT_DIR"* && "$cmd" != *"$LEGACY_ROOT_HINT"* ]]; then
+        continue
+      fi
+      log_warning "Force-evicting lingering process PID=$pid"
+      kill -9 "$pid" 2>/dev/null || true
+    done < <(pgrep -f "$pattern" 2>/dev/null || true)
+  done
+
+  if [[ $evicted -gt 0 ]]; then
+    log_success "Startup hygiene evicted $evicted stale process(es)"
+  else
+    log_info "No stale SwarmX instances detected"
+  fi
 }
 
 # ─── Health Check: Ollama ─────────────────────────────────────────────────────
@@ -375,6 +451,7 @@ main() {
   # Run health checks
   log_info "Running health checks..."
   check_directories || { log_error "Directory check failed"; exit 1; }
+  evict_stale_instances
   check_python || { log_error "Python check failed"; exit 1; }
   check_nodejs || { log_error "Node.js check failed"; exit 1; }
   check_ports || { log_error "Port check failed"; exit 1; }

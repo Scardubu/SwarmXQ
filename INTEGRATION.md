@@ -27,6 +27,18 @@ swarm up --dashboard
 swarm status dashboard
 ```
 
+## Startup Hygiene Integration (V6.1)
+
+`scripts/startup-enhanced.sh` now includes a deterministic startup hygiene pass before normal health checks.
+
+Behavior:
+1. Evicts stale SwarmX launch processes (`python -m cli up`, `swarm.sh up`, API `server.js`, dashboard `next start`).
+2. Restricts eviction scope to this repository root and the legacy `SwarmX-1.5` root hint.
+3. Continues with port checks and explicit port reclamation if listeners still exist.
+
+Operational result:
+- repeated restarts converge reliably without manual `pkill` in most cases.
+
 ## Key file roles
 
 | Path | Role |
