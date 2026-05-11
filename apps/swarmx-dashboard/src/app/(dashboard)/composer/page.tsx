@@ -171,10 +171,10 @@ function WelcomeTypewriter() {
 function MessageBubble({ msg }: { readonly msg: ComposerMessage }) {
   const isUser = msg.role === "user";
   const isError = msg.isError === true;
-  const time = new Date(msg.timestamp).toLocaleTimeString("en-NG", {
+  // [V6.1-FIX-19] Use the browser's system locale/timezone — do not hardcode region.
+  const time = new Date(msg.timestamp).toLocaleTimeString(undefined, {
     hour: "2-digit",
     minute: "2-digit",
-    timeZone: "Africa/Lagos",
   });
 
   return (
@@ -292,7 +292,7 @@ function PresetChips({ onSelect }: { readonly onSelect: (p: string) => void }) {
           const Icon = p.icon;
           return (
             <button
-              key={p.prompt}
+              key={p.label}
               onClick={() => onSelect(p.prompt)}
               aria-label={`Use preset prompt: ${p.label}`}
               className={cn(
@@ -345,7 +345,9 @@ function useApiHealth(pollIntervalMs = 12_000): ApiHealthState {
       if (cancelled) return;
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        // [V6.1-FIX-19] 8 s — safely above /api/system/health's 5 s model-probe
+        // timeout so the hook never races with the endpoint's own deadline.
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
         const t0 = Date.now();
         const res = await fetch(`${baseUrl}/api/system/health`, {
           signal: controller.signal,
@@ -385,7 +387,16 @@ function useApiHealth(pollIntervalMs = 12_000): ApiHealthState {
 // ── API status badge ──────────────────────────────────────────────────────────
 
 function ApiStatusDot({ health }: { readonly health: ApiHealthState }) {
-  if (health.apiOnline === null) return null; // not yet probed
+  // [V6.1-FIX-19] Render a neutral placeholder while the first probe is in-flight
+  // so the header width stays stable (no layout shift once apiOnline resolves).
+  if (health.apiOnline === null) {
+    return (
+      <span className="flex items-center gap-1 rounded border border-border/40 px-1.5 py-0.5 text-[9px] font-mono text-text-muted opacity-50">
+        <span className="h-1.5 w-1.5 rounded-full bg-border" />
+        API
+      </span>
+    );
+  }
 
   if (!health.apiOnline) {
     return (

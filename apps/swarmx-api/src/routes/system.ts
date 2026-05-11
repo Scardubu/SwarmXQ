@@ -91,9 +91,12 @@ export async function systemRouter(server: FastifyInstance): Promise<void> {
       : vramWarning         ? "warning"
       : "ok";
 
-    const responseCode = status === "ok" || status === "warning" ? 200 : 503;
-
-    return reply.code(responseCode).send({
+    // [V6.1-FIX-19] Always return HTTP 200 from /api/system/health.
+    // HTTP 503 means the API SERVICE is unavailable — but the API is running fine.
+    // When only Ollama is down, status="degraded" conveys the detail without
+    // causing monitoring tools, uptime checkers, and load balancers to flip the
+    // entire service to "down". 503 is reserved for unhandled fatal errors.
+    return reply.code(200).send({
       status,
       ts: new Date().toISOString(),
       ollama: {
