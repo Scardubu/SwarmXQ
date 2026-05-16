@@ -544,10 +544,9 @@ const chatSchema = z.object({
           })
         )
         .optional(),
-      // [V6.2-ENH-05] Operator-reported runtime pressure level from the
-      // dashboard governor. When "critical", model calls are bypassed to
-      // conserve memory and avoid OOM risk on constrained hosts.
-      pressureLevel: z.enum(["nominal", "elevated", "high", "critical"]).optional(),
+      // [V6.2-FIX-13] Align with the shared SwarmX PressureLevel contract.
+      // Accept legacy synonyms too so older dashboards keep working.
+      pressureLevel: z.enum(["normal", "nominal", "elevated", "high", "critical"]).optional(),
     })
     .optional(),
 });
@@ -650,6 +649,7 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       const rawModel: string =
         process.env["SWARMX_COMPOSER_MODEL"] ??
         process.env["SWARMX_MODEL_FAST"] ??
+        process.env["SWARM_MODEL_FAST"] ??
         "phi4-fast";
       const model = rawModel.includes(":") ? rawModel : `${rawModel}:latest`;
       let selectedModel = model;
@@ -772,6 +772,9 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       // [V6.1-FIX-15] If the configured tag is stale but installed models are
       // discoverable, route to the first discovered model to avoid avoidable 404s.
       const preflightModels = await listAvailableModels();
+      const configuredModelCandidates = (await getConfiguredModels())
+        .map((candidate) => normalizeModelTag(candidate))
+        .filter(Boolean);
       if (
         preflightModels.length > 0 &&
         !preflightModels.some((m) => m === model || m.startsWith(`${rawModel}:`))
@@ -780,6 +783,7 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           model,
           rawModel,
           process.env["SWARMX_MODEL_FAST"] ?? "",
+          process.env["SWARM_MODEL_FAST"] ?? "",
           "phi4-fast:latest",
           "phi4-fast",
         ]) ?? model;
@@ -794,7 +798,14 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       try {
         const modelCandidates = [
           selectedModel,
-          normalizeModelTag(process.env["SWARMX_COMPOSER_FAST_MODEL"] ?? process.env["SWARMX_MODEL_FAST"] ?? "phi4-fast"),
+          normalizeModelTag(
+            process.env["SWARMX_COMPOSER_FAST_MODEL"] ??
+            process.env["SWARMX_MODEL_FAST"] ??
+            process.env["SWARM_MODEL_FAST"] ??
+            "phi4-fast",
+          ),
+          ...configuredModelCandidates,
+          ...preflightModels.map((candidate) => normalizeModelTag(candidate)),
         ]
           .map((m) => m.trim())
           .filter(Boolean)
@@ -876,6 +887,11 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
                 await sleep(delayMs);
                 continue;
               }
+
+              // [V6.2-FIX-15] Non-retryable failures such as 404 model-not-found
+              // should advance to the next candidate immediately instead of
+              // wasting the remaining attempts on the same missing tag.
+              break;
             }
           }
         }
@@ -988,7 +1004,7 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
             ? "Install at least one model on this Ollama endpoint, then set SWARMX_COMPOSER_MODEL to that exact tag."
             : isTimeout
             ? `⏱ Timeout after ${effectiveTimeoutMs}ms — increase via SWARMX_COMPOSER_TIMEOUT_MS env var`
-            : `Set SWARMX_COMPOSER_MODEL (or SWARMX_MODEL_FAST) to a model available in your local Ollama registry.`,
+            : `Set SWARMX_COMPOSER_MODEL (or SWARM_MODEL_FAST / SWARMX_MODEL_FAST) to a model available in your local Ollama registry.`,
         ]
           .filter((l) => l !== "")
           .join("\n");

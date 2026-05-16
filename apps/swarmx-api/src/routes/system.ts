@@ -108,9 +108,22 @@ export async function systemRouter(server: FastifyInstance): Promise<void> {
       memory: memGb,
       ...(vramWarning ? { warnings: [vramWarning] } : {}),
       config: {
-        modelFast:   process.env["SWARM_MODEL_FAST"]   ?? "phi4-fast",
-        modelReason: process.env["SWARM_MODEL_REASON"] ?? "deepseek-reasoner",
-        modelCode:   process.env["SWARM_MODEL_CODE"]   ?? "qwen-worker",
+        // [V6.2-FIX-14] Keep health output aligned with the env precedence used
+        // by the API routes/services so diagnostics reflect real runtime state.
+        modelFast:
+          process.env["SWARMX_COMPOSER_MODEL"] ??
+          process.env["SWARMX_MODEL_FAST"] ??
+          process.env["SWARM_MODEL_FAST"] ??
+          "phi4-fast",
+        modelReason:
+          process.env["SWARMX_MODEL_REASON"] ??
+          process.env["SWARMX_MODEL_REASONER"] ??
+          process.env["SWARM_MODEL_REASON"] ??
+          "deepseek-reasoner",
+        modelCode:
+          process.env["SWARMX_MODEL_CODE"] ??
+          process.env["SWARM_MODEL_CODE"] ??
+          "qwen-worker",
         apiPort:     Number.parseInt(process.env["SWARMX_API_PORT"] ?? "3001", 10),
       },
     });

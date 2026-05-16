@@ -10,6 +10,8 @@ dist/
 build/
 .eggs/
 .env
+.env.local
+env.local
 
 # Virtual environments
 .venv/

@@ -863,6 +863,16 @@
 				"cat <<'JSON' | curl --max-time 20 -sS -i http://127.0.0.1:3001/api/composer/chat -H \"Content-Type: application/json\" --data-binary @-\n{\"sessionId\":\"final-smoke-local\",\"message\":\"are you there?\"}\nJSON"
 			],
 			"isBackground": false
+		},
+		{
+			"label": "copilot-force-restart-and-smoke",
+			"type": "shell",
+			"command": "bash",
+			"args": [
+				"-lc",
+				"fuser -k 3001/tcp 2>/dev/null || true; fuser -k 3000/tcp 2>/dev/null || true; .venv/bin/python -m cli up --dashboard --detach --host 127.0.0.1 --port 3001; echo \"=== /health ===\"; curl --retry 12 --retry-delay 1 --retry-connrefused --max-time 5 -sS -i http://127.0.0.1:3001/health; echo; echo \"=== /api/system/health ===\"; curl --retry 5 --retry-delay 1 --retry-connrefused --max-time 10 -sS -i http://127.0.0.1:3001/api/system/health; echo; echo \"=== composer ===\"; printf \"{\\\"sessionId\\\":\\\"smoke-final\\\",\\\"message\\\":\\\"are you there?\\\"}\" | curl --retry 3 --retry-delay 1 --retry-connrefused --max-time 20 -sS -i http://127.0.0.1:3001/api/composer/chat -H \"Content-Type: application/json\" --data-binary @-"
+			],
+			"isBackground": false
 		}
 	]
 }

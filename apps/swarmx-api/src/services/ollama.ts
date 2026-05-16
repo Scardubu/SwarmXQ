@@ -34,6 +34,16 @@ interface EndpointProbeResult {
   latencyMs: number;
 }
 
+function firstConfiguredEnv(keys: string[]): string {
+  for (const key of keys) {
+    const value = process.env[key]?.trim();
+    if (value) {
+      return value;
+    }
+  }
+  return "";
+}
+
 function getDefaultEndpoints(): string[] {
   const ordered = [
     process.env["OLLAMA_HOST"]?.trim() || "",
@@ -147,10 +157,10 @@ async function probeSubprocessModels(): Promise<string[]> {
 
 function getStaticModels(): string[] {
   const models = [
-    process.env["SWARMX_COMPOSER_MODEL"]?.trim() || "",
-    process.env["SWARMX_MODEL_FAST"]?.trim() || "",
-    process.env["SWARMX_MODEL_CODE"]?.trim() || "",
-    process.env["SWARMX_MODEL_REASON"]?.trim() || "",
+    firstConfiguredEnv(["SWARMX_COMPOSER_MODEL"]),
+    firstConfiguredEnv(["SWARMX_MODEL_FAST", "SWARM_MODEL_FAST"]),
+    firstConfiguredEnv(["SWARMX_MODEL_CODE", "SWARM_MODEL_CODE"]),
+    firstConfiguredEnv(["SWARMX_MODEL_REASON", "SWARMX_MODEL_REASONER", "SWARM_MODEL_REASON"]),
     "phi4-fast:latest",
     "qwen-worker:latest",
     "deepseek-reasoner:latest",
@@ -167,35 +177,15 @@ async function discoverModels(
   method: "http" | "http-health" | "subprocess" | "static";
   endpoint: string;
 }> {
-  const GLOBAL_HTTP_TIMEOUT_MS = 4200;
   const normalizedEndpoints = endpoints.map((e) => normalizeEndpoint(e));
   const primaryEndpoint = normalizeEndpoint(normalizedEndpoints[0] ?? "http://127.0.0.1:11434");
   const configuredModels = getStaticModels();
 
-  // [V6.2-FIX-04] Use a shared AbortController so the global timeout actually
-  // cancels all in-flight probes instead of just resolving the race while
-  // background fetches continue and potentially write stale results to cache.
-  const globalAbort = new AbortController();
-  const globalTimeoutId = setTimeout(() => globalAbort.abort(), GLOBAL_HTTP_TIMEOUT_MS);
-
-  async function probeEndpointCancellable(baseUrl: string): Promise<EndpointProbeResult> {
-    if (globalAbort.signal.aborted) {
-      return { endpoint: baseUrl, versionReachable: false, tagsReachable: false, models: [], latencyMs: 0 };
-    }
-    return probeEndpoint(baseUrl);
-  }
-
-  let results: EndpointProbeResult[];
-  try {
-    results = await Promise.race([
-      Promise.all(normalizedEndpoints.map((e) => probeEndpointCancellable(e))),
-      new Promise<EndpointProbeResult[]>((resolve) =>
-        globalAbort.signal.addEventListener("abort", () => resolve([]), { once: true }),
-      ),
-    ]);
-  } finally {
-    clearTimeout(globalTimeoutId);
-  }
+  // [V6.2-FIX-12] Keep successful probe results even when one configured
+  // endpoint is dead or slow. Each probe already has short internal timeouts,
+  // so waiting on allSettled avoids collapsing the whole pass to static mode.
+  const results = (await Promise.allSettled(normalizedEndpoints.map((endpoint) => probeEndpoint(endpoint))))
+    .flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
 
   // Prefer endpoint with tags readiness; tie-break by configured endpoint order.
   for (const endpoint of normalizedEndpoints) {
