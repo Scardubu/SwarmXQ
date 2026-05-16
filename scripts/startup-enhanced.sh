@@ -35,7 +35,7 @@ fi
 
 readonly STARTUP_LOG="${STARTUP_LOG:-${SWARM_HOME:-.swarmx}/logs/startup-enhanced.log}"
 readonly DEFAULT_TIMEOUT=300  # seconds
-readonly OLLAMA_URL="${OLLAMA_HOST:-http://localhost:11434}"
+OLLAMA_URL="${OLLAMA_HOST:-http://localhost:11434}"
 readonly CURL_MAX_TIME="${SWARMX_STARTUP_CURL_MAX_TIME:-8}"
 readonly API_HOST="${SWARMX_API_HOST:-127.0.0.1}"
 readonly API_PORT="${SWARMX_API_PORT:-3001}"
@@ -97,6 +97,36 @@ detect_available_mem_mb() {
     return 0
   fi
   echo $((avail_kb / 1024))
+}
+
+probe_ollama_url() {
+  local url="$1"
+  curl -s --connect-timeout 2 --max-time 3 "$url/api/version" >/dev/null 2>&1
+}
+
+discover_working_ollama_url() {
+  local candidates=(
+    "$OLLAMA_URL"
+    "${SWARMX_OLLAMA_URL:-}"
+    "${SWARMX_OLLAMA_BASE_URL:-}"
+    "http://127.0.0.1:11434"
+    "http://localhost:11434"
+  )
+  local seen="|"
+
+  for candidate in "${candidates[@]}"; do
+    [[ -z "$candidate" ]] && continue
+    if [[ "$seen" == *"|$candidate|"* ]]; then
+      continue
+    fi
+    seen+="$candidate|"
+    if probe_ollama_url "$candidate"; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
 }
 
 setup_ollama_runtime_tuning() {
@@ -268,16 +298,31 @@ check_ollama() {
   fi
   
   # [V6.1-FIX-17] Bound total request time to avoid hangs on half-open sockets.
-  if curl -s --connect-timeout 5 --max-time "$CURL_MAX_TIME" "$OLLAMA_URL/api/version" >/dev/null 2>&1; then
+  if probe_ollama_url "$OLLAMA_URL"; then
     log_success "Ollama is responding"
     return 0
   else
     log_warning "Ollama is not responding at $OLLAMA_URL"
+    # [V6.2-FIX-11] Repo-local overrides can point at a stale port even while
+    # the real daemon is healthy on a default local endpoint. Prefer failing
+    # over to a live endpoint over autostarting a second daemon.
+    local fallback_url
+    fallback_url=$(discover_working_ollama_url || true)
+    if [[ -n "$fallback_url" && "$fallback_url" != "$OLLAMA_URL" ]]; then
+      log_warning "Configured Ollama endpoint is stale; failing over to $fallback_url"
+      OLLAMA_URL="$fallback_url"
+      export OLLAMA_HOST="$fallback_url"
+      export SWARMX_OLLAMA_URL="$fallback_url"
+      export SWARMX_OLLAMA_BASE_URL="$fallback_url"
+      log_success "Ollama fallback endpoint is responding"
+      return 0
+    fi
+
     if [[ "$OLLAMA_AUTOSTART" == "1" ]] && command -v ollama >/dev/null 2>&1; then
       log_info "Attempting non-blocking Ollama autostart (best-effort)..."
       nohup ollama serve >> "$STARTUP_LOG" 2>&1 &
       disown || true
-      if curl -s --connect-timeout 2 --max-time 3 "$OLLAMA_URL/api/version" >/dev/null 2>&1; then
+      if probe_ollama_url "$OLLAMA_URL"; then
         log_success "Ollama autostart succeeded"
       else
         log_warning "Ollama still unavailable after autostart attempt (startup continues in degraded mode)"
@@ -427,7 +472,7 @@ setup_environment() {
 print_startup_banner() {
   cat >&2 << 'EOF'
 ╔════════════════════════════════════════════════════════════════════════════╗
-║                         SwarmX V6.1 Startup                               ║
+║                         SwarmX V6.2 Startup                               ║
 ║                    Enhanced Health Check & Automation                      ║
 ╚════════════════════════════════════════════════════════════════════════════╝
 EOF

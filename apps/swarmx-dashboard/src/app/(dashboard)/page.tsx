@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo } from "react";
+import Link from "next/link";
 import {
   RadialBarChart,
   RadialBar,
@@ -184,13 +185,14 @@ function InsightStrip() {
             {ins.type === "info"  && <Brain className="h-3 w-3 shrink-0" />}
             <span>{ins.message}</span>
           </div>
+          {/* [V6.2-ENH-07] Use Next.js Link for SPA navigation instead of full-page <a> reload. */}
           {ins.action && ins.href && (
-            <a
+            <Link
               href={ins.href}
               className="shrink-0 ml-4 underline underline-offset-2 opacity-80 hover:opacity-100 transition-opacity"
             >
               {ins.action}
-            </a>
+            </Link>
           )}
         </div>
       ))}

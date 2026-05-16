@@ -131,10 +131,13 @@ export default function LogsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `swarmx-logs-${Date.now()}.txt`;
+    // [V6.2-ENH-09] Include active filter and datestamp in download filename.
+    const levelTag = levelFilter !== "all" ? `-${levelFilter}` : "";
+    const date = new Date().toISOString().slice(0, 10);
+    a.download = `swarmx-logs${levelTag}-${date}.txt`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [filtered]);
+  }, [filtered, levelFilter]);
 
   return (
     <div className="flex flex-col h-full">

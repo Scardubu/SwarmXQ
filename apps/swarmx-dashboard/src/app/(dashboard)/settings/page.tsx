@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Save, ExternalLink } from "lucide-react";
+import { Save, ExternalLink, AlertCircle } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -131,6 +131,18 @@ export default function SettingsPage() {
               <Save className="h-3 w-3" />
               {saveMutation.isPending ? "Saving…" : "Save Changes"}
             </Button>
+          </div>
+        )}
+        {/* [V6.2-ENH-08] Show inline error when save fails. */}
+        {saveMutation.isError && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-red-500/40 bg-red-500/10 text-[10px] font-mono text-red-200">
+            <AlertCircle className="h-3 w-3 shrink-0" />
+            <span>
+              Save failed:{" "}
+              {saveMutation.error instanceof Error
+                ? saveMutation.error.message
+                : "Unknown error"}
+            </span>
           </div>
         )}
       </div>

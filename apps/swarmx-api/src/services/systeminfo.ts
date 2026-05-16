@@ -75,6 +75,8 @@ export function startSystemInfoPoller(server: FastifyInstance): void {
           usedMb: mem.used / (1024 * 1024),
           availableMb: mem.available / (1024 * 1024),
           swarmxSliceMb,
+          // [V6.2-FIX-18] Satisfy required swarmxSliceLimitMb field in SystemMetricsSnapshot type.
+          swarmxSliceLimitMb: null,
         },
         disk: {
           readBytesPerSec: diskReadPerSec,

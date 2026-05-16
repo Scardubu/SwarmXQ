@@ -483,6 +483,9 @@ export default function ComposerPage() {
   // synchronous setState inside effects (React compiler cascade warning).
   const [recentScopes, setRecentScopes] = useState<string[]>(() => loadRecentScopes());
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
+  // [V6.2-FIX-16] Derive pressureLevel before sendMessage callback so the
+  // closure captures the correct value and the dependency array is complete.
+  const pressureLevel = governorState?.pressureLevel;
 
   React.useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -631,7 +634,7 @@ export default function ComposerPage() {
     } finally {
       clearTimeout(abortTimer);
     }
-  }, [state.sessionId, state.isLoading, agents, projectScope, recentScopes]);
+  }, [state.sessionId, state.isLoading, agents, projectScope, recentScopes, pressureLevel]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -639,7 +642,6 @@ export default function ComposerPage() {
   };
 
   const runningCount = [...agents.values()].filter((a) => a.status === "running").length;
-  const pressureLevel = governorState?.pressureLevel;
   const isDegraded = pressureLevel === "high" || pressureLevel === "critical";
   const isModelOffline = startupSummary?.ollamaReachable === false;
   const lastAssistant = [...state.messages].reverse().find((m) => m.role === "assistant");

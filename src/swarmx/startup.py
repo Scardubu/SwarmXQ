@@ -23,7 +23,7 @@ import json
 import os
 import time
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -150,7 +150,7 @@ def _check_pressure(cfg: Any) -> tuple[str, int, float, int]:
     Gracefully returns ("normal", 0, 0.0, 1) if pressure module unavailable.
     """
     try:
-        from .pressure import get_pressure, concurrency_limit_from_config
+        from .pressure import concurrency_limit_from_config, get_pressure
 
         warn_mb = getattr(cfg, "pressure_warn_mb", 1500)
         crit_mb = getattr(cfg, "pressure_critical_mb", 800)
@@ -307,7 +307,7 @@ async def run_startup_autopilot(cfg: Any | None = None) -> StartupSummary:
     narrative = _build_narrative(status, pressure_level, warmup_done)
 
     summary = StartupSummary(
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=datetime.now(UTC).isoformat(),  # [V6.2-FIX-17] datetime.UTC alias (Python 3.11+, runtime is 3.12)
         status=status,
         narrative=narrative,
         pressure_level=pressure_level,
@@ -341,7 +341,7 @@ async def run_startup_autopilot(cfg: Any | None = None) -> StartupSummary:
 def run_startup_autopilot_sync(cfg: Any | None = None) -> StartupSummary:
     """Synchronous wrapper for run_startup_autopilot."""
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()  # raises RuntimeError if no loop is running
         # Already inside an event loop — use run_in_executor pattern
         import concurrent.futures
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
