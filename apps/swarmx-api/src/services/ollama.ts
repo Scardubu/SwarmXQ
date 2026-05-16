@@ -1,13 +1,14 @@
 /**
- * SwarmX V6.1 — Resilient Ollama Service
+ * SwarmX V6.2 — Resilient Ollama Service
  *
  * Centralizes Ollama endpoint resolution and model discovery with:
  * - Multi-endpoint failover (localhost, 127.0.0.1, configured)
- * - Graceful degradation (HTTP → subprocess fallback)
+ * - Graceful degradation (HTTP -> subprocess fallback)
  * - Cached model lists with TTL
  * - Structured health reporting
  *
- * [V6.1-FIX-13] Replaces brittle per-route Ollama discovery with robust service.
+ * [V6.2-FIX-02] Split endpoint health from model-list readiness so the API can
+ * fail over across localhost/127.0.0.1 even when /api/tags is slow or blocked.
  */
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
@@ -16,19 +17,24 @@ const execAsync = promisify(exec);
 
 export interface OllamaServiceConfig {
   baseUrl: string;
-  // [V6.1-FIX-17] Health means HTTP reachability of the configured endpoint.
-  // Subprocess fallback can discover model tags, but cannot satisfy API calls.
+  // Health means HTTP reachability on /api/version for the selected endpoint.
   isHealthy: boolean;
-  modelListMethod: "http" | "subprocess" | "static";
+  modelListMethod: "http" | "http-health" | "subprocess" | "static";
   cachedModels: string[];
   configuredModels: string[];
   lastCheckTime: number;
   lastError?: string;
 }
 
+interface EndpointProbeResult {
+  endpoint: string;
+  versionReachable: boolean;
+  tagsReachable: boolean;
+  models: string[];
+  latencyMs: number;
+}
+
 function getDefaultEndpoints(): string[] {
-  // [V6.1-FIX-17] Resolve endpoints per discovery cycle so runtime env changes
-  // (restart scripts, port remaps) are honored without module reload.
   const ordered = [
     process.env["OLLAMA_HOST"]?.trim() || "",
     process.env["SWARMX_OLLAMA_URL"]?.trim() || "",
@@ -48,57 +54,70 @@ function getDefaultEndpoints(): string[] {
   return deduped;
 }
 
-const CACHE_TTL_MS = 15_000; // 15 seconds
+const CACHE_TTL_MS = 15_000;
 
 let cachedConfig: OllamaServiceConfig | null = null;
 let lastDiscoveryTime = 0;
 
-/**
- * Normalize an Ollama endpoint URL.
- */
 function normalizeEndpoint(raw: string): string {
   if (!raw) return "http://127.0.0.1:11434";
   const trimmed = raw.trim();
   if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
     return trimmed.replace(/\/+$/, "");
   }
-  // Assume http if no scheme
   return `http://${trimmed.replace(/\/+$/, "")}`;
 }
 
-/**
- * Probe HTTP endpoint for Ollama /api/tags.
- */
-async function probeHttpModels(
-  baseUrl: string,
-  timeoutMs: number = 3000,
-): Promise<{ reachable: boolean; models: string[] }> {
+async function probeVersion(baseUrl: string, timeoutMs: number): Promise<boolean> {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await fetch(`${baseUrl}/api/tags`, {
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      if (!res.ok) return { reachable: false, models: [] };
-      const json = (await res.json()) as { models?: Array<{ name?: string }> };
-      const names = (json.models ?? [])
-        .map((m) => m.name?.trim())
-        .filter((n): n is string => Boolean(n));
-      return { reachable: true, models: [...new Set(names)].sort() };
+      const res = await fetch(`${baseUrl}/api/version`, { signal: controller.signal });
+      return res.ok;
     } finally {
       clearTimeout(timeoutId);
     }
   } catch {
-    return { reachable: false, models: [] };
+    return false;
   }
 }
 
-/**
- * Subprocess fallback: `ollama list` — async to avoid blocking the event loop.
- * [V6.1-FIX-18] Replaced execSync (event-loop-blocking) with promisified exec.
- */
+async function probeTags(baseUrl: string, timeoutMs: number): Promise<{ ok: boolean; models: string[] }> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(`${baseUrl}/api/tags`, { signal: controller.signal });
+      if (!res.ok) return { ok: false, models: [] };
+      const json = (await res.json()) as { models?: Array<{ name?: string }> };
+      const names = (json.models ?? [])
+        .map((m) => m.name?.trim())
+        .filter((n): n is string => Boolean(n));
+      return { ok: true, models: [...new Set(names)].sort() };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  } catch {
+    return { ok: false, models: [] };
+  }
+}
+
+async function probeEndpoint(baseUrl: string): Promise<EndpointProbeResult> {
+  const start = Date.now();
+  const [versionReachable, tags] = await Promise.all([
+    probeVersion(baseUrl, 1800),
+    probeTags(baseUrl, 2600),
+  ]);
+  return {
+    endpoint: baseUrl,
+    versionReachable,
+    tagsReachable: tags.ok,
+    models: tags.models,
+    latencyMs: Date.now() - start,
+  };
+}
+
 async function probeSubprocessModels(): Promise<string[]> {
   try {
     const { stdout } = await Promise.race([
@@ -107,7 +126,7 @@ async function probeSubprocessModels(): Promise<string[]> {
         setTimeout(() => reject(new Error("subprocess timeout")), 3500),
       ),
     ]);
-    const lines = stdout.trim().split("\n").slice(1); // Skip header
+    const lines = stdout.trim().split("\n").slice(1);
     const names = lines
       .map((line) => line.split(/\s+/)[0]?.trim())
       .filter((n): n is string => Boolean(n) && n !== "NAME");
@@ -117,9 +136,6 @@ async function probeSubprocessModels(): Promise<string[]> {
   }
 }
 
-/**
- * Static fallback: return configured model names from env.
- */
 function getStaticModels(): string[] {
   const models = [
     process.env["SWARMX_COMPOSER_MODEL"]?.trim() || "",
@@ -133,50 +149,55 @@ function getStaticModels(): string[] {
   return [...new Set(models)].sort();
 }
 
-/**
- * Main discovery: probe all HTTP endpoints in parallel, then subprocess, then static.
- * [V6.1-FIX-18] Replaced sequential per-endpoint await (could block 3s × N) with
- * Promise.allSettled() fan-out capped by a 4 s global race to prevent event-loop stall.
- */
 async function discoverModels(
   endpoints: string[],
 ): Promise<{
   models: string[];
   configuredModels: string[];
   httpReachable: boolean;
-  method: "http" | "subprocess" | "static";
+  method: "http" | "http-health" | "subprocess" | "static";
   endpoint: string;
 }> {
-  const GLOBAL_HTTP_TIMEOUT_MS = 4_000;
-  const primaryEndpoint = normalizeEndpoint(endpoints[0] ?? "http://127.0.0.1:11434");
+  const GLOBAL_HTTP_TIMEOUT_MS = 4200;
+  const normalizedEndpoints = endpoints.map((e) => normalizeEndpoint(e));
+  const primaryEndpoint = normalizeEndpoint(normalizedEndpoints[0] ?? "http://127.0.0.1:11434");
   const configuredModels = getStaticModels();
 
-  // Probe all endpoints in parallel, capped at 4 s total.
-  type ProbeResult = PromiseSettledResult<{ reachable: boolean; models: string[] }>;
-  const httpResults: ProbeResult[] = await Promise.race([
-    Promise.allSettled(
-      endpoints.map((e) => probeHttpModels(normalizeEndpoint(e), 2500)),
-    ),
-    new Promise<ProbeResult[]>((resolve) =>
+  const results: EndpointProbeResult[] = await Promise.race([
+    Promise.all(normalizedEndpoints.map((e) => probeEndpoint(e))),
+    new Promise<EndpointProbeResult[]>((resolve) =>
       setTimeout(() => resolve([]), GLOBAL_HTTP_TIMEOUT_MS),
     ),
   ]);
 
-  // Return the first successful HTTP result, preserving endpoint order priority.
-  for (let i = 0; i < httpResults.length; i++) {
-    const result = httpResults[i];
-    if (result?.status === "fulfilled" && result.value.reachable) {
+  // Prefer endpoint with tags readiness; tie-break by configured endpoint order.
+  for (const endpoint of normalizedEndpoints) {
+    const match = results.find((r) => r.endpoint === endpoint && r.versionReachable && r.tagsReachable);
+    if (match) {
       return {
-        models: result.value.models,
+        models: match.models,
         configuredModels,
         httpReachable: true,
         method: "http",
-        endpoint: normalizeEndpoint(endpoints[i] ?? primaryEndpoint),
+        endpoint: match.endpoint,
       };
     }
   }
 
-  // Fallback: subprocess (async — no event-loop block).
+  // If tags fail but /api/version is reachable, keep HTTP endpoint usable for chat.
+  for (const endpoint of normalizedEndpoints) {
+    const match = results.find((r) => r.endpoint === endpoint && r.versionReachable);
+    if (match) {
+      return {
+        models: [],
+        configuredModels,
+        httpReachable: true,
+        method: "http-health",
+        endpoint: match.endpoint,
+      };
+    }
+  }
+
   const subprocessModels = await probeSubprocessModels();
   if (subprocessModels.length > 0) {
     return {
@@ -188,7 +209,6 @@ async function discoverModels(
     };
   }
 
-  // Final fallback: static config candidates only.
   return {
     models: [],
     configuredModels,
@@ -198,13 +218,9 @@ async function discoverModels(
   };
 }
 
-/**
- * Get cached or discover Ollama configuration.
- */
 export async function getOllamaConfig(): Promise<OllamaServiceConfig> {
   const now = Date.now();
 
-  // Return cached config if fresh
   if (cachedConfig && now - lastDiscoveryTime < CACHE_TTL_MS) {
     return cachedConfig;
   }
@@ -225,33 +241,21 @@ export async function getOllamaConfig(): Promise<OllamaServiceConfig> {
   return cachedConfig;
 }
 
-/**
- * Get Ollama base URL (for API calls).
- */
 export async function getOllamaBaseUrl(): Promise<string> {
   const config = await getOllamaConfig();
   return config.baseUrl;
 }
 
-/**
- * Get available model list (with fallbacks).
- */
 export async function getAvailableModels(): Promise<string[]> {
   const config = await getOllamaConfig();
   return config.cachedModels;
 }
 
-/**
- * Get configured model candidates from environment/static defaults.
- */
 export async function getConfiguredModels(): Promise<string[]> {
   const config = await getOllamaConfig();
   return config.configuredModels;
 }
 
-/**
- * Check Ollama health (works even if model list is unavailable).
- */
 export async function checkOllamaHealth(): Promise<{
   reachable: boolean;
   endpoint: string;
@@ -265,36 +269,33 @@ export async function checkOllamaHealth(): Promise<{
   };
 }
 
-/**
- * Invalidate cache (call after model changes).
- */
 export function invalidateOllamaCache(): void {
   cachedConfig = null;
   lastDiscoveryTime = 0;
 }
 
-/**
- * Fast health probe — single endpoint check with 2 s timeout.
- * [V6.1-FIX-18] Used by /health route so it never blocks on full discovery.
- * Returns result directly without touching the discovery cache.
- */
 export async function fastHealthProbe(): Promise<{
   reachable: boolean;
   endpoint: string;
   latencyMs: number;
 }> {
-  const endpoints = getDefaultEndpoints();
-  const primary = endpoints[0] ?? "http://127.0.0.1:11434";
-  const t0 = Date.now();
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
-    const res = await fetch(`${primary}/api/version`, {
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    return { reachable: res.ok, endpoint: primary, latencyMs: Date.now() - t0 };
-  } catch {
-    return { reachable: false, endpoint: primary, latencyMs: Date.now() - t0 };
+  const endpoints = getDefaultEndpoints().map((e) => normalizeEndpoint(e));
+  const start = Date.now();
+
+  for (const endpoint of endpoints) {
+    const ok = await probeVersion(endpoint, 2000);
+    if (ok) {
+      return {
+        reachable: true,
+        endpoint,
+        latencyMs: Date.now() - start,
+      };
+    }
   }
+
+  return {
+    reachable: false,
+    endpoint: endpoints[0] ?? "http://127.0.0.1:11434",
+    latencyMs: Date.now() - start,
+  };
 }
