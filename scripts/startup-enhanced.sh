@@ -18,6 +18,21 @@ set -euo pipefail
 # ─── Configuration ────────────────────────────────────────────────────────────
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# [V6.2-FIX-03] Load repo-local persistent environment overrides before
+# resolving startup defaults so values survive across shell sessions.
+if [[ -f "$ROOT_DIR/.env.local" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT_DIR/.env.local"
+  set +a
+elif [[ -f "$ROOT_DIR/env.local" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT_DIR/env.local"
+  set +a
+fi
+
 readonly STARTUP_LOG="${STARTUP_LOG:-${SWARM_HOME:-.swarmx}/logs/startup-enhanced.log}"
 readonly DEFAULT_TIMEOUT=300  # seconds
 readonly OLLAMA_URL="${OLLAMA_HOST:-http://localhost:11434}"
@@ -209,6 +224,13 @@ evict_stale_instances() {
     done < <(pgrep -f "$pattern" 2>/dev/null || true)
   done
 
+  # [V6.2-FIX-08] Give SIGTERM-ed processes a brief window to exit cleanly
+  # before the second pass force-kills them. Without this wait, Node.js
+  # children (e.g. Next.js, Fastify) may not flush open handles in time.
+  if [[ $evicted -gt 0 ]]; then
+    sleep 2
+  fi
+
   # Force kill any lingering matched processes.
   for pattern in "${patterns[@]}"; do
     while IFS= read -r pid; do
@@ -222,7 +244,10 @@ evict_stale_instances() {
         continue
       fi
       log_warning "Force-evicting lingering process PID=$pid"
-      kill -9 "$pid" 2>/dev/null || true
+      # Only SIGKILL if process is still alive after the grace window.
+      if kill -0 "$pid" 2>/dev/null; then
+        kill -9 "$pid" 2>/dev/null || true
+      fi
     done < <(pgrep -f "$pattern" 2>/dev/null || true)
   done
 
@@ -501,6 +526,11 @@ main() {
   print_startup_banner
   
   log_info "Starting SwarmX enhanced startup..."
+  # [V6.2-ENH-03] Surface available RAM before launch so operators can
+  # correlate pressure-adjusted defaults with system state.
+  local _avail_mb_pre
+  _avail_mb_pre=$(detect_available_mem_mb)
+  log_info "System memory: ${_avail_mb_pre} MB available at startup"
   
   # Run health checks
   log_info "Running health checks..."

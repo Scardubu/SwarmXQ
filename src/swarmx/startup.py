@@ -210,7 +210,9 @@ async def _warmup_models(cfg: Any) -> bool:
                         return True
                 return False
     except Exception as exc:
-        log.debug("startup_warmup_failed", reason=_exc_reason(exc))
+        # [V6.2-FIX-09] Raise log level to info so warmup misses are visible
+        # in normal operator log streams, not buried at debug.
+        log.info("startup_warmup_failed", reason=_exc_reason(exc))
         return False
 
 
@@ -362,8 +364,10 @@ def _persist_summary(summary: StartupSummary, cfg: Any | None) -> None:
         tmp = target.with_suffix(".tmp")
         tmp.write_text(json.dumps(summary.to_dict(), indent=2), encoding="utf-8")
         tmp.replace(target)
-    except Exception:
-        pass  # persistence failure never blocks startup
+    except OSError as e:
+        # [V6.2-FIX-10] Log persistence failures at warning so operators know
+        # the startup summary will not be available to the API broadcast.
+        log.warning("startup_summary_persist_failed", reason=str(e))
 
 
 def load_startup_summary(home: Path | None = None) -> dict[str, Any] | None:

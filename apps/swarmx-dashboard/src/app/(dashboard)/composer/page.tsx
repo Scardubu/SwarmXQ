@@ -542,6 +542,9 @@ export default function ComposerPage() {
             status: a.status,
             role: a.role,
           })),
+          // [V6.2-ENH-05] Relay runtime pressure level so the API can bypass
+          // model calls when the host is under critical memory pressure.
+          pressureLevel: pressureLevel ?? undefined,
         },
       };
 
@@ -559,6 +562,14 @@ export default function ComposerPage() {
       }
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      // [V6.2-ENH-02] Read server-advertised timeout so future abort timers
+      // can align with the server's effective budget for this prompt type.
+      const serverTimeoutMs = Number.parseInt(res.headers.get("X-Request-Timeout-Ms") ?? "", 10);
+      if (Number.isFinite(serverTimeoutMs) && serverTimeoutMs > 0) {
+        // Store on window for the next sendMessage() call (best-effort).
+        (globalThis as Record<string, unknown>)["__swarmx_last_server_timeout_ms"] = serverTimeoutMs;
+      }
 
       const data = await res.json() as ComposerApiResponse;
 
@@ -653,12 +664,20 @@ export default function ComposerPage() {
               : "Fleet standing by"}
           </span>
           {isDegraded && (
-            <span className="rounded border border-yellow-500/30 bg-yellow-500/10 px-1.5 py-0.5 text-[9px] font-mono text-yellow-200">
+            <span
+              className="rounded border border-yellow-500/30 bg-yellow-500/10 px-1.5 py-0.5 text-[9px] font-mono text-yellow-200"
+              role="status"
+              aria-label="System is in degraded mode due to high resource pressure"
+            >
               DEGRADED MODE
             </span>
           )}
           {isModelOffline && (
-            <span className="rounded border border-red-500/30 bg-red-500/10 px-1.5 py-0.5 text-[9px] font-mono text-red-300">
+            <span
+              className="rounded border border-red-500/30 bg-red-500/10 px-1.5 py-0.5 text-[9px] font-mono text-red-300"
+              role="status"
+              aria-label="Model backend is offline — Ollama is unreachable"
+            >
               MODEL OFFLINE
             </span>
           )}

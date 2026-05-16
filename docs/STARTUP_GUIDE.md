@@ -91,6 +91,8 @@ python -m cli up --dashboard --host 127.0.0.1 --port 3002
 | `SWARMX_COMPOSER_CB_FAILURE_THRESHOLD` | `4` | Consecutive model failures before opening Composer circuit breaker. |
 | `SWARMX_COMPOSER_CB_OPEN_MS` | `20000` | Circuit breaker cooldown window before half-open probe. |
 | `SWARMX_COMPOSER_DEEP_TIMEOUT_MS` | `90000` | Minimum timeout budget for deep/complex prompts. |
+| `SWARMX_COMPOSER_DEEP_TIMEOUT_MIN_MS` | Same as `SWARMX_COMPOSER_DEEP_TIMEOUT_MS` | Lower bound applied to deep-prompt timeout on constrained hosts — set this below `SWARMX_COMPOSER_DEEP_TIMEOUT_MS` to let complex prompts fail faster rather than waiting the full 90 s. |
+| `SWARMX_OLLAMA_CACHE_TTL_MS` | `15000` | Ollama service-discovery cache TTL in milliseconds. Lowering this causes more-frequent re-discovery; raising it reduces overhead on stable Ollama deployments. |
 | `NEXT_PUBLIC_SWARMX_COMPOSER_CLIENT_TIMEOUT_MS` | `120000` | Dashboard client-side abort ceiling for composer requests. |
 | `SWARMX_START_OLLAMA_IF_DOWN` | `1` | Startup script attempts non-blocking `ollama serve` when endpoint is down. |
 | `SWARMX_V5_POLL_TIMEOUT_MS` | `25000` | Timeout for `python -m swarmx metrics` subprocess used by API poller. Increase on slow hosts to avoid SIGTERM skips. |
@@ -109,6 +111,28 @@ bash scripts/startup-enhanced.sh --dashboard
 # Or set inline
 VERBOSE=1 bash scripts/startup-enhanced.sh --check-only
 ```
+
+### Persistent Across Shells (.env.local)
+
+`startup-enhanced.sh` now auto-loads local overrides from `.env.local` (or `env.local`) at repository root before startup defaults are resolved.
+
+Use this for stable Ollama endpoint pinning across new terminals:
+
+```bash
+cat > .env.local <<'EOF'
+OLLAMA_HOST=http://127.0.0.1:11435
+SWARMX_OLLAMA_URL=http://127.0.0.1:11435
+SWARMX_OLLAMA_BASE_URL=http://127.0.0.1:11435
+EOF
+```
+
+Then start normally:
+
+```bash
+bash scripts/startup-enhanced.sh --dashboard
+```
+
+`.env.local` is ignored by git and safe for machine-specific local overrides.
 
 ## Troubleshooting
 

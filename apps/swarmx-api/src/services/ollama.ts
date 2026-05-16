@@ -54,10 +54,19 @@ function getDefaultEndpoints(): string[] {
   return deduped;
 }
 
-const CACHE_TTL_MS = 15_000;
+// [V6.2-FIX-04] CACHE_TTL_MS is now env-overridable so constrained hosts can
+// tune discovery frequency without a code change.
+const CACHE_TTL_MS = Number.parseInt(
+  process.env["SWARMX_OLLAMA_CACHE_TTL_MS"] ?? "15000",
+  10,
+) || 15_000;
 
 let cachedConfig: OllamaServiceConfig | null = null;
 let lastDiscoveryTime = 0;
+// [V6.2-FIX-04] In-flight deduplication: all concurrent callers awaiting
+// discovery share a single Promise instead of racing to spawn parallel
+// discoverModels() calls, which caused stale writes within the TTL window.
+let _discoveryPromise: Promise<OllamaServiceConfig> | null = null;
 
 function normalizeEndpoint(raw: string): string {
   if (!raw) return "http://127.0.0.1:11434";
@@ -163,12 +172,30 @@ async function discoverModels(
   const primaryEndpoint = normalizeEndpoint(normalizedEndpoints[0] ?? "http://127.0.0.1:11434");
   const configuredModels = getStaticModels();
 
-  const results: EndpointProbeResult[] = await Promise.race([
-    Promise.all(normalizedEndpoints.map((e) => probeEndpoint(e))),
-    new Promise<EndpointProbeResult[]>((resolve) =>
-      setTimeout(() => resolve([]), GLOBAL_HTTP_TIMEOUT_MS),
-    ),
-  ]);
+  // [V6.2-FIX-04] Use a shared AbortController so the global timeout actually
+  // cancels all in-flight probes instead of just resolving the race while
+  // background fetches continue and potentially write stale results to cache.
+  const globalAbort = new AbortController();
+  const globalTimeoutId = setTimeout(() => globalAbort.abort(), GLOBAL_HTTP_TIMEOUT_MS);
+
+  async function probeEndpointCancellable(baseUrl: string): Promise<EndpointProbeResult> {
+    if (globalAbort.signal.aborted) {
+      return { endpoint: baseUrl, versionReachable: false, tagsReachable: false, models: [], latencyMs: 0 };
+    }
+    return probeEndpoint(baseUrl);
+  }
+
+  let results: EndpointProbeResult[];
+  try {
+    results = await Promise.race([
+      Promise.all(normalizedEndpoints.map((e) => probeEndpointCancellable(e))),
+      new Promise<EndpointProbeResult[]>((resolve) =>
+        globalAbort.signal.addEventListener("abort", () => resolve([]), { once: true }),
+      ),
+    ]);
+  } finally {
+    clearTimeout(globalTimeoutId);
+  }
 
   // Prefer endpoint with tags readiness; tie-break by configured endpoint order.
   for (const endpoint of normalizedEndpoints) {
@@ -225,20 +252,35 @@ export async function getOllamaConfig(): Promise<OllamaServiceConfig> {
     return cachedConfig;
   }
 
+  // [V6.2-FIX-04] Return the in-flight promise if discovery is already running
+  // so concurrent callers (e.g. composer + health check arriving simultaneously)
+  // share one discovery round rather than racing to spawn duplicates.
+  if (_discoveryPromise !== null) {
+    return _discoveryPromise;
+  }
+
   const endpoints = getDefaultEndpoints();
-  const discovery = await discoverModels(endpoints);
 
-  cachedConfig = {
-    baseUrl: normalizeEndpoint(discovery.endpoint),
-    isHealthy: discovery.httpReachable,
-    modelListMethod: discovery.method,
-    cachedModels: discovery.models,
-    configuredModels: discovery.configuredModels,
-    lastCheckTime: now,
-  };
+  async function doDiscovery(): Promise<OllamaServiceConfig> {
+    const discovery = await discoverModels(endpoints);
+    const ts = Date.now();
+    cachedConfig = {
+      baseUrl: normalizeEndpoint(discovery.endpoint),
+      isHealthy: discovery.httpReachable,
+      modelListMethod: discovery.method,
+      cachedModels: discovery.models,
+      configuredModels: discovery.configuredModels,
+      lastCheckTime: ts,
+    };
+    lastDiscoveryTime = ts;
+    return cachedConfig;
+  }
 
-  lastDiscoveryTime = now;
-  return cachedConfig;
+  _discoveryPromise = doDiscovery().finally(() => {
+    _discoveryPromise = null;
+  });
+
+  return _discoveryPromise;
 }
 
 export async function getOllamaBaseUrl(): Promise<string> {
@@ -272,6 +314,8 @@ export async function checkOllamaHealth(): Promise<{
 export function invalidateOllamaCache(): void {
   cachedConfig = null;
   lastDiscoveryTime = 0;
+  // Note: _discoveryPromise is intentionally not cleared; any in-flight
+  // discovery will complete and write a fresh result.
 }
 
 export async function fastHealthProbe(): Promise<{

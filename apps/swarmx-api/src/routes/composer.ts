@@ -64,6 +64,13 @@ const COMPOSER_DEEP_TIMEOUT_MS = Math.max(
   30_000,
   Number.parseInt(process.env["SWARMX_COMPOSER_DEEP_TIMEOUT_MS"] ?? "90000", 10) || 90_000,
 );
+// [V6.2-FIX-05] Operator escape hatch: on constrained hosts (≤ 8 GB VRAM) the
+// default 90s deep-prompt floor may be unacceptable. Setting
+// SWARMX_COMPOSER_DEEP_TIMEOUT_MIN_MS to e.g. "45000" lowers the floor.
+const COMPOSER_DEEP_TIMEOUT_MIN_MS = Number.parseInt(
+  process.env["SWARMX_COMPOSER_DEEP_TIMEOUT_MIN_MS"] ?? String(COMPOSER_DEEP_TIMEOUT_MS),
+  10,
+) || COMPOSER_DEEP_TIMEOUT_MS;
 
 const composerCircuit = {
   state: "closed" as CircuitState,
@@ -107,7 +114,9 @@ function computeAdaptiveTimeoutMs({
 }): number {
   const complexity = classifyPromptComplexity(message);
   if (complexity === "deep") {
-    return Math.max(timeoutMs, COMPOSER_DEEP_TIMEOUT_MS);
+    // [V6.2-FIX-05] Use COMPOSER_DEEP_TIMEOUT_MIN_MS as the floor so operators
+    // on constrained hardware can override the default 90s minimum.
+    return Math.max(timeoutMs, COMPOSER_DEEP_TIMEOUT_MIN_MS);
   }
   if (complexity === "light") {
     return Math.min(timeoutMs, shortPromptTimeoutMs);
@@ -134,7 +143,9 @@ function circuitRecordSuccess(): void {
 
 function circuitRecordFailure(nowMs: number): void {
   composerCircuit.failures += 1;
-  if (composerCircuit.failures >= COMPOSER_CB_FAILURE_THRESHOLD) {
+  // [V6.2-FIX-06] Guard against re-opening an already-open circuit so that a
+  // late error from a pre-open call cannot reset the openedAtMs countdown.
+  if (composerCircuit.failures >= COMPOSER_CB_FAILURE_THRESHOLD && composerCircuit.state !== "open") {
     composerCircuit.state = "open";
     composerCircuit.openedAtMs = nowMs;
   }
@@ -188,15 +199,22 @@ function shouldLogHistogram(): boolean {
 function detectLocalIntent(
   message: string,
 ): "running_by_role" | "high_cpu" | "available_agents" | "simple_copy" | "python_calculator" | "presence_ping" | "idle_unassigned" | null {
-  const q = message.toLowerCase();
+  // [V6.2-ENH-01] Normalize before matching: strip leading/trailing whitespace
+  // and trailing punctuation so common variants ("hello!", "are you there?",
+  // " ping ") resolve without adding an entry for each permutation.
+  const q = message.toLowerCase().trim().replace(/[!?.,:;]+$/, "");
   if (
     q === "are you there" ||
-    q === "are you there?" ||
     q === "you there" ||
-    q === "you there?" ||
+    q === "still there" ||
     q === "ping" ||
     q === "hello" ||
-    q === "hi"
+    q === "hi" ||
+    q === "hey" ||
+    q === "hey there" ||
+    q === "status" ||
+    q === "swarm status" ||
+    q === "fleet status"
   ) {
     return "presence_ping";
   }
@@ -526,6 +544,10 @@ const chatSchema = z.object({
           })
         )
         .optional(),
+      // [V6.2-ENH-05] Operator-reported runtime pressure level from the
+      // dashboard governor. When "critical", model calls are bypassed to
+      // conserve memory and avoid OOM risk on constrained hosts.
+      pressureLevel: z.enum(["nominal", "elevated", "high", "critical"]).optional(),
     })
     .optional(),
 });
@@ -675,6 +697,9 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         shortPromptTimeoutMs,
       });
       const promptComplexity = classifyPromptComplexity(message);
+      // [V6.2-ENH-02] Advertise the server-side effective timeout so the client
+      // can calibrate its own abort timer on future requests.
+      void reply.header("X-Request-Timeout-Ms", String(effectiveTimeoutMs));
       // [V6.1-ENH-03] Route-level preflight decision telemetry for quick
       // operator diagnosis under latency pressure.
       server.log.info(
@@ -720,6 +745,23 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       }
       if (localIntent === "python_calculator") {
         responseText = formatPythonCalculator();
+        return mkResponse(responseText, "local");
+      }
+
+      // [V6.2-ENH-05] Pressure-aware routing: when the dashboard reports
+      // "critical" runtime pressure, skip the model call entirely. Starting
+      // an Ollama inference while the host is above ~90% RAM risks OOM-killing
+      // either the model process or this API service. Respond with a live
+      // fleet summary (same content as "presence_ping") and include a
+      // diagnostic note so operators understand why no model call was made.
+      if (context?.pressureLevel === "critical") {
+        responseText =
+          "[CRITICAL PRESSURE] Model call bypassed to protect host memory.\n\n" +
+          formatPresencePing(agents);
+        server.log.warn(
+          { pressureLevel: context.pressureLevel, runningCount, errorCount },
+          "composer_pressure_bypass",
+        );
         return mkResponse(responseText, "local");
       }
 
@@ -852,10 +894,18 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           composerTimeoutHistogram[bucket] += 1;
           composerTimeoutCount += 1;
         }
+        // [V6.2-FIX-07] Replace Promise.all with allSettled + per-call deadline
+        // so a slow/unresponsive Ollama cannot stall the fallback response.
+        const DIAG_DEADLINE_MS = 2500;
+        const withDeadline = <T>(p: Promise<T>, fallback: T): Promise<T> =>
+          Promise.race([
+            p,
+            new Promise<T>((resolve) => setTimeout(() => resolve(fallback), DIAG_DEADLINE_MS)),
+          ]);
         const [availableModels, configuredModels, ollamaHealth] = await Promise.all([
-          listAvailableModels(),
-          getConfiguredModels(),
-          checkOllamaHealth(),
+          withDeadline(listAvailableModels(), []),
+          withDeadline(getConfiguredModels(), []),
+          withDeadline(checkOllamaHealth(), { reachable: false, endpoint: "", methodUsed: "static" }),
         ]);
         fallbackDiagnostics = {
           reason,
