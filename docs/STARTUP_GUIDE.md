@@ -18,6 +18,7 @@ bash scripts/startup-enhanced.sh --dashboard
 ✅ Checks port 3000 and 3001 availability (kills stale processes if needed)  
 ✅ Evicts stale SwarmX API/dashboard instances from current and legacy roots before launch  
 ✅ Verifies Ollama is running (non-blocking; continues without it)  
+✅ Attempts best-effort non-blocking `ollama serve` autostart when enabled  
 ✅ Auto-seeds CORS origins for localhost (`http://localhost:3000`)  
 ✅ Starts API server on `http://127.0.0.1:3001`  
 ✅ Starts dashboard on `http://127.0.0.1:3000`  
@@ -82,7 +83,16 @@ python -m cli up --dashboard --host 127.0.0.1 --port 3002
 | `SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS` | `45000` | Cap used for short prompts (<=180 chars). Keeps interactive queries responsive without forcing premature 30s fallbacks. |
 | `SWARMX_COMPOSER_NUM_PREDICT` | `256` | Composer response token ceiling; lower values reduce latency on constrained hosts. |
 | `SWARMX_COMPOSER_KEEP_ALIVE` | `10m` | Composer model keep-alive window passed to Ollama chat calls to reduce repeated cold starts. |
+| `SWARMX_COMPOSER_FAST_MODEL` | `phi4-fast` | Fast fallback model candidate used when configured composer model fails. |
 | `SWARMX_COMPOSER_TIMEOUT_HISTO_LOG_EVERY` | `3` | Log compact composer timeout histogram every N timeout fallbacks (`0` or negative logs every timeout). |
+| `SWARMX_COMPOSER_RETRY_MAX_ATTEMPTS` | `2` | Max model call attempts per candidate before fallback. |
+| `SWARMX_COMPOSER_RETRY_BASE_DELAY_MS` | `250` | Exponential backoff base delay between retries. |
+| `SWARMX_COMPOSER_RETRY_MAX_DELAY_MS` | `2500` | Exponential backoff ceiling between retries. |
+| `SWARMX_COMPOSER_CB_FAILURE_THRESHOLD` | `4` | Consecutive model failures before opening Composer circuit breaker. |
+| `SWARMX_COMPOSER_CB_OPEN_MS` | `20000` | Circuit breaker cooldown window before half-open probe. |
+| `SWARMX_COMPOSER_DEEP_TIMEOUT_MS` | `90000` | Minimum timeout budget for deep/complex prompts. |
+| `NEXT_PUBLIC_SWARMX_COMPOSER_CLIENT_TIMEOUT_MS` | `120000` | Dashboard client-side abort ceiling for composer requests. |
+| `SWARMX_START_OLLAMA_IF_DOWN` | `1` | Startup script attempts non-blocking `ollama serve` when endpoint is down. |
 | `SWARMX_V5_POLL_TIMEOUT_MS` | `25000` | Timeout for `python -m swarmx metrics` subprocess used by API poller. Increase on slow hosts to avoid SIGTERM skips. |
 | `SWARMX_REPO_ROOT` | Auto-detected | Absolute path to SwarmX repository; auto-set by `swarm up`. Required for metrics subprocess PYTHONPATH composition. |
 | `SWARMX_PYTHON` | `sys.executable` | Python interpreter for metrics poller and CLI sidecars; auto-detected from active venv by `swarm up`. |
@@ -151,6 +161,13 @@ export SWARMX_STARTUP_CURL_MAX_TIME=8
 bash scripts/startup-enhanced.sh --dashboard
 ```
 
+If you want startup to skip background autostart attempts:
+
+```bash
+export SWARMX_START_OLLAMA_IF_DOWN=0
+bash scripts/startup-enhanced.sh --dashboard
+```
+
 ### Composer fallback despite models being installed
 
 If Composer falls back even when models are installed:
@@ -178,6 +195,7 @@ When tuning under load, use these logs from the API process:
 
 - `composer_preflight`: shows whether request was routed locally or to model, with model tag and timeout.
 - `Composer model call failed — using fleet summary fallback`: includes `elapsedMs`, `timeoutCount`, and compact `timeoutHistogram` every N timeouts.
+- `composer_model_retry_backoff`: logs retry attempt, delay, and error reason when transient model/network failures occur.
 - Composer fallback output now includes `Model discovery source` (`http`, `subprocess`, or `static`) so operators can tell whether `/api/tags`, `ollama list`, or static config was used.
 
 Example tuning:

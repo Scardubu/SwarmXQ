@@ -26,6 +26,7 @@ readonly API_HOST="${SWARMX_API_HOST:-127.0.0.1}"
 readonly API_PORT="${SWARMX_API_PORT:-3001}"
 readonly DASHBOARD_PORT="3000"
 readonly LEGACY_ROOT_HINT="/SwarmX-1.5"
+readonly OLLAMA_AUTOSTART="${SWARMX_START_OLLAMA_IF_DOWN:-1}"
 
 # ─── Flags ───────────────────────────────────────────────────────────────────
 CHECK_ONLY=false
@@ -71,6 +72,46 @@ log_error() {
 log_info() {
   echo -e "${BLUE}ℹ${NC} $*" >&2
   log "INFO" "ℹ $*"
+}
+
+detect_available_mem_mb() {
+  local avail_kb
+  avail_kb=$(awk '/MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null || echo "0")
+  if [[ -z "$avail_kb" || "$avail_kb" == "0" ]]; then
+    echo "0"
+    return 0
+  fi
+  echo $((avail_kb / 1024))
+}
+
+setup_ollama_runtime_tuning() {
+  # [V6.2-ENH-03] Hardware-aware Ollama defaults for constrained hosts.
+  # Keep these fail-open and env-overridable so operators can tune explicitly.
+  local avail_mb
+  avail_mb=$(detect_available_mem_mb)
+  local constrained=false
+  if [[ "$avail_mb" -gt 0 && "$avail_mb" -lt 2200 ]]; then
+    constrained=true
+  fi
+
+  export OLLAMA_FLASH_ATTENTION="${OLLAMA_FLASH_ATTENTION:-1}"
+  export OLLAMA_KV_CACHE_TYPE="${OLLAMA_KV_CACHE_TYPE:-q8_0}"
+  export OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-1}"
+  export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-1}"
+  export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-180}"
+
+  if [[ "$constrained" == true ]]; then
+    export SWARMX_COMPOSER_NUM_PREDICT="${SWARMX_COMPOSER_NUM_PREDICT:-192}"
+    export SWARMX_COMPOSER_TIMEOUT_MS="${SWARMX_COMPOSER_TIMEOUT_MS:-55000}"
+    export SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS="${SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS:-40000}"
+    log_warning "Low available RAM detected (${avail_mb} MB). Applying constrained Ollama/Composer defaults."
+  else
+    export SWARMX_COMPOSER_NUM_PREDICT="${SWARMX_COMPOSER_NUM_PREDICT:-256}"
+    export SWARMX_COMPOSER_TIMEOUT_MS="${SWARMX_COMPOSER_TIMEOUT_MS:-60000}"
+    export SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS="${SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS:-45000}"
+  fi
+
+  log_info "Ollama tuning: FLASH_ATTENTION=$OLLAMA_FLASH_ATTENTION KV_CACHE=$OLLAMA_KV_CACHE_TYPE PARALLEL=$OLLAMA_NUM_PARALLEL MAX_MODELS=$OLLAMA_MAX_LOADED_MODELS KEEP_ALIVE=$OLLAMA_KEEP_ALIVE"
 }
 
 # ─── Helper: Port Availability Check ──────────────────────────────────────────
@@ -207,7 +248,18 @@ check_ollama() {
     return 0
   else
     log_warning "Ollama is not responding at $OLLAMA_URL"
-    log_info "To start Ollama: ollama serve"
+    if [[ "$OLLAMA_AUTOSTART" == "1" ]] && command -v ollama >/dev/null 2>&1; then
+      log_info "Attempting non-blocking Ollama autostart (best-effort)..."
+      nohup ollama serve >> "$STARTUP_LOG" 2>&1 &
+      disown || true
+      if curl -s --connect-timeout 2 --max-time 3 "$OLLAMA_URL/api/version" >/dev/null 2>&1; then
+        log_success "Ollama autostart succeeded"
+      else
+        log_warning "Ollama still unavailable after autostart attempt (startup continues in degraded mode)"
+      fi
+    else
+      log_info "To start Ollama manually: ollama serve"
+    fi
     return 0  # Non-blocking; continue with startup
   fi
 }
@@ -467,6 +519,7 @@ main() {
   
   # Setup environment
   setup_environment
+  setup_ollama_runtime_tuning
   
   # Delegate to main startup script
   log_info "Delegating to swarm up command..."

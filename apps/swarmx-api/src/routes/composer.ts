@@ -21,6 +21,10 @@ type ComposerAgent = {
 
 type TimeoutBucket = "lt5s" | "lt15s" | "lt30s" | "lt45s" | "gte45s";
 
+type PromptComplexity = "light" | "standard" | "deep";
+
+type CircuitState = "closed" | "open" | "half-open";
+
 const TIMEOUT_HISTOGRAM_LOG_EVERY = Number.parseInt(
   process.env["SWARMX_COMPOSER_TIMEOUT_HISTO_LOG_EVERY"] ?? "3",
   10,
@@ -35,6 +39,126 @@ const composerTimeoutHistogram: Record<TimeoutBucket, number> = {
 };
 
 let composerTimeoutCount = 0;
+
+const COMPOSER_RETRY_MAX_ATTEMPTS = Math.max(
+  1,
+  Number.parseInt(process.env["SWARMX_COMPOSER_RETRY_MAX_ATTEMPTS"] ?? "2", 10) || 2,
+);
+const COMPOSER_RETRY_BASE_DELAY_MS = Math.max(
+  50,
+  Number.parseInt(process.env["SWARMX_COMPOSER_RETRY_BASE_DELAY_MS"] ?? "250", 10) || 250,
+);
+const COMPOSER_RETRY_MAX_DELAY_MS = Math.max(
+  COMPOSER_RETRY_BASE_DELAY_MS,
+  Number.parseInt(process.env["SWARMX_COMPOSER_RETRY_MAX_DELAY_MS"] ?? "2500", 10) || 2500,
+);
+const COMPOSER_CB_FAILURE_THRESHOLD = Math.max(
+  1,
+  Number.parseInt(process.env["SWARMX_COMPOSER_CB_FAILURE_THRESHOLD"] ?? "4", 10) || 4,
+);
+const COMPOSER_CB_OPEN_MS = Math.max(
+  1000,
+  Number.parseInt(process.env["SWARMX_COMPOSER_CB_OPEN_MS"] ?? "20000", 10) || 20000,
+);
+const COMPOSER_DEEP_TIMEOUT_MS = Math.max(
+  30_000,
+  Number.parseInt(process.env["SWARMX_COMPOSER_DEEP_TIMEOUT_MS"] ?? "90000", 10) || 90_000,
+);
+
+const composerCircuit = {
+  state: "closed" as CircuitState,
+  failures: 0,
+  openedAtMs: 0,
+};
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function classifyPromptComplexity(message: string): PromptComplexity {
+  const q = message.toLowerCase();
+  const deepSignals = [
+    "deep",
+    "analyze",
+    "architecture",
+    "root cause",
+    "incident",
+    "postmortem",
+    "design",
+    "optimize",
+    "evolution",
+    "workflow",
+    "multi-agent",
+  ];
+  const deepHits = deepSignals.filter((s) => q.includes(s)).length;
+  if (message.trim().length > 320 || deepHits >= 2) return "deep";
+  if (message.trim().length <= 120) return "light";
+  return "standard";
+}
+
+function computeAdaptiveTimeoutMs({
+  message,
+  timeoutMs,
+  shortPromptTimeoutMs,
+}: {
+  message: string;
+  timeoutMs: number;
+  shortPromptTimeoutMs: number;
+}): number {
+  const complexity = classifyPromptComplexity(message);
+  if (complexity === "deep") {
+    return Math.max(timeoutMs, COMPOSER_DEEP_TIMEOUT_MS);
+  }
+  if (complexity === "light") {
+    return Math.min(timeoutMs, shortPromptTimeoutMs);
+  }
+  return timeoutMs;
+}
+
+function circuitIsOpen(nowMs: number): boolean {
+  if (composerCircuit.state === "open") {
+    if (nowMs - composerCircuit.openedAtMs >= COMPOSER_CB_OPEN_MS) {
+      composerCircuit.state = "half-open";
+      return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+function circuitRecordSuccess(): void {
+  composerCircuit.failures = 0;
+  composerCircuit.openedAtMs = 0;
+  composerCircuit.state = "closed";
+}
+
+function circuitRecordFailure(nowMs: number): void {
+  composerCircuit.failures += 1;
+  if (composerCircuit.failures >= COMPOSER_CB_FAILURE_THRESHOLD) {
+    composerCircuit.state = "open";
+    composerCircuit.openedAtMs = nowMs;
+  }
+}
+
+function shouldRetryModelError(reason: string): boolean {
+  const lower = reason.toLowerCase();
+  return (
+    lower.includes("timeout") ||
+    lower.includes("abort") ||
+    lower.includes("fetch") ||
+    lower.includes("network") ||
+    lower.includes("502") ||
+    lower.includes("503") ||
+    lower.includes("504")
+  );
+}
+
+function computeBackoffDelayMs(attempt: number): number {
+  const exp = COMPOSER_RETRY_BASE_DELAY_MS * 2 ** Math.max(0, attempt - 1);
+  const bounded = Math.min(COMPOSER_RETRY_MAX_DELAY_MS, exp);
+  const jitter = Math.floor(Math.random() * Math.max(1, Math.floor(bounded * 0.2)));
+  return bounded + jitter;
+}
 
 function timeoutBucketFor(elapsedMs: number): TimeoutBucket {
   if (elapsedMs < 5_000) return "lt5s";
@@ -417,6 +541,8 @@ interface ComposerResponseDiagnostics {
   model?: string;
   selectedModel?: string;
   timeoutMs?: number;
+  retryCount?: number;
+  circuitOpen?: boolean;
 }
 
 interface ComposerResponsePayload {
@@ -534,17 +660,21 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         ? configuredShortPromptTimeout
         : 45_000;
 
-      let responseText: string;
+      let responseText = "";
       let usedSummaryFallback = false;
       let fallbackDiagnostics: ComposerResponseDiagnostics | null = null;
 
       // [V6.1-FIX-12] Fast deterministic answers for operational prompts that
       // can be computed directly from live fleet state (no model dependency).
       const localIntent = detectLocalIntent(message);
-      // [V6.1-PERF-04] Keep short interactive prompts from stalling too long
-      // behind cold model loads; long prompts retain the configured timeout.
-      const isShortPrompt = message.trim().length <= 180;
-      const effectiveTimeoutMs = isShortPrompt ? Math.min(timeoutMs, shortPromptTimeoutMs) : timeoutMs;
+      // [V6.2-ENH-01] Adaptive timeout budget by prompt complexity.
+      // Light prompts stay snappy; deep analysis prompts get a longer budget.
+      const effectiveTimeoutMs = computeAdaptiveTimeoutMs({
+        message,
+        timeoutMs,
+        shortPromptTimeoutMs,
+      });
+      const promptComplexity = classifyPromptComplexity(message);
       // [V6.1-ENH-03] Route-level preflight decision telemetry for quick
       // operator diagnosis under latency pressure.
       server.log.info(
@@ -552,6 +682,7 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           decision: localIntent ? "local" : "model",
           localIntent: localIntent ?? "none",
           msgChars: message.length,
+          promptComplexity,
           model,
           timeoutMs: effectiveTimeoutMs,
           numPredict: composerNumPredict,
@@ -617,48 +748,105 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       }
 
       let modelAttemptStartedAt = 0;
+      let retryCount = 0;
       try {
-        modelAttemptStartedAt = Date.now();
-        const ollamaRes = await fetch(`${ollamaBase}/api/chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: selectedModel,
-            stream: false,
-            keep_alive: composerKeepAlive,
-            options: {
-              num_predict: composerNumPredict,
-            },
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: message },
-            ],
-          }),
-          signal: AbortSignal.timeout(Number.isFinite(effectiveTimeoutMs) ? effectiveTimeoutMs : 90_000),
-        });
+        const modelCandidates = [
+          selectedModel,
+          normalizeModelTag(process.env["SWARMX_COMPOSER_FAST_MODEL"] ?? process.env["SWARMX_MODEL_FAST"] ?? "phi4-fast"),
+        ]
+          .map((m) => m.trim())
+          .filter(Boolean)
+          .filter((m, idx, arr) => arr.indexOf(m) === idx);
 
-        if (!ollamaRes.ok) {
-          const body = await ollamaRes.text();
-          server.log.warn({ status: ollamaRes.status, body }, "Ollama request failed");
-          throw new Error(`Ollama ${ollamaRes.status}: ${body}`);
+        if (circuitIsOpen(Date.now())) {
+          throw new Error("Circuit breaker open: recent model failures exceeded threshold");
         }
 
-        const data = (await ollamaRes.json()) as {
-          message?: { content?: string };
-          error?: string;
-        };
-        responseText =
-          data?.message?.content?.trim() ??
-          data?.error ??
-          "No response from model.";
-        server.log.debug(
-          { elapsedMs: Date.now() - modelAttemptStartedAt, model, timeoutMs: effectiveTimeoutMs },
-          "composer_model_call_ok",
-        );
+        // [V6.2-FIX-01] Hard cap total model path budget so retries do not stall the route.
+        const requestDeadlineMs = Date.now() + Math.max(10_000, effectiveTimeoutMs + 5_000);
+
+        let lastError: Error | null = null;
+        outer: for (const candidate of modelCandidates) {
+          selectedModel = candidate;
+          for (let attempt = 1; attempt <= COMPOSER_RETRY_MAX_ATTEMPTS; attempt++) {
+            retryCount = Math.max(retryCount, attempt - 1);
+            try {
+              const remainingMs = requestDeadlineMs - Date.now();
+              if (remainingMs <= 1500) {
+                throw new Error("Composer request budget exceeded before model response");
+              }
+              const attemptTimeoutMs = Math.max(1200, Math.min(effectiveTimeoutMs, remainingMs));
+              modelAttemptStartedAt = Date.now();
+              const ollamaRes = await fetch(`${ollamaBase}/api/chat`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  model: selectedModel,
+                  stream: false,
+                  keep_alive: composerKeepAlive,
+                  options: {
+                    num_predict: composerNumPredict,
+                  },
+                  messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: message },
+                  ],
+                }),
+                signal: AbortSignal.timeout(Number.isFinite(attemptTimeoutMs) ? attemptTimeoutMs : 90_000),
+              });
+
+              if (!ollamaRes.ok) {
+                const body = await ollamaRes.text();
+                server.log.warn({ status: ollamaRes.status, body, selectedModel, attempt }, "Ollama request failed");
+                throw new Error(`Ollama ${ollamaRes.status}: ${body}`);
+              }
+
+              const data = (await ollamaRes.json()) as {
+                message?: { content?: string };
+                error?: string;
+              };
+              responseText =
+                data?.message?.content?.trim() ??
+                data?.error ??
+                "No response from model.";
+              circuitRecordSuccess();
+              server.log.debug(
+                {
+                  elapsedMs: Date.now() - modelAttemptStartedAt,
+                  model,
+                  selectedModel,
+                  timeoutMs: attemptTimeoutMs,
+                  attempt,
+                },
+                "composer_model_call_ok",
+              );
+              break outer;
+            } catch (attemptErr) {
+              const reason = attemptErr instanceof Error ? attemptErr.message : String(attemptErr);
+              lastError = attemptErr instanceof Error ? attemptErr : new Error(reason);
+              const canRetry = attempt < COMPOSER_RETRY_MAX_ATTEMPTS && shouldRetryModelError(reason);
+              if (canRetry) {
+                const delayMs = computeBackoffDelayMs(attempt);
+                server.log.warn(
+                  { selectedModel, attempt, delayMs, reason },
+                  "composer_model_retry_backoff",
+                );
+                await sleep(delayMs);
+                continue;
+              }
+            }
+          }
+        }
+
+        if (typeof responseText !== "string" || responseText.trim().length === 0) {
+          const fallbackError = lastError ?? new Error("Unknown model failure");
+          throw fallbackError;
+        }
       } catch (err) {
         const reason = err instanceof Error ? err.message : "Unknown error";
         const elapsedMs = modelAttemptStartedAt > 0 ? Date.now() - modelAttemptStartedAt : 0;
         const isTimeout = reason.toLowerCase().includes("timeout") || reason.toLowerCase().includes("abort");
+        circuitRecordFailure(Date.now());
         if (isTimeout) {
           const bucket = timeoutBucketFor(elapsedMs);
           composerTimeoutHistogram[bucket] += 1;
@@ -676,14 +864,20 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           model,
           selectedModel,
           timeoutMs: effectiveTimeoutMs,
+          retryCount,
+          circuitOpen: composerCircuit.state === "open",
         };
         server.log.warn(
           {
             err,
             model,
+            selectedModel,
             timeoutMs: effectiveTimeoutMs,
             elapsedMs,
             isTimeout,
+            retryCount,
+            circuitState: composerCircuit.state,
+            circuitFailures: composerCircuit.failures,
             timeoutCount: composerTimeoutCount,
             ...(isTimeout && shouldLogHistogram() ? { timeoutHistogram: timeoutHistogramCompact() } : {}),
           },
@@ -698,6 +892,8 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
             timeoutMs: effectiveTimeoutMs,
             model,
             selectedModel,
+            retryCount,
+            circuitOpen: composerCircuit.state === "open",
           });
         }
 
@@ -726,6 +922,10 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           `Model discovery source: ${ollamaHealth.methodUsed}`,
           `Configured model: ${model} (resolved from: ${rawModel})`,
           selectedModel !== model ? `Selected model for request: ${selectedModel}` : "",
+          `Retry attempts used: ${retryCount}`,
+          composerCircuit.state === "open"
+            ? `Circuit breaker: OPEN for ${Math.ceil(COMPOSER_CB_OPEN_MS / 1000)}s after repeated model failures.`
+            : `Circuit breaker: ${composerCircuit.state.toUpperCase()} (failures: ${composerCircuit.failures}).`,
           availableModels.length > 0
             ? `Available local models: ${availableModels.join(", ")}`
             : noInstalledModels

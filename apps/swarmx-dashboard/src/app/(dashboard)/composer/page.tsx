@@ -28,6 +28,8 @@ interface ComposerMessage {
     model?: string;
     selectedModel?: string;
     timeoutMs?: number;
+    retryCount?: number;
+    circuitOpen?: boolean;
   };
 }
 
@@ -60,8 +62,29 @@ function resolveDirectApiBaseUrl(): string {
 }
 
 const COMPOSER_RECENT_SCOPES_KEY = "swarmx:composer:recent-scopes";
+const CLIENT_TIMEOUT_MS = Number.parseInt(
+  process.env.NEXT_PUBLIC_SWARMX_COMPOSER_CLIENT_TIMEOUT_MS ?? "120000",
+  10,
+);
 const DEFAULT_PROJECT_SCOPE =
   process.env.NEXT_PUBLIC_SWARMX_PROJECT_PATH ?? "/home/scar/Downloads/SwarmX-1.5";
+
+function classifyPromptComplexity(message: string): "light" | "standard" | "deep" {
+  const q = message.toLowerCase();
+  const deepSignals = ["deep", "analyze", "architecture", "incident", "evolution", "workflow", "multi-agent"];
+  const deepHits = deepSignals.filter((s) => q.includes(s)).length;
+  if (message.trim().length > 320 || deepHits >= 2) return "deep";
+  if (message.trim().length <= 120) return "light";
+  return "standard";
+}
+
+function clientAbortTimeoutMs(message: string): number {
+  const normalizedDefault = Number.isFinite(CLIENT_TIMEOUT_MS) && CLIENT_TIMEOUT_MS > 0 ? CLIENT_TIMEOUT_MS : 120_000;
+  const complexity = classifyPromptComplexity(message);
+  if (complexity === "light") return Math.min(normalizedDefault, 60_000);
+  if (complexity === "deep") return Math.max(normalizedDefault, 120_000);
+  return normalizedDefault;
+}
 
 function loadRecentScopes(): string[] {
   if (typeof window === "undefined") return [];
@@ -500,9 +523,11 @@ export default function ComposerPage() {
     }));
     setInput("");
 
-    // [V5.9-FIX-02] 90-second hard abort; avoids infinite loading on cold models.
+    // [V6.2-ENH-02] Adaptive client-side abort budget aligned with API routing.
+    // Prevents client aborting deep prompts too early while keeping light prompts snappy.
     const abortCtrl = new AbortController();
-    const abortTimer = setTimeout(() => abortCtrl.abort(), 90_000);
+    const abortAfterMs = clientAbortTimeoutMs(content);
+    const abortTimer = setTimeout(() => abortCtrl.abort(), abortAfterMs);
 
     try {
       const payload = {
@@ -559,7 +584,7 @@ export default function ComposerPage() {
       let errorText: string;
       if (err instanceof DOMException && err.name === "AbortError") {
         errorText =
-          "Request timed out after 90 s.\n\nThe model may still be loading on the host. Try again in a few seconds, or check that Ollama is running:\n  curl http://localhost:11434/api/tags";
+          `Request timed out after ${Math.round(abortAfterMs / 1000)} s.\n\nThe model may still be loading on the host. Try again in a few seconds, or check that Ollama is running:\n  curl http://localhost:11434/api/tags`;
       } else if (err instanceof Error && /HTTP 503/.test(err.message)) {
         errorText =
           "API returned 503 — the model service is temporarily unavailable.\n\nOllama may be loading or swapping a model. Wait a moment then retry.";
@@ -720,6 +745,16 @@ export default function ComposerPage() {
                 {lastAssistant?.diagnostics?.ollamaEndpoint && (
                   <p className="text-yellow-200/90">
                     Endpoint: {lastAssistant.diagnostics.ollamaEndpoint}
+                  </p>
+                )}
+                {typeof lastAssistant?.diagnostics?.retryCount === "number" && (
+                  <p className="text-yellow-200/90">
+                    Retries: {lastAssistant.diagnostics.retryCount}
+                  </p>
+                )}
+                {lastAssistant?.diagnostics?.circuitOpen && (
+                  <p className="text-yellow-200/90">
+                    Circuit breaker is open due to repeated model failures; retry after cooldown.
                   </p>
                 )}
               </div>
