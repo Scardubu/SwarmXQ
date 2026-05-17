@@ -348,27 +348,46 @@ function parseCpuThreshold(message: string, fallback = 80): number {
 function fallbackForSimplePrompt(message: string): string | null {
   const q = message.toLowerCase();
 
-  if (q.includes("python") && (q.includes("function") || q.includes("hook"))) {
+  // [V6.2-FIX-21] Broaden Python match: cover "script", "function", "hook", and
+  // bare "python" + code-creation verbs so common prompts don't reach the fleet
+  // summary fallback when the model is offline.
+  if (q.includes("python") && (
+    q.includes("function") ||
+    q.includes("hook") ||
+    q.includes("script") ||
+    ((q.includes("write") || q.includes("create") || q.includes("build") || q.includes("simple")) && q.includes("python"))
+  )) {
     return [
-      "Model timeout fallback: generated a simple Python function template.",
+      "Model offline fallback: here is a simple Python script template.",
       "",
       "```python",
-      "def greet(name: str) -> str:",
-      "    return f\"Hello, {name}!\"",
+      "#!/usr/bin/env python3",
+      "\"\"\"Simple Python script.\"\"\"",
+      "",
+      "",
+      "def main() -> None:",
+      "    print(\"Hello from SwarmX!\")",
+      "",
+      "",
+      "if __name__ == \"__main__\":",
+      "    main()",
       "```",
       "",
-      "You can call it with: `greet(\"Scar\")`.",
+      "Start Ollama and pull a model for a richer, task-specific response:",
+      "  ollama pull phi4-fast",
     ].join("\n");
   }
 
-  if (q.includes("javascript") && q.includes("function")) {
+  if (q.includes("javascript") && (q.includes("function") || q.includes("script"))) {
     return [
-      "Model timeout fallback: generated a simple JavaScript function template.",
+      "Model offline fallback: here is a simple JavaScript template.",
       "",
       "```javascript",
       "function greet(name) {",
       "  return `Hello, ${name}!`;",
       "}",
+      "",
+      "console.log(greet(\"SwarmX\"));",
       "```",
     ].join("\n");
   }
@@ -767,11 +786,61 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
 
       // [V6.1-PERF-05] Resolve Ollama endpoint only for model-routed prompts.
       // Local intents should never block on model discovery or Ollama health.
-      const ollamaBase = await resolveOllamaBaseUrl();
+      // [V6.2-FIX-17] Parallelize all preflight I/O — all three calls share the
+      // same cached OllamaServiceConfig so only the first triggers discovery.
+      const [ollamaBase, preflightModels, preflightHealth] = await Promise.all([
+        resolveOllamaBaseUrl(),
+        listAvailableModels(),
+        checkOllamaHealth(),
+      ]);
+
+      // [V6.2-FIX-18] When Ollama /api/tags confirms zero installed models, skip
+      // the model-call loop entirely — every candidate will 404, wasting time and
+      // inflating circuit-breaker failures for a configuration problem, not a
+      // transient error. Return actionable guidance immediately.
+      if (
+        preflightModels.length === 0 &&
+        preflightHealth.reachable &&
+        preflightHealth.methodUsed === "http"
+      ) {
+        const noModelsMsg = [
+          `SwarmX fleet summary (responding to: "${message}")`,
+          "",
+          `Active agents: ${runningCount}`,
+          `Error agents: ${errorCount}`,
+          `Total registered: ${agents.length}`,
+          ...agents
+            .slice(0, 8)
+            .map((a) => `  • ${a.name ?? a.id} [${a.status}]${a.currentTask ? ` — ${a.currentTask}` : ""}`),
+          agents.length > 8 ? `  …and ${agents.length - 8} more` : "",
+          "",
+          "Composer model fallback reason: No models installed on this Ollama endpoint",
+          `Configured Ollama endpoint: ${preflightHealth.endpoint}`,
+          `Model discovery source: ${preflightHealth.methodUsed}`,
+          `Configured model: ${model} (resolved from: ${rawModel})`,
+          "",
+          "Install at least one model, then set SWARMX_COMPOSER_MODEL to that exact tag.",
+          `  ollama pull ${rawModel}`,
+          "  # or set SWARMX_COMPOSER_MODEL=<tag> in your .env.local",
+        ]
+          .filter((l) => l !== "")
+          .join("\n");
+        server.log.warn(
+          { endpoint: preflightHealth.endpoint, model, configuredModel: rawModel },
+          "composer_no_models_installed",
+        );
+        return mkResponse(noModelsMsg, "fallback", {
+          reason: "No models installed on this Ollama endpoint",
+          ollamaReachable: true,
+          ollamaEndpoint: preflightHealth.endpoint,
+          model,
+          selectedModel,
+          timeoutMs: effectiveTimeoutMs,
+        });
+      }
 
       // [V6.1-FIX-15] If the configured tag is stale but installed models are
       // discoverable, route to the first discovered model to avoid avoidable 404s.
-      const preflightModels = await listAvailableModels();
       const configuredModelCandidates = (await getConfiguredModels())
         .map((candidate) => normalizeModelTag(candidate))
         .filter(Boolean);
@@ -967,7 +1036,11 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         const modelMismatch = availableModels.length > 0 && !availableModels.some(
           (m) => m === model || m.startsWith(rawModel + ":"),
         );
-        const noInstalledModels = availableModels.length === 0 && ollamaHealth.methodUsed === "http";
+        // [V6.2-FIX-20] Include http-health (endpoint reachable, /api/tags failed or
+        // empty) in the "no models" branch — both cases indicate nothing to call.
+        const noInstalledModels =
+          availableModels.length === 0 &&
+          (ollamaHealth.methodUsed === "http" || ollamaHealth.methodUsed === "http-health");
 
         responseText = [
           `SwarmX fleet summary (responding to: "${message}")`,
@@ -987,7 +1060,10 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           `Configured Ollama endpoint: ${ollamaBase}`,
           `Model discovery source: ${ollamaHealth.methodUsed}`,
           `Configured model: ${model} (resolved from: ${rawModel})`,
-          selectedModel !== model ? `Selected model for request: ${selectedModel}` : "",
+          // [V6.2-FIX-19] "Last attempted model" is more accurate than "Selected model"
+          // when the candidate loop exhausted all options — selectedModel holds the
+          // last candidate tried, not a deliberate upfront choice.
+          selectedModel !== model ? `Last attempted model: ${selectedModel}` : "",
           `Retry attempts used: ${retryCount}`,
           composerCircuit.state === "open"
             ? `Circuit breaker: OPEN for ${Math.ceil(COMPOSER_CB_OPEN_MS / 1000)}s after repeated model failures.`
