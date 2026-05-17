@@ -907,6 +907,40 @@
 				"-m",
 				"fix(composer,dashboard,docs): correct stale project scope, http-health early-exit, and document Ollama tuning"
 			]
+		},
+		{
+			"label": "composer-workflow-last-hour-smoke",
+			"type": "shell",
+			"command": "bash",
+			"args": [
+				"-lc",
+				"printf '{\"sessionId\":\"workflow-smoke\",\"message\":\"What workflows have run in the last hour? Show success/fail breakdown.\"}' | curl --max-time 20 -sS -i http://127.0.0.1:3001/api/composer/chat -H \"Content-Type: application/json\" --data-binary @-"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "final-smoke-composer-workflow-last-hour",
+			"type": "shell",
+			"command": "bash",
+			"args": [
+				"-lc",
+				"cat <<'JSON' | curl --max-time 20 -sS -i http://127.0.0.1:3001/api/composer/chat -H \"Content-Type: application/json\" --data-binary @-\n{\"sessionId\":\"final-smoke-workflow-hour\",\"message\":\"What workflows have run in the last hour? Show success/fail breakdown.\"}\nJSON"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "smoke2-composer-workflow-hour",
+			"type": "shell",
+			"command": "curl",
+			"args": [
+				"-sS",
+				"-i",
+				"http://127.0.0.1:3001/api/composer/chat",
+				"-H",
+				"Content-Type: application/json",
+				"--data",
+				"{\"sessionId\":\"smoke-workflow-hour\",\"message\":\"What workflows have run in the last hour? Show success/fail breakdown.\",\"context\":{}}"
+			]
 		}
 	]
 }

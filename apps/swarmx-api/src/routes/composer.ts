@@ -1,4 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { z } from "zod";
 import { agentRegistry } from "./agents.js";
 import {
@@ -24,6 +26,16 @@ type TimeoutBucket = "lt5s" | "lt15s" | "lt30s" | "lt45s" | "gte45s";
 type PromptComplexity = "light" | "standard" | "deep";
 
 type CircuitState = "closed" | "open" | "half-open";
+
+type WorkflowRunStatus = "queued" | "running" | "success" | "failed" | "cancelled";
+
+interface WorkflowRunRecord {
+  runId: string;
+  workflowId: string;
+  status: WorkflowRunStatus;
+  createdAt: string;
+  updatedAt: string;
+}
 
 const TIMEOUT_HISTOGRAM_LOG_EVERY = Number.parseInt(
   process.env["SWARMX_COMPOSER_TIMEOUT_HISTO_LOG_EVERY"] ?? "3",
@@ -196,9 +208,104 @@ function shouldLogHistogram(): boolean {
   return composerTimeoutCount % TIMEOUT_HISTOGRAM_LOG_EVERY === 0;
 }
 
+function workflowRunsFilePath(): string {
+  const runtimeHome =
+    process.env["SWARMX_HOME"] ??
+    `${process.env["HOME"] ?? process.env["USERPROFILE"] ?? ""}/.swarmx`;
+  return path.join(runtimeHome, "state", "workflow-runs.jsonl");
+}
+
+async function loadWorkflowRuns(limit = 1000): Promise<WorkflowRunRecord[]> {
+  try {
+    const raw = await readFile(workflowRunsFilePath(), "utf8");
+    const rows = raw
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line) as WorkflowRunRecord;
+        } catch {
+          return null;
+        }
+      })
+      .filter((row): row is WorkflowRunRecord => row !== null);
+    return rows.slice(-limit);
+  } catch {
+    return [];
+  }
+}
+
+async function formatWorkflowLastHourSummary(): Promise<string> {
+  const now = Date.now();
+  const horizonMs = 60 * 60 * 1000;
+  const runs = await loadWorkflowRuns(1500);
+
+  const inWindow = runs.filter((run) => {
+    const ts = Date.parse(run.updatedAt || run.createdAt);
+    return Number.isFinite(ts) && now - ts <= horizonMs;
+  });
+
+  if (inWindow.length === 0) {
+    return [
+      "Workflow run summary (last 60 minutes)",
+      "Total runs: 0",
+      "Success: 0",
+      "Failed: 0",
+      "Cancelled: 0",
+      "Running: 0",
+      "Queued: 0",
+      "",
+      "No workflow runs recorded in the last hour.",
+    ].join("\n");
+  }
+
+  const counts = {
+    success: 0,
+    failed: 0,
+    cancelled: 0,
+    running: 0,
+    queued: 0,
+  };
+  const perWorkflow = new Map<string, { total: number; success: number; failed: number }>();
+
+  for (const run of inWindow) {
+    if (run.status in counts) {
+      counts[run.status as keyof typeof counts] += 1;
+    }
+    const bucket = perWorkflow.get(run.workflowId) ?? { total: 0, success: 0, failed: 0 };
+    bucket.total += 1;
+    if (run.status === "success") bucket.success += 1;
+    if (run.status === "failed") bucket.failed += 1;
+    perWorkflow.set(run.workflowId, bucket);
+  }
+
+  const terminal = counts.success + counts.failed + counts.cancelled;
+  const successRate = terminal > 0 ? ((counts.success / terminal) * 100).toFixed(1) : "0.0";
+
+  const topWorkflows = [...perWorkflow.entries()]
+    .sort((a, b) => b[1].total - a[1].total)
+    .slice(0, 6);
+
+  return [
+    "Workflow run summary (last 60 minutes)",
+    `Total runs: ${inWindow.length}`,
+    `Success: ${counts.success}`,
+    `Failed: ${counts.failed}`,
+    `Cancelled: ${counts.cancelled}`,
+    `Running: ${counts.running}`,
+    `Queued: ${counts.queued}`,
+    `Success rate (terminal runs): ${successRate}%`,
+    "",
+    "Top workflows:",
+    ...topWorkflows.map(([id, c]) =>
+      `  • ${id}: ${c.total} run${c.total === 1 ? "" : "s"} (success ${c.success}, failed ${c.failed})`,
+    ),
+  ].join("\n");
+}
+
 function detectLocalIntent(
   message: string,
-): "running_by_role" | "high_cpu" | "available_agents" | "simple_copy" | "python_calculator" | "presence_ping" | "idle_unassigned" | null {
+): "running_by_role" | "high_cpu" | "available_agents" | "simple_copy" | "python_calculator" | "presence_ping" | "idle_unassigned" | "workflow_last_hour" | null {
   // [V6.2-ENH-01] Normalize before matching: strip leading/trailing whitespace
   // and trailing punctuation so common variants ("hello!", "are you there?",
   // " ping ") resolve without adding an entry for each permutation.
@@ -241,6 +348,13 @@ function detectLocalIntent(
   }
   if (q.includes("python") && q.includes("calculator") && (q.includes("simple") || q.includes("write") || q.includes("build"))) {
     return "python_calculator";
+  }
+  const asksWorkflowWindow =
+    (q.includes("workflow") || q.includes("workflows")) &&
+    (q.includes("last hour") || q.includes("past hour") || q.includes("previous hour") || q.includes("1 hour"));
+  const asksBreakdown = q.includes("breakdown") || q.includes("success") || q.includes("fail") || q.includes("failed");
+  if (asksWorkflowWindow && asksBreakdown) {
+    return "workflow_last_hour";
   }
   return null;
 }
@@ -766,6 +880,10 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         responseText = formatPythonCalculator();
         return mkResponse(responseText, "local");
       }
+      if (localIntent === "workflow_last_hour") {
+        responseText = await formatWorkflowLastHourSummary();
+        return mkResponse(responseText, "local");
+      }
 
       // [V6.2-ENH-05] Pressure-aware routing: when the dashboard reports
       // "critical" runtime pressure, skip the model call entirely. Starting
@@ -835,6 +953,42 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           reason: "No models installed on this Ollama endpoint",
           ollamaReachable: true,
           ollamaEndpoint: preflightHealth.endpoint,
+          model,
+          selectedModel,
+          timeoutMs: effectiveTimeoutMs,
+        });
+      }
+
+      // [V6.2-FIX-21] Fail fast when Ollama is unreachable and model discovery
+      // only returned static candidates. This avoids exhausting retry budgets
+      // on guaranteed network failures and keeps operator UX responsive.
+      if (preflightModels.length === 0 && !preflightHealth.reachable) {
+        const unreachableMsg = [
+          `SwarmX fleet summary (responding to: "${message}")`,
+          "",
+          `Active agents: ${runningCount}`,
+          `Error agents: ${errorCount}`,
+          `Total registered: ${agents.length}`,
+          ...agents
+            .slice(0, 8)
+            .map((a) => `  • ${a.name ?? a.id} [${a.status}]${a.currentTask ? ` — ${a.currentTask}` : ""}`),
+          agents.length > 8 ? `  …and ${agents.length - 8} more` : "",
+          "",
+          "Composer model fallback reason: Ollama endpoint unreachable during preflight",
+          `Configured Ollama endpoint: ${preflightHealth.endpoint || ollamaBase}`,
+          `Model discovery source: ${preflightHealth.methodUsed}`,
+          `Configured model: ${model} (resolved from: ${rawModel})`,
+          "",
+          "Start Ollama, then retry:",
+          "  ollama serve",
+          "  curl http://127.0.0.1:11434/api/tags",
+        ]
+          .filter((l) => l !== "")
+          .join("\n");
+        return mkResponse(unreachableMsg, "fallback", {
+          reason: "Ollama endpoint unreachable during preflight",
+          ollamaReachable: false,
+          ollamaEndpoint: preflightHealth.endpoint || ollamaBase,
           model,
           selectedModel,
           timeoutMs: effectiveTimeoutMs,
