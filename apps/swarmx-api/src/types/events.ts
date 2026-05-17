@@ -59,6 +59,7 @@ export interface SystemMemoryMetrics {
   usedMb: number;
   availableMb: number;
   swarmxSliceMb: number;
+  swarmxSliceLimitMb: number | null;
 }
 
 export interface SystemDiskMetrics {

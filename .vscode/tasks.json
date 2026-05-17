@@ -70,7 +70,7 @@
 			"args": [
 				"commit",
 				"-m",
-				"fix(startup): deterministic instance eviction and resilient ollama discovery"
+				"fix(composer,dashboard,docs): correct Ollama port in .env.local, stale project path, http-health early-exit, Ollama tuning docs"
 			]
 		},
 		{
@@ -873,6 +873,40 @@
 				"fuser -k 3001/tcp 2>/dev/null || true; fuser -k 3000/tcp 2>/dev/null || true; .venv/bin/python -m cli up --dashboard --detach --host 127.0.0.1 --port 3001; echo \"=== /health ===\"; curl --retry 12 --retry-delay 1 --retry-connrefused --max-time 5 -sS -i http://127.0.0.1:3001/health; echo; echo \"=== /api/system/health ===\"; curl --retry 5 --retry-delay 1 --retry-connrefused --max-time 10 -sS -i http://127.0.0.1:3001/api/system/health; echo; echo \"=== composer ===\"; printf \"{\\\"sessionId\\\":\\\"smoke-final\\\",\\\"message\\\":\\\"are you there?\\\"}\" | curl --retry 3 --retry-delay 1 --retry-connrefused --max-time 20 -sS -i http://127.0.0.1:3001/api/composer/chat -H \"Content-Type: application/json\" --data-binary @-"
 			],
 			"isBackground": false
+		},
+		{
+			"label": "copilot-restart-with-local-ollama-11435",
+			"type": "shell",
+			"command": "bash",
+			"args": [
+				"-lc",
+				"set -a && source .env.local && set +a && fuser -k 3001/tcp 2>/dev/null || true; fuser -k 3000/tcp 2>/dev/null || true; /home/scar/Downloads/SwarmXQ/.venv/bin/python -m cli up --dashboard --detach --host 127.0.0.1 --port 3001; echo '=== system health ==='; curl --retry 10 --retry-delay 1 --retry-connrefused --max-time 10 -sS -i http://127.0.0.1:3001/api/system/health; echo; echo '=== composer ==='; cat <<'JSON' | curl --retry 2 --retry-delay 1 --retry-connrefused --max-time 150 -sS -i http://127.0.0.1:3001/api/composer/chat -H 'Content-Type: application/json' --data-binary @-\n{\"sessionId\":\"copilot-11435-test\",\"message\":\"write a simple python script that prints hello world\"}\nJSON"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "swarmx-stage-v620-fixes",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"add",
+				"apps/swarmx-api/src/routes/composer.ts",
+				"apps/swarmx-api/src/types/events.ts",
+				"apps/swarmx-dashboard/src/app/(dashboard)/composer/page.tsx",
+				"docs/STARTUP_GUIDE.md",
+				"src/swarmx/console/commands/up.py",
+				".vscode/tasks.json"
+			]
+		},
+		{
+			"label": "swarmx-commit-v620-fixes",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"commit",
+				"-m",
+				"fix(composer,dashboard,docs): correct stale project scope, http-health early-exit, and document Ollama tuning"
+			]
 		}
 	]
 }

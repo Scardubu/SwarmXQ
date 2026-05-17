@@ -101,6 +101,19 @@ python -m cli up --dashboard --host 127.0.0.1 --port 3002
 | `SWARMX_STARTUP_CURL_MAX_TIME` | `8` | Hard max-time (seconds) for startup script curl probes (Ollama/API/dashboard). Prevents hangs on half-open sockets. |
 | `VERBOSE` | (not set) | Enable verbose logging in startup script |
 
+### Ollama Tuning (constrained-host)
+
+These Ollama variables are read by the Ollama daemon at startup. Export them before launching the stack, or pin them in `.env.local` (auto-loaded by `startup-enhanced.sh`).
+
+| Variable | Recommended (≤8 GB) | Purpose |
+|----------|---------------------|--------|
+| `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama base URL; must point to the daemon that holds model blobs. |
+| `OLLAMA_NUM_PARALLEL` | `1` | Concurrent model inference slots. `1` prevents dual-slot VRAM splits on single-GPU hosts. |
+| `OLLAMA_MAX_LOADED_MODELS` | `1` | Maximum models resident in VRAM simultaneously. `1` ensures strict single-model mode (aligns with `strict_single_model: true` in config). |
+| `OLLAMA_FLASH_ATTENTION` | `1` | Enable flash-attention kernel; reduces KV-cache VRAM usage ~30% on supported hardware with no quality loss. |
+| `OLLAMA_KV_CACHE_TYPE` | `q8_0` | Quantize KV-cache to INT8. Saves ~40% KV-cache VRAM at minimal accuracy cost; safe for reasoning and coding workloads. |
+| `OLLAMA_KEEP_ALIVE` | `15m` | How long Ollama keeps a model loaded after the last request. `15m` is a good balance between warm-start speed and memory reclaim. |
+
 ### Setting Environment Variables
 
 ```bash
@@ -116,15 +129,34 @@ VERBOSE=1 bash scripts/startup-enhanced.sh --check-only
 
 `startup-enhanced.sh` now auto-loads local overrides from `.env.local` (or `env.local`) at repository root before startup defaults are resolved.
 
-Use this for stable Ollama endpoint pinning across new terminals:
+Use this for stable Ollama endpoint pinning and constrained-host tuning across new terminals:
 
 ```bash
 cat > .env.local <<'EOF'
-OLLAMA_HOST=http://127.0.0.1:11435
-SWARMX_OLLAMA_URL=http://127.0.0.1:11435
-SWARMX_OLLAMA_BASE_URL=http://127.0.0.1:11435
+# Ollama endpoint — points to the daemon that holds model blobs
+OLLAMA_HOST=http://127.0.0.1:11434
+SWARMX_OLLAMA_URL=http://127.0.0.1:11434
+SWARMX_OLLAMA_BASE_URL=http://127.0.0.1:11434
+
+# Ollama constrained-host tuning
+OLLAMA_NUM_PARALLEL=1
+OLLAMA_MAX_LOADED_MODELS=1
+OLLAMA_KEEP_ALIVE=15m
+OLLAMA_FLASH_ATTENTION=1
+OLLAMA_KV_CACHE_TYPE=q8_0
+
+# Composer tuning for constrained hardware
+SWARMX_COMPOSER_MODEL=phi4-fast:latest
+SWARMX_COMPOSER_FAST_MODEL=phi4-fast:latest
+SWARMX_COMPOSER_NUM_PREDICT=96
+SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS=120000
+SWARMX_COMPOSER_TIMEOUT_MS=150000
 EOF
 ```
+
+> **Note:** Replace `11434` with the port of whichever Ollama daemon holds your
+> model blobs. To find it: `ollama list` (or `curl http://127.0.0.1:11434/api/tags`).
+> If you see `total blobs: 0`, that daemon has no models — switch to the one that does.
 
 Then start normally:
 
@@ -191,6 +223,52 @@ If you want startup to skip background autostart attempts:
 export SWARMX_START_OLLAMA_IF_DOWN=0
 bash scripts/startup-enhanced.sh --dashboard
 ```
+
+### Composer always falls back or times out on a low-RAM host
+
+Symptons: every Composer response is a fleet summary (mode = `fallback`) even when
+`ollama list` shows models installed, or requests time out after 60 s.
+
+**Diagnosis:**
+
+```bash
+# 1. Confirm Ollama endpoint holds model blobs
+curl -s http://127.0.0.1:11434/api/tags | python3 -m json.tool | head -20
+
+# 2. Verify the effective Ollama URL SwarmX sees
+curl -s http://127.0.0.1:3001/api/system/health | python3 -m json.tool | grep -A5 ollama
+
+# 3. Check available RAM before starting the stack
+free -h
+```
+
+**Fix — pin the correct endpoint and extend timeouts in `.env.local`:**
+
+```bash
+cat > .env.local <<'EOF'
+OLLAMA_HOST=http://127.0.0.1:11434
+SWARMX_OLLAMA_URL=http://127.0.0.1:11434
+SWARMX_OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_NUM_PARALLEL=1
+OLLAMA_MAX_LOADED_MODELS=1
+OLLAMA_FLASH_ATTENTION=1
+OLLAMA_KV_CACHE_TYPE=q8_0
+SWARMX_COMPOSER_MODEL=phi4-fast:latest
+SWARMX_COMPOSER_NUM_PREDICT=96
+SWARMX_COMPOSER_TIMEOUT_MS=150000
+SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS=120000
+EOF
+bash scripts/startup-enhanced.sh --dashboard
+```
+
+Key notes:
+- `phi4-fast:latest` requires ~4.2 GB VRAM. If the host has <5 GB available, the model
+  may be paged to RAM and take 2–3 min to answer. Token ceiling (`NUM_PREDICT=96`) keeps
+  responses short and prevents runaway inference.
+- `startup-enhanced.sh` auto-discovers the live Ollama endpoint on startup
+  (`check_ollama()`) so stale `.env.local` entries self-correct at launch.
+- The Composer reports `mode: "fallback"` in its diagnostic payload. Check `diagnostics`
+  in the API response or the `composer_preflight` log entry.
 
 ### Composer fallback despite models being installed
 

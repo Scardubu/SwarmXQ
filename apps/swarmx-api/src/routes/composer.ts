@@ -798,10 +798,12 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       // the model-call loop entirely — every candidate will 404, wasting time and
       // inflating circuit-breaker failures for a configuration problem, not a
       // transient error. Return actionable guidance immediately.
+      // [V6.2-FIX-20] Include http-health (endpoint reachable, /api/tags failed or
+      // empty) — both "http" and "http-health" indicate nothing to call.
       if (
         preflightModels.length === 0 &&
         preflightHealth.reachable &&
-        preflightHealth.methodUsed === "http"
+        (preflightHealth.methodUsed === "http" || preflightHealth.methodUsed === "http-health")
       ) {
         const noModelsMsg = [
           `SwarmX fleet summary (responding to: "${message}")`,

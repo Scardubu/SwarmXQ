@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -41,6 +42,68 @@ def _repo_root() -> Path:
 def _api_dist() -> Path:
     """Absolute path to the compiled Fastify API entry point."""
     return _repo_root() / "apps" / "swarmx-api" / "dist" / "server.js"
+
+
+def _api_src_root() -> Path:
+    return _repo_root() / "apps" / "swarmx-api" / "src"
+
+
+def _api_bundle_is_stale() -> bool:
+    api_dist = _api_dist()
+    if not api_dist.exists():
+        return True
+
+    try:
+        dist_mtime = api_dist.stat().st_mtime
+    except OSError:
+        return True
+
+    for source_path in _api_src_root().rglob("*.ts"):
+        try:
+            if source_path.stat().st_mtime > dist_mtime:
+                return True
+        except OSError:
+            continue
+
+    return False
+
+
+def _ensure_api_bundle_fresh(*, console: object, _json: bool) -> Path:
+    """Ensure the compiled Fastify API bundle exists and reflects current TS sources."""
+    api_dist = _api_dist()
+    if not _api_bundle_is_stale():
+        return api_dist
+
+    pnpm_bin = shutil.which("pnpm")
+    if pnpm_bin is None:
+        emit_error("pnpm is required to rebuild the Fastify API bundle.", code=1)
+        raise typer.Exit(code=1)
+
+    # [V6.2-FIX-19] Rebuild the API automatically when dist is missing or stale
+    # so `swarm up` never serves placeholder handlers from outdated compiled JS.
+    if not _json:
+        console.print("[warn]API build output is missing or stale; rebuilding @swarmx/api…[/warn]")
+
+    result = subprocess.run(
+        [pnpm_bin, "--filter", "@swarmx/api", "build"],
+        cwd=str(_repo_root()),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "pnpm build failed").strip()
+        emit_error(f"Failed to rebuild @swarmx/api: {detail}", code=1)
+        raise typer.Exit(code=1)
+
+    if not api_dist.exists():
+        emit_error(
+            f"Compiled API not found at {api_dist} after rebuild.",
+            code=1,
+        )
+        raise typer.Exit(code=1)
+
+    return api_dist
 
 
 def _dashboard_root() -> Path:
@@ -147,22 +210,13 @@ def cmd_start(
 
     # ── Resolve Node.js API server ──────────────────────────────────────────
     # [V5.9-FIX-03] The API is Fastify (Node.js), not a Python ASGI application.
-    import shutil
     node_bin = shutil.which("node")
     if node_bin is None:
         emit_error("node is not installed or not on PATH. Install Node.js 22+.", code=1)
         raise typer.Exit(code=1)
 
-    api_dist = _api_dist()
-    if not api_dist.exists():
-        emit_error(
-            f"Compiled API not found at {api_dist}. "
-            "Run: pnpm --filter @swarmx/api build",
-            code=1,
-        )
-        raise typer.Exit(code=1)
-
     repo_root = _repo_root()
+    api_dist = _ensure_api_bundle_fresh(console=console, _json=_json)
 
     # [V6.1-FIX-06] Prefer the interpreter currently running SwarmX so API sidecars
     # inherit the active venv instead of falling back to a system python without the package.

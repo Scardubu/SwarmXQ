@@ -67,7 +67,7 @@ const CLIENT_TIMEOUT_MS = Number.parseInt(
   10,
 );
 const DEFAULT_PROJECT_SCOPE =
-  process.env.NEXT_PUBLIC_SWARMX_PROJECT_PATH ?? "/home/scar/Downloads/SwarmX-1.5";
+  process.env.NEXT_PUBLIC_SWARMX_PROJECT_PATH ?? "/home/scar/Downloads/SwarmXQ";
 
 function classifyPromptComplexity(message: string): "light" | "standard" | "deep" {
   const q = message.toLowerCase();
