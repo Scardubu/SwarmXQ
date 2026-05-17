@@ -1091,6 +1091,18 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       // only returned static candidates. This avoids exhausting retry budgets
       // on guaranteed network failures and keeps operator UX responsive.
       if (preflightModels.length === 0 && !preflightHealth.reachable) {
+        // [V6.2-FIX-24] Check template fallback before generic fleet summary.
+        const simpleFallbackPreflight = fallbackForSimplePrompt(message);
+        if (simpleFallbackPreflight) {
+          return mkResponse(simpleFallbackPreflight, "fallback", {
+            reason: "Ollama endpoint unreachable during preflight",
+            ollamaReachable: false,
+            ollamaEndpoint: preflightHealth.endpoint || ollamaBase,
+            model,
+            selectedModel,
+            timeoutMs: effectiveTimeoutMs,
+          });
+        }
         const unreachableMsg = [
           `SwarmX fleet summary (responding to: "${message}")`,
           "",
