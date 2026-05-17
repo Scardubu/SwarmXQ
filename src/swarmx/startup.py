@@ -1,9 +1,9 @@
-"""src/swarmx/startup — SwarmX V6.1 Startup Autopilot
+"""src/swarmx/startup — SwarmX V6.2 Startup Autopilot
 ======================================================
 Runs once per process launch:
   1. Fast health diagnostic (RAM, ZRAM, Ollama reachability)
   2. Pressure check and initial concurrency resolution
-  3. phi4-fast / phi4-worker model warmup (non-blocking ping)
+  3. phi4-fast model warmup — only if model is already resident in Ollama
   4. Evolver cycle sync (dry-run, background)
   5. Emit a structured StartupSummary with warm user narrative
 
@@ -15,6 +15,13 @@ Design invariants:
 
 [V6.1-ENH-01] New module. Wired into swarmx up (cmd_start) and exposed
               as a standalone entry point via `python -m swarmx.startup`.
+[V6.2-FIX-25] _warmup_models() now checks /api/ps before sending a generate
+              request. If phi4-fast is not resident, warmup is skipped. This
+              prevents the Ollama HTTP deadlock: on 8 GB / no-GPU hosts,
+              loading a fresh model (4.1 GB) via stream=false blocks Ollama's
+              HTTP accept loop for 60-120 s. A 20 s warmup timeout would
+              disconnect the client mid-load, leaving Ollama's handler blocked
+              and deadlocking all subsequent probe calls (/api/version, etc.).
 """
 from __future__ import annotations
 
@@ -173,21 +180,50 @@ def _check_pressure(cfg: Any) -> tuple[str, int, float, int]:
 
 async def _warmup_models(cfg: Any) -> bool:
     """
-    Send a 1-token prompt to phi4-fast (and optionally phi4-worker) to ensure
-    the Ollama connection pool is alive and KV cache is primed.
-    Returns True if at least one warmup succeeded within budget.
+    Send a 1-token prompt to phi4-fast only if it is ALREADY loaded in Ollama.
+
+    [V6.2-FIX-25] Skip warmup when the model is not resident. On low-RAM
+    systems (no GPU, 8 GB) loading a fresh model via /api/generate with
+    stream=false blocks Ollama's HTTP accept loop for 60-120 s. When the
+    warmup budget (20 s) expires and the client disconnects, Ollama's handler
+    stays blocked — deadlocking all subsequent probe calls (/api/version,
+    /api/tags) until the load eventually completes or times out.
+
+    Safe warmup sequence:
+      1. GET /api/ps — if model not listed, log and return False immediately.
+      2. Model IS loaded → send the 1-token ping (safe; no load latency).
+    Returns True if the warmup ping succeeds.
     """
     import httpx
 
     ollama_url: str = getattr(cfg, "ollama_url", "http://127.0.0.1:11434")
     fast_model_raw: str = getattr(cfg, "model_fast", "phi4-fast")
-    fast_models = [fast_model_raw]
-    if ":" not in fast_model_raw:
-        # [V6.1-FIX-14] Some hosts only expose explicit tagged names.
-        fast_models.append(f"{fast_model_raw}:latest")
+    fast_model_tagged = fast_model_raw if ":" in fast_model_raw else f"{fast_model_raw}:latest"
+    fast_models = [fast_model_raw, fast_model_tagged]
     budget_s = _warmup_budget_s()
-    warmup_prompt = "Hi"   # minimal — just opens the connection
 
+    # ── Step A: Check /api/ps — only proceed if model is already loaded ───────
+    try:
+        async with asyncio.timeout(5.0):
+            async with httpx.AsyncClient(timeout=5.0) as ps_client:
+                ps_resp = await ps_client.get(f"{ollama_url}/api/ps")
+                if ps_resp.status_code != 200:
+                    log.info("startup_warmup_skipped", reason="ps_unavailable")
+                    return False
+                loaded = {m.get("name", "") for m in ps_resp.json().get("models", [])}
+                if not any(m in loaded for m in fast_models):
+                    log.info(
+                        "startup_warmup_skipped",
+                        reason="model_not_loaded",
+                        model=fast_model_tagged,
+                    )
+                    return False
+    except Exception as exc:
+        # [V6.2-FIX-09] Raise log level to info so warmup misses are visible.
+        log.info("startup_warmup_failed", reason=_exc_reason(exc))
+        return False
+
+    # ── Step B: Model is loaded — safe to send 1-token ping ──────────────────
     try:
         async with asyncio.timeout(budget_s):
             async with httpx.AsyncClient(timeout=budget_s) as client:
@@ -196,7 +232,7 @@ async def _warmup_models(cfg: Any) -> bool:
                         f"{ollama_url}/api/generate",
                         json={
                             "model": fast_model,
-                            "prompt": warmup_prompt,
+                            "prompt": "Hi",
                             "stream": False,
                             "keep_alive": "10m",
                             "options": {
@@ -210,8 +246,6 @@ async def _warmup_models(cfg: Any) -> bool:
                         return True
                 return False
     except Exception as exc:
-        # [V6.2-FIX-09] Raise log level to info so warmup misses are visible
-        # in normal operator log streams, not buried at debug.
         log.info("startup_warmup_failed", reason=_exc_reason(exc))
         return False
 

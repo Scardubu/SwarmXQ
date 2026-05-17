@@ -9,7 +9,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
   Send, Bot, Sparkles, RefreshCw, FolderOpen, Pin,
-  Cpu, Database, AlertCircle, GitBranch, Activity,
+  Cpu, Database, AlertCircle, GitBranch, Activity, Loader2,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -655,7 +655,25 @@ export default function ComposerPage() {
       : startupSummary?.ollamaReachable === false;
   const lastAssistant = [...state.messages].reverse().find((m) => m.role === "assistant");
   const showFallbackHint = lastAssistant?.mode === "fallback";
+  // [V6.2-FIX-26] Distinguish cold-load warming-up from generic fallback.
+  const isModelWarmingUp =
+    lastAssistant?.mode === "fallback" &&
+    lastAssistant?.diagnostics?.reason === "model_warming_up";
   const canRetryLastPrompt = !state.isLoading && lastPrompt.trim().length > 0;
+
+  // [V6.2-FIX-26] Auto-retry after model warm-up: when the last response is a
+  // warming-up notice, schedule a one-shot retry after 90 s so the operator
+  // doesn't have to manually poll.
+  const warmingUpRetryHandled = React.useRef(false);
+  React.useEffect(() => {
+    if (!isModelWarmingUp || warmingUpRetryHandled.current || !lastPrompt.trim()) return;
+    warmingUpRetryHandled.current = true;
+    const tid = setTimeout(() => {
+      warmingUpRetryHandled.current = false;
+      sendMessage(lastPrompt);
+    }, 90_000);
+    return () => clearTimeout(tid);
+  }, [isModelWarmingUp, lastPrompt, sendMessage]);
 
   return (
     <div className="flex flex-col h-full">
@@ -763,7 +781,43 @@ export default function ComposerPage() {
             </p>
           </div>
         )}
-        {(isModelOffline || showFallbackHint) && (
+        {/* [V6.2-FIX-26] Model warming-up banner — distinct from generic fallback */}
+        {isModelWarmingUp && (
+          <div className="mx-4 mt-3 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2.5 text-[10px] font-mono text-sky-100">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <Loader2 className="h-3 w-3 text-sky-300 animate-spin shrink-0" />
+                  <span className="font-semibold text-sky-200">Model warming up</span>
+                </div>
+                <p className="text-sky-100/90">
+                  phi4-fast (4.1 GB) is loading in the background — typically 60-120 s on this
+                  host. Auto-retry scheduled in ~90 s, or click Retry manually.
+                </p>
+                {lastAssistant?.diagnostics?.ollamaEndpoint && (
+                  <p className="text-sky-200/70">
+                    Ollama: {lastAssistant.diagnostics.ollamaEndpoint}
+                  </p>
+                )}
+                <p className="text-sky-200/60">
+                  Monitor: <span className="text-sky-300">ollama ps</span>{" "}
+                  or <span className="text-sky-300">curl {lastAssistant?.diagnostics?.ollamaEndpoint ?? "http://127.0.0.1:11434"}/api/ps</span>
+                </p>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => { warmingUpRetryHandled.current = true; sendMessage(lastPrompt); }}
+                disabled={!canRetryLastPrompt}
+                className="h-7 shrink-0 border-sky-400/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/20"
+              >
+                Retry now
+              </Button>
+            </div>
+          </div>
+        )}
+        {(isModelOffline || (showFallbackHint && !isModelWarmingUp)) && (
           <div className="mx-4 mt-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-[10px] font-mono text-yellow-100">
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">

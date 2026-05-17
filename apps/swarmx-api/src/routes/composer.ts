@@ -184,6 +184,79 @@ function computeBackoffDelayMs(attempt: number): number {
   return bounded + jitter;
 }
 
+// ── [V6.2-FIX-26] Cold-load guard ─────────────────────────────────────────────
+//
+// Root cause: on low-VRAM hosts (8 GB RAM, no GPU) phi4-fast (4.1 GB) takes
+// 60-120 s to load from disk. The composer AbortSignal fires at 45 s, the
+// client disconnects, but Ollama's HTTP handler stays blocked on the in-progress
+// model load. All subsequent /api/version probes time out → Ollama deadlocked.
+//
+// Fix: before entering the model call loop, check /api/ps (3 s timeout).
+//   • If the target model IS loaded → proceed normally.
+//   • If nothing is loaded → fire an async preload (no AbortSignal, so it
+//     completes naturally without deadlocking Ollama) and return "warming up".
+//     Caller retries in ~90 s when the model is warm.
+
+/** Track in-progress preloads so we don't stack identical requests. */
+const _preloadState = new Map<string, { startedAt: number; done: boolean }>();
+
+/**
+ * Return the set of model name strings currently loaded in Ollama (/api/ps).
+ * Returns an empty set if /api/ps is unreachable or returns an error.
+ */
+async function getLoadedModelNames(ollamaBase: string): Promise<Set<string>> {
+  try {
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), 3_000);
+    try {
+      const res = await fetch(`${ollamaBase}/api/ps`, { signal: ctrl.signal });
+      if (!res.ok) return new Set();
+      const json = (await res.json()) as { models?: Array<{ name?: string }> };
+      return new Set(
+        (json.models ?? [])
+          .map((m) => m.name?.trim())
+          .filter((n): n is string => Boolean(n)),
+      );
+    } finally {
+      clearTimeout(tid);
+    }
+  } catch {
+    return new Set(); // network error — be permissive; let the caller decide
+  }
+}
+
+/**
+ * Fire-and-forget model preload via /api/generate.
+ * Intentionally has NO AbortSignal: we want the request to complete naturally
+ * so Ollama can finish loading without a mid-load client disconnect (which
+ * deadlocks the Ollama HTTP handler until the model finishes or Ollama restarts).
+ */
+function startModelPreload(ollamaBase: string, modelTag: string): void {
+  const existing = _preloadState.get(modelTag);
+  const preloadAge = existing ? Date.now() - existing.startedAt : Infinity;
+  // Skip if a preload is already running (< 180 s old and not done)
+  if (existing && !existing.done && preloadAge < 180_000) {
+    return;
+  }
+  const state = { startedAt: Date.now(), done: false };
+  _preloadState.set(modelTag, state);
+  // Intentionally no await — fire and forget
+  void fetch(`${ollamaBase}/api/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: modelTag,
+      prompt: "Hi",
+      stream: false,
+      keep_alive: "10m",
+      options: { num_predict: 1, temperature: 0, num_ctx: 256 },
+    }),
+    // NO AbortSignal — let the model load complete without client abort
+  })
+    .then((r) => { state.done = true; _preloadState.set(modelTag, { ...state, done: r.ok }); })
+    .catch(() => { state.done = true; _preloadState.set(modelTag, { ...state, done: false }); });
+}
+
 function timeoutBucketFor(elapsedMs: number): TimeoutBucket {
   if (elapsedMs < 5_000) return "lt5s";
   if (elapsedMs < 15_000) return "lt15s";
@@ -1160,6 +1233,62 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
 
       let modelAttemptStartedAt = 0;
       let retryCount = 0;
+
+      // [V6.2-FIX-26] Cold-load guard: check /api/ps before attempting /api/chat.
+      // If the target model is NOT in Ollama's resident set, a chat request would
+      // trigger a cold disk load (60-120 s). The AbortSignal fires first (45 s),
+      // the client disconnects, but Ollama's HTTP handler stays blocked on the
+      // in-progress load — deadlocking all subsequent /api/version probes.
+      // Fix: fire an async preload (no AbortSignal) and return "warming up".
+      {
+        const loadedNames = await getLoadedModelNames(ollamaBase);
+        const targetTags = [
+          selectedModel,
+          model,
+          rawModel,
+        ].filter(Boolean);
+        const isWarm = targetTags.some((t) => loadedNames.has(t));
+        if (!isWarm && loadedNames.size === 0) {
+          // Nothing loaded at all → trigger async preload and return warming-up.
+          startModelPreload(ollamaBase, normalizeModelTag(selectedModel));
+          const preloadState = _preloadState.get(normalizeModelTag(selectedModel));
+          const preloadAgeS = preloadState
+            ? Math.round((Date.now() - preloadState.startedAt) / 1000)
+            : 0;
+          const warmingUpMsg = [
+            `SwarmX model is warming up (responding to: "${message.slice(0, 80)}")`,
+            "",
+            "Ollama is reachable but no model is currently loaded in memory.",
+            `phi4-fast (4.1 GB) takes 60-120 s to load on this host. A background`,
+            `preload has been started — please retry your message in about 90 seconds.`,
+            "",
+            `Target model: ${model}`,
+            `Ollama endpoint: ${ollamaBase}`,
+            preloadAgeS > 0 ? `Preload started ${preloadAgeS}s ago` : "Preload just initiated",
+            "",
+            "Run `ollama ps` to monitor loading progress.",
+          ]
+            .filter(Boolean)
+            .join("\n");
+          server.log.info(
+            {
+              model,
+              selectedModel,
+              ollamaBase,
+              preloadAge: preloadAgeS,
+            },
+            "composer_model_warming_up",
+          );
+          return mkResponse(warmingUpMsg, "fallback", {
+            reason: "Model warming up — cold load in progress",
+            ollamaReachable: true,
+            ollamaEndpoint: ollamaBase,
+            model,
+            selectedModel,
+            timeoutMs: effectiveTimeoutMs,
+          });
+        }
+      }
       try {
         const modelCandidates = [
           selectedModel,

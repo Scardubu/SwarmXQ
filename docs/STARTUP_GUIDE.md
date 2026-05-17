@@ -93,6 +93,7 @@ python -m cli up --dashboard --host 127.0.0.1 --port 3002
 | `SWARMX_COMPOSER_DEEP_TIMEOUT_MS` | `90000` | Minimum timeout budget for deep/complex prompts. |
 | `SWARMX_COMPOSER_DEEP_TIMEOUT_MIN_MS` | Same as `SWARMX_COMPOSER_DEEP_TIMEOUT_MS` | Lower bound applied to deep-prompt timeout on constrained hosts — set this below `SWARMX_COMPOSER_DEEP_TIMEOUT_MS` to let complex prompts fail faster rather than waiting the full 90 s. |
 | `SWARMX_OLLAMA_CACHE_TTL_MS` | `15000` | Ollama service-discovery cache TTL in milliseconds. Lowering this causes more-frequent re-discovery; raising it reduces overhead on stable Ollama deployments. |
+| `SWARMX_OLLAMA_PROBE_TIMEOUT_MS` | `2000` | Timeout for fast Ollama health probes (`/api/version`, `/health`). Raise to `5000` on constrained hosts where the daemon takes 2-3 s to respond after a restart. |
 | `NEXT_PUBLIC_SWARMX_COMPOSER_CLIENT_TIMEOUT_MS` | `120000` | Dashboard client-side abort ceiling for composer requests. |
 | `SWARMX_START_OLLAMA_IF_DOWN` | `1` | Startup script attempts non-blocking `ollama serve` when endpoint is down. |
 | `SWARMX_V5_POLL_TIMEOUT_MS` | `25000` | Timeout for `python -m swarmx metrics` subprocess used by API poller. Increase on slow hosts to avoid SIGTERM skips. |
@@ -115,6 +116,66 @@ These Ollama variables are read by the Ollama daemon at startup. Export them bef
 | `OLLAMA_KEEP_ALIVE` | `15m` | How long Ollama keeps a model loaded after the last request. `15m` is a good balance between warm-start speed and memory reclaim. |
 
 ### Setting Environment Variables
+
+## Cold Start and Model Warm-Up
+
+### Why the first Composer request may take 60-120 s
+
+phi4-fast (4.1 GB) is not kept resident when Ollama first starts — it is loaded
+on demand. On a CPU-only host without enough VRAM, cold loading takes 60-120 s.
+
+**Before V6.2-FIX-25/26**, the stack had a deadlock:
+1. The Composer sent `POST /api/chat stream:false` with an `AbortSignal(45 s)`.
+2. Ollama started loading the model (60-120 s).
+3. The `AbortSignal` fired at 45 s — client disconnected.
+4. Ollama's HTTP handler stayed blocked on the in-progress model load.
+5. All subsequent `/api/version` probes timed out → Ollama deadlocked.
+
+**After V6.2-FIX-25/26** (active since V6.2):
+
+- **Python warmup** (`startup.py`): checks `/api/ps` before sending any warmup
+  request. If the model is not resident, warmup is skipped — no deadlock trigger.
+- **TypeScript composer** (`composer.ts`): checks `/api/ps` before the model call
+  loop. If nothing is loaded, it starts an async preload (`/api/generate` with no
+  `AbortSignal`) and immediately returns a `mode=fallback` "warming up" response.
+  The dashboard shows a blue banner and auto-retries after 90 s.
+
+### Constrained-host tuning for cold starts
+
+Add to `.env.local` to optimize for this host:
+
+```bash
+# Raise probe timeout so cold Ollama (2-3 s to respond) is not incorrectly
+# marked unreachable during the startup health check.
+SWARMX_OLLAMA_PROBE_TIMEOUT_MS=5000
+
+# Keep model resident for 15 min after each inference (avoids repeated loads).
+OLLAMA_KEEP_ALIVE=15m
+
+# Reduce response token ceiling for faster turnaround on simple queries.
+SWARMX_COMPOSER_NUM_PREDICT=96
+
+# Raise short-prompt timeout — gives the model up to 120 s to respond
+# (used once the model IS loaded; preload guard prevents deadlocks).
+SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS=120000
+SWARMX_COMPOSER_TIMEOUT_MS=150000
+```
+
+### Manual pre-warm before first use
+
+To avoid the 90 s wait on the first Composer request after a restart:
+
+```bash
+# Pre-load phi4-fast before starting the stack (no AbortSignal — safe)
+ollama run phi4-fast:latest "Hi" --verbose
+
+# Or trigger via the API generate endpoint directly:
+curl -s http://127.0.0.1:11434/api/generate \
+  -d '{"model":"phi4-fast:latest","prompt":"Hi","stream":false,"options":{"num_predict":1}}'
+
+# Then verify the model is loaded:
+ollama ps   # should show phi4-fast:latest
+```
 
 ```bash
 # For this session only
