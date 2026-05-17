@@ -308,6 +308,12 @@ export function invalidateOllamaCache(): void {
   // discovery will complete and write a fresh result.
 }
 
+// [V6.2-FIX-22] Probe timeout is now env-overridable. On constrained hosts the
+// default 2000ms can be too tight during cold startup; set
+// SWARMX_OLLAMA_PROBE_TIMEOUT_MS=3500 in .env.local to widen it.
+const FAST_PROBE_TIMEOUT_MS =
+  Number.parseInt(process.env["SWARMX_OLLAMA_PROBE_TIMEOUT_MS"] ?? "2000", 10) || 2_000;
+
 export async function fastHealthProbe(): Promise<{
   reachable: boolean;
   endpoint: string;
@@ -316,20 +322,34 @@ export async function fastHealthProbe(): Promise<{
   const endpoints = getDefaultEndpoints().map((e) => normalizeEndpoint(e));
   const start = Date.now();
 
-  for (const endpoint of endpoints) {
-    const ok = await probeVersion(endpoint, 2000);
-    if (ok) {
-      return {
-        reachable: true,
-        endpoint,
-        latencyMs: Date.now() - start,
-      };
-    }
+  if (endpoints.length === 0) {
+    return { reachable: false, endpoint: "http://127.0.0.1:11434", latencyMs: 0 };
   }
 
-  return {
-    reachable: false,
-    endpoint: endpoints[0] ?? "http://127.0.0.1:11434",
-    latencyMs: Date.now() - start,
-  };
+  // [V6.2-FIX-22] Run all endpoint probes in parallel and take the first
+  // successful one. The prior sequential approach (2s × N endpoints) caused
+  // latencyMs ≈ 4 s on hosts with 2 deduplicated endpoints (127.0.0.1 +
+  // localhost), which made the health endpoint report reachable:false and
+  // triggered a permanent MODEL OFFLINE banner even when Ollama was running.
+  const probes = endpoints.map(async (endpoint) => {
+    const ok = await probeVersion(endpoint, FAST_PROBE_TIMEOUT_MS);
+    if (!ok) throw new Error("unreachable");
+    return endpoint;
+  });
+
+  try {
+    const firstEndpoint = await Promise.any(probes);
+    return {
+      reachable: true,
+      endpoint: firstEndpoint,
+      latencyMs: Date.now() - start,
+    };
+  } catch {
+    // All probes failed — truly unreachable.
+    return {
+      reachable: false,
+      endpoint: endpoints[0] ?? "http://127.0.0.1:11434",
+      latencyMs: Date.now() - start,
+    };
+  }
 }

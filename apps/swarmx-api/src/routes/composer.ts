@@ -16,6 +16,7 @@ type ComposerAgent = {
   status: string;
   role: string | undefined;
   currentTask: string | undefined;
+  lastError?: string;
   resource?: {
     cpuPercent?: number;
   } | null;
@@ -305,7 +306,7 @@ async function formatWorkflowLastHourSummary(): Promise<string> {
 
 function detectLocalIntent(
   message: string,
-): "running_by_role" | "high_cpu" | "available_agents" | "simple_copy" | "python_calculator" | "presence_ping" | "idle_unassigned" | "workflow_last_hour" | null {
+): "running_by_role" | "high_cpu" | "available_agents" | "simple_copy" | "python_calculator" | "presence_ping" | "idle_unassigned" | "workflow_last_hour" | "agent_errors" | null {
   // [V6.2-ENH-01] Normalize before matching: strip leading/trailing whitespace
   // and trailing punctuation so common variants ("hello!", "are you there?",
   // " ping ") resolve without adding an entry for each permutation.
@@ -356,7 +357,49 @@ function detectLocalIntent(
   if (asksWorkflowWindow && asksBreakdown) {
     return "workflow_last_hour";
   }
+  // [V6.2-ENH-06] Agent error queries can be answered entirely from the live
+  // registry without a model call, making them instant even when Ollama is down.
+  if (
+    (q.includes("error") || q.includes("errors") || q.includes("fatal") || q.includes("failing") || q.includes("broken")) &&
+    (q.includes("agent") || q.includes("agents")) &&
+    (q.includes("list") || q.includes("show") || q.includes("find") || q.includes("what") || q.includes("which") || q.includes("diagnose"))
+  ) {
+    return "agent_errors";
+  }
   return null;
+}
+
+function formatAgentErrors(agents: ComposerAgent[]): string {
+  const errored = agents.filter((a) => isErrorStatus(a.status));
+  const lines: string[] = [];
+  lines.push("SwarmX agent error report");
+  lines.push(`Total registered: ${agents.length}`);
+  lines.push(`Agents in error/fatal state: ${errored.length}`);
+
+  if (errored.length === 0) {
+    lines.push("");
+    lines.push("No agents are currently in an error state.");
+    return lines.join("\n");
+  }
+
+  lines.push("");
+  for (const agent of errored) {
+    const name = agent.name ?? agent.id;
+    const task = agent.currentTask?.trim() ? `Last task: ${agent.currentTask}` : "No task recorded";
+    const err = agent.lastError?.trim() ? `Last error: ${agent.lastError}` : "No error message available";
+    lines.push(`  • ${name} [${agent.status}]`);
+    lines.push(`    ${task}`);
+    lines.push(`    ${err}`);
+  }
+
+  lines.push("");
+  lines.push("Possible causes:");
+  lines.push("- Ollama model failed to load (check ollama serve logs)");
+  lines.push("- Tool execution timeout in a long-running step");
+  lines.push("- Network error reaching a configured endpoint");
+  lines.push("");
+  lines.push("Next action: check ~/.swarmx/logs/ for agent-specific traces.");
+  return lines.join("\n");
 }
 
 function isActiveStatus(status: string): boolean {
@@ -502,6 +545,84 @@ function fallbackForSimplePrompt(message: string): string | null {
       "}",
       "",
       "console.log(greet(\"SwarmX\"));",
+      "```",
+    ].join("\n");
+  }
+
+  // [V6.2-FIX-23] TypeScript function/script template.
+  if (
+    (q.includes("typescript") || q.includes(" ts ") || q.includes(".ts")) &&
+    (q.includes("function") || q.includes("script") || q.includes("write") || q.includes("create"))
+  ) {
+    return [
+      "Model offline fallback: here is a simple TypeScript template.",
+      "",
+      "```typescript",
+      "interface Config {",
+      "  name: string;",
+      "  value: number;",
+      "}",
+      "",
+      "function process(cfg: Config): string {",
+      "  return `${cfg.name}: ${cfg.value}`;" ,
+      "}",
+      "",
+      "console.log(process({ name: \"SwarmX\", value: 42 }));",
+      "```",
+      "",
+      "Start Ollama and pull a model for a task-specific response:",
+      "  ollama pull phi4-fast",
+    ].join("\n");
+  }
+
+  // [V6.2-FIX-23] Bash/shell script template.
+  if (
+    (q.includes("bash") || q.includes("shell") || q.includes("sh")) &&
+    (q.includes("script") || q.includes("write") || q.includes("create") || q.includes("simple"))
+  ) {
+    return [
+      "Model offline fallback: here is a simple Bash script template.",
+      "",
+      "```bash",
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      "",
+      "NAME=\"SwarmX\"",
+      "",
+      "echo \"Hello from $NAME!\"",
+      "",
+      "# Check a condition",
+      "if [[ -d \"$HOME/.swarmx\" ]]; then",
+      "  echo \"SwarmX runtime found at $HOME/.swarmx\"",
+      "else",
+      "  echo \"SwarmX runtime not initialised — run swarm-init.sh\"",
+      "fi",
+      "```",
+      "",
+      "Start Ollama and pull a model for a task-specific script:",
+      "  ollama pull phi4-fast",
+    ].join("\n");
+  }
+
+  // [V6.2-FIX-23] Generic JSON example template.
+  if (
+    q.includes("json") &&
+    (q.includes("example") || q.includes("template") || q.includes("format") || q.includes("write") || q.includes("sample"))
+  ) {
+    return [
+      "Model offline fallback: here is a generic JSON structure example.",
+      "",
+      "```json",
+      "{",
+      "  \"name\": \"my-task\",",
+      "  \"status\": \"pending\",",
+      "  \"priority\": 1,",
+      "  \"tags\": [\"swarmx\", \"automation\"],",
+      "  \"metadata\": {",
+      "    \"createdAt\": \"2026-01-01T00:00:00Z\",",
+      "    \"owner\": \"strategist\"",
+      "  }",
+      "}",
       "```",
     ].join("\n");
   }
@@ -744,6 +865,9 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         status: a.status,
         role: a.role,
         currentTask: a.currentTask,
+        // [V6.2-ENH-06] exactOptionalPropertyTypes: include lastError only when
+        // actually defined so the mapped object is assignable to ComposerAgent.
+        ...(a.lastError !== undefined ? { lastError: a.lastError } : {}),
       }));
       const contextAgents = (context?.agents ?? []).map((a) => ({
         id: a.id,
@@ -882,6 +1006,10 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       }
       if (localIntent === "workflow_last_hour") {
         responseText = await formatWorkflowLastHourSummary();
+        return mkResponse(responseText, "local");
+      }
+      if (localIntent === "agent_errors") {
+        responseText = formatAgentErrors(agents);
         return mkResponse(responseText, "local");
       }
 

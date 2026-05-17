@@ -643,7 +643,16 @@ export default function ComposerPage() {
 
   const runningCount = [...agents.values()].filter((a) => a.status === "running").length;
   const isDegraded = pressureLevel === "high" || pressureLevel === "critical";
-  const isModelOffline = startupSummary?.ollamaReachable === false;
+  // [V6.2-FIX-22] Live health poll (12 s interval) is authoritative once resolved.
+  // The startupSummary is populated once at boot by the SSE startup event: if
+  // Ollama was unreachable at that moment (e.g., still starting), the stale
+  // "false" value would permanently show MODEL OFFLINE even after Ollama comes up.
+  // When apiHealth.ollamaOnline has resolved (non-null), use it. Only fall back to
+  // the startup snapshot while the first live probe is still in-flight (null).
+  const isModelOffline =
+    apiHealth.ollamaOnline !== null
+      ? apiHealth.ollamaOnline === false
+      : startupSummary?.ollamaReachable === false;
   const lastAssistant = [...state.messages].reverse().find((m) => m.role === "assistant");
   const showFallbackHint = lastAssistant?.mode === "fallback";
   const canRetryLastPrompt = !state.isLoading && lastPrompt.trim().length > 0;
