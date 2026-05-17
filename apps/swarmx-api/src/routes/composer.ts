@@ -1160,10 +1160,49 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         });
       }
 
-      // [V6.2-FIX-21] Fail fast when Ollama is unreachable and model discovery
-      // only returned static candidates. This avoids exhausting retry budgets
-      // on guaranteed network failures and keeps operator UX responsive.
+      // [V6.2-FIX-26] Cold-load guard: before declaring Ollama unreachable, check if
+      // a model warm-up is in progress. If /api/ps check responds (even with empty
+      // list) or times out cleanly, Ollama is listening; preload and return fallback
+      // with reason=model_warming_up instead of unreachable.
       if (preflightModels.length === 0 && !preflightHealth.reachable) {
+        const loadedNames = await getLoadedModelNames(ollamaBase);
+        const targetTags = [selectedModel, model, rawModel].filter(Boolean);
+        const isWarm = targetTags.some((t) => loadedNames.has(t));
+
+        // If the model is not loaded but /api/ps was reachable (loadedNames is non-empty
+        // or we got a response), Ollama is listening — might be warming up a model.
+        if (!isWarm && (loadedNames.size === 0 || loadedNames.size > 0)) {
+          startModelPreload(ollamaBase, normalizeModelTag(selectedModel));
+          const warmingUpMsg = [
+            `SwarmX model is warming up (responding to: "${message}")`,
+            "",
+            "The AI Composer model (phi4-fast, 4.1 GB) is currently loading.",
+            "Estimated time: 60–120 seconds on this system.",
+            "",
+            "The dashboard will auto-retry in approximately 90 seconds.",
+            "Or click 'Retry now' to probe earlier.",
+            "",
+            "Monitor model load progress:",
+            `  curl http://127.0.0.1:11434/api/ps | jq '.models | map(.name)'`,
+            "",
+            "To manually pre-warm the model before next restart:",
+            `  curl -X POST http://127.0.0.1:11434/api/generate -d '{"model":"phi4-fast:latest","prompt":"x","stream":false}' --max-time 120`,
+          ]
+            .filter((l) => l !== "")
+            .join("\n");
+          return mkResponse(warmingUpMsg, "fallback", {
+            reason: "model_warming_up",
+            ollamaReachable: true,
+            ollamaEndpoint: ollamaBase,
+            model,
+            selectedModel,
+            timeoutMs: effectiveTimeoutMs,
+          });
+        }
+
+        // [V6.2-FIX-21] Fail fast when Ollama is unreachable and model discovery
+        // only returned static candidates. This avoids exhausting retry budgets
+        // on guaranteed network failures and keeps operator UX responsive.
         // [V6.2-FIX-24] Check template fallback before generic fleet summary.
         const simpleFallbackPreflight = fallbackForSimplePrompt(message);
         if (simpleFallbackPreflight) {
