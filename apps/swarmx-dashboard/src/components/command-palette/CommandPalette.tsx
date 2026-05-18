@@ -85,6 +85,7 @@ export function CommandPalette() {
   return (
     <dialog
       open
+      aria-modal="true"
       aria-label="Command palette"
       className="swarm-command-palette fixed inset-0 z-100 flex items-start justify-center bg-transparent pt-[20vh]"
       onCancel={(event) => {
@@ -175,14 +176,20 @@ function CommandPaletteInner({
         <Command.Input
           ref={inputRef}
           placeholder="Type a command or search..."
+          aria-label="Search commands"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
           className={cn(
             "flex-1 bg-transparent text-sm font-mono text-text-primary placeholder:text-text-muted",
             "outline-none border-none"
           )}
         />
         <button
+          type="button"
           onClick={onClose}
-          className="text-text-muted hover:text-text-primary text-[10px] font-mono"
+          className="text-text-muted hover:text-text-primary text-[10px] font-mono focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded px-1"
           aria-label="Close"
         >
           ESC

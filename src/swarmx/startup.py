@@ -132,18 +132,25 @@ class StartupSummary:
 
 async def _check_health(cfg: Any) -> bool:
     """
-    Reads RAM from /proc/meminfo (instant) and probes Ollama /api/tags.
+    Probes Ollama /api/version (lighter than /api/tags; not blocked by queued
+    model operations) with a hard per-request timeout.
     Never raises; returns False on any error.
+
+    [V6.2-FIX-28] Switched from /api/tags to /api/version so a deadlocked
+    Ollama (HTTP handler blocked on a mid-load request) still triggers a
+    clean False instead of hanging for the full health budget.
     """
     import httpx
 
     ollama_url: str = getattr(cfg, "ollama_url", "http://127.0.0.1:11434")
-    budget_s = _health_budget_s()
+    # Use a tighter per-request timeout so this probe fails fast on a
+    # deadlocked daemon, leaving budget headroom for the rest of startup.
+    probe_timeout_s = min(_health_budget_s(), 4.0)
 
     try:
-        async with asyncio.timeout(budget_s):
-            async with httpx.AsyncClient(timeout=budget_s) as client:
-                resp = await client.get(f"{ollama_url}/api/tags")
+        async with asyncio.timeout(probe_timeout_s):
+            async with httpx.AsyncClient(timeout=httpx.Timeout(probe_timeout_s)) as client:
+                resp = await client.get(f"{ollama_url}/api/version")
                 return resp.status_code == 200
     except Exception:
         return False

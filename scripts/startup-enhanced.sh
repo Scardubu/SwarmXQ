@@ -318,10 +318,28 @@ check_ollama() {
       return 0
     fi
 
+    # [V6.2-FIX-27] Deadlock detection: if the probe failed but something IS
+    # listening on the port, the daemon is deadlocked (accepted TCP but its
+    # HTTP handler is blocked by a mid-load client disconnect). Kill it before
+    # trying to start a fresh instance — otherwise `ollama serve` will fail to
+    # bind and autostart silently does nothing.
+    local ollama_port
+    ollama_port=$(printf '%s' "$OLLAMA_URL" | grep -oP ':\K[0-9]+$' || echo "11434")
+    [[ -z "$ollama_port" ]] && ollama_port="11434"
+    local hung_pid
+    hung_pid=$(lsof -Pi :"$ollama_port" -sTCP:LISTEN -t 2>/dev/null | head -1 || true)
+    if [[ -n "$hung_pid" ]]; then
+      log_warning "Ollama (PID=$hung_pid) is deadlocked on port $ollama_port — killing and restarting..."
+      kill -9 "$hung_pid" 2>/dev/null || true
+      sleep 1
+    fi
+
     if [[ "$OLLAMA_AUTOSTART" == "1" ]] && command -v ollama >/dev/null 2>&1; then
       log_info "Attempting non-blocking Ollama autostart (best-effort)..."
       nohup ollama serve >> "$STARTUP_LOG" 2>&1 &
       disown || true
+      # Give the daemon a moment to bind the port before probing.
+      sleep 2
       if probe_ollama_url "$OLLAMA_URL"; then
         log_success "Ollama autostart succeeded"
       else

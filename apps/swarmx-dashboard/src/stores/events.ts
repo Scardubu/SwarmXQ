@@ -34,6 +34,8 @@ interface SparklinePoint {
 interface EventsState {
   // Connection
   connectionStatus: SSEConnectionStatus;
+  sseReconnectAttempt: number;
+  sseNextRetryMs: number | null;
   lastEventAt: number | null;
   isStale: boolean;
 
@@ -86,6 +88,7 @@ interface EventsActions {
   handleEvent: (event: SwarmXEvent) => void;
   replaceAgents: (agents: AgentState[]) => void;
   setConnectionStatus: (status: SSEConnectionStatus) => void;
+  setReconnectTelemetry: (attempt: number, nextRetryMs: number | null) => void;
   checkStale: () => void;
 }
 
@@ -493,6 +496,8 @@ function reduceEvent(state: EventsState, event: SwarmXEvent): EventsPatch {
 export const useEventsStore = create<EventsState & EventsActions>()(
   subscribeWithSelector((set, get) => ({
     connectionStatus: "connecting",
+    sseReconnectAttempt: 0,
+    sseNextRetryMs: null,
     lastEventAt: null,
     isStale: false,
     agents: new Map(),
@@ -522,7 +527,16 @@ export const useEventsStore = create<EventsState & EventsActions>()(
       set((state) => replaceAgentsSnapshot(state, agents));
     },
 
-    setConnectionStatus: (status) => set({ connectionStatus: status }),
+    setConnectionStatus: (status) =>
+      set((state) => ({
+        connectionStatus: status,
+        ...(status === "connected"
+          ? { sseReconnectAttempt: 0, sseNextRetryMs: null }
+          : {}),
+      })),
+
+    setReconnectTelemetry: (attempt, nextRetryMs) =>
+      set({ sseReconnectAttempt: attempt, sseNextRetryMs: nextRetryMs }),
 
     checkStale: () => {
       const { lastEventAt } = get();

@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { useEventsStore } from "@/stores/events";
 import { useUIStore } from "@/stores/ui";
 import { Terminal, PanelRight } from "lucide-react";
+import { useApiHealth } from "@/hooks/useApiHealth";
 import type { PressureLevel, StartupSummary } from "@swarmx/types";
 
 /** Live WAT clock (UTC+1 / Africa/Lagos). */
@@ -128,6 +129,9 @@ export function CommandBar({ breadcrumb = "Overview" }: CommandBarProps) {
   const governorState = useEventsStore((s) => s.governorState);
   // [V6.1-ENH-01] Startup narrative for health dot tooltip
   const startupSummary = useEventsStore((s) => s.startupSummary);
+  const sseReconnectAttempt = useEventsStore((s) => s.sseReconnectAttempt);
+  const sseNextRetryMs = useEventsStore((s) => s.sseNextRetryMs);
+  const apiHealth = useApiHealth(15_000);
   const toggleTerminal = useUIStore((s) => s.toggleTerminal);
   const terminalVisible = useUIStore((s) => s.terminalVisible);
   const toggleTelemetryRail = useUIStore((s) => s.toggleTelemetryRail);
@@ -153,6 +157,8 @@ export function CommandBar({ breadcrumb = "Overview" }: CommandBarProps) {
       : scsScore === null
       ? `System ${health}`
       : `System ${health} · SCS ${(scsScore * 100).toFixed(0)}%`;
+  const retrySeconds =
+    sseNextRetryMs !== null ? Math.max(0, Math.ceil(sseNextRetryMs / 1000)) : null;
 
   return (
     <header
@@ -195,6 +201,53 @@ export function CommandBar({ breadcrumb = "Overview" }: CommandBarProps) {
 
       {/* Right — System health + notifications + controls */}
       <div className="flex items-center gap-3">
+        {/* API/Ollama telemetry */}
+        {apiHealth.apiOnline !== null && (
+          <span
+            className={cn(
+              "hidden xl:inline-flex items-center rounded-full border px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wide",
+              apiHealth.apiOnline
+                ? "border-status-success/35 bg-status-success/8 text-status-success"
+                : "border-status-error/35 bg-status-error/8 text-status-error"
+            )}
+            title={`API health${apiHealth.latencyMs !== null ? ` · ${apiHealth.latencyMs} ms` : ""}`}
+            aria-label={apiHealth.apiOnline ? "API online" : "API offline"}
+          >
+            API {apiHealth.apiOnline ? (apiHealth.latencyMs !== null ? `${apiHealth.latencyMs}ms` : "UP") : "DOWN"}
+          </span>
+        )}
+
+        {apiHealth.ollamaOnline !== null && (
+          <span
+            className={cn(
+              "hidden xl:inline-flex items-center rounded-full border px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wide",
+              apiHealth.ollamaOnline
+                ? "border-status-success/35 bg-status-success/8 text-status-success"
+                : "border-status-warning/35 bg-status-warning/8 text-status-warning"
+            )}
+            title={`Ollama backend ${apiHealth.ollamaOnline ? "reachable" : "unreachable"}`}
+            aria-label={apiHealth.ollamaOnline ? "Ollama reachable" : "Ollama unreachable"}
+          >
+            OLLAMA {apiHealth.ollamaOnline ? "UP" : "DOWN"}
+          </span>
+        )}
+
+        {(connectionStatus !== "connected" || sseReconnectAttempt > 0) && (
+          <span
+            className="hidden xl:inline-flex items-center rounded-full border border-status-warning/35 bg-status-warning/8 px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wide text-status-warning"
+            role="status"
+            aria-live="polite"
+            title={
+              sseReconnectAttempt > 0
+                ? `SSE reconnect attempt ${sseReconnectAttempt}${retrySeconds !== null ? ` · next in ${retrySeconds}s` : ""}`
+                : "SSE reconnecting"
+            }
+          >
+            RETRY {sseReconnectAttempt > 0 ? `#${sseReconnectAttempt}` : "PENDING"}
+            {retrySeconds !== null ? ` · ${retrySeconds}s` : ""}
+          </span>
+        )}
+
         {/* SSE stale indicator */}
         {(isStale || connectionStatus === "disconnected") && (
           <span className="text-[10px] font-mono text-status-warning" role="status" aria-live="polite">

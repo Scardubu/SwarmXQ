@@ -200,28 +200,36 @@ function computeBackoffDelayMs(attempt: number): number {
 /** Track in-progress preloads so we don't stack identical requests. */
 const _preloadState = new Map<string, { startedAt: number; done: boolean }>();
 
+interface LoadedModelState {
+  reachable: boolean;
+  names: Set<string>;
+}
+
 /**
- * Return the set of model name strings currently loaded in Ollama (/api/ps).
- * Returns an empty set if /api/ps is unreachable or returns an error.
+ * Return loaded model state from Ollama (/api/ps).
+ * reachable=false means the endpoint could not be queried.
  */
-async function getLoadedModelNames(ollamaBase: string): Promise<Set<string>> {
+async function getLoadedModelState(ollamaBase: string): Promise<LoadedModelState> {
   try {
     const ctrl = new AbortController();
     const tid = setTimeout(() => ctrl.abort(), 3_000);
     try {
       const res = await fetch(`${ollamaBase}/api/ps`, { signal: ctrl.signal });
-      if (!res.ok) return new Set();
+      if (!res.ok) return { reachable: false, names: new Set() };
       const json = (await res.json()) as { models?: Array<{ name?: string }> };
-      return new Set(
-        (json.models ?? [])
-          .map((m) => m.name?.trim())
-          .filter((n): n is string => Boolean(n)),
-      );
+      return {
+        reachable: true,
+        names: new Set(
+          (json.models ?? [])
+            .map((m) => m.name?.trim())
+            .filter((n): n is string => Boolean(n)),
+        ),
+      };
     } finally {
       clearTimeout(tid);
     }
   } catch {
-    return new Set(); // network error — be permissive; let the caller decide
+    return { reachable: false, names: new Set() };
   }
 }
 
@@ -1165,13 +1173,13 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       // list) or times out cleanly, Ollama is listening; preload and return fallback
       // with reason=model_warming_up instead of unreachable.
       if (preflightModels.length === 0 && !preflightHealth.reachable) {
-        const loadedNames = await getLoadedModelNames(ollamaBase);
+        const loadedState = await getLoadedModelState(ollamaBase);
+        const loadedNames = loadedState.names;
         const targetTags = [selectedModel, model, rawModel].filter(Boolean);
         const isWarm = targetTags.some((t) => loadedNames.has(t));
 
-        // If the model is not loaded but /api/ps was reachable (loadedNames is non-empty
-        // or we got a response), Ollama is listening — might be warming up a model.
-        if (!isWarm && (loadedNames.size === 0 || loadedNames.size > 0)) {
+        // Only classify as warming up if /api/ps was actually reachable.
+        if (!isWarm && loadedState.reachable) {
           startModelPreload(ollamaBase, normalizeModelTag(selectedModel));
           const warmingUpMsg = [
             `SwarmX model is warming up (responding to: "${message}")`,
@@ -1280,14 +1288,15 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       // in-progress load — deadlocking all subsequent /api/version probes.
       // Fix: fire an async preload (no AbortSignal) and return "warming up".
       {
-        const loadedNames = await getLoadedModelNames(ollamaBase);
+        const loadedState = await getLoadedModelState(ollamaBase);
+        const loadedNames = loadedState.names;
         const targetTags = [
           selectedModel,
           model,
           rawModel,
         ].filter(Boolean);
         const isWarm = targetTags.some((t) => loadedNames.has(t));
-        if (!isWarm && loadedNames.size === 0) {
+        if (!isWarm && loadedState.reachable && loadedNames.size === 0) {
           // Nothing loaded at all → trigger async preload and return warming-up.
           startModelPreload(ollamaBase, normalizeModelTag(selectedModel));
           const preloadState = _preloadState.get(normalizeModelTag(selectedModel));

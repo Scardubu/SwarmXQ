@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useEventsStore } from "@/stores/events";
+import { useApiHealth, type ApiHealthState } from "@/hooks/useApiHealth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -338,75 +339,6 @@ function PresetChips({ onSelect }: { readonly onSelect: (p: string) => void }) {
   );
 }
 
-// ── API health poll ───────────────────────────────────────────────────────────
-
-interface ApiHealthState {
-  apiOnline: boolean | null;   // null = not yet checked
-  ollamaOnline: boolean | null;
-  latencyMs: number | null;
-  lastChecked: number | null;
-}
-
-/**
- * [V6.1-ENH-05] Polls /health every 12 s to surface API + Ollama liveness
- * separately from the SSE startup summary so operators can distinguish
- * "API offline" from "API online, model backend offline".
- */
-function useApiHealth(pollIntervalMs = 12_000): ApiHealthState {
-  const [health, setHealth] = React.useState<ApiHealthState>({
-    apiOnline: null,
-    ollamaOnline: null,
-    latencyMs: null,
-    lastChecked: null,
-  });
-
-  React.useEffect(() => {
-    const baseUrl = resolveDirectApiBaseUrl();
-    let cancelled = false;
-
-    async function probe() {
-      if (cancelled) return;
-      try {
-        const controller = new AbortController();
-        // [V6.1-FIX-19] 8 s — safely above /api/system/health's 5 s model-probe
-        // timeout so the hook never races with the endpoint's own deadline.
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
-        const t0 = Date.now();
-        const res = await fetch(`${baseUrl}/api/system/health`, {
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-        const latencyMs = Date.now() - t0;
-        if (cancelled) return;
-        if (res.ok || res.status === 503) {
-          const data = await res.json() as { ollama?: { reachable?: boolean } };
-          setHealth({
-            apiOnline: true,
-            ollamaOnline: data?.ollama?.reachable ?? null,
-            latencyMs,
-            lastChecked: Date.now(),
-          });
-        } else {
-          setHealth((prev) => ({ ...prev, apiOnline: false, latencyMs, lastChecked: Date.now() }));
-        }
-      } catch {
-        if (!cancelled) {
-          setHealth((prev) => ({ ...prev, apiOnline: false, latencyMs: null, lastChecked: Date.now() }));
-        }
-      }
-    }
-
-    void probe();
-    const id = setInterval(() => { void probe(); }, pollIntervalMs);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [pollIntervalMs]);
-
-  return health;
-}
-
 // ── API status badge ──────────────────────────────────────────────────────────
 
 function ApiStatusDot({ health }: { readonly health: ApiHealthState }) {
@@ -659,6 +591,22 @@ export default function ComposerPage() {
   const isModelWarmingUp =
     lastAssistant?.mode === "fallback" &&
     lastAssistant?.diagnostics?.reason === "model_warming_up";
+  // [V6.2-ENH-07] Show an explicit retry countdown while the model warms so
+  // operators can see when an automatic retry will fire.
+  const [uiNowMs, setUiNowMs] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    if (!isModelWarmingUp) return;
+    const tick = setInterval(() => setUiNowMs(Date.now()), 1000);
+    return () => clearInterval(tick);
+  }, [isModelWarmingUp, lastAssistant?.timestamp]);
+  const warmingUpRetrySeconds =
+    isModelWarmingUp && lastAssistant
+      ? Math.max(0, Math.ceil((lastAssistant.timestamp + 90_000 - uiNowMs) / 1000))
+      : null;
+  const warmingUpProgressPct =
+    warmingUpRetrySeconds !== null
+      ? Math.min(100, Math.max(0, ((90 - warmingUpRetrySeconds) / 90) * 100))
+      : 0;
   const canRetryLastPrompt = !state.isLoading && lastPrompt.trim().length > 0;
 
   // [V6.2-FIX-26] Auto-retry after model warm-up: when the last response is a
@@ -772,7 +720,7 @@ export default function ComposerPage() {
       </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1" aria-label="Composer conversation">
+      <ScrollArea className="flex-1" aria-label="Composer conversation" aria-busy={state.isLoading}>
         {apiHealth.apiOnline === false && (
           <div className="mx-4 mt-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-[10px] font-mono text-red-200">
             <p>
@@ -794,6 +742,12 @@ export default function ComposerPage() {
                   phi4-fast (4.1 GB) is loading in the background — typically 60-120 s on this
                   host. Auto-retry scheduled in ~90 s, or click Retry manually.
                 </p>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-sky-400/20" aria-hidden>
+                  <div
+                    className="h-full rounded-full bg-sky-300/70 transition-all duration-500"
+                    style={{ width: `${warmingUpProgressPct}%` }}
+                  />
+                </div>
                 {lastAssistant?.diagnostics?.ollamaEndpoint && (
                   <p className="text-sky-200/70">
                     Ollama: {lastAssistant.diagnostics.ollamaEndpoint}
@@ -812,7 +766,9 @@ export default function ComposerPage() {
                 disabled={!canRetryLastPrompt}
                 className="h-7 shrink-0 border-sky-400/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/20"
               >
-                Retry now
+                {warmingUpRetrySeconds !== null && warmingUpRetrySeconds > 0
+                  ? `Retry in ${warmingUpRetrySeconds}s`
+                  : "Retry now"}
               </Button>
             </div>
           </div>
@@ -826,6 +782,11 @@ export default function ComposerPage() {
                     ? "Ollama is currently unreachable. Composer will continue with local fleet summaries."
                     : "Model path fell back to a fleet summary for the last response."}
                 </p>
+                {lastAssistant?.diagnostics?.reason && (
+                  <p className="text-yellow-200/90">
+                    Reason: {lastAssistant.diagnostics.reason}
+                  </p>
+                )}
                 {lastAssistant?.diagnostics?.ollamaEndpoint && (
                   <p className="text-yellow-200/90">
                     Endpoint: {lastAssistant.diagnostics.ollamaEndpoint}
@@ -905,11 +866,15 @@ export default function ComposerPage() {
               placeholder="Ask about your agents, workflows, or system state…"
               aria-label="Composer message input"
               className="flex-1 resize-none text-xs pr-4"
+              autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              enterKeyHint="send"
               disabled={state.isLoading}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
+                if (e.key === "Escape") {
                   e.preventDefault();
-                  sendMessage(input);
+                  setInput("");
                 }
               }}
             />
@@ -936,7 +901,7 @@ export default function ComposerPage() {
           </Button>
         </form>
         <p className="text-[9px] font-mono text-text-muted mt-1.5 text-center">
-          ↵ Enter · Sessions are ephemeral · Context includes live fleet state
+          ↵ Enter · Esc clears input · Sessions are ephemeral · Context includes live fleet state
         </p>
         {isDegraded && (
           <p className="text-[9px] font-mono text-yellow-200/90 mt-1 text-center" aria-live="polite">

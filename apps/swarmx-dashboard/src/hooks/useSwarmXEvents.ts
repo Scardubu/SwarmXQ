@@ -28,6 +28,7 @@ interface HistoricalEventsResponse {
 export function useSwarmXEvents(): void {
   const handleEvent = useEventsStore((s) => s.handleEvent);
   const setConnectionStatus = useEventsStore((s) => s.setConnectionStatus);
+  const setReconnectTelemetry = useEventsStore((s) => s.setReconnectTelemetry);
   const checkStale = useEventsStore((s) => s.checkStale);
 
   const esRef = useRef<EventSource | null>(null);
@@ -63,6 +64,7 @@ export function useSwarmXEvents(): void {
       es.onopen = () => {
         if (!destroyed) {
           setConnectionStatus("connected");
+          setReconnectTelemetry(0, null);
           // [V5.9-ENH-07] Reset backoff on successful connection
           reconnectAttemptRef.current = 0;
         }
@@ -90,6 +92,7 @@ export function useSwarmXEvents(): void {
         const jitter = backoff * 0.2 * (Math.random() * 2 - 1);
         const delay = Math.round(backoff + jitter);
         reconnectAttemptRef.current = attempt + 1;
+        setReconnectTelemetry(attempt + 1, delay);
         reconnectTimerRef.current = setTimeout(connect, delay);
       };
     }
@@ -109,5 +112,5 @@ export function useSwarmXEvents(): void {
       if (staleTimerRef.current) clearInterval(staleTimerRef.current);
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
     };
-  }, [handleEvent, setConnectionStatus, checkStale]);
+  }, [handleEvent, setConnectionStatus, setReconnectTelemetry, checkStale]);
 }

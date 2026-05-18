@@ -131,14 +131,21 @@ on demand. On a CPU-only host without enough VRAM, cold loading takes 60-120 s.
 4. Ollama's HTTP handler stayed blocked on the in-progress model load.
 5. All subsequent `/api/version` probes timed out → Ollama deadlocked.
 
-**After V6.2-FIX-25/26** (active since V6.2):
+**After V6.2-FIX-25/26/27/28** (active since V6.2):
 
 - **Python warmup** (`startup.py`): checks `/api/ps` before sending any warmup
   request. If the model is not resident, warmup is skipped — no deadlock trigger.
+- **Python health probe** (`startup.py`): uses `/api/version` with a short timeout
+  instead of `/api/tags`, so startup health checks fail fast even when model listing
+  is blocked by an in-flight load.
 - **TypeScript composer** (`composer.ts`): checks `/api/ps` before the model call
   loop. If nothing is loaded, it starts an async preload (`/api/generate` with no
   `AbortSignal`) and immediately returns a `mode=fallback` "warming up" response.
   The dashboard shows a blue banner and auto-retries after 90 s.
+- **Enhanced startup shell** (`startup-enhanced.sh`): if Ollama is unresponsive but
+  still owns the configured port, startup now kills the deadlocked listener before
+  non-blocking autostart. This avoids "autostart succeeded=false" loops caused by
+  failed rebind attempts to an already-occupied port.
 
 ### Constrained-host tuning for cold starts
 
