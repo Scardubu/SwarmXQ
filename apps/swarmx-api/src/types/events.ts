@@ -1,167 +1,296 @@
-# video-planner
+/**
+ * apps/swarmx-api/src/types/events.ts
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Shared event types for the SwarmX SSE stream.
+ * These must stay in sync with the frontend @swarmx/types package.
+ *
+ * Changelog:
+ *   [VIDEO-FIX-01] Added VideoJobEventData + VideoHealthEventData interfaces
+ *                  AND wired them into the SwarmXEvent discriminated union.
+ *                  Previously the interfaces were defined but never added to
+ *                  the union, causing a TypeScript build failure in video-queue.ts
+ *                  when broadcastEvent({ type: "video:progress", ... }) was called.
+ */
 
-## Identity
+import type { VideoJobStatus, VideoDegradeMode } from "./video.js";
 
-You are the **Video Planner** agent in the SwarmX multi-agent system. You specialise in decomposing a raw video prompt into a complete, production-ready content plan: intent classification, narrative structure, scripting, and shot-level storyboard generation.
+export type AgentStatus =
+  | "idle"
+  | "queued"
+  | "running"
+  | "activating"
+  | "active"
+  | "deactivating"
+  | "success"
+  | "error"
+  | "fatal"
+  | "failed"
+  | "failed_permanent"
+  | "oom_killed"
+  | "oom"
+  | "killed"
+  | "throttled"
+  | "reloading"
+  | "reload"
+  | "paused";
 
-You operate as the primary cognitive worker in the video generation pipeline. You do not render video — you produce the structured artefacts that the render layer consumes.
-
----
-
-## Capabilities
-
-| Stage | What you produce |
-|-------|-----------------|
-| **Intent classification** | Parsed `VideoJobIntent` object — topic, style, aspect, length, target platform, key points |
-| **Planning** | Narrative arc, act structure, pacing notes, platform-specific constraints |
-| **Scripting** | Full voiceover script: hook (0–3 s), body, call-to-action; word count; estimated duration |
-| **Storyboard** | Shot-by-shot visual plan with ComfyUI-ready text prompts, camera motion, colour mood, text overlays |
-
----
-
-## Behavioural rules
-
-### Pressure-aware degradation
-
-Check `pressureAtStart` and current system pressure before each stage. Apply these rules automatically — do not wait to be told:
-
-| Pressure level | Degradation action |
-|---|---|
-| `critical` | Produce intent + plan only. Set `degradeMode = "intent_only"`. Return immediately after planning. |
-| `high` | Produce script. Skip storyboard and render. Set `degradeMode = "script_only"`. |
-| `normal` | Run full pipeline through storyboard. |
-
-Always log a warning in `job.warnings[]` when degrading.
-
-### Output format discipline
-
-Every artefact must be valid JSON matching the API type contracts in `apps/swarmx-api/src/types/video.ts`. Do not return free-form prose as a top-level output. Wrap any explanatory notes inside the appropriate field (e.g. `renderNotes`, `plan`).
-
-### Stop on cancellation
-
-Check `job.status` at the boundary of every stage. If `status === "cancelled"`, stop immediately without writing partial output.
-
-### Model tracing
-
-Append to `job.modelTrace[]` for every Ollama call you make. Use the format `"model:stage"` (e.g. `"phi4-fast:intent"`, `"deepseek-reasoner:planning"`, `"qwen-worker:scripting"`).
-
----
-
-## Stage outputs
-
-### 1 — Intent classification (`phi4-fast`)
-
-Classify the raw prompt into a structured intent. Return a `VideoJobIntent` object:
-
-```json
-{
-"topic": "one-line summary of what the video is about",
-"style": "motivational | educational | narrative | documentary | explainer | abstract | custom",
-"aspect": "9:16 | 16:9 | 1:1",
-"length": "short | medium | long",
-"targetPlatform": "tiktok | youtube_shorts | reels | generic",
-"tone": "optional tone descriptor, e.g. 'calm and authoritative'",
-"keyPoints": ["up to 5 key points the script must cover"],
-"rawPrompt": "verbatim input prompt"
+export interface AgentResources {
+  cpuPercent: number;
+  memoryMb: number;
+  cpuThrottledPercent?: number;
+  oomEvents?: number;
+  ioReadBytes?: number;
+  ioWriteBytes?: number;
 }
-```
 
-Default rules when the prompt is ambiguous:
-- aspect → `9:16` (most social platforms)
-- length → `short`
-- style → `motivational`
-- platform → `generic`
-
-### 2 — Planning (`deepseek-reasoner`)
-
-Produce a free-form `plan` string (stored in `job.plan`). Include:
-- Act structure (intro, build, climax, CTA)
-- Scene count and rough timing per scene
-- Visual theme or aesthetic direction
-- Platform-specific constraints (e.g. TikTok: first 2 s must hook; YouTube Shorts: no long intros)
-- Any risks or complexity the storyboard phase should know about
-
-Keep plans under 600 words. This is internal guidance, not output copy.
-
-### 3 — Scripting (`qwen-worker`)
-
-Produce a `VideoScript` object:
-
-```json
-{
-"title": "short internal title",
-"hook": "first 3 seconds — must grab attention immediately",
-"body": "main narrative body",
-"cta": "closing call-to-action",
-"estimatedDurationSec": 45,
-"wordCount": 120,
-"narrationText": "hook + body + cta concatenated, ready for TTS"
+export interface AgentState {
+  id: string;
+  name?: string;
+  role?: string;
+  model?: string;
+  status: AgentStatus;
+  currentTask?: string;
+  lastError?: string;
+  startedAt?: string;
+  pid?: number;
+  cgroupPath?: string;
+  resources?: AgentResources;
 }
-```
 
-Script rules:
-- `short` → 80–120 words, ≤ 45 s
-- `medium` → 150–250 words, 45–90 s
-- `long` → 300–500 words, 90–180 s
-- Match style: motivational scripts use second-person, strong verbs; educational scripts use first-person plural, step-by-step structure
-- No filler phrases ("In today's video…", "Don't forget to like and subscribe")
-
-### 4 — Storyboard (`qwen-worker`, same session)
-
-Produce a `VideoStoryboard` object with an array of `StoryboardShot` entries:
-
-```json
-{
-"shots": [
-{
-"index": 0,
-"durationSec": 3,
-"visualDescription": "abstract particles converging into a human silhouette",
-"narrationSegment": "Every great achievement starts with a single decision.",
-"cameraMotion": "slow zoom in",
-"colorMood": "deep blue with warm gold highlights",
-"textOverlay": "ONE DECISION CHANGES EVERYTHING",
-"comfyPrompt": "cinematic slow zoom, particles forming human shape, deep blue background, gold highlights, 4K, photorealistic"
+export interface SystemCpuMetrics {
+  load1m: number;
+  load5m: number;
+  load15m: number;
+  coreCount: number;
+  perCorePercent: number[];
 }
-],
-"totalDurationSec": 45,
-"style": "motivational",
-"aspect": "9:16",
-"resolution": "720p",
-"renderNotes": "Use LTX-Video with --lowvram. Shot 3 requires a transition dissolve. Estimated render: 12–18 min."
+
+export interface SystemMemoryMetrics {
+  totalMb: number;
+  usedMb: number;
+  availableMb: number;
+  swarmxSliceMb: number;
+  swarmxSliceLimitMb: number | null;
 }
-```
 
-Storyboard rules:
-- `short` → 3–5 shots
-- `medium` → 6–10 shots
-- `long` → 11–18 shots
-- Every shot must have a `comfyPrompt` — these are passed directly to the render stage
-- `renderNotes` should warn about complex transitions or long shots that may strain the renderer
-- `resolution` is always `720p` for `short`/`medium`; may be `720p` or `480p` for `long` depending on shot count
+export interface SystemDiskMetrics {
+  readBytesPerSec: number;
+  writeBytesPerSec: number;
+  utilizationPercent: number;
+}
 
----
+export interface SystemNetworkMetrics {
+  rxBytesPerSec: number;
+  txBytesPerSec: number;
+}
 
-## Interaction with the orchestrator
+export interface SystemMetricsSnapshot {
+  timestamp: string;
+  cpu: SystemCpuMetrics;
+  memory: SystemMemoryMetrics;
+  disk: SystemDiskMetrics;
+  network: SystemNetworkMetrics;
+}
 
-The orchestrator (`video-orchestrator.ts`) calls you by running LLM inference against Ollama. You do not call the orchestrator back — you are stateless. The orchestrator passes you the current `VideoJob` state as context in the system prompt and expects a single well-formed JSON response per stage.
+export interface CgroupScopeMetrics {
+  path: string;
+  cpuPercent: number;
+  memoryCurrentMb: number;
+  cpuThrottledPct?: number;
+  oomEvents: number;
+  ioReadBytesPerSec?: number;
+  ioWriteBytesPerSec?: number;
+}
 
-Respond **only** with the JSON artefact for the requested stage. Do not include markdown fences, explanatory prose, or stage labels outside the JSON object.
+export interface QueueMetrics {
+  name: string;
+  waiting: number;
+  active: number;
+  delayed: number;
+  failed: number;
+  completed: number;
+}
 
----
+export type LogLevel =
+  | "debug"
+  | "info"
+  | "notice"
+  | "warn"
+  | "error"
+  | "critical"
+  | "alert"
+  | "emergency";
 
-## Error handling
+export interface LogEntry {
+  timestamp: string;
+  level: LogLevel;
+  message: string;
+  unit?: string;
+  agentId?: string;
+  traceId?: string;
+}
 
-If a stage fails to produce valid JSON, the orchestrator will mark the stage as failed and attempt one retry with a simplified prompt. On second failure, the job is degraded.
+export interface ScsSnapshot {
+  score: number;
+  history: number[];
+  timestamp: string;
+}
 
-Do not hallucinate model capabilities or render pipeline details. If you are uncertain about a technical constraint, use `renderNotes` to flag it for the operator.
+// [V5.9-ENH-05] Runtime governor snapshot — pressure level, concurrency, token ceilings
+export type PressureLevel = "normal" | "high" | "critical";
 
----
+export interface RuntimeGovernorSnapshot {
+  pressureLevel: PressureLevel;
+  availableMb: number;
+  zramUsedPct: number;
+  concurrencyLimit: number;
+  observeOnly: boolean;
+  tokenCeilings: Record<string, number>;
+  timestamp: string;
+}
 
-## Skill tags
+// [V6.1-ENH-01] Startup autopilot summary — emitted once per process launch.
+export interface StartupSummary {
+  /** ISO-8601 UTC timestamp of autopilot completion */
+  timestamp: string;
+  /** Overall startup status */
+  status: "ready" | "degraded" | "critical";
+  /** Warm user-facing narrative */
+  narrative: string;
+  pressureLevel: PressureLevel;
+  availableMb: number;
+  zramUsedPct: number;
+  concurrencyLimit: number;
+  ollamaReachable: boolean;
+  warmupDone: boolean;
+  evolverSynced: boolean;
+  evolverProposals: number;
+  durationMs: number;
+}
 
-- `narrative-planning`
-- `shot-design`
-- `pressure-aware-degradation`
-- `prompt-structuring`
-- `media-orchestration`
+export type WorkflowEventStatus = "running" | "success" | "failed" | "cancelled";
+
+export interface WorkflowEventData {
+  id: string;
+  workflowId: string;
+  correlationId: string;
+  status: WorkflowEventStatus;
+  timestamp: string;
+  name?: string;
+  exitCode?: number;
+  error?: string;
+}
+
+// [V5.9-FIX-05] Python lifecycle event payloads — bridged from swarmx journal to SSE.
+// Aligned with EventKind constants added in event_bus.py.
+
+export interface RunStartedData {
+  jobId: string;
+  repo: string;
+  target: string;
+  timestamp: string;
+}
+
+export interface RunCompletedData {
+  jobId: string;
+  runId: string;
+  status: "success" | "partial" | "failed" | "error";
+  timestamp: string;
+}
+
+export interface MissionCreatedData {
+  missionId: string;
+  repo: string;
+  target: string;
+  timestamp: string;
+}
+
+export interface TaskEventData {
+  goal: string;
+  stepIndex?: number;
+  runId?: string;
+  timestamp: string;
+}
+
+export interface EvolutionEventData {
+  jobId: string;
+  repo?: string;
+  proposalCount?: number;
+  timestamp: string;
+}
+
+export interface WorkerJobEventData {
+  jobId: string;
+  kind?: string;
+  repo?: string;
+  target?: string;
+  error?: string;
+  timestamp: string;
+}
+
+// ── Video generation events ───────────────────────────────────────────────────
+// [VIDEO-FIX-01] These interfaces were present in earlier drafts but were never
+// added to the SwarmXEvent discriminated union below, causing TypeScript build
+// errors whenever broadcastEvent() was called with type "video:progress".
+
+export interface VideoJobEventData {
+  jobId: string;
+  correlationId: string;
+  status: VideoJobStatus;
+  degradeMode: VideoDegradeMode;
+  progress: number;
+  timestamp: string;
+  stage?: string;
+  message?: string;
+  error?: string;
+  outputPath?: string;
+}
+
+export interface VideoHealthEventData {
+  timestamp: string;
+  ollamaReachable: boolean;
+  comfyuiReachable: boolean;
+  pressureLevel: string;
+  renderCapable: boolean;
+}
+
+// ── Discriminated union ───────────────────────────────────────────────────────
+
+export type SwarmXEvent =
+  | { type: "agent:update"; data: AgentState }
+  | { type: "agent:remove"; data: { id: string } }
+  | { type: "system:metrics"; data: SystemMetricsSnapshot }
+  | { type: "system:scs"; data: ScsSnapshot }
+  // [V5.9-ENH-05] Runtime governor: pressure level, concurrency, token ceilings
+  | { type: "system:governor"; data: RuntimeGovernorSnapshot }
+  // [V6.1-ENH-01] Startup autopilot summary — emitted once per process launch
+  | { type: "system:startup"; data: StartupSummary }
+  | { type: "system:alert"; data: { severity: "warn" | "critical"; message: string; source: string; timestamp: number } }
+  | { type: "cgroup:metrics"; data: CgroupScopeMetrics }
+  | { type: "queue:metrics"; data: QueueMetrics }
+  | { type: "log:entry"; data: LogEntry }
+  // [V5.9-ENH-02] Workflow lifecycle events share one typed payload with correlation metadata.
+  | { type: "workflow:started"; data: WorkflowEventData }
+  | { type: "workflow:completed"; data: WorkflowEventData }
+  | { type: "workflow:failed"; data: WorkflowEventData }
+  | { type: "workflow:cancelled"; data: WorkflowEventData }
+  | { type: "queue:drained"; data: { name: string } }
+  | { type: "system:oom"; data: { agentId: string; cgroupPath: string; count: number } }
+  | { type: "control:pause"; data: Record<string, never> }
+  | { type: "control:resume"; data: Record<string, never> }
+  // [V5.9-FIX-05] Python event bridge — run, task, mission, evolution, worker job events
+  | { type: "run:started";     data: RunStartedData }
+  | { type: "run:completed";   data: RunCompletedData }
+  | { type: "mission:created"; data: MissionCreatedData }
+  | { type: "task:start";      data: TaskEventData }
+  | { type: "task:complete";   data: TaskEventData }
+  | { type: "task:failed";     data: TaskEventData }
+  | { type: "evolution:started";   data: EvolutionEventData }
+  | { type: "evolution:completed"; data: EvolutionEventData }
+  | { type: "worker:job_started"; data: WorkerJobEventData }
+  | { type: "worker:job_done";    data: WorkerJobEventData }
+  | { type: "worker:job_error";   data: WorkerJobEventData }
+  // [VIDEO-FIX-01] Video generation pipeline events — added to union so
+  // broadcastEvent() in video-queue.ts passes TypeScript type-checking.
+  | { type: "video:progress"; data: VideoJobEventData }
+  | { type: "video:health";   data: VideoHealthEventData };
