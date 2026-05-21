@@ -1,0 +1,75 @@
+family: video
+description: Pressure-aware video generation pipeline for SwarmXQ.
+risk: medium
+
+meta:
+  model_triad:
+    router: phi4-fast
+    reasoning: deepseek-reasoner
+    execution: qwen-worker
+
+stages:
+  - name: intake
+    owner: strategist
+    model: phi4-fast
+    risk: low
+    purpose: Normalize the request, constraints, and target platform.
+    outputs:
+      - prompt
+      - style
+      - aspect
+      - length
+      - targetPlatform
+
+  - name: plan
+    owner: video-planner
+    model: deepseek-reasoner
+    risk: medium
+    purpose: Decide the narrative structure, scene count, and pacing.
+    outputs:
+      - plan
+      - intent
+      - keyPoints
+
+  - name: script
+    owner: video-planner
+    model: qwen-worker
+    risk: medium
+    purpose: Produce the narration, hook, body, and call-to-action.
+    outputs:
+      - script
+
+  - name: storyboard
+    owner: video-planner
+    model: qwen-worker
+    risk: medium
+    purpose: Convert the script into shots with visual direction.
+    outputs:
+      - storyboard
+      - shotPrompts
+
+  - name: render
+    owner: renderer
+    model: none
+    risk: medium
+    purpose: Dispatch or defer the final visual render depending on system pressure.
+    outputs:
+      - renderManifest
+      - artifactPaths
+
+  - name: export
+    owner: strategist
+    model: none
+    risk: low
+    purpose: Persist outputs and publish completion metadata.
+    outputs:
+      - jobSummary
+      - artifactIndex
+
+  - name: learn
+    owner: memory-curator
+    model: none
+    risk: low
+    purpose: Record durable lessons about prompt patterns and degradation behavior.
+    outputs:
+      - memoryEntry
