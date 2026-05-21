@@ -5,13 +5,20 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Video job creation form. Submits to POST /api/video/jobs.
  * Shows pressure warning when system memory is elevated.
+ *
+ * BUG-FIX [VIDEO-FORM-01]:
+ *   The previous version referenced `s.governorSnapshot?.pressureLevel` but the
+ *   Zustand events store exports the field as `governorState` (a
+ *   RuntimeGovernorSnapshot object). The incorrect key produced `undefined` at
+ *   runtime, so `isHighPressure` was always false — the pressure warning was
+ *   never shown even under critical system load.
+ *   Fixed: `s.governorSnapshot` → `s.governorState`.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { useEventsStore } from "@/stores/events";
 import { cn } from "@/lib/utils";
 import { Film, Loader2, AlertTriangle, Sparkles } from "lucide-react";
@@ -71,7 +78,12 @@ export function VideoJobForm({ onJobCreated }: VideoJobFormProps) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [degradeWarning, setDegradeWarning] = useState<string | null>(null);
 
-  const pressureLevel = useEventsStore((s) => s.governorSnapshot?.pressureLevel ?? "normal");
+  // [VIDEO-FORM-01] Corrected: governorSnapshot → governorState.
+  // The events store uses `governorState: RuntimeGovernorSnapshot | null`.
+  // The old reference to `governorSnapshot` always resolved to undefined,
+  // meaning `pressureLevel` was always undefined and `isHighPressure` was
+  // always false — the warning was never shown.
+  const pressureLevel = useEventsStore((s) => s.governorState?.pressureLevel ?? "normal");
   const isHighPressure = pressureLevel === "high" || pressureLevel === "critical";
 
   async function handleSubmit(e: React.FormEvent) {
