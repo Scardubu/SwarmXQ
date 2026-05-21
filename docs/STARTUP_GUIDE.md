@@ -168,6 +168,10 @@ SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS=120000
 SWARMX_COMPOSER_TIMEOUT_MS=150000
 ```
 
+`startup-enhanced.sh` now applies this same constrained-host profile automatically
+when available RAM falls below roughly 2.2 GB, so restarts default to the safer
+single-model path even if these values are not exported manually.
+
 ### Manual pre-warm before first use
 
 To avoid the 90 s wait on the first Composer request after a restart:
@@ -254,6 +258,9 @@ python -m cli up --dashboard --host 127.0.0.1 --port 3002
 ### Deterministic restart hygiene (new)
 
 `startup-enhanced.sh` now performs an explicit old-instance eviction pass before port checks.
+
+It also resolves `SCRIPT_DIR`/`ROOT_DIR` with `CDPATH` suppressed so customized
+shell environments cannot corrupt repo-root detection during startup.
 
 What it evicts:
 - prior `python -m cli up` and `swarm.sh up` sessions
@@ -428,6 +435,9 @@ node --version
 # Check if API is running
 curl http://127.0.0.1:3001/health
 
+# Inspect structured swarm + Ollama health
+curl http://127.0.0.1:3001/api/system/health | python3 -m json.tool
+
 # Check API logs
 tail -50 ~/.swarmx/logs/swarmx-*.log
 
@@ -542,6 +552,9 @@ Press `Ctrl+K` (or `Cmd+K` on macOS) to open the command palette:
 ```bash
 # Check API health
 curl http://127.0.0.1:3001/health
+
+# Check structured system + swarm health
+curl http://127.0.0.1:3001/api/system/health
 
 # Get system metrics
 curl http://127.0.0.1:3001/api/system/metrics

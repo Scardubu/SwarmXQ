@@ -8,15 +8,40 @@ import si from "systeminformation";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { getAvailableModels, fastHealthProbe } from "../services/ollama.js";
+import { getSwarmHealthSummary } from "../services/swarm-pressure-monitor.js";
 
 const execFileAsync = promisify(execFile);
 
-// Canonical model triad — aligned with configs/routing.yaml [V5.9-FIX-01]
-const CANONICAL_MODEL_TRIAD = [
-  { role: "router",  tag: "phi4-fast",         gguf: "microsoft_Phi-4-mini-instruct-Q8_0.gguf" },
-  { role: "reason",  tag: "deepseek-reasoner",  gguf: "DeepSeek-R1-Distill-Qwen-7B-Q5_K_M.gguf" },
-  { role: "code",    tag: "qwen-worker",         gguf: "Qwen2.5-7B-Instruct-Q5_K_M.gguf" },
-] as const;
+function getCanonicalModelTriad() {
+  return [
+    {
+      role: "router",
+      tag:
+        process.env["SWARMX_COMPOSER_MODEL"] ??
+        process.env["SWARMX_MODEL_FAST"] ??
+        process.env["SWARM_MODEL_FAST"] ??
+        "phi4-fast-scar",
+      gguf: "microsoft_Phi-4-mini-instruct-Q8_0.gguf",
+    },
+    {
+      role: "reason",
+      tag:
+        process.env["SWARMX_MODEL_REASON"] ??
+        process.env["SWARMX_MODEL_REASONER"] ??
+        process.env["SWARM_MODEL_REASON"] ??
+        "deepseek-reasoner-scar",
+      gguf: "DeepSeek-R1-Distill-Qwen-7B-Q5_K_M.gguf",
+    },
+    {
+      role: "code",
+      tag:
+        process.env["SWARMX_MODEL_CODE"] ??
+        process.env["SWARM_MODEL_CODE"] ??
+        "qwen-worker-scar",
+      gguf: "Qwen2.5-7B-Instruct-Q5_K_M.gguf",
+    },
+  ] as const;
+}
 
 type ModelStatus = "ready" | "missing" | "error";
 
@@ -31,14 +56,15 @@ interface ModelReadiness {
 async function probeOllamaModels(): Promise<ModelReadiness[]> {
   // [V6.1-FIX-13] Use centralized resilient service
   const results: ModelReadiness[] = [];
+  const canonicalModelTriad = getCanonicalModelTriad();
   const listedTags = (await getAvailableModels()).map((t) => t.toLowerCase());
   if (listedTags.length === 0) {
-    for (const m of CANONICAL_MODEL_TRIAD) {
+    for (const m of canonicalModelTriad) {
       results.push({ role: m.role, tag: m.tag, gguf: m.gguf, status: "missing", error: "No installed models discovered" });
     }
     return results;
   }
-  for (const m of CANONICAL_MODEL_TRIAD) {
+  for (const m of canonicalModelTriad) {
     const found = listedTags.some(
       (t) => t === m.tag.toLowerCase() || t.startsWith(m.tag.toLowerCase() + ":"),
     );
@@ -55,6 +81,7 @@ export async function systemRouter(server: FastifyInstance): Promise<void> {
   // the full multi-endpoint discovery cycle (which can exceed 10 s under pressure).
   server.get("/health", async (_req: FastifyRequest, reply: FastifyReply) => {
     const MODEL_PROBE_TIMEOUT_MS = 5_000;
+    const canonicalModelTriad = getCanonicalModelTriad();
 
     // Run fast liveness probe + system mem in parallel; cap model probe independently.
     const [ollamaHealth, mem, models] = await Promise.all([
@@ -64,7 +91,7 @@ export async function systemRouter(server: FastifyInstance): Promise<void> {
         probeOllamaModels(),
         new Promise<ModelReadiness[]>((resolve) =>
           setTimeout(
-            () => resolve(CANONICAL_MODEL_TRIAD.map((m) => ({ ...m, status: "error" as ModelStatus, error: "probe timeout" }))),
+            () => resolve(canonicalModelTriad.map((m) => ({ ...m, status: "error" as ModelStatus, error: "probe timeout" }))),
             MODEL_PROBE_TIMEOUT_MS,
           ),
         ),
@@ -90,6 +117,7 @@ export async function systemRouter(server: FastifyInstance): Promise<void> {
       : !allReady           ? "degraded"
       : vramWarning         ? "warning"
       : "ok";
+    const swarm = getSwarmHealthSummary();
 
     // [V6.1-FIX-19] Always return HTTP 200 from /api/system/health.
     // HTTP 503 means the API SERVICE is unavailable — but the API is running fine.
@@ -105,6 +133,7 @@ export async function systemRouter(server: FastifyInstance): Promise<void> {
         latencyMs: ollamaHealth.latencyMs,
       },
       models,
+      swarm,
       memory: memGb,
       ...(vramWarning ? { warnings: [vramWarning] } : {}),
       config: {

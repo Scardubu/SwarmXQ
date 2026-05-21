@@ -38,8 +38,9 @@ import { startSystemInfoPoller } from "./services/systeminfo.js";
 import { startCgroupPoller } from "./services/cgroup.js";
 import { startJournaldStream } from "./services/journald.js";
 import { startV5MetricsPoller, broadcastStartupSummary } from "./services/v5metrics.js";
-import { startPyEventsPoller } from "./services/pyevents.js";  // [V5.9-FIX-05]
+import { startPyEventsPoller } from "./services/pyevents.js"; // [V5.9-FIX-05]
 import { startAgentSeedService } from "./services/agentSeed.js";
+import { startSwarmMonitor } from "./services/swarm-pressure-monitor.js";
 
 const PORT = Number.parseInt(process.env["SWARMX_API_PORT"] ?? "3001", 10);
 const HOST = process.env["SWARMX_API_HOST"] ?? "127.0.0.1";
@@ -131,13 +132,13 @@ await server.register(ssePlugin);
 await server.register(websocketPlugin);
 
 // ── Route registration ────────────────────────────────────────────────────────
-await server.register(agentsRouter,    { prefix: "/api/agents" });
-await server.register(systemRouter,    { prefix: "/api/system" });
+await server.register(agentsRouter, { prefix: "/api/agents" });
+await server.register(systemRouter, { prefix: "/api/system" });
 await server.register(workflowsRouter, { prefix: "/api/workflows" });
-await server.register(logsRouter,      { prefix: "/api/logs" });
-await server.register(configRouter,    { prefix: "/api/config" });
-await server.register(composerRouter,  { prefix: "/api/composer" });
-await server.register(metricsRouter,   { prefix: "/api/metrics" });
+await server.register(logsRouter, { prefix: "/api/logs" });
+await server.register(configRouter, { prefix: "/api/config" });
+await server.register(composerRouter, { prefix: "/api/composer" });
+await server.register(metricsRouter, { prefix: "/api/metrics" });
 
 // ── Health check ──────────────────────────────────────────────────────────────
 // Probed by docker-compose healthcheck and Kubernetes liveness probes.
@@ -152,21 +153,41 @@ server.get("/health", { logLevel: "silent" }, async () => ({
 // tini (PID 1 in the container) forwards SIGTERM here. Fastify.close() drains
 // all in-flight requests before the process exits.
 
+let isShuttingDown = false;
+
 const shutdown = async (signal: string): Promise<void> => {
+  if (isShuttingDown) {
+    return;
+  }
+
+  isShuttingDown = true;
   server.log.info({ signal }, "Shutdown signal received — draining requests…");
+
+  try {
+    stopSwarmMonitor();
+  } catch (err) {
+    server.log.warn({ err }, "Failed to stop swarm monitor during shutdown");
+  }
+
   await server.close();
   server.log.info("Server closed. Exiting.");
   process.exit(0);
 };
 
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
-process.on("SIGINT",  () => void shutdown("SIGINT"));
+process.on("SIGINT", () => void shutdown("SIGINT"));
 
 // ── Background pollers ────────────────────────────────────────────────────────
 startSystemInfoPoller(server);
+
+const stopSwarmMonitor = startSwarmMonitor(
+  (event, data) => server.log.debug({ event, data }, "swarm event"),
+  10_000, // poll every 10s
+);
+
 startCgroupPoller(server);
 startV5MetricsPoller(server);
-startPyEventsPoller(server);  // [V5.9-FIX-05] bridge Python journal events to SSE
+startPyEventsPoller(server); // [V5.9-FIX-05] bridge Python journal events to SSE
 startAgentSeedService(server); // [V6.1-FIX-15] Seed idle agents from catalog on API boot.
 // [V6.1-ENH-01] Broadcast the Python startup summary to SSE clients after boot
 broadcastStartupSummary(server);

@@ -16,8 +16,9 @@
 set -euo pipefail
 
 # ─── Configuration ────────────────────────────────────────────────────────────
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+readonly SCRIPT_PATH="${BASH_SOURCE[0]:-$0}"
+readonly SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$SCRIPT_PATH")" >/dev/null 2>&1 && pwd -P)"
+readonly ROOT_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd -P)"
 
 # [V6.2-FIX-03] Load repo-local persistent environment overrides before
 # resolving startup defaults so values survive across shell sessions.
@@ -143,12 +144,13 @@ setup_ollama_runtime_tuning() {
   export OLLAMA_KV_CACHE_TYPE="${OLLAMA_KV_CACHE_TYPE:-q8_0}"
   export OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-1}"
   export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-1}"
-  export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-180}"
+  export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-15m}"
 
   if [[ "$constrained" == true ]]; then
-    export SWARMX_COMPOSER_NUM_PREDICT="${SWARMX_COMPOSER_NUM_PREDICT:-192}"
-    export SWARMX_COMPOSER_TIMEOUT_MS="${SWARMX_COMPOSER_TIMEOUT_MS:-55000}"
-    export SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS="${SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS:-40000}"
+    export SWARMX_COMPOSER_NUM_PREDICT="${SWARMX_COMPOSER_NUM_PREDICT:-96}"
+    export SWARMX_COMPOSER_TIMEOUT_MS="${SWARMX_COMPOSER_TIMEOUT_MS:-150000}"
+    export SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS="${SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS:-120000}"
+    export SWARMX_OLLAMA_PROBE_TIMEOUT_MS="${SWARMX_OLLAMA_PROBE_TIMEOUT_MS:-5000}"
     log_warning "Low available RAM detected (${avail_mb} MB). Applying constrained Ollama/Composer defaults."
   else
     export SWARMX_COMPOSER_NUM_PREDICT="${SWARMX_COMPOSER_NUM_PREDICT:-256}"

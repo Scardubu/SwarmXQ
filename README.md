@@ -11,6 +11,15 @@ SwarmX V6 is the self-improving operator layer on top of the existing control pl
 
 ### Launch Full Stack (API + Dashboard)
 
+Recommended (enhanced startup with health checks and stale-process eviction):
+
+```bash
+cd SwarmXQ
+bash scripts/startup-enhanced.sh --dashboard
+```
+
+Classic path:
+
 ```bash
 cd SwarmXQ
 source .venv/bin/activate
@@ -23,8 +32,11 @@ Then open the dashboard at **http://localhost:3000**
 
 - `SWARMX_API_URL` — API endpoint for dashboard rewrites (default: `http://127.0.0.1:3001`)
 - `SWARMX_COMPOSER_TIMEOUT_MS` — Composer model timeout in ms (default: `60000` in API)
+- `SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS` — Short-prompt timeout cap in ms (default: `45000`)
+- `SWARMX_COMPOSER_NUM_PREDICT` — Composer token cap (recommended `96` on constrained hosts)
 - `SWARMX_V5_POLL_TIMEOUT_MS` — Metrics poll subprocess timeout in ms (default: `25000`)
 - `SWARMX_OLLAMA_URL` — Ollama endpoint (default: `http://127.0.0.1:11434`)
+- `SWARMX_OLLAMA_PROBE_TIMEOUT_MS` — Fast Ollama probe timeout in ms (default: `2000`, use `5000` on cold hosts)
 - `SWARMX_DASHBOARD_ORIGIN` — CORS allowlist for browser requests (default: auto-configured by `swarm up`)
   - For local dev: `http://localhost:3000,http://127.0.0.1:3000` (auto-set)
   - For production: Set explicitly, e.g. `https://swarmx.example.com`
@@ -48,7 +60,7 @@ SwarmX uses **environment-driven CORS** to protect the API from unauthorized cro
 - Verify SWARMX_API_URL is set correctly (should be `http://127.0.0.1:3001`, not `localhost`)
 
 **Composer endpoint hangs or times out**
-- Cold model loads can take 15–40s on first request; API default timeout is 45s and then falls back to a fleet summary
+- Cold model loads can take 60–120s on constrained hosts; composer now returns a warming-up fallback and starts a background preload instead of hard failing
 - Common operator prompts (for example, simple welcome/greeting copy) are now answered locally without waiting for model warmup
 - Presence checks like `are you there?` and `ping` are answered locally from live fleet state
 - Idle-assignment prompts like `how many are idle and why are they not assigned tasks?` are answered locally with assignment guidance
@@ -56,6 +68,10 @@ SwarmX uses **environment-driven CORS** to protect the API from unauthorized cro
 - Start Ollama: `ollama serve`
 - Ensure `SWARMX_COMPOSER_MODEL` (or `SWARMX_MODEL_FAST`) resolves to an installed Ollama tag (`:latest` is auto-appended when omitted)
 - Tune timeout with `SWARMX_COMPOSER_TIMEOUT_MS` if your host is slower/faster
+
+**Health diagnostics**
+- API service health: `curl http://127.0.0.1:3001/health`
+- Structured system + swarm health: `curl http://127.0.0.1:3001/api/system/health`
 
 **V5 metrics poll logs repeated "poll skipped" with SIGTERM**
 - On slower hosts, `python -m swarmx metrics` can exceed the poll timeout
@@ -79,9 +95,9 @@ kill -9 <PID>
 
 The bundled routing is aligned to this local triad (canonical tags):
 
-- `phi4-fast` — router / orchestration complexity scoring
-- `deepseek-reasoner` — reasoning / critique / architecture
-- `qwen-worker` — execution / code / tool use
+- `phi4-fast-scar` — router / orchestration complexity scoring
+- `deepseek-reasoner-scar` — reasoning / critique / architecture
+- `qwen-worker-scar` — execution / code / tool use
 
 Legacy tags are normalized at config load time:
 

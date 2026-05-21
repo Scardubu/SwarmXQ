@@ -10,6 +10,29 @@ import {
   checkOllamaHealth,
 } from "../services/ollama.js";
 
+import {
+  getAdaptiveCallConfig,
+  getAvailableRamMb,
+  getJitteredDelayMs,
+  currentPressureLevel,
+  withTimeout,
+  recordSuccess,
+  recordFailure,
+  jitteredDelay,
+  type OperationKey,
+  type ModelCallOverrides,
+} from "../services/adaptive-timeout-config.js";
+import {
+  setActiveModel,
+  recordLatency,
+  recordTokens,
+  recordTimeout,
+} from "../services/swarm-pressure-monitor.js";
+import {
+  sanitizeReasoningOutput,
+  extractJson,
+} from "../services/reasoning-sanitizer.js";
+
 type ComposerAgent = {
   id: string;
   name: string | undefined;
@@ -90,10 +113,6 @@ const composerCircuit = {
   failures: 0,
   openedAtMs: 0,
 };
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function classifyPromptComplexity(message: string): PromptComplexity {
   const q = message.toLowerCase();
@@ -177,11 +196,61 @@ function shouldRetryModelError(reason: string): boolean {
   );
 }
 
-function computeBackoffDelayMs(attempt: number): number {
-  const exp = COMPOSER_RETRY_BASE_DELAY_MS * 2 ** Math.max(0, attempt - 1);
-  const bounded = Math.min(COMPOSER_RETRY_MAX_DELAY_MS, exp);
-  const jitter = Math.floor(Math.random() * Math.max(1, Math.floor(bounded * 0.2)));
-  return bounded + jitter;
+async function callOllama(
+  ollamaBase: string,
+  selectedModel: string,
+  systemPrompt: string,
+  message: string,
+  keepAlive: string,
+  numPredict: number,
+  overrides?: ModelCallOverrides,
+): Promise<{
+  text: string;
+  tokens?: number;
+  raw?: unknown;
+}> {
+  const ollamaRes = await fetch(`${ollamaBase}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: selectedModel,
+      stream: false,
+      keep_alive: keepAlive,
+      options: {
+        num_predict: numPredict,
+        ...(overrides ?? {}),
+      },
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: message },
+      ],
+    }),
+  });
+
+  if (!ollamaRes.ok) {
+    const body = await ollamaRes.text();
+    throw new Error(`Ollama ${ollamaRes.status}: ${body}`);
+  }
+
+  const data = (await ollamaRes.json()) as {
+    message?: { content?: string };
+    error?: string;
+    eval_count?: number;
+    prompt_eval_count?: number;
+  };
+
+  const text =
+    data?.message?.content?.trim() ??
+    data?.error ??
+    "No response from model.";
+
+  const totalTokens = (data.eval_count ?? 0) + (data.prompt_eval_count ?? 0);
+
+  return {
+    text,
+    ...(totalTokens > 0 ? { tokens: totalTokens } : {}),
+    raw: data,
+  };
 }
 
 // ── [V6.2-FIX-26] Cold-load guard ─────────────────────────────────────────────
@@ -743,6 +812,47 @@ function pickBestDiscoveredModel(
   return normalizedDiscovered[0] ?? null;
 }
 
+function preferredModelCandidates(
+  promptComplexity: PromptComplexity,
+  runtimePressure: ReturnType<typeof currentPressureLevel>,
+  selectedModel: string,
+): string[] {
+  const fastModel = normalizeModelTag(
+    process.env["SWARMX_COMPOSER_FAST_MODEL"] ??
+    process.env["SWARMX_MODEL_FAST"] ??
+    process.env["SWARM_MODEL_FAST"] ??
+    selectedModel ??
+    "phi4-fast",
+  );
+  const reasonModel = normalizeModelTag(
+    process.env["SWARMX_MODEL_REASON"] ??
+    process.env["SWARMX_MODEL_REASONER"] ??
+    process.env["SWARM_MODEL_REASON"] ??
+    "deepseek-reasoner",
+  );
+  const codeModel = normalizeModelTag(
+    process.env["SWARMX_MODEL_CODE"] ??
+    process.env["SWARM_MODEL_CODE"] ??
+    "qwen-worker",
+  );
+
+  if (runtimePressure === "critical") {
+    return [fastModel, selectedModel];
+  }
+
+  if (promptComplexity === "deep") {
+    return runtimePressure === "high"
+      ? [fastModel, selectedModel, reasonModel, codeModel]
+      : [reasonModel, selectedModel, fastModel, codeModel];
+  }
+
+  if (promptComplexity === "light") {
+    return [fastModel, selectedModel, reasonModel];
+  }
+
+  return [selectedModel, fastModel, reasonModel, codeModel];
+}
+
 function formatRunningByRole(agents: ComposerAgent[]): string {
   const running = agents.filter((a) => isActiveStatus(a.status));
   const grouped = new Map<string, ComposerAgent[]>();
@@ -899,6 +1009,8 @@ interface ComposerResponseDiagnostics {
   timeoutMs?: number;
   retryCount?: number;
   circuitOpen?: boolean;
+  pressureLevel?: ReturnType<typeof currentPressureLevel>;
+  availableRamMb?: number;
 }
 
 interface ComposerResponsePayload {
@@ -1035,6 +1147,8 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         shortPromptTimeoutMs,
       });
       const promptComplexity = classifyPromptComplexity(message);
+      const runtimePressure = currentPressureLevel();
+      const availableRamMb = getAvailableRamMb();
       // [V6.2-ENH-02] Advertise the server-side effective timeout so the client
       // can calibrate its own abort timer on future requests.
       void reply.header("X-Request-Timeout-Ms", String(effectiveTimeoutMs));
@@ -1050,6 +1164,8 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           timeoutMs: effectiveTimeoutMs,
           numPredict: composerNumPredict,
           keepAlive: composerKeepAlive,
+          runtimePressure,
+          availableRamMb,
           runningCount,
           errorCount,
           totalAgents: agents.length,
@@ -1100,15 +1216,25 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       // either the model process or this API service. Respond with a live
       // fleet summary (same content as "presence_ping") and include a
       // diagnostic note so operators understand why no model call was made.
-      if (context?.pressureLevel === "critical") {
+      if (context?.pressureLevel === "critical" || runtimePressure === "critical") {
         responseText =
-          "[CRITICAL PRESSURE] Model call bypassed to protect host memory.\n\n" +
+          `[CRITICAL PRESSURE] Model call bypassed to protect host memory (${availableRamMb} MB available).\n\n` +
           formatPresencePing(agents);
         server.log.warn(
-          { pressureLevel: context.pressureLevel, runningCount, errorCount },
+          {
+            clientPressureLevel: context?.pressureLevel,
+            runtimePressure,
+            availableRamMb,
+            runningCount,
+            errorCount,
+          },
           "composer_pressure_bypass",
         );
-        return mkResponse(responseText, "local");
+        return mkResponse(responseText, "local", {
+          reason: "critical_pressure_bypass",
+          pressureLevel: runtimePressure,
+          availableRamMb,
+        });
       }
 
       // [V6.1-PERF-05] Resolve Ollama endpoint only for model-routed prompts.
@@ -1165,6 +1291,8 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           model,
           selectedModel,
           timeoutMs: effectiveTimeoutMs,
+          pressureLevel: runtimePressure,
+          availableRamMb,
         });
       }
 
@@ -1205,6 +1333,8 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
             model,
             selectedModel,
             timeoutMs: effectiveTimeoutMs,
+            pressureLevel: runtimePressure,
+            availableRamMb,
           });
         }
 
@@ -1221,6 +1351,8 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
             model,
             selectedModel,
             timeoutMs: effectiveTimeoutMs,
+            pressureLevel: runtimePressure,
+            availableRamMb,
           });
         }
         const unreachableMsg = [
@@ -1252,6 +1384,8 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           model,
           selectedModel,
           timeoutMs: effectiveTimeoutMs,
+          pressureLevel: runtimePressure,
+          availableRamMb,
         });
       }
 
@@ -1339,13 +1473,7 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       }
       try {
         const modelCandidates = [
-          selectedModel,
-          normalizeModelTag(
-            process.env["SWARMX_COMPOSER_FAST_MODEL"] ??
-            process.env["SWARMX_MODEL_FAST"] ??
-            process.env["SWARM_MODEL_FAST"] ??
-            "phi4-fast",
-          ),
+          ...preferredModelCandidates(promptComplexity, runtimePressure, selectedModel),
           ...configuredModelCandidates,
           ...preflightModels.map((candidate) => normalizeModelTag(candidate)),
         ]
@@ -1372,61 +1500,121 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
               }
               const attemptTimeoutMs = Math.max(1200, Math.min(effectiveTimeoutMs, remainingMs));
               modelAttemptStartedAt = Date.now();
-              const ollamaRes = await fetch(`${ollamaBase}/api/chat`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  model: selectedModel,
-                  stream: false,
-                  keep_alive: composerKeepAlive,
-                  options: {
-                    num_predict: composerNumPredict,
-                  },
-                  messages: [
-                    { role: "system", content: systemPrompt },
-                    { role: "user", content: message },
-                  ],
-                }),
-                signal: AbortSignal.timeout(Number.isFinite(attemptTimeoutMs) ? attemptTimeoutMs : 90_000),
-              });
 
-              if (!ollamaRes.ok) {
-                const body = await ollamaRes.text();
-                server.log.warn({ status: ollamaRes.status, body, selectedModel, attempt }, "Ollama request failed");
-                throw new Error(`Ollama ${ollamaRes.status}: ${body}`);
+              const isRoutingCall =
+                promptComplexity === "light" ||
+                message.length < 120;
+
+              const opKey: OperationKey = promptComplexity === "deep"
+                ? "deep_reasoning"
+                : isRoutingCall
+                  ? "routing"
+                  : "fast_chat";
+
+              const {
+                timeoutMs: adaptiveTimeoutMs,
+                overrides,
+                circuitOpen,
+                pressure,
+              } = getAdaptiveCallConfig(selectedModel, opKey);
+
+              if (circuitOpen) {
+                throw new Error(`Adaptive timeout circuit open for ${selectedModel}`);
               }
 
-              const data = (await ollamaRes.json()) as {
-                message?: { content?: string };
-                error?: string;
-              };
-              responseText =
-                data?.message?.content?.trim() ??
-                data?.error ??
-                "No response from model.";
-              circuitRecordSuccess();
-              server.log.debug(
-                {
-                  elapsedMs: Date.now() - modelAttemptStartedAt,
-                  model,
-                  selectedModel,
-                  timeoutMs: attemptTimeoutMs,
-                  attempt,
-                },
-                "composer_model_call_ok",
-              );
-              break outer;
+              setActiveModel(selectedModel);
+
+              const t0 = Date.now();
+
+              try {
+                const result = await withTimeout(
+                  callOllama(
+                    ollamaBase,
+                    selectedModel,
+                    systemPrompt,
+                    message,
+                    composerKeepAlive,
+                    composerNumPredict,
+                    overrides,
+                  ),
+                  Math.min(adaptiveTimeoutMs, attemptTimeoutMs),
+                  opKey,
+                );
+
+                recordSuccess(selectedModel);
+                circuitRecordSuccess();
+
+                const latencyMs = Date.now() - t0;
+
+                recordLatency(latencyMs);
+                recordTimeout(false);
+
+                if (result.tokens) {
+                  recordTokens(result.tokens);
+                }
+
+                server.log.debug(
+                  {
+                    selectedModel,
+                    latencyMs,
+                    pressure,
+                    opKey,
+                    adaptiveTimeoutMs,
+                    attempt,
+                  },
+                  "composer_adaptive_call_ok",
+                );
+
+                const cleanText = selectedModel.includes("deepseek")
+                  ? sanitizeReasoningOutput(result.text)
+                  : result.text;
+
+                responseText = cleanText;
+
+                void extractJson(cleanText);
+
+                break outer;
+              } catch (adaptiveErr) {
+                recordFailure(selectedModel);
+                recordTimeout(true);
+
+                const reason = adaptiveErr instanceof Error
+                  ? adaptiveErr.message
+                  : String(adaptiveErr);
+
+                server.log.warn(
+                  {
+                    selectedModel,
+                    reason,
+                    pressure,
+                    opKey,
+                    adaptiveTimeoutMs,
+                    attempt,
+                  },
+                  "composer_adaptive_call_failed",
+                );
+
+                throw adaptiveErr;
+              }
             } catch (attemptErr) {
               const reason = attemptErr instanceof Error ? attemptErr.message : String(attemptErr);
               lastError = attemptErr instanceof Error ? attemptErr : new Error(reason);
               const canRetry = attempt < COMPOSER_RETRY_MAX_ATTEMPTS && shouldRetryModelError(reason);
               if (canRetry) {
-                const delayMs = computeBackoffDelayMs(attempt);
+                const delayMs = getJitteredDelayMs(
+                  attempt - 1,
+                  COMPOSER_RETRY_BASE_DELAY_MS,
+                  COMPOSER_RETRY_MAX_DELAY_MS,
+                );
                 server.log.warn(
                   { selectedModel, attempt, delayMs, reason },
                   "composer_model_retry_backoff",
                 );
-                await sleep(delayMs);
+                await jitteredDelay(
+                  attempt - 1,
+                  COMPOSER_RETRY_BASE_DELAY_MS,
+                  COMPOSER_RETRY_MAX_DELAY_MS,
+                );
                 continue;
               }
 
@@ -1474,12 +1662,16 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           timeoutMs: effectiveTimeoutMs,
           retryCount,
           circuitOpen: composerCircuit.state === "open",
+          pressureLevel: runtimePressure,
+          availableRamMb,
         };
         server.log.warn(
           {
             err,
             model,
             selectedModel,
+            activeModel: selectedModel,
+            adaptivePressure: context?.pressureLevel,
             timeoutMs: effectiveTimeoutMs,
             elapsedMs,
             isTimeout,
@@ -1502,6 +1694,8 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
             selectedModel,
             retryCount,
             circuitOpen: composerCircuit.state === "open",
+            pressureLevel: runtimePressure,
+            availableRamMb,
           });
         }
 
