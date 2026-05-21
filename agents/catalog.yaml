@@ -410,3 +410,20 @@ agents:
   - settings-audit
   - toolchain-lock
   - devcontainer-setup
+
+
+- name: video-planner
+  file: video-planner.md
+  model: reason
+  outputs:
+    - video-plan
+    - video-script
+    - storyboard
+    - degradation-note
+    - render-handoff
+  skill_tags:
+    - narrative-planning
+    - shot-design
+    - pressure-aware-degradation
+    - prompt-structuring
+    - media-orchestration
