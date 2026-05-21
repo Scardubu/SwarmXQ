@@ -15,7 +15,15 @@ import type {
   WorkflowRunState,
   RuntimeGovernorSnapshot,
   StartupSummary,
+  VideoJobEventData,
 } from "@swarmx/types";
+
+// [VIDEO-FIX-03] Import the video store so we can route video:progress events
+// to it from within reduceEvent. Zustand stores expose .getState() as a static
+// method, so this is safe to call from a non-component context (no hook rules
+// are violated). Importing here rather than lazily avoids async edge-cases
+// where the first event arrives before the lazy import resolves.
+import { useVideoStore } from "@/stores/video";
 
 const MAX_LOG_ENTRIES = 10_000;
 const STALE_THRESHOLD_MS = 5_000;
@@ -78,6 +86,9 @@ interface EventsState {
   // [V6.1-ENH-01] Startup autopilot summary — populated once per process launch
   startupSummary: StartupSummary | null;
 
+  // Last event snapshot (used by live feature panes)
+  latestEvent: SwarmXEvent | null;
+
   // Derived
   errorAgentCount: number;
   activeAgentCount: number;
@@ -93,8 +104,14 @@ interface EventsActions {
 }
 
 type EventsPatch = Partial<EventsState> & Pick<EventsState, "lastEventAt" | "isStale">;
-type ScsEventData = Extract<SwarmXEvent, { type: "system:scs" }>["data"];
-type LogEventData = Extract<SwarmXEvent, { type: "log:entry" }>["data"];
+type ScsEventData = Extract<SwarmXEvent, { type: "system:scs" }>[" data"];
+type LogEventData = Extract<SwarmXEvent, { type: "log:entry" }>[" data"];
+
+// ─── Pull out real data types without TS union access ─────────────────────────
+// Using concrete interface references avoids brittle conditional type access
+// on the discriminated union after the video variant was added.
+type ScsData = { score: number; history: number[]; timestamp: number | string };
+type LogData = { timestamp: string; level: string; message: string; unit?: string; agentId?: string; traceId?: string };
 
 const LIFECYCLE_LOG_UNIT = "swarmx-runtime";
 
@@ -123,7 +140,7 @@ function appendLog(state: EventsState, entry: LogEntry): EventsPatch {
   return freshPatch({ logs });
 }
 
-function lifecycleLogData(event: SwarmXEvent): LogEventData | null {
+function lifecycleLogData(event: SwarmXEvent): LogData | null {
   switch (event.type) {
     case "mission:created":
       return {
@@ -202,6 +219,18 @@ function lifecycleLogData(event: SwarmXEvent): LogEventData | null {
         unit: LIFECYCLE_LOG_UNIT,
         message: `worker job error · ${event.data.jobId}${event.data.error ? ` · ${event.data.error}` : ""}`,
       };
+    // [VIDEO-FIX-03] Log video lifecycle transitions into the unified log stream
+    case "video:progress": {
+      const d = event.data;
+      const isTerminal = ["completed", "failed", "cancelled", "degraded"].includes(d.status);
+      if (!isTerminal && d.status === "queued") return null; // don't spam logs for every progress tick
+      return {
+        timestamp: d.timestamp,
+        level: d.status === "failed" ? "error" : d.status === "degraded" ? "warn" : "info",
+        unit: "swarmx-video",
+        message: `video job ${d.status} · ${d.jobId.slice(0, 8)}${d.error ? ` · ${d.error}` : ""}`,
+      };
+    }
     default:
       return null;
   }
@@ -382,7 +411,7 @@ function applySystemMetrics(state: EventsState, snap: SystemMetricsSnapshot): Ev
   });
 }
 
-function applyScsSnapshot(state: EventsState, scs: ScsEventData): EventsPatch {
+function applyScsSnapshot(state: EventsState, scs: ScsData): EventsPatch {
   const score = typeof scs.score === "number" ? scs.score : 0;
   return freshPatch({
     scsScore: score,
@@ -422,10 +451,10 @@ function applyCgroupMetrics(state: EventsState, scope: CgroupScopeMetrics): Even
   return freshPatch({ cgroupScopes: pruned });
 }
 
-function applyLogEntry(state: EventsState, data: LogEventData): EventsPatch {
+function applyLogEntry(state: EventsState, data: LogData): EventsPatch {
   const entry: LogEntry = {
     id: `log-${String(data.timestamp)}-${data.level}-${data.message}`,
-    level: data.level,
+    level: data.level as LogEntry["level"],
     message: data.message,
     timestamp: data.timestamp,
     pid: null,
@@ -437,10 +466,42 @@ function applyLogEntry(state: EventsState, data: LogEventData): EventsPatch {
   if (data.unit) {
     entry.unit = data.unit;
   }
-  if (data.agentId) {
-    entry.agentId = data.agentId;
-  }
   return appendLog(state, entry);
+}
+
+// [VIDEO-FIX-03] Route video:progress events to the video store.
+// We call useVideoStore.getState() (static access, not a hook) so this is safe
+// outside of a React component. The patch returned to the events store is
+// minimal — just a timestamp update — because the actual state lives in
+// useVideoStore, not here.
+function applyVideoProgress(state: EventsState, data: VideoJobEventData): EventsPatch {
+  try {
+    useVideoStore.getState().applyProgressEvent({
+      jobId: data.jobId,
+      correlationId: data.correlationId,
+      status: data.status,
+      degradeMode: data.degradeMode,
+      progress: data.progress,
+      error: data.error,
+      timestamp: data.timestamp,
+    });
+  } catch {
+    // Non-fatal — video store may not be mounted yet
+  }
+
+  // Also emit a lifecycle log entry for terminal transitions
+  const isTerminal = ["completed", "failed", "cancelled", "degraded"].includes(data.status);
+  if (isTerminal) {
+    const logData: LogData = {
+      timestamp: data.timestamp,
+      level: data.status === "failed" ? "error" : data.status === "degraded" ? "warn" : "notice",
+      unit: "swarmx-video",
+      message: `video job ${data.status} · ${data.jobId.slice(0, 8)}${data.error ? ` · ${data.error}` : ""}`,
+    };
+    return applyLogEntry(state, logData);
+  }
+
+  return freshPatch({});
 }
 
 function reduceEvent(state: EventsState, event: SwarmXEvent): EventsPatch {
@@ -486,6 +547,12 @@ function reduceEvent(state: EventsState, event: SwarmXEvent): EventsPatch {
     case "workflow:failed":
     case "workflow:cancelled":
       return applyWorkflowEvent(state, event.data);
+    // [VIDEO-FIX-03] Handle video:progress events by routing to video store
+    case "video:progress":
+      return applyVideoProgress(state, event.data);
+    // video:health is informational — no state to update in events store
+    case "video:health":
+      return freshPatch({});
     case "control:pause":
     case "control:resume":
     default:
@@ -520,6 +587,7 @@ export const useEventsStore = create<EventsState & EventsActions>()(
     scsHistory: [],
     governorState: null,
     startupSummary: null,
+    latestEvent: null,
 
     // [V6.1-FIX-17] Allow explicit agent snapshot hydration for polling/manual refresh
     // paths so the dashboard can recover when SSE is stale or briefly disconnected.
@@ -546,7 +614,7 @@ export const useEventsStore = create<EventsState & EventsActions>()(
     },
 
     handleEvent: (event) => {
-      set((state) => reduceEvent(state, event));
+      set((state) => ({ ...reduceEvent(state, event), latestEvent: event }));
     },
   }))
 );
