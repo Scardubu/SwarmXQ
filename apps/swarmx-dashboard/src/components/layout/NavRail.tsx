@@ -18,6 +18,7 @@ import {
   Settings,
   ChevronRight,
   Activity,
+  Film,
 } from "lucide-react";
 
 interface NavItem {
@@ -72,6 +73,13 @@ function useNavItems(): NavItem[] {
       href: "/logs",
       icon: ScrollText,
       shortcut: "⌘5",
+    },
+    {
+      id: "video",
+      label: "Video",
+      href: "/video",
+      icon: Film,
+      shortcut: "⌘7",
     },
     {
       id: "system",
