@@ -2,6 +2,14 @@
 // SwarmX OS — Shared Type Definitions
 // Target: Linux (Ubuntu 22.04+ / Debian 12+, systemd + cgroup v2)
 // Shared between: apps/swarmx-dashboard (Next.js) · apps/swarmx-api (Fastify)
+//
+// Changelog:
+//   [VIDEO-FIX-02] Added VideoJobStatus, VideoDegradeMode, VideoJobEventData,
+//                  VideoHealthEventData types and wired video:progress +
+//                  video:health into the SwarmXEvent discriminated union.
+//                  Without this the dashboard's useSwarmXEvents hook silently
+//                  drops all video SSE events — they arrive as unknown types
+//                  and fall through the switch without reaching the video store.
 // ============================================================================
 
 // ── Agent ────────────────────────────────────────────────────────────────────
@@ -267,8 +275,6 @@ export interface ControlPlaneLayer {
 
 // ── SSE Events ───────────────────────────────────────────────────────────────
 
-// ── Canonical SSE events (must match apps/swarmx-api broadcast shape exactly) ─
-
 export type WorkflowEventStatus = 'running' | 'success' | 'failed' | 'cancelled'
 
 export interface WorkflowEventData {
@@ -329,64 +335,97 @@ export interface WorkerJobEventData {
 }
 
 // ── Startup Autopilot Summary (V6.1) ─────────────────────────────────────────
-// [V6.1-ENH-01] Emitted once per process launch via "system:startup" SSE event.
-// Persisted to SWARM_HOME/state/startup_summary.json between launches.
 export interface StartupSummary {
-  /** ISO-8601 UTC timestamp of autopilot completion */
   timestamp: string
-  /** Overall startup status */
   status: 'ready' | 'degraded' | 'critical'
-  /** Warm user-facing narrative describing the startup result */
   narrative: string
-  /** Memory pressure level at startup */
   pressureLevel: PressureLevel
-  /** Available RAM in MB at startup */
   availableMb: number
-  /** ZRAM utilisation fraction 0.0–1.0 at startup */
   zramUsedPct: number
-  /** Effective concurrency limit resolved at startup */
   concurrencyLimit: number
-  /** Whether Ollama /api/tags responded successfully */
   ollamaReachable: boolean
-  /** Whether model warmup ping completed within budget */
   warmupDone: boolean
-  /** Whether evolver dry-run cycle completed within budget */
   evolverSynced: boolean
-  /** Number of evolution proposals staged during evolver sync */
   evolverProposals: number
-  /** Total startup autopilot duration in milliseconds */
   durationMs: number
 }
+
+// ── Video Generation Types ────────────────────────────────────────────────────
+// [VIDEO-FIX-02] Added here so that the dashboard's useSwarmXEvents hook can
+// type-narrow video:progress events from the SSE stream. Without these types
+// in the shared package, all video events are silently ignored by the
+// dashboard's handleEvent → reduceEvent switch statement.
+
+export type VideoJobStatus =
+  | 'queued'
+  | 'preflight'
+  | 'planning'
+  | 'scripting'
+  | 'storyboard'
+  | 'rendering'
+  | 'assembling'
+  | 'exporting'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'degraded'
+
+export type VideoDegradeMode =
+  | 'none'           // full pipeline ran
+  | 'script_only'    // script produced, no storyboard/render
+  | 'storyboard_only'// script + storyboard, no render
+  | 'render_deferred'// full content ready, render queued for later
+  | 'intent_only'    // just parsed the intent, models unavailable
+
+/** Emitted on every status/progress transition by video-queue.ts */
+export interface VideoJobEventData {
+  jobId: string
+  correlationId: string
+  status: VideoJobStatus
+  degradeMode: VideoDegradeMode
+  progress: number          // 0–100
+  timestamp: string         // ISO-8601
+  stage?: string
+  message?: string
+  error?: string
+  outputPath?: string
+}
+
+/** Emitted by GET /api/video/health polling; not on every request. */
+export interface VideoHealthEventData {
+  timestamp: string
+  ollamaReachable: boolean
+  comfyuiReachable: boolean
+  pressureLevel: string
+  renderCapable: boolean
+}
+
+// ── Discriminated union ───────────────────────────────────────────────────────
 
 export type SwarmXEvent =
   // Agent lifecycle — full state object; handles create, update, status change
   | { type: 'agent:update'; data: AgentState }
   | { type: 'agent:remove'; data: { id: string } }
   // Workflow lifecycle
-  // [V5.9-ENH-02] Workflow lifecycle events share one typed payload with correlation metadata.
   | { type: 'workflow:started'; data: WorkflowEventData }
   | { type: 'workflow:completed'; data: WorkflowEventData }
   | { type: 'workflow:failed'; data: WorkflowEventData }
   | { type: 'workflow:cancelled'; data: WorkflowEventData }
-  // Queue telemetry — data wrapper matches API broadcast
+  // Queue telemetry
   | { type: 'queue:metrics'; data: QueueMetrics }
   | { type: 'queue:drained'; data: { name: string } }
-  // System metrics — full snapshot
+  // System metrics
   | { type: 'system:metrics'; data: SystemMetricsSnapshot }
-  // V5 Swarm Coherence Score
   | { type: 'system:scs'; data: ScsSnapshot }
-  // [V5.9-ENH-05] Runtime governor: pressure level, concurrency, token ceilings
   | { type: 'system:governor'; data: RuntimeGovernorSnapshot }
-  // [V6.1-ENH-01] Startup autopilot summary — emitted once per process launch
   | { type: 'system:startup'; data: StartupSummary }
-  // OEM / safety events
   | { type: 'system:oom'; data: { agentId: string; cgroupPath: string; count: number } }
   | { type: 'system:alert'; data: { severity: 'warn' | 'critical'; message: string; source: string; timestamp: number } }
-  // cgroup scope telemetry — data wrapper matches API broadcast
+  // cgroup scope telemetry
   | { type: 'cgroup:metrics'; data: CgroupScopeMetrics }
   // Structured log stream (journald)
   | { type: 'log:entry'; data: { timestamp: string; level: LogLevel; message: string; unit?: string; agentId?: string; traceId?: string } }
-  // Python mission/run/task lifecycle — bridged from journal.jsonl by Fastify
+  // Python mission/run/task lifecycle
   | { type: 'mission:created'; data: MissionCreatedData }
   | { type: 'run:started'; data: RunStartedData }
   | { type: 'run:completed'; data: RunCompletedData }
@@ -401,6 +440,10 @@ export type SwarmXEvent =
   // Control plane signals
   | { type: 'control:pause'; data: Record<string, never> }
   | { type: 'control:resume'; data: Record<string, never> }
+  // [VIDEO-FIX-02] Video generation pipeline — must be in the shared union so
+  // useSwarmXEvents can type-narrow and dispatch them to the video store.
+  | { type: 'video:progress'; data: VideoJobEventData }
+  | { type: 'video:health';   data: VideoHealthEventData }
 
 // ── Legacy SSE events (kept for backward-compat consumers; not emitted by API v2+) ─
 
