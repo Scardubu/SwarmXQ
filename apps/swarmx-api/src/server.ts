@@ -19,6 +19,10 @@
  *   [API-ENH-01] startup error now logs the specific bind error before process.exit(1)
  *                so container log tails show the failure reason (port conflict, EACCES)
  *                instead of just an exit code.
+ *   [VIDEO-SERVER-01] videoRouter registered under /api/video. Previously absent —
+ *                the router and its processor (runVideoJob) were never wired into the
+ *                server, making every video API call return 404. Import + register
+ *                call added below alongside the existing route registrations.
  */
 
 import Fastify from "fastify";
@@ -34,6 +38,8 @@ import { logsRouter } from "./routes/logs.js";
 import { configRouter } from "./routes/config.js";
 import { composerRouter } from "./routes/composer.js";
 import { metricsRouter } from "./routes/metrics.js";
+// [VIDEO-SERVER-01] Import the video router so the subsystem is reachable.
+import { videoRouter } from "./routes/video.js";
 import { startSystemInfoPoller } from "./services/systeminfo.js";
 import { startCgroupPoller } from "./services/cgroup.js";
 import { startJournaldStream } from "./services/journald.js";
@@ -139,6 +145,12 @@ await server.register(logsRouter, { prefix: "/api/logs" });
 await server.register(configRouter, { prefix: "/api/config" });
 await server.register(composerRouter, { prefix: "/api/composer" });
 await server.register(metricsRouter, { prefix: "/api/metrics" });
+// [VIDEO-SERVER-01] Register the video subsystem router.
+// This was missing from the previous server.ts — all /api/video/* routes returned
+// 404 until this line was added. The videoRouter import above also triggers the
+// registerVideoProcessor(runVideoJob) side-effect that wires the orchestrator
+// into the in-memory queue.
+await server.register(videoRouter, { prefix: "/api/video" });
 
 // ── Health check ──────────────────────────────────────────────────────────────
 // Probed by docker-compose healthcheck and Kubernetes liveness probes.
