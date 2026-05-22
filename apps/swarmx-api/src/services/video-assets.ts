@@ -1,73 +1,215 @@
 /**
  * apps/swarmx-api/src/services/video-assets.ts
- * ─────────────────────────────────────────────────────────────────────────────
- * Minimal file-system helpers for video job artifacts.
- * Stores per-job outputs under SWARMX_VIDEO_OUTPUT_DIR (or .swarmx/video-output).
- * ─────────────────────────────────────────────────────────────────────────────
+ * SwarmXQ Video Subsystem — Output Storage Abstraction
+ *
+ * Responsibilities:
+ *  - Build VideoOutputMetadata from raw orchestrator results
+ *  - Resolve file paths and public URLs
+ *  - Verify output file existence
+ *  - Artifact cleanup for old/cancelled jobs
  */
 
-import { mkdir, readFile, writeFile, rm } from "node:fs/promises";
-import path from "node:path";
+import { createHash } from "node:crypto";
+import { stat, unlink, readFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import type { VideoOutputMetadata, VideoJobRequest, VideoJobStage } from "../types/video.js";
 
-const VIDEO_OUTPUT_DIR =
-  process.env["SWARMX_VIDEO_OUTPUT_DIR"] ??
-  path.resolve(process.cwd(), "../../.swarmx/video-output");
+// ─── Config ───────────────────────────────────────────────────────────────────
 
-export function getVideoOutputRoot(): string {
-  return VIDEO_OUTPUT_DIR;
+const OUTPUT_DIR = resolve(
+  process.env.VIDEO_OUTPUT_DIR ??
+    join(process.env.HOME ?? "/tmp", "swarmx_outputs", "video")
+);
+
+const PUBLIC_URL_BASE = process.env.VIDEO_PUBLIC_URL_BASE ?? "/api/video/files";
+
+const STUB_DURATION_SECONDS = 30;
+const STUB_WIDTH = 720;
+const STUB_HEIGHT = 1280;
+const STUB_FPS = 24;
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface BuildMetadataInput {
+  jobId: string;
+  outputFilename: string;
+  scriptText?: string;
+  storyboardFrames?: string[];
+  modelsUsed: Record<string, string>;
+  request: VideoJobRequest;
 }
 
-export function getVideoJobDir(jobId: string): string {
-  return path.join(VIDEO_OUTPUT_DIR, jobId);
+// ─── Path Resolution ──────────────────────────────────────────────────────────
+
+export function outputDir(): string {
+  return OUTPUT_DIR;
 }
 
-export function getVideoArtifactPath(jobId: string, fileName: string): string {
-  const safeName = path.basename(fileName).replace(/[^a-zA-Z0-9._-]/g, "_");
-  return path.join(getVideoJobDir(jobId), safeName);
+export function resolveOutputPath(filename: string): string {
+  return join(OUTPUT_DIR, filename);
 }
 
-export async function ensureVideoJobDir(jobId: string): Promise<string> {
-  const dir = getVideoJobDir(jobId);
-  await mkdir(dir, { recursive: true });
-  return dir;
+export function resolvePublicUrl(filename: string): string {
+  return `${PUBLIC_URL_BASE}/${filename}`;
 }
 
-export async function writeVideoTextArtifact(
-  jobId: string,
-  fileName: string,
-  contents: string,
-): Promise<string> {
-  const filePath = getVideoArtifactPath(jobId, fileName);
-  await ensureVideoJobDir(jobId);
-  await writeFile(filePath, contents, "utf8");
-  return filePath;
+// ─── Metadata Builder ─────────────────────────────────────────────────────────
+
+/**
+ * Build a VideoOutputMetadata record.
+ * If the file exists on disk, reads real stats.
+ * If not (stub/ComfyUI not running), fills in reasonable defaults
+ * so the pipeline can complete without crashing in dev.
+ */
+export async function buildOutputMetadata(
+  input: BuildMetadataInput
+): Promise<VideoOutputMetadata> {
+  const absolutePath = resolveOutputPath(input.outputFilename);
+  const publicUrl = resolvePublicUrl(input.outputFilename);
+  const relativePath = input.outputFilename;
+
+  let fileSizeBytes = 0;
+  let checksum = "stub";
+  let durationSeconds = STUB_DURATION_SECONDS;
+  let widthPx = STUB_WIDTH;
+  let heightPx = STUB_HEIGHT;
+
+  if (existsSync(absolutePath)) {
+    const fileStat = await stat(absolutePath);
+    fileSizeBytes = fileStat.size;
+
+    const buf = await readFile(absolutePath);
+    checksum = createHash("sha256").update(buf).digest("hex");
+
+    // Attempt to read duration from file metadata.
+    // In a real implementation, pipe through ffprobe here.
+    durationSeconds = await probeDuration(absolutePath);
+    const dims = await probeDimensions(absolutePath);
+    widthPx = dims.width;
+    heightPx = dims.height;
+  }
+
+  const format: "mp4" | "webm" = input.outputFilename.endsWith(".webm")
+    ? "webm"
+    : "mp4";
+
+  return {
+    relativePath,
+    absolutePath,
+    publicUrl,
+    fileSizeBytes,
+    durationSeconds,
+    widthPx,
+    heightPx,
+    fps: STUB_FPS,
+    format,
+    checksum,
+    generatedAt: new Date().toISOString(),
+    scriptText: input.scriptText,
+    storyboardFrames: input.storyboardFrames,
+    modelsUsed: input.modelsUsed,
+  };
 }
 
-export async function writeVideoJsonArtifact<T>(
-  jobId: string,
-  fileName: string,
-  payload: T,
-): Promise<string> {
-  return writeVideoTextArtifact(jobId, fileName, `${JSON.stringify(payload, null, 2)}
-`);
-}
+// ─── Cleanup ──────────────────────────────────────────────────────────────────
 
-export async function readVideoArtifact(jobId: string, fileName: string): Promise<string | null> {
+/**
+ * Delete output artifact for a given job.
+ * Safe to call even if the file does not exist.
+ */
+export async function deleteArtifact(filename: string): Promise<boolean> {
+  const path = resolveOutputPath(filename);
   try {
-    return await readFile(getVideoArtifactPath(jobId, fileName), "utf8");
+    await unlink(path);
+    return true;
   } catch {
-    return null;
+    return false;
   }
 }
 
-export async function removeVideoJobArtifacts(jobId: string): Promise<void> {
+// ─── Probes (ffprobe stubs) ───────────────────────────────────────────────────
+
+/**
+ * Probe video duration via ffprobe.
+ * Returns STUB_DURATION_SECONDS if ffprobe is unavailable.
+ */
+async function probeDuration(filePath: string): Promise<number> {
   try {
-    await rm(getVideoJobDir(jobId), { recursive: true, force: true });
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execFileAsync = promisify(execFile);
+
+    const { stdout } = await execFileAsync("ffprobe", [
+      "-v", "quiet",
+      "-print_format", "json",
+      "-show_format",
+      filePath,
+    ]);
+
+    const parsed = JSON.parse(stdout) as {
+      format?: { duration?: string };
+    };
+    const dur = parseFloat(parsed.format?.duration ?? "0");
+    return dur > 0 ? dur : STUB_DURATION_SECONDS;
   } catch {
-    // best-effort cleanup
+    return STUB_DURATION_SECONDS;
   }
 }
 
-export function buildVideoArtifactUrl(jobId: string, fileName: string): string {
-  return `/api/video/jobs/${encodeURIComponent(jobId)}/artifacts/${encodeURIComponent(fileName)}`;
+async function probeDimensions(
+  filePath: string
+): Promise<{ width: number; height: number }> {
+  try {
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execFileAsync = promisify(execFile);
+
+    const { stdout } = await execFileAsync("ffprobe", [
+      "-v", "quiet",
+      "-print_format", "json",
+      "-show_streams",
+      filePath,
+    ]);
+
+    const parsed = JSON.parse(stdout) as {
+      streams?: { width?: number; height?: number; codec_type?: string }[];
+    };
+    const video = parsed.streams?.find((s) => s.codec_type === "video");
+    return {
+      width: video?.width ?? STUB_WIDTH,
+      height: video?.height ?? STUB_HEIGHT,
+    };
+  } catch {
+    return { width: STUB_WIDTH, height: STUB_HEIGHT };
+  }
+}
+
+// ─── Manifest ─────────────────────────────────────────────────────────────────
+
+export interface ArtifactManifestEntry {
+  jobId: string;
+  filename: string;
+  publicUrl: string;
+  createdAt: string;
+}
+
+/**
+ * List all video artifacts in the output directory.
+ */
+export async function listArtifacts(): Promise<ArtifactManifestEntry[]> {
+  try {
+    const { readdir } = await import("node:fs/promises");
+    const files = await readdir(OUTPUT_DIR);
+    return files
+      .filter((f) => f.endsWith(".mp4") || f.endsWith(".webm"))
+      .map((f) => ({
+        jobId: f.split("_")[1]?.split(".")[0] ?? f,
+        filename: f,
+        publicUrl: resolvePublicUrl(f),
+        createdAt: new Date().toISOString(),
+      }));
+  } catch {
+    return [];
+  }
 }
