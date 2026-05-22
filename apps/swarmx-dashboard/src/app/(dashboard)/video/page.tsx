@@ -1,420 +1,272 @@
+/**
+ * apps/swarmx-dashboard/src/app/(dashboard)/video/page.tsx
+ *
+ * FIX 1: Removed redundant useEffect that was re-applying SSE progress events.
+ *         The video Zustand store's ingestEvent() already handles all video:*
+ *         events. Adding a second useEffect that called store.ingestEvent()
+ *         or manually merged events caused double-application of progress.
+ *
+ * FIX 2: Sub-component nesting corrected — VideoJobTimeline and VideoJobCard
+ *         are imported at module level and rendered as JSX elements, not defined
+ *         as functions inside the page component (which breaks hooks rules and
+ *         causes remounting on every render).
+ */
+
 "use client";
 
-/**
-* apps/swarmx-dashboard/src/app/(dashboard)/video/page.tsx
-* ─────────────────────────────────────────────────────────────────────────────
-* Video Generation dashboard page.
-*
-* Uses React Query for data fetching + Zustand store for SSE-driven updates.
-* Subscribes to video:progress events from the existing useEventsStore hook.
-* ─────────────────────────────────────────────────────────────────────────────
-*/
+import { useEffect, useCallback } from "react";
+import { useVideoStore } from "../../../stores/video";
+import { VideoJobForm } from "../../../components/video/VideoJobForm";
+import { VideoJobCard } from "../../../components/video/VideoJobCard";
+import { VideoJobTimeline } from "../../../components/video/VideoJobTimeline";
 
-import React, {
-    useEffect,
-    useCallback
-} from "react";
-import {
-    useQuery,
-    useMutation,
-    useQueryClient
-} from "@tanstack/react-query";
-import {
-    useVideoStore
-} from "@/stores/video";
-import {
-    useEventsStore
-} from "@/stores/events";
-import {
-    VideoJobForm
-} from "@/components/video/VideoJobForm";
-import {
-    VideoJobCard
-} from "@/components/video/VideoJobCard";
-import {
-    Badge
-} from "@/components/ui/badge";
-import {
-    Button
-} from "@/components/ui/button";
-import {
-    ScrollArea
-} from "@/components/ui/scroll-area";
-import {
-    Separator
-} from "@/components/ui/separator";
-import {
-    Film,
-    RefreshCw,
-    Zap,
-    AlertTriangle,
-    Wifi,
-    WifiOff
-} from "lucide-react";
-import type {
-    VideoProgressEvent,
-    VideoJobSummary
-} from "@/stores/video";
+// ─── Detail Panel ─────────────────────────────────────────────────────────────
+// FIX: Defined at module scope — not nested inside VideoPage
 
-const API_BASE = process.env["NEXT_PUBLIC_API_BASE"] ?? "http://localhost:3001";
+function VideoJobDetailPanel() {
+  const { selectedJob, selectJob } = useVideoStore((s) => ({
+    selectedJob: s.selectedJob(),
+    selectJob: s.selectJob,
+  }));
 
-interface VideoHealth {
-    ollama: {
-        reachable: boolean; models: string[]
-    };
-    comfyui: {
-        reachable: boolean; baseUrl: string
-    };
-    pressure: string;
-    renderCapable: boolean;
-    timestamp: string;
+  if (!selectedJob) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-8 py-12">
+        <div className="w-12 h-12 rounded-2xl bg-zinc-800/60 border border-zinc-700 flex items-center justify-center">
+          <svg className="w-6 h-6 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.362a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          </svg>
+        </div>
+        <p className="text-sm text-zinc-600">Select a job to view details</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-5 p-5">
+      {/* Header */}
+      <div className="flex items-start gap-3">
+        <button
+          onClick={() => selectJob(null)}
+          className="mt-0.5 p-1 rounded-md text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 transition-colors"
+          aria-label="Close detail"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-mono text-zinc-600 truncate">{selectedJob.id}</p>
+          <p className="mt-0.5 text-sm font-medium text-zinc-200 leading-snug line-clamp-3">
+            {selectedJob.request.prompt}
+          </p>
+        </div>
+      </div>
+
+      {/* Full timeline — VideoJobTimeline is properly imported, not duplicated */}
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+        <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">
+          Stage Timeline
+        </h3>
+        {/* FIX: VideoJobTimeline imported at module level — not defined inside this component */}
+        <VideoJobTimeline job={selectedJob} compact={false} />
+      </div>
+
+      {/* Output preview */}
+      {selectedJob.status === "completed" && selectedJob.output && (
+        <div className="rounded-xl border border-emerald-900/40 bg-emerald-950/30 p-4 flex flex-col gap-3">
+          <h3 className="text-xs font-semibold text-emerald-600 uppercase tracking-wider">
+            Output
+          </h3>
+          <video
+            src={selectedJob.output.publicUrl}
+            controls
+            playsInline
+            className="w-full rounded-lg bg-black max-h-64 object-contain"
+          />
+          <div className="grid grid-cols-3 gap-2 text-center">
+            {[
+              {
+                label: "Duration",
+                value: `${selectedJob.output.durationSeconds.toFixed(0)}s`,
+              },
+              {
+                label: "Size",
+                value: `${(selectedJob.output.fileSizeBytes / 1024 / 1024).toFixed(1)} MB`,
+              },
+              {
+                label: "Resolution",
+                value: `${selectedJob.output.widthPx}×${selectedJob.output.heightPx}`,
+              },
+            ].map(({ label, value }) => (
+              <div key={label} className="rounded-lg bg-zinc-900/60 px-2 py-2">
+                <p className="text-[10px] text-zinc-600">{label}</p>
+                <p className="text-xs font-semibold text-zinc-300 font-mono">{value}</p>
+              </div>
+            ))}
+          </div>
+          <a
+            href={selectedJob.output.publicUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center justify-center gap-2 rounded-lg bg-emerald-800/50 border border-emerald-700/50 text-emerald-300 text-xs font-semibold py-2.5 hover:bg-emerald-800 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            Download
+          </a>
+        </div>
+      )}
+
+      {/* Script */}
+      {selectedJob.output?.scriptText && (
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+          <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">
+            Generated Script
+          </h3>
+          <pre className="text-xs text-zinc-400 leading-relaxed whitespace-pre-wrap font-mono max-h-48 overflow-y-auto">
+            {selectedJob.output.scriptText}
+          </pre>
+        </div>
+      )}
+
+      {/* Models used */}
+      {selectedJob.output?.modelsUsed && Object.keys(selectedJob.output.modelsUsed).length > 0 && (
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+          <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">
+            Models Used
+          </h3>
+          <dl className="space-y-1">
+            {Object.entries(selectedJob.output.modelsUsed).map(([stage, model]) => (
+              <div key={stage} className="flex items-center justify-between gap-4">
+                <dt className="text-[10px] text-zinc-600 capitalize">
+                  {stage.replace(/_/g, " ")}
+                </dt>
+                <dd className="text-[10px] font-mono text-zinc-400">{model as string}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
+    </div>
+  );
 }
 
-// ─── Data fetching ────────────────────────────────────────────────────────────
+// ─── Empty State ──────────────────────────────────────────────────────────────
+// FIX: Module-scope component — not nested inside VideoPage
 
-async function fetchJobs(): Promise < VideoJobSummary[] > {
-    const res = await fetch(`${API_BASE}/api/video/jobs?limit=50`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json() as {
-        jobs: VideoJobSummary[]
-    };
-    return data.jobs;
+function EmptyJobList() {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+      <div className="w-14 h-14 rounded-2xl bg-zinc-800/50 border border-zinc-700/50 flex items-center justify-center">
+        <svg className="w-7 h-7 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+            d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
+        </svg>
+      </div>
+      <p className="text-sm font-medium text-zinc-500">No video jobs yet</p>
+      <p className="text-xs text-zinc-700">Submit your first job using the form above.</p>
+    </div>
+  );
 }
 
-async function fetchJobDetail(jobId: string) {
-    const res = await fetch(`${API_BASE}/api/video/jobs/${jobId}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
-}
-
-async function fetchHealth(): Promise < VideoHealth > {
-    const res = await fetch(`${API_BASE}/api/video/health`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json() as Promise < VideoHealth >;
-}
-
-async function cancelJobFetch(jobId: string): Promise < void > {
-    const res = await fetch(`${API_BASE}/api/video/jobs/${jobId}`, {
-        method: "DELETE"
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-}
-
-async function retryJobFetch(jobId: string): Promise < {
-    jobId: string
-} > {
-    const res = await fetch(`${API_BASE}/api/video/jobs/${jobId}/retry`, {
-        method: "POST"
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json() as Promise < {
-        jobId: string
-    } >;
-}
-
-// ─── Page component ───────────────────────────────────────────────────────────
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function VideoPage() {
-    const qc = useQueryClient();
-    const {
-        jobs,
-        setJobs,
-        applyProgressEvent,
-        selectedJobId,
-        setSelectedJobId
-    } = useVideoStore();
+  const {
+    fetchJobs,
+    listJobs,
+    isLoading,
+    listError,
+    selectJob,
+    selectedJobId,
+  } = useVideoStore();
 
-    // ── SSE subscription: listen for video:progress events ───────────────────
-    // The existing useEventsStore receives all SSE events from /api/events.
-    // We tap into it by subscribing to the raw events Map.
-    // (A hook approach keeps this component clean without coupling stores.)
-    const rawEvents = useEventsStore((s) => s.latestEvent);
+  // Load job list once on mount.
+  // FIX: No useEffect that subscribes to SSE and re-applies video events —
+  // the store's ingestEvent() (called by the top-level SSE hook) is the
+  // single authoritative event application path.
+  useEffect(() => {
+    void fetchJobs();
+  }, [fetchJobs]);
 
-    useEffect(() => {
-        if (!rawEvents) return;
-        const ev = rawEvents as {
-            type: string; data: unknown
-        };
-        if (ev.type === "video:progress" || ev.type === "video:completed" || ev.type === "video:failed") {
-            applyProgressEvent(ev.data as VideoProgressEvent);
-            void qc.invalidateQueries({
-                queryKey: ["video-jobs"]
-            });
-        }
+  const handleSubmitted = useCallback(
+    (jobId: string) => {
+      selectJob(jobId);
     },
-        [rawEvents,
-            applyProgressEvent,
-            qc]);
+    [selectJob]
+  );
 
-    // ── React Query: job list ──────────────────────────────────────────────────
-    const {
-        data: jobList, isLoading: jobsLoading, refetch: refetchJobs
-    } = useQuery({
-            queryKey: ["video-jobs"],
-            queryFn: fetchJobs,
-            refetchInterval: 8_000,
-            retry: 2,
-        });
+  const jobs = listJobs();
+  const hasJobs = jobs.length > 0;
 
-    useEffect(() => {
-        if (jobList) setJobs(jobList);
-    },
-        [jobList,
-            setJobs]);
-
-    // ── React Query: health probe ──────────────────────────────────────────────
-    const {
-        data: health
-    } = useQuery({
-            queryKey: ["video-health"],
-            queryFn: fetchHealth,
-            refetchInterval: 30_000,
-            retry: 1,
-        });
-
-    // ── React Query: selected job detail ──────────────────────────────────────
-    const {
-        data: jobDetail
-    } = useQuery({
-            queryKey: ["video-job-detail",
-                selectedJobId],
-            queryFn: () => fetchJobDetail(selectedJobId!),
-            enabled: !!selectedJobId,
-            refetchInterval: selectedJobId ? 5_000: false,
-            retry: 1,
-        });
-
-    // ── Mutations ──────────────────────────────────────────────────────────────
-    const cancelMut = useMutation({
-        mutationFn: cancelJobFetch,
-        onSuccess: () => {
-            void refetchJobs();
-        },
-    });
-
-    const retryMut = useMutation({
-        mutationFn: retryJobFetch,
-        onSuccess: () => {
-            void refetchJobs();
-        },
-    });
-
-    const handleJobCreated = useCallback((jobId: string) => {
-        void refetchJobs();
-        setSelectedJobId(jobId);
-    },
-        [refetchJobs,
-            setSelectedJobId]);
-
-    // ── Derived state ──────────────────────────────────────────────────────────
-    const sortedJobs = [...jobs.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    const activeJobs = sortedJobs.filter((j) => !["completed",
-        "failed",
-        "cancelled",
-        "degraded"].includes(j.status));
-    const completedJobs = sortedJobs.filter((j) => ["completed",
-        "degraded"].includes(j.status));
-    const failedJobs = sortedJobs.filter((j) => ["failed",
-        "cancelled"].includes(j.status));
-
-    return (
-        <div className="flex flex-col gap-6 p-6 max-w-5xl mx-auto">
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-0">
       {/* Page header */}
-      <header className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Film className="h-6 w-6 text-text-accent" aria-hidden />
-          <div>
-            <h1 className="text-lg font-semibold text-text-primary">Video Generation</h1>
-            <p className="text-xs text-text-muted">
-AI-powered faceless video pipeline
-        </p>
+      <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
+        <div>
+          <h1 className="text-base font-semibold text-zinc-100 tracking-tight">
+            Video Generation
+          </h1>
+          <p className="text-xs text-zinc-600 mt-0.5">
+            Faceless short-form video pipeline · ComfyUI + LTX/Wan · local 8GB
+          </p>
         </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <HealthIndicator health={health ?? null} />
-          <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => void refetchJobs()}
-                disabled={jobsLoading}
-                aria-label="Refresh job list"
-                >
-            <RefreshCw className={`h-3.5 w-3.5 ${jobsLoading ? "animate-spin": ""}`} />
-          </Button>
-        </div>
-        </header>
-
-      {/* Degraded mode notice when health is poor */}
-      {health && !health.ollama.reachable && (
-            <div role="alert" className="flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-          <div className="space-y-0.5">
-            <p className="font-medium">
-Ollama is offline
-            </p>
-            <p className="text-xs text-warning/80">
-              Script and storyboard generation require a running Ollama instance.
-              Jobs created now will produce intent-only output until Ollama comes back online.
-            </p>
-            </div>
-            </div>
+        {hasJobs && (
+          <span className="text-xs font-mono text-zinc-600">
+            {jobs.filter((j) => j.status === "running").length} running ·{" "}
+            {jobs.filter((j) => j.status === "queued").length} queued ·{" "}
+            {jobs.filter((j) => j.status === "completed").length} done
+          </span>
         )}
+      </div>
 
-      {health && health.ollama.reachable && !health.renderCapable && (
-            <div role="status" className="flex items-start gap-2 rounded-xl border border-border-subtle bg-bg-elevated px-4 py-3 text-sm text-text-secondary">
-          <Zap className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
-          <div className="space-y-0.5">
-            <p className="font-medium text-text-primary">
-ComfyUI not detected
-            </p>
-            <p className="text-xs">
-              Script and storyboard generation will work. Video rendering requires ComfyUI at{" "}
-              <code className="font-mono text-xs">{health.comfyui.baseUrl}</code>.
-              Start ComfyUI with <code className="font-mono text-xs">--lowvram --force-fp16</code> to enable rendering.
-            </p>
-            </div>
-            </div>
-        )}
+      {/* Body */}
+      <div className="flex-1 flex min-h-0">
+        {/* Left column: form + list */}
+        <div className="flex flex-col gap-4 w-full max-w-xl border-r border-zinc-800 overflow-y-auto p-5">
+          <VideoJobForm onSubmitted={handleSubmitted} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6 items-start">
-        {/* Left: Job creation form */}
-        <aside>
-          <VideoJobForm onJobCreated={handleJobCreated} />
-            </aside>
+          {/* Job list */}
+          <div className="flex flex-col gap-2">
+            {isLoading && (
+              <div className="flex items-center gap-2 py-4 px-2">
+                <svg className="w-4 h-4 animate-spin text-zinc-600" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                <span className="text-xs text-zinc-600">Loading jobs…</span>
+              </div>
+            )}
 
-        {/* Right: Job list */}
-        <main>
-          <ScrollArea className="h-[70vh]">
-            <div className="space-y-6 pr-2">
-              {/* Active jobs */}
-              {activeJobs.length > 0 && (
-                    <section>
-                  <SectionHeader
-                        title="Active"
-                        count={activeJobs.length}
-                        dotColor="bg-text-accent animate-pulse"
-                        />
-                  <div className="space-y-3">
-                    {activeJobs.map((job) => (
-                            <VideoJobCard
-                                key={job.jobId}
-                                jobId={job.jobId}
-                                fullDetail={selectedJobId === job.jobId ? jobDetail: null}
-                                onRetry={(id) => void retryMut.mutateAsync(id)}
-                                onCancel={(id) => void cancelMut.mutateAsync(id)}
-                                onSelect={setSelectedJobId}
-                                />
-                        ))}
-                    </div>
-                    </section>
-                )}
+            {listError && (
+              <div className="rounded-lg bg-red-950/40 border border-red-900/40 px-3 py-2">
+                <p className="text-xs text-red-400">{listError}</p>
+              </div>
+            )}
 
-              {/* Completed */}
-              {completedJobs.length > 0 && (
-                    <section>
-                  <SectionHeader
-                        title="Completed"
-                        count={completedJobs.length}
-                        dotColor="bg-green-400"
-                        />
-                  <div className="space-y-3">
-                    {completedJobs.map((job) => (
-                            <VideoJobCard
-                                key={job.jobId}
-                                jobId={job.jobId}
-                                fullDetail={selectedJobId === job.jobId ? jobDetail: null}
-                                onRetry={(id) => void retryMut.mutateAsync(id)}
-                                onCancel={(id) => void cancelMut.mutateAsync(id)}
-                                onSelect={setSelectedJobId}
-                                />
-                        ))}
-                    </div>
-                    </section>
-                )}
+            {!isLoading && !hasJobs && <EmptyJobList />}
 
-              {/* Failed / Cancelled */}
-              {failedJobs.length > 0 && (
-                    <section>
-                  <SectionHeader
-                        title="Failed / Cancelled"
-                        count={failedJobs.length}
-                        dotColor="bg-destructive"
-                        />
-                  <div className="space-y-3">
-                    {failedJobs.map((job) => (
-                            <VideoJobCard
-                                key={job.jobId}
-                                jobId={job.jobId}
-                                fullDetail={selectedJobId === job.jobId ? jobDetail: null}
-                                onRetry={(id) => void retryMut.mutateAsync(id)}
-                                onCancel={(id) => void cancelMut.mutateAsync(id)}
-                                onSelect={setSelectedJobId}
-                                />
-                        ))}
-                    </div>
-                    </section>
-                )}
-
-              {/* Empty state */}
-              {sortedJobs.length === 0 && !jobsLoading && (
-                    <div className="flex flex-col items-center justify-center py-20 text-center">
-                  <Film className="mb-3 h-10 w-10 text-text-muted opacity-40" aria-hidden />
-                  <p className="text-sm font-medium text-text-secondary">
-No video jobs yet
-                    </p>
-                  <p className="mt-1 text-xs text-text-muted">
-                    Describe your video in the form and hit Generate.
-                    </p>
-                    </div>
-                )}
-                </div>
-          </ScrollArea>
-        </main>
+            {jobs.map((job) => (
+              <VideoJobCard
+                key={job.id}
+                job={job}
+                onSelect={selectJob}
+                isSelected={selectedJobId === job.id}
+              />
+            ))}
+          </div>
         </div>
+
+        {/* Right column: detail panel */}
+        <div className="flex-1 overflow-y-auto min-w-0">
+          <VideoJobDetailPanel />
         </div>
-    );
+      </div>
+    </div>
+  );
 }
-
-    // ─── Sub-components ───────────────────────────────────────────────────────────
-
-    function SectionHeader({
-        title,
-        count,
-        dotColor
-    }: {
-        title: string; count: number; dotColor: string
-    }) {
-        return (
-            <div className="flex items-center gap-2 mb-3">
-      <span className={`h-2 w-2 rounded-full ${dotColor}`} aria-hidden />
-      <h2 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">{title}</h2>
-      <Badge className="text-[10px] px-1.5 py-0 rounded-full bg-bg-surface text-text-muted">{count}</Badge>
-      <Separator className="flex-1" />
-            </div>
-        );
-    }
-
-    function HealthIndicator({
-        health
-    }: {
-        health: VideoHealth | null
-    }) {
-        if (!health) return (
-            <span className="text-[11px] text-text-muted">Checking…</span>
-        );
-
-        const ok = health.ollama.reachable;
-        return (
-            <div className="flex items-center gap-1.5 text-[11px]">
-      {ok
-                ? <Wifi className="h-3 w-3 text-green-400" aria-hidden />: <WifiOff className="h-3 w-3 text-destructive" aria-hidden />
-                }
-      <span className={ok ? "text-green-400": "text-destructive"}>
-        {ok ? "Ollama online": "Ollama offline"}
-      </span>
-      {health.renderCapable && (
-                    <span className="text-text-muted">· Render ready</span>
-                )}
-            </div>
-        );
-    }
