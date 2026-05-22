@@ -1,360 +1,252 @@
 /**
  * apps/swarmx-api/src/routes/video.ts
- * ─────────────────────────────────────────────────────────────────────────────
- * SwarmX Video Generation — Fastify route handlers
+ * SwarmXQ Video Subsystem — Fastify Route Plugin
  *
- * Endpoints:
- *   POST   /api/video/jobs                       — create a job
- *   GET    /api/video/jobs                       — list jobs (limit param)
- *   GET    /api/video/jobs/:id                   — full job detail
- *   DELETE /api/video/jobs/:id                   — cancel a job
- *   POST   /api/video/jobs/:id/retry             — clone and re-queue a failed job
- *   GET    /api/video/health                     — Ollama + ComfyUI reachability
- *
- * BUG-FIX [VIDEO-ROUTE-01]:
- *   The previous version of this file contained the VideoPageLoading React
- *   component (loading.tsx) instead of Fastify route definitions. This was a
- *   copy-paste error during the bundle merge. The correct content is here.
- *
- * The router is registered in server.ts under the /api/video prefix.
- * ─────────────────────────────────────────────────────────────────────────────
+ * Exposes:
+ *   POST   /api/video/jobs
+ *   GET    /api/video/jobs
+ *   GET    /api/video/jobs/:id
+ *   POST   /api/video/jobs/:id/cancel
+ *   GET    /api/video/files/:filename   (static output serving)
  */
 
-import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
-import {
-  createJob,
-  getJob,
-  listJobs,
-  cancelJob,
-} from "../services/video-queue.js";
-import { runVideoJob } from "../services/video-orchestrator.js";
-import { registerVideoProcessor } from "../services/video-queue.js";
-import { checkOllamaHealth, getOllamaBaseUrl } from "../services/ollama.js";
-import { currentPressureLevel } from "../services/adaptive-timeout-config.js";
-import type { CreateVideoJobRequest } from "../types/video.js";
+import type { FastifyInstance, FastifyPluginOptions } from "fastify";
+import { createReadStream, existsSync } from "node:fs";
+import { join } from "node:path";
+import type { VideoJobRequest, VideoJobListQuery } from "../types/video.js";
+import * as queue from "../services/video-queue.js";
+import * as assets from "../services/video-assets.js";
+import { runOrchestration } from "../services/video-orchestrator.js";
+import type { BroadcastFn } from "../services/video-orchestrator.js";
 
-// ── Register orchestrator as the queue processor once (idempotent) ─────────────
-registerVideoProcessor(runVideoJob);
+// ─── Schema ───────────────────────────────────────────────────────────────────
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface CreateJobBody {
-  prompt: string;
-  style?: string;
-  aspect?: string;
-  length?: string;
-  targetPlatform?: string;
-}
-
-interface JobParams {
-  id: string;
-}
-
-interface ListQuery {
-  limit?: string;
-}
-
-// ─── Validation helpers ────────────────────────────────────────────────────────
-
-const VALID_STYLES = new Set(["motivational","educational","narrative","documentary","explainer","abstract","custom"]);
-const VALID_ASPECTS = new Set(["9:16","16:9","1:1"]);
-const VALID_LENGTHS = new Set(["short","medium","long"]);
-const VALID_PLATFORMS = new Set(["tiktok","youtube_shorts","reels","generic"]);
-
-function validateCreateBody(body: unknown): { valid: true; req: CreateVideoJobRequest } | { valid: false; error: string } {
-  if (!body || typeof body !== "object") return { valid: false, error: "Request body is required" };
-  const b = body as Record<string, unknown>;
-
-  if (!b["prompt"] || typeof b["prompt"] !== "string" || !b["prompt"].trim()) {
-    return { valid: false, error: "prompt is required and must be a non-empty string" };
-  }
-  if (b["style"] && !VALID_STYLES.has(String(b["style"]))) {
-    return { valid: false, error: `style must be one of: ${[...VALID_STYLES].join(", ")}` };
-  }
-  if (b["aspect"] && !VALID_ASPECTS.has(String(b["aspect"]))) {
-    return { valid: false, error: `aspect must be one of: ${[...VALID_ASPECTS].join(", ")}` };
-  }
-  if (b["length"] && !VALID_LENGTHS.has(String(b["length"]))) {
-    return { valid: false, error: `length must be one of: ${[...VALID_LENGTHS].join(", ")}` };
-  }
-  if (b["targetPlatform"] && !VALID_PLATFORMS.has(String(b["targetPlatform"]))) {
-    return { valid: false, error: `targetPlatform must be one of: ${[...VALID_PLATFORMS].join(", ")}` };
-  }
-
-  return {
-    valid: true,
-    req: {
-      prompt: String(b["prompt"]).trim().slice(0, 2000),
-      style: b["style"] ? (String(b["style"]) as CreateVideoJobRequest["style"]) : undefined,
-      aspect: b["aspect"] ? (String(b["aspect"]) as CreateVideoJobRequest["aspect"]) : undefined,
-      length: b["length"] ? (String(b["length"]) as CreateVideoJobRequest["length"]) : undefined,
-      targetPlatform: b["targetPlatform"] ? (String(b["targetPlatform"]) as CreateVideoJobRequest["targetPlatform"]) : undefined,
+const VideoJobRequestSchema = {
+  type: "object",
+  required: ["prompt"],
+  properties: {
+    prompt: { type: "string", minLength: 1, maxLength: 2000 },
+    platform: {
+      type: "string",
+      enum: ["tiktok", "youtube_shorts", "reels", "generic"],
     },
-  };
-}
+    niche: {
+      type: "string",
+      enum: ["motivational", "finance", "facts", "true_crime", "tech", "other"],
+    },
+    targetDurationSeconds: { type: "number", minimum: 15, maximum: 180 },
+    modelTier: {
+      type: "string",
+      enum: ["fast", "worker", "supervisor", "reasoner"],
+    },
+    clientRequestId: { type: "string", maxLength: 128 },
+  },
+} as const;
 
-// ─── ComfyUI probe ────────────────────────────────────────────────────────────
+const JobIdParamSchema = {
+  type: "object",
+  required: ["id"],
+  properties: { id: { type: "string" } },
+} as const;
 
-const COMFYUI_BASE = process.env["SWARMX_COMFYUI_URL"] ?? "http://127.0.0.1:8188";
+const ListQuerySchema = {
+  type: "object",
+  properties: {
+    status: {
+      type: "string",
+      enum: ["queued", "running", "completed", "failed", "cancelled"],
+    },
+    platform: { type: "string" },
+    limit: { type: "number", minimum: 1, maximum: 100 },
+    offset: { type: "number", minimum: 0 },
+  },
+} as const;
 
-async function probeComfyUI(): Promise<boolean> {
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 3_000);
-    try {
-      const res = await fetch(`${COMFYUI_BASE}/system_stats`, { signal: controller.signal });
-      return res.ok;
-    } finally {
-      clearTimeout(timer);
-    }
-  } catch {
-    return false;
-  }
-}
+// ─── Plugin ───────────────────────────────────────────────────────────────────
 
-// ─── Route plugin ─────────────────────────────────────────────────────────────
+export async function videoRoutes(
+  fastify: FastifyInstance,
+  opts: FastifyPluginOptions & { broadcast?: BroadcastFn }
+): Promise<void> {
+  const broadcast: BroadcastFn =
+    opts.broadcast ??
+    ((event) => fastify.log.debug({ event }, "video:event (no broadcaster)"));
 
-export async function videoRouter(server: FastifyInstance): Promise<void> {
-
-  // ── POST /api/video/jobs — create a new video job ──────────────────────────
-  server.post<{ Body: CreateJobBody }>(
-    "/jobs",
+  // ── POST /api/video/jobs ───────────────────────────────────────────────────
+  fastify.post<{ Body: VideoJobRequest }>(
+    "/api/video/jobs",
     {
       schema: {
-        description: "Create a new video generation job",
-        tags: ["video"],
-        body: {
-          type: "object",
-          required: ["prompt"],
-          properties: {
-            prompt: { type: "string", minLength: 1, maxLength: 2000 },
-            style: { type: "string" },
-            aspect: { type: "string" },
-            length: { type: "string" },
-            targetPlatform: { type: "string" },
+        body: VideoJobRequestSchema,
+        response: {
+          201: {
+            type: "object",
+            properties: {
+              jobId: { type: "string" },
+              status: { type: "string" },
+              createdAt: { type: "string" },
+              message: { type: "string" },
+            },
+          },
+          422: {
+            type: "object",
+            properties: {
+              error: { type: "string" },
+              message: { type: "string" },
+            },
+          },
+          503: {
+            type: "object",
+            properties: {
+              error: { type: "string" },
+              message: { type: "string" },
+            },
           },
         },
       },
     },
-    async (req: FastifyRequest<{ Body: CreateJobBody }>, reply: FastifyReply) => {
-      const validated = validateCreateBody(req.body);
-      if (!validated.valid) {
-        return reply.status(400).send({ error: validated.error });
+    async (request, reply) => {
+      let job;
+      try {
+        job = queue.enqueue(request.body);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Queue error";
+        return reply.status(503).send({ error: "queue_full", message });
       }
 
-      const pressure = currentPressureLevel();
-      const job = createJob(validated.req, pressure);
-
-      // Warn on degraded-mode paths at submission time so the client can surface
-      // a message before any SSE events arrive.
-      let degradeWarning: string | undefined;
-      if (pressure === "critical") {
-        degradeWarning = "System is under critical memory pressure. Only script output is expected.";
-      } else if (pressure === "high") {
-        degradeWarning = "System memory is elevated. Video render may be deferred.";
-      }
+      // Kick off orchestration asynchronously — do not await.
+      setImmediate(() => {
+        const started = queue.startJob(job.id);
+        if (started) {
+          void runOrchestration(job.id, broadcast).catch((err) => {
+            fastify.log.error({ err, jobId: job.id }, "video orchestration crashed");
+          });
+        }
+      });
 
       return reply.status(201).send({
-        jobId: job.jobId,
-        correlationId: job.correlationId,
+        jobId: job.id,
         status: job.status,
-        message: "Job queued",
-        ...(degradeWarning ? { degradeWarning } : {}),
+        createdAt: job.createdAt,
+        message: `Video job created. Track progress via SSE or GET /api/video/jobs/${job.id}`,
       });
-    },
+    }
   );
 
-  // ── GET /api/video/jobs — list jobs ────────────────────────────────────────
-  server.get<{ Querystring: ListQuery }>(
-    "/jobs",
+  // ── GET /api/video/jobs ────────────────────────────────────────────────────
+  fastify.get<{ Querystring: VideoJobListQuery }>(
+    "/api/video/jobs",
     {
-      schema: {
-        description: "List video generation jobs",
-        tags: ["video"],
-        querystring: {
-          type: "object",
-          properties: {
-            limit: { type: "string" },
-          },
-        },
-      },
+      schema: { querystring: ListQuerySchema },
     },
-    async (req: FastifyRequest<{ Querystring: ListQuery }>, reply: FastifyReply) => {
-      const rawLimit = req.query.limit;
-      const limit = rawLimit ? Math.min(Math.max(parseInt(rawLimit, 10) || 50, 1), 200) : 50;
-      const jobs = listJobs(limit);
-      return reply.send({ jobs, count: jobs.length });
-    },
+    async (request, reply) => {
+      const { status, limit = 20, offset = 0 } = request.query;
+      const result = queue.listJobs({ status, limit, offset });
+      return reply.send({
+        jobs: result.jobs,
+        total: result.total,
+        limit,
+        offset,
+        queueDepth: queue.queuedCount(),
+        runningCount: queue.runningCount(),
+      });
+    }
   );
 
-  // ── GET /api/video/jobs/:id — full job detail ──────────────────────────────
-  server.get<{ Params: JobParams }>(
-    "/jobs/:id",
+  // ── GET /api/video/jobs/:id ────────────────────────────────────────────────
+  fastify.get<{ Params: { id: string } }>(
+    "/api/video/jobs/:id",
     {
-      schema: {
-        description: "Get full detail for a single video job",
-        tags: ["video"],
-        params: {
-          type: "object",
-          required: ["id"],
-          properties: { id: { type: "string" } },
-        },
-      },
+      schema: { params: JobIdParamSchema },
     },
-    async (req: FastifyRequest<{ Params: JobParams }>, reply: FastifyReply) => {
-      const job = getJob(req.params.id);
+    async (request, reply) => {
+      const job = queue.getJob(request.params.id);
       if (!job) {
-        return reply.status(404).send({ error: `Job ${req.params.id} not found` });
+        return reply.status(404).send({
+          error: "not_found",
+          message: `Video job ${request.params.id} not found`,
+        });
       }
       return reply.send(job);
-    },
+    }
   );
 
-  // ── DELETE /api/video/jobs/:id — cancel a job ──────────────────────────────
-  // Dashboard uses DELETE (not POST /cancel) — kept consistent with that expectation.
-  server.delete<{ Params: JobParams }>(
-    "/jobs/:id",
+  // ── POST /api/video/jobs/:id/cancel ───────────────────────────────────────
+  fastify.post<{ Params: { id: string } }>(
+    "/api/video/jobs/:id/cancel",
     {
-      schema: {
-        description: "Cancel a video generation job",
-        tags: ["video"],
-        params: {
-          type: "object",
-          required: ["id"],
-          properties: { id: { type: "string" } },
-        },
-      },
+      schema: { params: JobIdParamSchema },
     },
-    async (req: FastifyRequest<{ Params: JobParams }>, reply: FastifyReply) => {
-      const job = getJob(req.params.id);
+    async (request, reply) => {
+      const job = queue.getJob(request.params.id);
       if (!job) {
-        return reply.status(404).send({ error: `Job ${req.params.id} not found` });
+        return reply.status(404).send({
+          error: "not_found",
+          message: `Video job ${request.params.id} not found`,
+        });
       }
 
-      const cancelled = cancelJob(req.params.id);
+      const previousStatus = job.status;
+      const cancelled = queue.cancelJob(request.params.id);
+
       if (!cancelled) {
         return reply.status(409).send({
-          error: `Job ${req.params.id} is already in a terminal state (${job.status}) and cannot be cancelled`,
+          error: "already_terminal",
+          message: `Job is already in terminal state '${previousStatus}'`,
         });
       }
 
-      return reply.send({ jobId: req.params.id, status: "cancelled" });
-    },
-  );
-
-  // ── POST /api/video/jobs/:id/cancel — canonical cancel (alias) ─────────────
-  // The implementation plan specified POST /:id/cancel. Both routes work.
-  server.post<{ Params: JobParams }>(
-    "/jobs/:id/cancel",
-    {
-      schema: {
-        description: "Cancel a video generation job (POST alias)",
-        tags: ["video"],
-        params: {
-          type: "object",
-          required: ["id"],
-          properties: { id: { type: "string" } },
+      broadcast({
+        type: "video:cancelled",
+        timestamp: new Date().toISOString(),
+        payload: {
+          jobId: job.id,
+          cancelledAt: new Date().toISOString(),
+          requestedBy: "user",
+          stage: job.currentStage,
         },
-      },
-    },
-    async (req: FastifyRequest<{ Params: JobParams }>, reply: FastifyReply) => {
-      const job = getJob(req.params.id);
-      if (!job) {
-        return reply.status(404).send({ error: `Job ${req.params.id} not found` });
-      }
-
-      const cancelled = cancelJob(req.params.id);
-      if (!cancelled) {
-        return reply.status(409).send({
-          error: `Job ${req.params.id} cannot be cancelled (current status: ${job.status})`,
-        });
-      }
-
-      return reply.send({ jobId: req.params.id, status: "cancelled" });
-    },
-  );
-
-  // ── POST /api/video/jobs/:id/retry — clone and re-queue ────────────────────
-  // Copies the original prompt + options into a new job so the user doesn't
-  // have to re-submit the form. Only allowed on terminal states.
-  server.post<{ Params: JobParams }>(
-    "/jobs/:id/retry",
-    {
-      schema: {
-        description: "Retry a failed or cancelled video job",
-        tags: ["video"],
-        params: {
-          type: "object",
-          required: ["id"],
-          properties: { id: { type: "string" } },
-        },
-      },
-    },
-    async (req: FastifyRequest<{ Params: JobParams }>, reply: FastifyReply) => {
-      const original = getJob(req.params.id);
-      if (!original) {
-        return reply.status(404).send({ error: `Job ${req.params.id} not found` });
-      }
-
-      const retryable = ["failed", "degraded", "cancelled"];
-      if (!retryable.includes(original.status)) {
-        return reply.status(409).send({
-          error: `Job ${req.params.id} cannot be retried (current status: ${original.status}). Only failed, degraded, or cancelled jobs can be retried.`,
-        });
-      }
-
-      const pressure = currentPressureLevel();
-      const newJob = createJob(
-        {
-          prompt: original.prompt,
-          style: original.intent?.style,
-          aspect: original.intent?.aspect,
-          length: original.intent?.length,
-          targetPlatform: original.intent?.targetPlatform,
-        },
-        pressure,
-      );
-
-      return reply.status(201).send({
-        jobId: newJob.jobId,
-        correlationId: newJob.correlationId,
-        status: newJob.status,
-        retriedFrom: req.params.id,
-        message: "Retry job queued",
       });
-    },
-  );
-
-  // ── GET /api/video/health — Ollama + ComfyUI reachability ─────────────────
-  server.get(
-    "/health",
-    {
-      schema: {
-        description: "Check video subsystem health (Ollama + ComfyUI)",
-        tags: ["video"],
-      },
-    },
-    async (_req: FastifyRequest, reply: FastifyReply) => {
-      const [ollamaHealth, comfyuiReachable] = await Promise.all([
-        checkOllamaHealth().catch(() => ({ isHealthy: false, models: [] as string[] })),
-        probeComfyUI(),
-      ]);
-
-      const pressureLevel = currentPressureLevel();
 
       return reply.send({
-        ollama: {
-          reachable: ollamaHealth.isHealthy,
-          models: (ollamaHealth as { isHealthy: boolean; models?: string[] }).models ?? [],
-        },
-        comfyui: {
-          reachable: comfyuiReachable,
-          baseUrl: COMFYUI_BASE,
-        },
-        pressure: pressureLevel,
-        renderCapable: ollamaHealth.isHealthy && comfyuiReachable && pressureLevel !== "critical",
-        timestamp: new Date().toISOString(),
+        jobId: job.id,
+        cancelled: true,
+        previousStatus,
+        message: "Job cancelled",
       });
+    }
+  );
+
+  // ── GET /api/video/files/:filename ─────────────────────────────────────────
+  fastify.get<{ Params: { filename: string } }>(
+    "/api/video/files/:filename",
+    {
+      schema: {
+        params: {
+          type: "object",
+          required: ["filename"],
+          properties: { filename: { type: "string" } },
+        },
+      },
     },
+    async (request, reply) => {
+      // Prevent path traversal
+      const { filename } = request.params;
+      if (filename.includes("..") || filename.includes("/")) {
+        return reply.status(400).send({ error: "invalid_filename" });
+      }
+
+      const filePath = join(assets.outputDir(), filename);
+      if (!existsSync(filePath)) {
+        return reply.status(404).send({ error: "not_found" });
+      }
+
+      const ext = filename.split(".").pop()?.toLowerCase();
+      const contentType =
+        ext === "webm" ? "video/webm" : "video/mp4";
+
+      reply.header("Content-Type", contentType);
+      reply.header("Cache-Control", "public, max-age=3600");
+      return reply.send(createReadStream(filePath));
+    }
   );
 }
