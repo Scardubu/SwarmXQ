@@ -1,314 +1,238 @@
-"use client";
-
 /**
  * apps/swarmx-dashboard/src/components/video/VideoJobForm.tsx
- * ─────────────────────────────────────────────────────────────────────────────
- * Video job creation form. Submits to POST /api/video/jobs.
- * Shows pressure warning when system memory is elevated.
- *
- * BUG-FIX [VIDEO-FORM-01]:
- *   The previous version referenced `s.governorSnapshot?.pressureLevel` but the
- *   Zustand events store exports the field as `governorState` (a
- *   RuntimeGovernorSnapshot object). The incorrect key produced `undefined` at
- *   runtime, so `isHighPressure` was always false — the pressure warning was
- *   never shown even under critical system load.
- *   Fixed: `s.governorSnapshot` → `s.governorState`.
- * ─────────────────────────────────────────────────────────────────────────────
+ * Video generation request form with platform/niche/duration controls.
  */
 
-import React, { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { useEventsStore } from "@/stores/events";
-import { cn } from "@/lib/utils";
-import { Film, Loader2, AlertTriangle, Sparkles } from "lucide-react";
+"use client";
 
-type VideoStyle = "motivational" | "educational" | "narrative" | "documentary" | "explainer" | "abstract" | "custom";
-type VideoAspect = "9:16" | "16:9" | "1:1";
-type VideoLength = "short" | "medium" | "long";
-type TargetPlatform = "tiktok" | "youtube_shorts" | "reels" | "generic";
+import { useState, useId } from "react";
+import { useVideoStore } from "../../stores/video";
+import type { VideoJobRequest } from "../../../../swarmx-api/src/types/video";
 
-interface VideoJobFormProps {
-  onJobCreated: (jobId: string) => void;
+// ─── Select Helper ────────────────────────────────────────────────────────────
+
+function Select<T extends string>({
+  id,
+  label,
+  value,
+  onChange,
+  options,
+  disabled,
+}: {
+  id: string;
+  label: string;
+  value: T;
+  onChange: (v: T) => void;
+  options: { value: T; label: string }[];
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={id} className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
+        {label}
+      </label>
+      <select
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value as T)}
+        disabled={disabled}
+        className="
+          w-full rounded-lg bg-zinc-800/60 border border-zinc-700 text-zinc-200 text-sm
+          px-3 py-2 focus:outline-none focus:ring-1 focus:ring-amber-600/60 focus:border-amber-700
+          disabled:opacity-50 disabled:cursor-not-allowed transition-colors
+        "
+      >
+        {options.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
 }
 
-const API_BASE = process.env["NEXT_PUBLIC_API_BASE"] ?? "http://localhost:3001";
+// ─── Component ────────────────────────────────────────────────────────────────
 
-const STYLE_OPTIONS: { value: VideoStyle; label: string; desc: string }[] = [
-  { value: "motivational", label: "Motivational", desc: "Inspire & uplift" },
-  { value: "educational", label: "Educational", desc: "Teach & explain" },
-  { value: "narrative", label: "Narrative", desc: "Story-driven" },
-  { value: "explainer", label: "Explainer", desc: "How-to / concepts" },
-  { value: "abstract", label: "Abstract", desc: "Visual / conceptual" },
-];
+interface VideoJobFormProps {
+  onSubmitted?: (jobId: string) => void;
+}
 
-const LENGTH_OPTIONS: { value: VideoLength; label: string; range: string }[] = [
-  { value: "short", label: "Short", range: "15–45s" },
-  { value: "medium", label: "Medium", range: "45–90s" },
-  { value: "long", label: "Long", range: "90–180s" },
-];
+export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
+  const formId = useId();
+  const { submitJob, isSubmitting, submitError, clearErrors } = useVideoStore();
 
-const ASPECT_OPTIONS: { value: VideoAspect; label: string; hint: string }[] = [
-  { value: "9:16", label: "Vertical", hint: "TikTok / Reels" },
-  { value: "16:9", label: "Landscape", hint: "YouTube / Desktop" },
-  { value: "1:1", label: "Square", hint: "Feed / Cross-platform" },
-];
-
-const PLATFORM_OPTIONS: { value: TargetPlatform; label: string }[] = [
-  { value: "tiktok", label: "TikTok" },
-  { value: "youtube_shorts", label: "YouTube Shorts" },
-  { value: "reels", label: "Instagram Reels" },
-  { value: "generic", label: "Generic / Other" },
-];
-
-const EXAMPLE_PROMPTS = [
-  "Create a motivational video about building daily habits that stick",
-  "Explain compound interest for a TikTok audience in under 30 seconds",
-  "Tell a story about overcoming failure and finding success",
-  "Quick finance tip: why you should automate your savings",
-];
-
-export function VideoJobForm({ onJobCreated }: VideoJobFormProps) {
   const [prompt, setPrompt] = useState("");
-  const [style, setStyle] = useState<VideoStyle>("motivational");
-  const [length, setLength] = useState<VideoLength>("short");
-  const [aspect, setAspect] = useState<VideoAspect>("9:16");
-  const [platform, setPlatform] = useState<TargetPlatform>("tiktok");
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [degradeWarning, setDegradeWarning] = useState<string | null>(null);
+  const [platform, setPlatform] = useState<VideoJobRequest["platform"]>("tiktok");
+  const [niche, setNiche] = useState<NonNullable<VideoJobRequest["niche"]>>("motivational");
+  const [targetDuration, setTargetDuration] = useState(60);
+  const [modelTier, setModelTier] =
+    useState<NonNullable<VideoJobRequest["modelTier"]>>("supervisor");
 
-  // [VIDEO-FORM-01] Corrected: governorSnapshot → governorState.
-  // The events store uses `governorState: RuntimeGovernorSnapshot | null`.
-  // The old reference to `governorSnapshot` always resolved to undefined,
-  // meaning `pressureLevel` was always undefined and `isHighPressure` was
-  // always false — the warning was never shown.
-  const pressureLevel = useEventsStore((s) => s.governorState?.pressureLevel ?? "normal");
-  const isHighPressure = pressureLevel === "high" || pressureLevel === "critical";
+  const canSubmit = prompt.trim().length > 0 && !isSubmitting;
 
-  async function handleSubmit(e: React.FormEvent) {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!prompt.trim() || submitting) return;
+    clearErrors();
 
-    setSubmitting(true);
-    setSubmitError(null);
-    setDegradeWarning(null);
+    const jobId = await submitJob({
+      prompt: prompt.trim(),
+      platform,
+      niche,
+      targetDurationSeconds: targetDuration,
+      modelTier,
+    });
 
-    try {
-      const res = await fetch(`${API_BASE}/api/video/jobs`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: prompt.trim(), style, length, aspect, targetPlatform: platform }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: "Unknown error" })) as { error?: string };
-        setSubmitError(err.error ?? `HTTP ${res.status}`);
-        return;
-      }
-
-      const data = await res.json() as { jobId?: string; degradeWarning?: string };
-      if (data.degradeWarning) setDegradeWarning(data.degradeWarning);
-      if (data.jobId) {
-        setPrompt("");
-        onJobCreated(data.jobId);
-      }
-    } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "Network error");
-    } finally {
-      setSubmitting(false);
+    if (jobId) {
+      setPrompt("");
+      onSubmitted?.(jobId);
     }
-  }
+  };
 
   return (
     <form
-      onSubmit={(e) => void handleSubmit(e)}
-      className="rounded-xl border border-border-subtle bg-bg-elevated p-5 space-y-5"
-      aria-label="Create video generation job"
+      onSubmit={handleSubmit}
+      className="flex flex-col gap-4 rounded-xl border border-zinc-800 bg-zinc-900/70 p-5"
+      aria-labelledby={`${formId}-title`}
     >
-      {/* Header */}
-      <div className="flex items-center gap-2">
-        <Film className="h-5 w-5 text-text-accent" aria-hidden />
-        <h2 className="text-sm font-semibold text-text-primary">New Video Job</h2>
-      </div>
-
-      {/* Pressure warning */}
-      {isHighPressure && (
-        <div
-          role="alert"
-          className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning"
+      <div className="flex items-center justify-between">
+        <h2
+          id={`${formId}-title`}
+          className="text-sm font-semibold text-zinc-200 tracking-tight"
         >
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-          <span>
-            System memory is {pressureLevel}. Render may fall back to storyboard-only output.
-            Script and storyboard will still be generated.
-          </span>
-        </div>
-      )}
+          New Video Job
+        </h2>
+        <span className="text-[10px] font-mono text-zinc-600 uppercase tracking-widest">
+          Vidgen
+        </span>
+      </div>
 
       {/* Prompt */}
-      <div className="space-y-1.5">
-        <label htmlFor="video-prompt" className="text-xs font-medium text-text-secondary">
-          Describe your video
+      <div className="flex flex-col gap-1.5">
+        <label
+          htmlFor={`${formId}-prompt`}
+          className="text-xs font-medium text-zinc-400 uppercase tracking-wider"
+        >
+          Prompt
         </label>
-        <Input
-          id="video-prompt"
+        <textarea
+          id={`${formId}-prompt`}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          placeholder="e.g. A motivational video about building daily habits..."
+          placeholder="Describe the faceless video you want to generate…"
+          rows={3}
           maxLength={2000}
-          required
-          disabled={submitting}
-          className="text-sm"
-          aria-describedby="prompt-hint"
+          disabled={isSubmitting}
+          className="
+            w-full resize-none rounded-lg bg-zinc-800/60 border border-zinc-700
+            text-zinc-200 text-sm px-3 py-2.5 placeholder:text-zinc-600
+            focus:outline-none focus:ring-1 focus:ring-amber-600/60 focus:border-amber-700
+            disabled:opacity-50 disabled:cursor-not-allowed transition-colors leading-relaxed
+          "
         />
-        <p id="prompt-hint" className="text-[11px] text-text-muted">
-          {prompt.length}/2000 · Be specific about topic, tone, and goal
-        </p>
-      </div>
-
-      {/* Example prompts */}
-      <div className="space-y-1.5">
-        <p className="text-[11px] text-text-muted">Examples:</p>
-        <div className="flex flex-wrap gap-1.5">
-          {EXAMPLE_PROMPTS.map((ex) => (
-            <button
-              key={ex}
-              type="button"
-              onClick={() => setPrompt(ex)}
-              className="rounded-md border border-border-subtle px-2 py-0.5 text-[11px] text-text-secondary hover:bg-bg-surface hover:text-text-primary transition-colors"
-            >
-              {ex.slice(0, 40)}…
-            </button>
-          ))}
+        <div className="flex justify-end">
+          <span className="text-[10px] text-zinc-600 font-mono">
+            {prompt.length}/2000
+          </span>
         </div>
       </div>
 
-      {/* Style + Length row */}
-      <div className="grid grid-cols-2 gap-4">
-        <fieldset className="space-y-1.5">
-          <legend className="text-xs font-medium text-text-secondary">Style</legend>
-          <div className="flex flex-wrap gap-1.5">
-            {STYLE_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setStyle(opt.value)}
-                disabled={submitting}
-                aria-pressed={style === opt.value}
-                className={cn(
-                  "rounded-md border px-2 py-1 text-[11px] transition-colors",
-                  style === opt.value
-                    ? "border-text-accent bg-text-accent/10 text-text-accent"
-                    : "border-border-subtle text-text-secondary hover:border-border-active hover:text-text-primary",
-                )}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </fieldset>
-
-        <fieldset className="space-y-1.5">
-          <legend className="text-xs font-medium text-text-secondary">Length</legend>
-          <div className="flex gap-1.5">
-            {LENGTH_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setLength(opt.value)}
-                disabled={submitting}
-                aria-pressed={length === opt.value}
-                className={cn(
-                  "rounded-md border px-2 py-1 text-[11px] transition-colors",
-                  length === opt.value
-                    ? "border-text-accent bg-text-accent/10 text-text-accent"
-                    : "border-border-subtle text-text-secondary hover:border-border-active hover:text-text-primary",
-                )}
-              >
-                {opt.label}
-                <span className="ml-1 text-text-muted">{opt.range}</span>
-              </button>
-            ))}
-          </div>
-        </fieldset>
+      {/* Controls row */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Select
+          id={`${formId}-platform`}
+          label="Platform"
+          value={platform ?? "generic"}
+          onChange={setPlatform}
+          disabled={isSubmitting}
+          options={[
+            { value: "tiktok", label: "TikTok" },
+            { value: "youtube_shorts", label: "YT Shorts" },
+            { value: "reels", label: "Reels" },
+            { value: "generic", label: "Generic" },
+          ]}
+        />
+        <Select
+          id={`${formId}-niche`}
+          label="Niche"
+          value={niche}
+          onChange={setNiche}
+          disabled={isSubmitting}
+          options={[
+            { value: "motivational", label: "Motivational" },
+            { value: "finance", label: "Finance" },
+            { value: "facts", label: "Facts" },
+            { value: "true_crime", label: "True Crime" },
+            { value: "tech", label: "Tech" },
+            { value: "other", label: "Other" },
+          ]}
+        />
+        <Select
+          id={`${formId}-duration`}
+          label="Duration"
+          value={String(targetDuration) as never}
+          onChange={(v) => setTargetDuration(Number(v))}
+          disabled={isSubmitting}
+          options={[
+            { value: "15" as never, label: "15s" },
+            { value: "30" as never, label: "30s" },
+            { value: "60" as never, label: "60s" },
+            { value: "90" as never, label: "90s" },
+            { value: "120" as never, label: "2 min" },
+          ]}
+        />
+        <Select
+          id={`${formId}-model`}
+          label="Model Tier"
+          value={modelTier}
+          onChange={setModelTier}
+          disabled={isSubmitting}
+          options={[
+            { value: "fast", label: "Fast" },
+            { value: "worker", label: "Worker" },
+            { value: "supervisor", label: "Supervisor" },
+            { value: "reasoner", label: "Reasoner" },
+          ]}
+        />
       </div>
 
-      {/* Aspect + Platform row */}
-      <div className="grid grid-cols-2 gap-4">
-        <fieldset className="space-y-1.5">
-          <legend className="text-xs font-medium text-text-secondary">Aspect Ratio</legend>
-          <div className="flex gap-1.5">
-            {ASPECT_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setAspect(opt.value)}
-                disabled={submitting}
-                aria-pressed={aspect === opt.value}
-                className={cn(
-                  "rounded-md border px-2 py-1 text-[11px] transition-colors",
-                  aspect === opt.value
-                    ? "border-text-accent bg-text-accent/10 text-text-accent"
-                    : "border-border-subtle text-text-secondary hover:border-border-active hover:text-text-primary",
-                )}
-              >
-                {opt.value}
-                <span className="ml-1 text-text-muted">{opt.hint}</span>
-              </button>
-            ))}
-          </div>
-        </fieldset>
-
-        <fieldset className="space-y-1.5">
-          <legend className="text-xs font-medium text-text-secondary">Platform</legend>
-          <select
-            value={platform}
-            onChange={(e) => setPlatform(e.target.value as TargetPlatform)}
-            disabled={submitting}
-            className="w-full rounded-md border border-border-subtle bg-bg-surface px-2 py-1.5 text-xs text-text-primary focus:border-text-accent focus:outline-none"
-          >
-            {PLATFORM_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-        </fieldset>
-      </div>
-
-      {/* Submit error */}
+      {/* Error */}
       {submitError && (
-        <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          {submitError}
-        </div>
-      )}
-
-      {/* Degrade warning after submit */}
-      {degradeWarning && (
-        <div role="status" className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-          <Sparkles className="inline h-3 w-3 mr-1" />
-          {degradeWarning}
+        <div className="rounded-lg bg-red-950/50 border border-red-900/50 px-3 py-2">
+          <p className="text-xs text-red-400">{submitError}</p>
         </div>
       )}
 
       {/* Submit */}
-      <Button
+      <button
         type="submit"
-        disabled={!prompt.trim() || submitting}
-        className="w-full"
-        size="sm"
+        disabled={!canSubmit}
+        className="
+          self-end flex items-center gap-2 rounded-lg bg-amber-600 hover:bg-amber-500
+          text-white text-sm font-semibold px-5 py-2.5
+          disabled:opacity-40 disabled:cursor-not-allowed
+          transition-all duration-150 active:scale-95
+        "
       >
-        {submitting ? (
+        {isSubmitting ? (
           <>
-            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" aria-hidden />
-            Queuing job…
+            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+            Submitting…
           </>
         ) : (
           <>
-            <Film className="mr-2 h-3.5 w-3.5" aria-hidden />
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
             Generate Video
           </>
         )}
-      </Button>
+      </button>
     </form>
   );
 }
