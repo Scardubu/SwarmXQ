@@ -1,296 +1,327 @@
 /**
  * apps/swarmx-api/src/types/events.ts
- * ─────────────────────────────────────────────────────────────────────────────
- * Shared event types for the SwarmX SSE stream.
- * These must stay in sync with the frontend @swarmx/types package.
+ * SwarmXQ — Canonical SSE Event Union
  *
- * Changelog:
- *   [VIDEO-FIX-01] Added VideoJobEventData + VideoHealthEventData interfaces
- *                  AND wired them into the SwarmXEvent discriminated union.
- *                  Previously the interfaces were defined but never added to
- *                  the union, causing a TypeScript build failure in video-queue.ts
- *                  when broadcastEvent({ type: "video:progress", ... }) was called.
+ * Extends the existing event surface with video job lifecycle events.
+ * All events are discriminated by `type` and carry an ISO 8601 `timestamp`.
  */
 
-import type { VideoJobStatus, VideoDegradeMode } from "./video.js";
+import type {
+  VideoJob,
+  VideoJobStatus,
+  VideoJobStage,
+  VideoStageProgress,
+  VideoJobError,
+} from "./video.js";
 
-export type AgentStatus =
-  | "idle"
-  | "queued"
-  | "running"
-  | "activating"
-  | "active"
-  | "deactivating"
-  | "success"
-  | "error"
-  | "fatal"
-  | "failed"
-  | "failed_permanent"
-  | "oom_killed"
-  | "oom"
-  | "killed"
-  | "throttled"
-  | "reloading"
-  | "reload"
-  | "paused";
+// ─── Base ────────────────────────────────────────────────────────────────────
 
-export interface AgentResources {
-  cpuPercent: number;
-  memoryMb: number;
-  cpuThrottledPercent?: number;
-  oomEvents?: number;
-  ioReadBytes?: number;
-  ioWriteBytes?: number;
-}
-
-export interface AgentState {
-  id: string;
-  name?: string;
-  role?: string;
-  model?: string;
-  status: AgentStatus;
-  currentTask?: string;
-  lastError?: string;
-  startedAt?: string;
-  pid?: number;
-  cgroupPath?: string;
-  resources?: AgentResources;
-}
-
-export interface SystemCpuMetrics {
-  load1m: number;
-  load5m: number;
-  load15m: number;
-  coreCount: number;
-  perCorePercent: number[];
-}
-
-export interface SystemMemoryMetrics {
-  totalMb: number;
-  usedMb: number;
-  availableMb: number;
-  swarmxSliceMb: number;
-  swarmxSliceLimitMb: number | null;
-}
-
-export interface SystemDiskMetrics {
-  readBytesPerSec: number;
-  writeBytesPerSec: number;
-  utilizationPercent: number;
-}
-
-export interface SystemNetworkMetrics {
-  rxBytesPerSec: number;
-  txBytesPerSec: number;
-}
-
-export interface SystemMetricsSnapshot {
-  timestamp: string;
-  cpu: SystemCpuMetrics;
-  memory: SystemMemoryMetrics;
-  disk: SystemDiskMetrics;
-  network: SystemNetworkMetrics;
-}
-
-export interface CgroupScopeMetrics {
-  path: string;
-  cpuPercent: number;
-  memoryCurrentMb: number;
-  cpuThrottledPct?: number;
-  oomEvents: number;
-  ioReadBytesPerSec?: number;
-  ioWriteBytesPerSec?: number;
-}
-
-export interface QueueMetrics {
-  name: string;
-  waiting: number;
-  active: number;
-  delayed: number;
-  failed: number;
-  completed: number;
-}
-
-export type LogLevel =
-  | "debug"
-  | "info"
-  | "notice"
-  | "warn"
-  | "error"
-  | "critical"
-  | "alert"
-  | "emergency";
-
-export interface LogEntry {
-  timestamp: string;
-  level: LogLevel;
-  message: string;
-  unit?: string;
-  agentId?: string;
+interface BaseEvent {
+  timestamp: string; // ISO 8601
+  /** Correlation ID for tracing across Python and TypeScript layers. */
   traceId?: string;
 }
 
-export interface ScsSnapshot {
-  score: number;
-  history: number[];
-  timestamp: string;
+// ─── System Events ────────────────────────────────────────────────────────────
+
+export interface GovernorEvent extends BaseEvent {
+  type: "system:governor";
+  payload: {
+    pressureLevel: "normal" | "high" | "critical";
+    availableMb: number;
+    zramUsedPct: number;
+    concurrencyLimit: number;
+    observeOnly: boolean;
+    tokenCeilings: Record<string, number>;
+  };
 }
 
-// [V5.9-ENH-05] Runtime governor snapshot — pressure level, concurrency, token ceilings
-export type PressureLevel = "normal" | "high" | "critical";
-
-export interface RuntimeGovernorSnapshot {
-  pressureLevel: PressureLevel;
-  availableMb: number;
-  zramUsedPct: number;
-  concurrencyLimit: number;
-  observeOnly: boolean;
-  tokenCeilings: Record<string, number>;
-  timestamp: string;
+export interface StartupEvent extends BaseEvent {
+  type: "system:startup";
+  payload: {
+    status: "ready" | "degraded" | "failed";
+    narrative: string;
+    pressureLevel: "normal" | "high" | "critical";
+    availableMb: number;
+    zramUsedPct: number;
+    concurrencyLimit: number;
+    ollamaReachable: boolean;
+    warmupDone: boolean;
+    evolverSynced: boolean;
+    durationMs: number;
+  };
 }
 
-// [V6.1-ENH-01] Startup autopilot summary — emitted once per process launch.
-export interface StartupSummary {
-  /** ISO-8601 UTC timestamp of autopilot completion */
-  timestamp: string;
-  /** Overall startup status */
-  status: "ready" | "degraded" | "critical";
-  /** Warm user-facing narrative */
-  narrative: string;
-  pressureLevel: PressureLevel;
-  availableMb: number;
-  zramUsedPct: number;
-  concurrencyLimit: number;
-  ollamaReachable: boolean;
-  warmupDone: boolean;
-  evolverSynced: boolean;
-  evolverProposals: number;
-  durationMs: number;
+export interface HeartbeatEvent extends BaseEvent {
+  type: "system:heartbeat";
+  payload: { uptime: number };
 }
 
-export type WorkflowEventStatus = "running" | "success" | "failed" | "cancelled";
+// ─── Mission / Run / Task Events (existing) ───────────────────────────────────
 
-export interface WorkflowEventData {
-  id: string;
-  workflowId: string;
-  correlationId: string;
-  status: WorkflowEventStatus;
-  timestamp: string;
-  name?: string;
-  exitCode?: number;
-  error?: string;
+export interface MissionEvent extends BaseEvent {
+  type: "mission:started" | "mission:completed" | "mission:failed";
+  payload: {
+    missionId: string;
+    goal?: string;
+    durationMs?: number;
+    error?: string;
+  };
 }
 
-// [V5.9-FIX-05] Python lifecycle event payloads — bridged from swarmx journal to SSE.
-// Aligned with EventKind constants added in event_bus.py.
-
-export interface RunStartedData {
-  jobId: string;
-  repo: string;
-  target: string;
-  timestamp: string;
+export interface RunEvent extends BaseEvent {
+  type: "run:started" | "run:completed" | "run:failed";
+  payload: {
+    runId: string;
+    taskId?: string;
+    model?: string;
+    durationMs?: number;
+    error?: string;
+  };
 }
 
-export interface RunCompletedData {
-  jobId: string;
-  runId: string;
-  status: "success" | "partial" | "failed" | "error";
-  timestamp: string;
+export interface TaskEvent extends BaseEvent {
+  type: "task:started" | "task:completed" | "task:failed";
+  payload: {
+    taskId: string;
+    prompt?: string;
+    result?: string;
+    durationMs?: number;
+    error?: string;
+  };
 }
 
-export interface MissionCreatedData {
-  missionId: string;
-  repo: string;
-  target: string;
-  timestamp: string;
+export interface EvolutionEvent extends BaseEvent {
+  type:
+    | "evolution:observed"
+    | "evolution:critiqued"
+    | "evolution:proposed"
+    | "evolution:approved"
+    | "evolution:rejected"
+    | "evolution:applied";
+  payload: {
+    proposalId: string;
+    risk?: "low" | "medium" | "high";
+    fitnessScore?: number;
+    description?: string;
+  };
 }
 
-export interface TaskEventData {
-  goal: string;
-  stepIndex?: number;
-  runId?: string;
-  timestamp: string;
+// ─── Video Job Events (NEW) ───────────────────────────────────────────────────
+
+/**
+ * Emitted when a video job transitions to "queued".
+ */
+export interface VideoJobCreatedEvent extends BaseEvent {
+  type: "video:created";
+  payload: {
+    jobId: string;
+    prompt: string;
+    platform?: string;
+    niche?: string;
+    queueDepth: number;
+    estimatedWaitMs?: number;
+  };
 }
 
-export interface EvolutionEventData {
-  jobId: string;
-  repo?: string;
-  proposalCount?: number;
-  timestamp: string;
+/**
+ * Emitted when the job moves from "queued" to "running".
+ */
+export interface VideoJobQueuedEvent extends BaseEvent {
+  type: "video:queued";
+  payload: {
+    jobId: string;
+    queuePosition: number;
+    estimatedWaitMs?: number;
+  };
 }
 
-export interface WorkerJobEventData {
-  jobId: string;
-  kind?: string;
-  repo?: string;
-  target?: string;
-  error?: string;
-  timestamp: string;
+/**
+ * Emitted when a stage transitions to active.
+ */
+export interface VideoStageStartedEvent extends BaseEvent {
+  type: "video:stage_started";
+  payload: {
+    jobId: string;
+    stage: VideoJobStage;
+    stageIndex: number;
+    totalStages: number;
+    modelTag?: string;
+    estimatedDurationMs?: number;
+  };
 }
 
-// ── Video generation events ───────────────────────────────────────────────────
-// [VIDEO-FIX-01] These interfaces were present in earlier drafts but were never
-// added to the SwarmXEvent discriminated union below, causing TypeScript build
-// errors whenever broadcastEvent() was called with type "video:progress".
-
-export interface VideoJobEventData {
-  jobId: string;
-  correlationId: string;
-  status: VideoJobStatus;
-  degradeMode: VideoDegradeMode;
-  progress: number;
-  timestamp: string;
-  stage?: string;
-  message?: string;
-  error?: string;
-  outputPath?: string;
+/**
+ * Emitted periodically within a stage to report granular progress.
+ */
+export interface VideoProgressEvent extends BaseEvent {
+  type: "video:progress";
+  payload: {
+    jobId: string;
+    stage: VideoJobStage;
+    stageProgress: VideoStageProgress;
+    overallProgress: number;
+    message?: string;
+  };
 }
 
-export interface VideoHealthEventData {
-  timestamp: string;
-  ollamaReachable: boolean;
-  comfyuiReachable: boolean;
-  pressureLevel: string;
-  renderCapable: boolean;
+/**
+ * Emitted when the job transitions to "completed".
+ */
+export interface VideoJobCompletedEvent extends BaseEvent {
+  type: "video:completed";
+  payload: {
+    jobId: string;
+    outputPublicUrl: string;
+    durationSeconds: number;
+    fileSizeBytes: number;
+    totalDurationMs: number;
+    modelsUsed: Record<string, string>;
+  };
 }
 
-// ── Discriminated union ───────────────────────────────────────────────────────
+/**
+ * Emitted when the job transitions to "failed".
+ */
+export interface VideoJobFailedEvent extends BaseEvent {
+  type: "video:failed";
+  payload: {
+    jobId: string;
+    error: VideoJobError;
+    stage?: VideoJobStage;
+    retryCount: number;
+    totalDurationMs: number;
+  };
+}
+
+/**
+ * Emitted when the job is cancelled by the user or orchestrator.
+ */
+export interface VideoJobCancelledEvent extends BaseEvent {
+  type: "video:cancelled";
+  payload: {
+    jobId: string;
+    cancelledAt: string;
+    requestedBy: "user" | "orchestrator" | "pressure_governor";
+    stage?: VideoJobStage;
+  };
+}
+
+/**
+ * Full job snapshot — emitted after any status transition.
+ * Allows dashboard to re-hydrate from a single event.
+ */
+export interface VideoJobSnapshotEvent extends BaseEvent {
+  type: "video:snapshot";
+  payload: {
+    job: VideoJob;
+  };
+}
+
+// ─── Union ────────────────────────────────────────────────────────────────────
+
+export type VideoEvent =
+  | VideoJobCreatedEvent
+  | VideoJobQueuedEvent
+  | VideoStageStartedEvent
+  | VideoProgressEvent
+  | VideoJobCompletedEvent
+  | VideoJobFailedEvent
+  | VideoJobCancelledEvent
+  | VideoJobSnapshotEvent;
 
 export type SwarmXEvent =
-  | { type: "agent:update"; data: AgentState }
-  | { type: "agent:remove"; data: { id: string } }
-  | { type: "system:metrics"; data: SystemMetricsSnapshot }
-  | { type: "system:scs"; data: ScsSnapshot }
-  // [V5.9-ENH-05] Runtime governor: pressure level, concurrency, token ceilings
-  | { type: "system:governor"; data: RuntimeGovernorSnapshot }
-  // [V6.1-ENH-01] Startup autopilot summary — emitted once per process launch
-  | { type: "system:startup"; data: StartupSummary }
-  | { type: "system:alert"; data: { severity: "warn" | "critical"; message: string; source: string; timestamp: number } }
-  | { type: "cgroup:metrics"; data: CgroupScopeMetrics }
-  | { type: "queue:metrics"; data: QueueMetrics }
-  | { type: "log:entry"; data: LogEntry }
-  // [V5.9-ENH-02] Workflow lifecycle events share one typed payload with correlation metadata.
-  | { type: "workflow:started"; data: WorkflowEventData }
-  | { type: "workflow:completed"; data: WorkflowEventData }
-  | { type: "workflow:failed"; data: WorkflowEventData }
-  | { type: "workflow:cancelled"; data: WorkflowEventData }
-  | { type: "queue:drained"; data: { name: string } }
-  | { type: "system:oom"; data: { agentId: string; cgroupPath: string; count: number } }
-  | { type: "control:pause"; data: Record<string, never> }
-  | { type: "control:resume"; data: Record<string, never> }
-  // [V5.9-FIX-05] Python event bridge — run, task, mission, evolution, worker job events
-  | { type: "run:started";     data: RunStartedData }
-  | { type: "run:completed";   data: RunCompletedData }
-  | { type: "mission:created"; data: MissionCreatedData }
-  | { type: "task:start";      data: TaskEventData }
-  | { type: "task:complete";   data: TaskEventData }
-  | { type: "task:failed";     data: TaskEventData }
-  | { type: "evolution:started";   data: EvolutionEventData }
-  | { type: "evolution:completed"; data: EvolutionEventData }
-  | { type: "worker:job_started"; data: WorkerJobEventData }
-  | { type: "worker:job_done";    data: WorkerJobEventData }
-  | { type: "worker:job_error";   data: WorkerJobEventData }
-  // [VIDEO-FIX-01] Video generation pipeline events — added to union so
-  // broadcastEvent() in video-queue.ts passes TypeScript type-checking.
-  | { type: "video:progress"; data: VideoJobEventData }
-  | { type: "video:health";   data: VideoHealthEventData };
+  | GovernorEvent
+  | StartupEvent
+  | HeartbeatEvent
+  | MissionEvent
+  | RunEvent
+  | TaskEvent
+  | EvolutionEvent
+  | VideoEvent;
+
+// ─── Type Guards ──────────────────────────────────────────────────────────────
+
+export function isVideoEvent(event: SwarmXEvent): event is VideoEvent {
+  return event.type.startsWith("video:");
+}
+
+export function isGovernorEvent(event: SwarmXEvent): event is GovernorEvent {
+  return event.type === "system:governor";
+}
+
+// ─── SSE Wire Format ──────────────────────────────────────────────────────────
+
+/**
+ * Serialise a SwarmXEvent to the SSE wire format.
+ * `event:` line is the discriminator; `data:` line is JSON-encoded payload.
+ */
+export function toSSEFrame(event: SwarmXEvent): string {
+  return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
+}
+
+/**
+ * Parse an SSE data line back into a SwarmXEvent.
+ * Returns null on parse failure so callers can skip malformed frames.
+ */
+export function parseSSEFrame(raw: string): SwarmXEvent | null {
+  try {
+    return JSON.parse(raw) as SwarmXEvent;
+  } catch {
+    return null;
+  }
+}
+
+// ─── Event Factory Helpers ────────────────────────────────────────────────────
+
+export function makeVideoCreatedEvent(
+  jobId: string,
+  prompt: string,
+  queueDepth: number,
+  extra?: Partial<VideoJobCreatedEvent["payload"]>
+): VideoJobCreatedEvent {
+  return {
+    type: "video:created",
+    timestamp: new Date().toISOString(),
+    payload: { jobId, prompt, queueDepth, ...extra },
+  };
+}
+
+export function makeVideoProgressEvent(
+  jobId: string,
+  stage: VideoJobStage,
+  stageProgress: VideoStageProgress,
+  overallProgress: number,
+  message?: string
+): VideoProgressEvent {
+  return {
+    type: "video:progress",
+    timestamp: new Date().toISOString(),
+    payload: { jobId, stage, stageProgress, overallProgress, message },
+  };
+}
+
+export function makeVideoCompletedEvent(
+  jobId: string,
+  payload: Omit<VideoJobCompletedEvent["payload"], "jobId">
+): VideoJobCompletedEvent {
+  return {
+    type: "video:completed",
+    timestamp: new Date().toISOString(),
+    payload: { jobId, ...payload },
+  };
+}
+
+export function makeVideoFailedEvent(
+  jobId: string,
+  error: VideoJobError,
+  retryCount: number,
+  totalDurationMs: number,
+  stage?: VideoJobStage
+): VideoJobFailedEvent {
+  return {
+    type: "video:failed",
+    timestamp: new Date().toISOString(),
+    payload: { jobId, error, stage, retryCount, totalDurationMs },
+  };
+}
