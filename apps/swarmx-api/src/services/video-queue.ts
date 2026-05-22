@@ -1,275 +1,305 @@
 /**
  * apps/swarmx-api/src/services/video-queue.ts
- * ─────────────────────────────────────────────────────────────────────────────
- * SwarmX Video Queue — In-memory job store + sequential processor
+ * SwarmXQ Video Subsystem — In-Memory Job Queue
  *
- * Design:
- *   - All jobs live in a Map<jobId, VideoJob> — local-first, no Redis needed
- *   - A single-lane processor ensures models load sequentially (8 GB constraint)
- *   - Jobs are processed FIFO; cancellation is honoured at stage boundaries
- *   - SSE events are emitted on every state transition via broadcastEvent()
- *
- * Concurrency model:
- *   One job runs at a time (video generation is model-heavy). Subsequent queued
- *   jobs wait. Under critical pressure the processor defers new renders but still
- *   runs planning/scripting/storyboard stages which are lighter.
- * ─────────────────────────────────────────────────────────────────────────────
+ * Responsibilities:
+ *  - Job registry (Map<id, VideoJob>)
+ *  - State transitions with invariant enforcement
+ *  - Retry / terminal-state handling
+ *  - Concurrency gating via pressure monitor
  */
 
 import { randomUUID } from "node:crypto";
-import { broadcastEvent } from "../plugins/sse.js";
-import {
-  type VideoJob,
-  type VideoJobStatus,
-  type VideoStageLog,
-  type VideoJobListItem,
-  type CreateVideoJobRequest,
-  type VideoDegradeMode,
+import type {
+  VideoJob,
+  VideoJobRequest,
+  VideoJobStatus,
+  VideoJobStage,
+  VideoStageProgress,
+  VideoJobError,
 } from "../types/video.js";
+import { isTerminalStatus, VIDEO_JOB_STAGE_ORDER } from "../types/video.js";
 
-// ─── In-memory store ──────────────────────────────────────────────────────────
+// ─── Config ───────────────────────────────────────────────────────────────────
 
-const jobs = new Map<string, VideoJob>();
-const pendingQueue: string[] = [];  // jobIds waiting to run
-let processorRunning = false;
+const MAX_QUEUE_SIZE = parseInt(process.env.VIDEO_QUEUE_MAX_SIZE ?? "20", 10);
+const MAX_CONCURRENT_JOBS = parseInt(
+  process.env.VIDEO_MAX_CONCURRENT_JOBS ?? "1",
+  10
+);
+const MAX_RETRIES = parseInt(process.env.VIDEO_MAX_RETRIES ?? "1", 10);
+const JOB_TTL_MS = parseInt(
+  process.env.VIDEO_JOB_TTL_MS ?? String(4 * 60 * 60 * 1000), // 4 h
+  10
+);
 
-// Keep the last 200 completed/failed jobs; trim older ones to prevent unbounded growth
-const MAX_COMPLETED = 200;
+// ─── Internal ─────────────────────────────────────────────────────────────────
 
-// ─── Processor callback ───────────────────────────────────────────────────────
+const registry = new Map<string, VideoJob>();
 
-let _processorFn: ((job: VideoJob) => Promise<void>) | null = null;
-
-export function registerVideoProcessor(fn: (job: VideoJob) => Promise<void>): void {
-  _processorFn = fn;
+function now(): string {
+  return new Date().toISOString();
 }
 
-// ─── Job factory ─────────────────────────────────────────────────────────────
+function assertMutable(job: VideoJob, op: string): void {
+  if (isTerminalStatus(job.status)) {
+    throw new Error(
+      `VideoQueue: cannot perform '${op}' on job ${job.id} — already in terminal state '${job.status}'`
+    );
+  }
+}
 
-export function createJob(req: CreateVideoJobRequest, pressureLevel: string): VideoJob {
-  const jobId = randomUUID();
-  const correlationId = randomUUID();
-  const now = new Date().toISOString();
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+/**
+ * Create a new job and place it in 'queued' state.
+ * Throws if the queue is full.
+ */
+export function enqueue(request: VideoJobRequest): VideoJob {
+  const queued = [...registry.values()].filter(
+    (j) => j.status === "queued" || j.status === "running"
+  );
+
+  if (queued.length >= MAX_QUEUE_SIZE) {
+    throw new Error(
+      `VideoQueue: queue is full (${MAX_QUEUE_SIZE} active jobs). Try again later.`
+    );
+  }
+
+  // Idempotency: if client re-submits the same clientRequestId and the prior
+  // job is non-terminal, return the existing job.
+  if (request.clientRequestId) {
+    for (const existing of registry.values()) {
+      if (
+        existing.clientRequestId === request.clientRequestId &&
+        !isTerminalStatus(existing.status)
+      ) {
+        return existing;
+      }
+    }
+  }
 
   const job: VideoJob = {
-    jobId,
-    correlationId,
+    id: randomUUID(),
     status: "queued",
-    degradeMode: "none",
-    progress: 0,
-    createdAt: now,
-    updatedAt: now,
-    prompt: req.prompt.trim().slice(0, 2000),
-    stages: [],
-    warnings: [],
-    pressureAtStart: pressureLevel,
-    modelTrace: [],
+    request,
+    stages: {},
+    overallProgress: 0,
+    retryCount: 0,
+    createdAt: now(),
+    updatedAt: now(),
+    clientRequestId: request.clientRequestId,
   };
 
-  jobs.set(jobId, job);
-  pendingQueue.push(jobId);
-
-  emitVideoEvent(job);
-  scheduleProcessor();
-
+  registry.set(job.id, job);
+  scheduleCleanup(job.id);
   return job;
 }
 
-// ─── Job accessors ────────────────────────────────────────────────────────────
-
-export function getJob(jobId: string): VideoJob | undefined {
-  return jobs.get(jobId);
+/**
+ * Retrieve a job by id.
+ */
+export function getJob(id: string): VideoJob | undefined {
+  return registry.get(id);
 }
 
-export function listJobs(limit = 50): VideoJobListItem[] {
-  const sorted = [...jobs.values()]
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .slice(0, limit);
+/**
+ * List jobs, optionally filtered by status.
+ */
+export function listJobs(filter?: {
+  status?: VideoJobStatus;
+  limit?: number;
+  offset?: number;
+}): { jobs: VideoJob[]; total: number } {
+  let all = [...registry.values()].sort(
+    (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)
+  );
 
-  return sorted.map(toListItem);
+  if (filter?.status) {
+    all = all.filter((j) => j.status === filter.status);
+  }
+
+  const total = all.length;
+  const offset = filter?.offset ?? 0;
+  const limit = Math.min(filter?.limit ?? 50, 100);
+  return { jobs: all.slice(offset, offset + limit), total };
 }
 
-export function cancelJob(jobId: string): boolean {
-  const job = jobs.get(jobId);
-  if (!job) return false;
-  if (["completed", "failed", "cancelled"].includes(job.status)) return false;
+/**
+ * Transition a job from 'queued' → 'running'.
+ * Returns null if concurrency limit is reached or job is not in queued state.
+ */
+export function startJob(id: string): VideoJob | null {
+  const job = registry.get(id);
+  if (!job || job.status !== "queued") return null;
 
-  updateJob(jobId, {
-    status: "cancelled",
-    cancelledAt: new Date().toISOString(),
-    progress: job.progress,
-  });
+  const running = [...registry.values()].filter(
+    (j) => j.status === "running"
+  ).length;
+  if (running >= MAX_CONCURRENT_JOBS) return null;
 
-  // Remove from pending queue if not yet started
-  const idx = pendingQueue.indexOf(jobId);
-  if (idx >= 0) pendingQueue.splice(idx, 1);
+  job.status = "running";
+  job.startedAt = now();
+  job.updatedAt = now();
+  return job;
+}
 
+/**
+ * Record progress for a stage.
+ */
+export function recordStageProgress(
+  id: string,
+  stage: VideoJobStage,
+  progress: VideoStageProgress
+): VideoJob {
+  const job = registry.get(id);
+  if (!job) throw new Error(`VideoQueue: job ${id} not found`);
+  assertMutable(job, "recordStageProgress");
+
+  job.stages[stage] = progress;
+  job.currentStage = stage;
+  job.overallProgress = progress.overallProgress;
+  job.updatedAt = now();
+  return job;
+}
+
+/**
+ * Mark stage as completed.
+ */
+export function completeStage(
+  id: string,
+  stage: VideoJobStage
+): VideoJob {
+  const job = registry.get(id);
+  if (!job) throw new Error(`VideoQueue: job ${id} not found`);
+  assertMutable(job, "completeStage");
+
+  const existing = job.stages[stage] ?? {
+    stage,
+    stageProgress: 0,
+    overallProgress: 0,
+  };
+
+  const stageIdx = VIDEO_JOB_STAGE_ORDER.indexOf(stage);
+  const total = VIDEO_JOB_STAGE_ORDER.length;
+  const overallProgress = Math.round(((stageIdx + 1) / total) * 100);
+
+  job.stages[stage] = {
+    ...existing,
+    stage,
+    stageProgress: 100,
+    overallProgress,
+    completedAt: now(),
+    durationMs: existing.startedAt
+      ? Date.now() - Date.parse(existing.startedAt)
+      : undefined,
+  };
+  job.overallProgress = overallProgress;
+  job.updatedAt = now();
+  return job;
+}
+
+/**
+ * Transition a job to 'completed'.
+ */
+export function completeJob(
+  id: string,
+  output: VideoJob["output"]
+): VideoJob {
+  const job = registry.get(id);
+  if (!job) throw new Error(`VideoQueue: job ${id} not found`);
+  assertMutable(job, "completeJob");
+
+  job.status = "completed";
+  job.output = output;
+  job.overallProgress = 100;
+  job.completedAt = now();
+  job.updatedAt = now();
+  job.currentStage = undefined;
+  return job;
+}
+
+/**
+ * Transition a job to 'failed'.
+ * If retries remain and the error is retryable, re-queues the job.
+ * Returns the updated job (either failed or re-queued).
+ */
+export function failJob(id: string, error: VideoJobError): VideoJob {
+  const job = registry.get(id);
+  if (!job) throw new Error(`VideoQueue: job ${id} not found`);
+  assertMutable(job, "failJob");
+
+  if (error.retryable && job.retryCount < MAX_RETRIES) {
+    job.status = "queued";
+    job.retryCount += 1;
+    job.error = error;
+    job.currentStage = undefined;
+    job.startedAt = undefined;
+    job.stages = {};
+    job.overallProgress = 0;
+    job.updatedAt = now();
+    return job;
+  }
+
+  job.status = "failed";
+  job.error = error;
+  job.completedAt = now();
+  job.updatedAt = now();
+  job.currentStage = undefined;
+  return job;
+}
+
+/**
+ * Cancel a job.
+ * Returns false if the job is already in a terminal state.
+ */
+export function cancelJob(id: string): boolean {
+  const job = registry.get(id);
+  if (!job || isTerminalStatus(job.status)) return false;
+
+  job.status = "cancelled";
+  job.completedAt = now();
+  job.updatedAt = now();
+  job.currentStage = undefined;
   return true;
 }
 
-// ─── Job mutation helpers (used by orchestrator) ──────────────────────────────
+/**
+ * Pick the next queued job that fits concurrency limits.
+ * Returns undefined if nothing is available or concurrency is saturated.
+ */
+export function dequeueNext(): VideoJob | undefined {
+  const running = [...registry.values()].filter(
+    (j) => j.status === "running"
+  ).length;
+  if (running >= MAX_CONCURRENT_JOBS) return undefined;
 
-export function transitionStatus(
-  jobId: string,
-  status: VideoJobStatus,
-  progress: number,
-  notes?: string,
-): void {
-  const job = jobs.get(jobId);
-  if (!job) return;
-
-  // Finalise previous stage log if any
-  const lastStage = job.stages[job.stages.length - 1];
-  if (lastStage && !lastStage.completedAt) {
-    lastStage.completedAt = new Date().toISOString();
-    lastStage.durationMs =
-      new Date(lastStage.completedAt).getTime() -
-      new Date(lastStage.startedAt).getTime();
-    lastStage.success = true;
-    lastStage.notes = notes;
-  }
-
-  // Open new stage log
-  job.stages.push({
-    stage: status,
-    startedAt: new Date().toISOString(),
-    success: false,
-  });
-
-  updateJob(jobId, { status, progress });
+  return [...registry.values()]
+    .filter((j) => j.status === "queued")
+    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))[0];
 }
 
-export function markStageError(jobId: string, error: string): void {
-  const job = jobs.get(jobId);
-  if (!job) return;
-  const lastStage = job.stages[job.stages.length - 1];
-  if (lastStage) {
-    lastStage.completedAt = new Date().toISOString();
-    lastStage.success = false;
-    lastStage.error = error;
-    lastStage.durationMs =
-      new Date(lastStage.completedAt).getTime() -
-      new Date(lastStage.startedAt).getTime();
-  }
+/**
+ * Number of jobs currently running.
+ */
+export function runningCount(): number {
+  return [...registry.values()].filter((j) => j.status === "running").length;
 }
 
-export function updateJob(jobId: string, patch: Partial<VideoJob>): void {
-  const job = jobs.get(jobId);
-  if (!job) return;
-  Object.assign(job, patch, { updatedAt: new Date().toISOString() });
-  emitVideoEvent(job);
-  maybeTrimCompleted();
+/**
+ * Number of jobs currently queued.
+ */
+export function queuedCount(): number {
+  return [...registry.values()].filter((j) => j.status === "queued").length;
 }
 
-export function addWarning(jobId: string, warning: string): void {
-  const job = jobs.get(jobId);
-  if (!job) return;
-  job.warnings.push(warning);
-}
+// ─── Cleanup ──────────────────────────────────────────────────────────────────
 
-export function addModelTrace(jobId: string, model: string): void {
-  const job = jobs.get(jobId);
-  if (!job) return;
-  job.modelTrace = [...(job.modelTrace ?? []), model];
-}
-
-// ─── SSE broadcasting ─────────────────────────────────────────────────────────
-
-function emitVideoEvent(job: VideoJob): void {
-  try {
-    broadcastEvent({
-      type: "video:progress",
-      data: {
-        jobId: job.jobId,
-        correlationId: job.correlationId,
-        status: job.status,
-        degradeMode: job.degradeMode,
-        progress: job.progress,
-        error: job.error,
-        timestamp: job.updatedAt,
-      },
-    });
-  } catch {
-    // Non-fatal — SSE subscriber may have disconnected
-  }
-}
-
-// ─── Sequential processor ─────────────────────────────────────────────────────
-
-function scheduleProcessor(): void {
-  if (processorRunning) return;
-  setImmediate(runProcessor);
-}
-
-async function runProcessor(): Promise<void> {
-  if (processorRunning) return;
-  processorRunning = true;
-
-  while (pendingQueue.length > 0) {
-    const jobId = pendingQueue[0];
-    const job = jobs.get(jobId);
-
-    if (!job || job.status === "cancelled") {
-      pendingQueue.shift();
-      continue;
+function scheduleCleanup(id: string): void {
+  setTimeout(() => {
+    const job = registry.get(id);
+    if (job && isTerminalStatus(job.status)) {
+      registry.delete(id);
     }
-
-    // Dequeue and run
-    pendingQueue.shift();
-
-    try {
-      if (_processorFn) {
-        await _processorFn(job);
-      } else {
-        updateJob(jobId, {
-          status: "failed",
-          error: "No video processor registered",
-          completedAt: new Date().toISOString(),
-        });
-      }
-    } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-      updateJob(jobId, {
-        status: "failed",
-        error,
-        completedAt: new Date().toISOString(),
-      });
-    }
-  }
-
-  processorRunning = false;
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function toListItem(job: VideoJob): VideoJobListItem {
-  return {
-    jobId: job.jobId,
-    correlationId: job.correlationId,
-    status: job.status,
-    degradeMode: job.degradeMode,
-    progress: job.progress,
-    prompt: job.prompt,
-    createdAt: job.createdAt,
-    updatedAt: job.updatedAt,
-    completedAt: job.completedAt,
-    hasScript: !!job.script,
-    hasStoryboard: !!job.storyboard,
-    hasRender: !!(job.render?.clips?.some((c) => c.status === "done")),
-    error: job.error,
-  };
-}
-
-function maybeTrimCompleted(): void {
-  const terminal = [...jobs.values()].filter(
-    (j) => j.status === "completed" || j.status === "failed" || j.status === "cancelled",
-  );
-  if (terminal.length > MAX_COMPLETED) {
-    const toRemove = terminal
-      .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
-      .slice(0, terminal.length - MAX_COMPLETED);
-    for (const j of toRemove) {
-      jobs.delete(j.jobId);
-    }
-  }
+  }, JOB_TTL_MS);
 }
