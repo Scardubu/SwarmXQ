@@ -1,177 +1,367 @@
 /**
  * apps/swarmx-dashboard/src/stores/video.ts
- * ─────────────────────────────────────────────────────────────────────────────
- * Zustand store for the video generation subsystem.
+ * SwarmXQ Dashboard — Video Zustand Store
  *
- * Subscribes to video:progress SSE events from the existing events store.
- * Fetches full job details on demand via React Query (not stored here).
- * ─────────────────────────────────────────────────────────────────────────────
+ * Single source of truth for video jobs. The store subscribes to the global SSE
+ * stream and applies video job events directly — no secondary useEffect needed
+ * in page components. Components should read from this store only.
  */
 
 import { create } from "zustand";
+import { devtools } from "zustand/middleware";
+import type {
+  VideoJob,
+  VideoJobRequest,
+  VideoJobStage,
+  VideoStageProgress,
+} from "../../../swarmx-api/src/types/video";
+import type { SwarmXEvent } from "../../../swarmx-api/src/types/events";
 
-// ─── Types (mirrored from API types) ─────────────────────────────────────────
+// ─── State ────────────────────────────────────────────────────────────────────
 
-export type VideoJobStatus =
-  | "queued" | "preflight" | "planning" | "scripting"
-  | "storyboard" | "rendering" | "assembling" | "exporting"
-  | "completed" | "failed" | "cancelled" | "degraded";
-
-export type VideoDegradeMode =
-  | "none" | "script_only" | "storyboard_only" | "render_deferred" | "intent_only";
-
-export interface VideoJobSummary {
-  jobId: string;
-  correlationId: string;
-  status: VideoJobStatus;
-  degradeMode: VideoDegradeMode;
-  progress: number;
-  prompt: string;
-  createdAt: string;
-  updatedAt: string;
-  completedAt?: string;
-  hasScript?: boolean;
-  hasStoryboard?: boolean;
-  hasRender?: boolean;
-  error?: string;
+export interface VideoState {
+  /** All known jobs, keyed by id. */
+  jobs: Map<string, VideoJob>;
+  /** Currently selected job for detail view. */
+  selectedJobId: string | null;
+  /** True while the initial job list is loading. */
+  isLoading: boolean;
+  /** True while a new job is being submitted. */
+  isSubmitting: boolean;
+  /** Non-null when the list fetch failed. */
+  listError: string | null;
+  /** Non-null when job submission failed. */
+  submitError: string | null;
 }
 
-// ─── Progress event from SSE ──────────────────────────────────────────────────
+export interface VideoActions {
+  // ── Remote ──────────────────────────────────────────────────────────────────
+  fetchJobs: () => Promise<void>;
+  submitJob: (request: VideoJobRequest) => Promise<string | null>;
+  cancelJob: (jobId: string) => Promise<void>;
 
-export interface VideoProgressEvent {
-  jobId: string;
-  correlationId: string;
-  status: VideoJobStatus;
-  degradeMode: VideoDegradeMode;
-  progress: number;
-  error?: string;
-  timestamp: string;
+  // ── SSE ingestion ───────────────────────────────────────────────────────────
+  /** Called by the top-level SSE hook to route events into the store. */
+  ingestEvent: (event: SwarmXEvent) => void;
+
+  // ── Selection ───────────────────────────────────────────────────────────────
+  selectJob: (jobId: string | null) => void;
+
+  // ── Derived helpers ─────────────────────────────────────────────────────────
+  getJob: (jobId: string) => VideoJob | undefined;
+  listJobs: () => VideoJob[];
+  selectedJob: () => VideoJob | undefined;
+
+  // ── Reset ────────────────────────────────────────────────────────────────────
+  clearErrors: () => void;
+}
+
+type VideoStore = VideoState & VideoActions;
+
+// ─── API helpers ──────────────────────────────────────────────────────────────
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:7380";
+
+async function apiFetch<T>(
+  path: string,
+  init?: RequestInit
+): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: { "Content-Type": "application/json", ...init?.headers },
+    ...init,
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => res.statusText);
+    throw new Error(`API ${path} → ${res.status}: ${body}`);
+  }
+  return res.json() as Promise<T>;
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
-interface VideoStore {
-  /** Lightweight summaries keyed by jobId (updated via SSE) */
-  jobs: Map<string, VideoJobSummary>;
-  /** The jobId currently being viewed in detail */
-  selectedJobId: string | null;
-  /** True while the job list is loading from the API */
-  loading: boolean;
-  /** Store-level error (not job-level) */
-  error: string | null;
+export const useVideoStore = create<VideoStore>()(
+  devtools(
+    (set, get) => ({
+      // ── Initial state ────────────────────────────────────────────────────────
+      jobs: new Map(),
+      selectedJobId: null,
+      isLoading: false,
+      isSubmitting: false,
+      listError: null,
+      submitError: null,
 
-  // Actions
-  setSelectedJobId: (id: string | null) => void;
-  setLoading: (loading: boolean) => void;
-  setError: (error: string | null) => void;
-  /** Bulk-load job list from API response */
-  setJobs: (jobs: VideoJobSummary[]) => void;
-  /** Apply a SSE progress event — upserts into the jobs map */
-  applyProgressEvent: (event: VideoProgressEvent) => void;
-  /** Remove a job from the local map (e.g., after cancel) */
-  removeJob: (jobId: string) => void;
-  /** Total active jobs (queued / running stages) */
-  activeCount: () => number;
-}
+      // ── fetchJobs ─────────────────────────────────────────────────────────────
+      fetchJobs: async () => {
+        set({ isLoading: true, listError: null }, false, "video/fetchJobs/start");
+        try {
+          const data = await apiFetch<{ jobs: VideoJob[] }>("/api/video/jobs");
+          const jobs = new Map<string, VideoJob>();
+          for (const job of data.jobs) {
+            jobs.set(job.id, job);
+          }
+          set({ jobs, isLoading: false }, false, "video/fetchJobs/done");
+        } catch (err) {
+          set(
+            {
+              isLoading: false,
+              listError: err instanceof Error ? err.message : "Failed to fetch jobs",
+            },
+            false,
+            "video/fetchJobs/error"
+          );
+        }
+      },
 
-export const useVideoStore = create<VideoStore>((set, get) => ({
-  jobs: new Map(),
-  selectedJobId: null,
-  loading: false,
-  error: null,
+      // ── submitJob ────────────────────────────────────────────────────────────
+      submitJob: async (request) => {
+        set({ isSubmitting: true, submitError: null }, false, "video/submit/start");
+        try {
+          const data = await apiFetch<{ jobId: string; status: string; createdAt: string }>(
+            "/api/video/jobs",
+            { method: "POST", body: JSON.stringify(request) }
+          );
 
-  setSelectedJobId: (id) => set({ selectedJobId: id }),
-  setLoading: (loading) => set({ loading }),
-  setError: (error) => set({ error }),
+          // Seed the store with a pending job so the UI updates immediately.
+          const seedJob: VideoJob = {
+            id: data.jobId,
+            status: "queued",
+            request,
+            stages: {},
+            overallProgress: 0,
+            retryCount: 0,
+            createdAt: data.createdAt,
+            updatedAt: data.createdAt,
+          };
+          set(
+            (state) => {
+              const jobs = new Map(state.jobs);
+              jobs.set(data.jobId, seedJob);
+              return { jobs, isSubmitting: false, selectedJobId: data.jobId };
+            },
+            false,
+            "video/submit/done"
+          );
+          return data.jobId;
+        } catch (err) {
+          set(
+            {
+              isSubmitting: false,
+              submitError: err instanceof Error ? err.message : "Failed to submit job",
+            },
+            false,
+            "video/submit/error"
+          );
+          return null;
+        }
+      },
 
-  setJobs: (incoming) => {
-    const next = new Map<string, VideoJobSummary>(get().jobs);
-    for (const job of incoming) {
-      next.set(job.jobId, job);
-    }
-    set({ jobs: next });
-  },
+      // ── cancelJob ────────────────────────────────────────────────────────────
+      cancelJob: async (jobId) => {
+        try {
+          await apiFetch(`/api/video/jobs/${jobId}/cancel`, { method: "POST" });
+          // Optimistic update — SSE will confirm.
+          set(
+            (state) => {
+              const jobs = new Map(state.jobs);
+              const job = jobs.get(jobId);
+              if (job) {
+                jobs.set(jobId, {
+                  ...job,
+                  status: "cancelled",
+                  updatedAt: new Date().toISOString(),
+                });
+              }
+              return { jobs };
+            },
+            false,
+            "video/cancel"
+          );
+        } catch (err) {
+          console.error("[VideoStore] cancelJob failed:", err);
+        }
+      },
 
-  applyProgressEvent: (event) => {
-    const jobs = new Map(get().jobs);
-    const existing = jobs.get(event.jobId);
-    jobs.set(event.jobId, {
-      jobId: event.jobId,
-      correlationId: event.correlationId,
-      status: event.status,
-      degradeMode: event.degradeMode,
-      progress: event.progress,
-      prompt: existing?.prompt ?? "",
-      createdAt: existing?.createdAt ?? event.timestamp,
-      updatedAt: event.timestamp,
-      completedAt: ["completed", "failed", "degraded", "cancelled"].includes(event.status)
-        ? event.timestamp
-        : existing?.completedAt,
-      error: event.error,
-      hasScript: existing?.hasScript,
-      hasStoryboard: existing?.hasStoryboard,
-      hasRender: existing?.hasRender,
-    });
-    set({ jobs });
-  },
+      // ── ingestEvent ───────────────────────────────────────────────────────────
+      /**
+       * Route SSE events into the store.
+       *
+       * IMPORTANT: This is the ONLY place video events are applied to state.
+       * Components must NOT have their own useEffect that listens to the SSE
+       * stream and re-applies video events — that causes double-application.
+       * Subscribe to this store's derived state instead.
+       */
+      ingestEvent: (event) => {
+        if (!event.type.startsWith("video:")) return;
 
-  removeJob: (jobId) => {
-    const jobs = new Map(get().jobs);
-    jobs.delete(jobId);
-    const selectedJobId = get().selectedJobId === jobId ? null : get().selectedJobId;
-    set({ jobs, selectedJobId });
-  },
+        set(
+          (state) => {
+            const jobs = new Map(state.jobs);
 
-  activeCount: () => {
-    const active: VideoJobStatus[] = ["queued", "preflight", "planning", "scripting", "storyboard", "rendering", "assembling", "exporting"];
-    let count = 0;
-    for (const job of get().jobs.values()) {
-      if (active.includes(job.status)) count++;
-    }
-    return count;
-  },
-}));
+            switch (event.type) {
+              case "video:created": {
+                // If we don't have this job yet (e.g. submitted from another tab),
+                // seed a minimal record.
+                if (!jobs.has(event.payload.jobId)) {
+                  const seed: VideoJob = {
+                    id: event.payload.jobId,
+                    status: "queued",
+                    request: { prompt: event.payload.prompt },
+                    stages: {},
+                    overallProgress: 0,
+                    retryCount: 0,
+                    createdAt: event.timestamp,
+                    updatedAt: event.timestamp,
+                  };
+                  jobs.set(seed.id, seed);
+                }
+                break;
+              }
 
-// ─── Status helpers ───────────────────────────────────────────────────────────
+              case "video:queued": {
+                const job = jobs.get(event.payload.jobId);
+                if (job) {
+                  jobs.set(job.id, {
+                    ...job,
+                    status: "queued",
+                    updatedAt: event.timestamp,
+                  });
+                }
+                break;
+              }
 
-export function isTerminal(status: VideoJobStatus): boolean {
-  return ["completed", "failed", "cancelled", "degraded"].includes(status);
-}
+              case "video:stage_started": {
+                const job = jobs.get(event.payload.jobId);
+                if (job) {
+                  const stage = event.payload.stage as VideoJobStage;
+                  const stageProgress: VideoStageProgress = {
+                    stage,
+                    stageProgress: 0,
+                    overallProgress: job.overallProgress,
+                    startedAt: event.timestamp,
+                    message: `${stage.replace(/_/g, " ")} started`,
+                  };
+                  jobs.set(job.id, {
+                    ...job,
+                    status: "running",
+                    currentStage: stage,
+                    stages: { ...job.stages, [stage]: stageProgress },
+                    updatedAt: event.timestamp,
+                  });
+                }
+                break;
+              }
 
-export function isRunning(status: VideoJobStatus): boolean {
-  return !isTerminal(status);
-}
+              case "video:progress": {
+                const job = jobs.get(event.payload.jobId);
+                if (job) {
+                  const { stage, stageProgress, overallProgress } = event.payload;
+                  jobs.set(job.id, {
+                    ...job,
+                    status: "running",
+                    currentStage: stage as VideoJobStage,
+                    overallProgress,
+                    stages: {
+                      ...job.stages,
+                      [stage]: stageProgress,
+                    },
+                    updatedAt: event.timestamp,
+                  });
+                }
+                break;
+              }
 
-export const STATUS_LABELS: Record<VideoJobStatus, string> = {
-  queued: "Queued",
-  preflight: "Preflight",
-  planning: "Planning",
-  scripting: "Writing Script",
-  storyboard: "Building Storyboard",
-  rendering: "Rendering",
-  assembling: "Assembling",
-  exporting: "Exporting",
-  completed: "Completed",
-  failed: "Failed",
-  cancelled: "Cancelled",
-  degraded: "Degraded",
-};
+              case "video:completed": {
+                const job = jobs.get(event.payload.jobId);
+                if (job) {
+                  jobs.set(job.id, {
+                    ...job,
+                    status: "completed",
+                    overallProgress: 100,
+                    currentStage: undefined,
+                    completedAt: event.timestamp,
+                    updatedAt: event.timestamp,
+                    output: job.output ?? {
+                      relativePath: "",
+                      absolutePath: "",
+                      publicUrl: event.payload.outputPublicUrl,
+                      fileSizeBytes: event.payload.fileSizeBytes,
+                      durationSeconds: event.payload.durationSeconds,
+                      widthPx: 720,
+                      heightPx: 1280,
+                      fps: 24,
+                      format: "mp4",
+                      checksum: "",
+                      generatedAt: event.timestamp,
+                      modelsUsed: event.payload.modelsUsed,
+                    },
+                  });
+                }
+                break;
+              }
 
-export const DEGRADE_LABELS: Record<VideoDegradeMode, string> = {
-  none: "Full pipeline",
-  script_only: "Script only (no render)",
-  storyboard_only: "Storyboard ready (no render)",
-  render_deferred: "Render deferred",
-  intent_only: "Intent only (models offline)",
-};
+              case "video:failed": {
+                const job = jobs.get(event.payload.jobId);
+                if (job) {
+                  jobs.set(job.id, {
+                    ...job,
+                    status: job.retryCount < event.payload.retryCount ? "queued" : "failed",
+                    retryCount: event.payload.retryCount,
+                    error: event.payload.error,
+                    currentStage: undefined,
+                    updatedAt: event.timestamp,
+                  });
+                }
+                break;
+              }
 
-export const PIPELINE_STAGES: VideoJobStatus[] = [
-  "queued", "preflight", "planning", "scripting",
-  "storyboard", "rendering", "assembling", "exporting", "completed",
-];
+              case "video:cancelled": {
+                const job = jobs.get(event.payload.jobId);
+                if (job) {
+                  jobs.set(job.id, {
+                    ...job,
+                    status: "cancelled",
+                    currentStage: undefined,
+                    completedAt: event.timestamp,
+                    updatedAt: event.timestamp,
+                  });
+                }
+                break;
+              }
 
-export function stagePct(status: VideoJobStatus): number {
-  const idx = PIPELINE_STAGES.indexOf(status);
-  if (idx < 0) return 0;
-  return Math.round((idx / (PIPELINE_STAGES.length - 1)) * 100);
-}
+              case "video:snapshot": {
+                jobs.set(event.payload.job.id, event.payload.job);
+                break;
+              }
+            }
+
+            return { jobs };
+          },
+          false,
+          `video/sse/${event.type}`
+        );
+      },
+
+      // ── Selection ─────────────────────────────────────────────────────────────
+      selectJob: (jobId) => {
+        set({ selectedJobId: jobId }, false, "video/select");
+      },
+
+      // ── Derived ───────────────────────────────────────────────────────────────
+      getJob: (jobId) => get().jobs.get(jobId),
+      listJobs: () =>
+        [...get().jobs.values()].sort(
+          (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)
+        ),
+      selectedJob: () => {
+        const { selectedJobId, jobs } = get();
+        return selectedJobId ? jobs.get(selectedJobId) : undefined;
+      },
+
+      // ── Reset ─────────────────────────────────────────────────────────────────
+      clearErrors: () => {
+        set({ listError: null, submitError: null }, false, "video/clearErrors");
+      },
+    }),
+    { name: "VideoStore" }
+  )
+);
