@@ -1,193 +1,203 @@
 /**
  * apps/swarmx-api/src/types/video.ts
- * ─────────────────────────────────────────────────────────────────────────────
- * SwarmX Video Generation — Type contracts
- *
- * Job lifecycle (happy path):
- *   queued → preflight → planning → scripting → storyboard →
- *   rendering → assembling → exporting → completed
- *
- * Degraded paths:
- *   * → degraded        (partial output preserved)
- *   * → failed          (unrecoverable error)
- *   * → cancelled       (user-initiated)
- *   planning → script_only     (renderer unavailable)
- *   scripting → storyboard_only (pressure critical mid-pipe)
- *
- * ─────────────────────────────────────────────────────────────────────────────
+ * SwarmXQ Video Subsystem — Shared Domain Types
+ * Phase 1: Canonical contracts for queue, routes, orchestrator, and dashboard.
  */
 
-// ─── Job state ────────────────────────────────────────────────────────────────
+// ─── Job Lifecycle ────────────────────────────────────────────────────────────
 
 export type VideoJobStatus =
   | "queued"
-  | "preflight"
-  | "planning"
-  | "scripting"
-  | "storyboard"
-  | "rendering"
-  | "assembling"
-  | "exporting"
+  | "running"
   | "completed"
   | "failed"
-  | "cancelled"
-  | "degraded";
+  | "cancelled";
 
-export type VideoDegradeMode =
-  | "none"           // full pipeline ran
-  | "script_only"    // script produced, no storyboard/render
-  | "storyboard_only"// script + storyboard, no render
-  | "render_deferred"// full content ready, render queued for later
-  | "intent_only";   // just parsed the intent, models unavailable
+export type VideoJobStage =
+  | "intent_classification"
+  | "planning"
+  | "scripting"
+  | "storyboard_generation"
+  | "render_assembly"
+  | "finalizing";
 
-export type VideoStyle =
-  | "motivational"
-  | "educational"
-  | "narrative"
-  | "documentary"
-  | "explainer"
-  | "abstract"
-  | "custom";
+export const VIDEO_JOB_STAGE_ORDER: VideoJobStage[] = [
+  "intent_classification",
+  "planning",
+  "scripting",
+  "storyboard_generation",
+  "render_assembly",
+  "finalizing",
+];
 
-export type VideoAspect = "9:16" | "16:9" | "1:1";
+export const VIDEO_JOB_STAGE_LABELS: Record<VideoJobStage, string> = {
+  intent_classification: "Intent Classification",
+  planning: "Planning",
+  scripting: "Scripting",
+  storyboard_generation: "Storyboard Generation",
+  render_assembly: "Render & Assembly",
+  finalizing: "Finalizing",
+};
 
-export type VideoLength = "short" | "medium" | "long"; // <30s, 30–90s, >90s
+// ─── Request / Response ───────────────────────────────────────────────────────
 
-// ─── Job data structures ──────────────────────────────────────────────────────
-
-export interface VideoJobIntent {
-  topic: string;
-  style: VideoStyle;
-  aspect: VideoAspect;
-  length: VideoLength;
-  targetPlatform?: "tiktok" | "youtube_shorts" | "reels" | "generic";
-  tone?: string;
-  keyPoints?: string[];
-  rawPrompt: string;
+export interface VideoJobRequest {
+  /** Plain-language description of the video to generate. */
+  prompt: string;
+  /** Target platform influencing style, aspect ratio, and length. */
+  platform?: "tiktok" | "youtube_shorts" | "reels" | "generic";
+  /** Niche category — informs scripting model routing. */
+  niche?: "motivational" | "finance" | "facts" | "true_crime" | "tech" | "other";
+  /** Preferred output duration in seconds. Clamped to 15–180 by orchestrator. */
+  targetDurationSeconds?: number;
+  /** Model tier override — defaults to auto-routing via complexity score. */
+  modelTier?: "fast" | "worker" | "supervisor" | "reasoner";
+  /** Client-supplied idempotency key. */
+  clientRequestId?: string;
 }
 
-export interface VideoScript {
-  title: string;
-  hook: string;                // first 3 seconds
-  body: string;                // main narrative
-  cta: string;                 // call to action
-  estimatedDurationSec: number;
-  wordCount: number;
-  narrationText: string;       // full voiceover script
-}
-
-export interface StoryboardShot {
-  index: number;
-  durationSec: number;
-  visualDescription: string;
-  narrationSegment: string;
-  cameraMotion?: string;       // e.g. "slow zoom in", "static"
-  colorMood?: string;          // e.g. "warm golden", "dark blue"
-  textOverlay?: string;
-  comfyPrompt?: string;        // ready-to-use ComfyUI text2video prompt
-}
-
-export interface VideoStoryboard {
-  shots: StoryboardShot[];
-  totalDurationSec: number;
-  style: VideoStyle;
-  aspect: VideoAspect;
-  resolution: "480p" | "720p";
-  renderNotes: string;         // guidance for operator / ComfyUI
-}
-
-export interface RenderManifest {
+export interface VideoJobResponse {
   jobId: string;
-  comfyWorkflowJson?: Record<string, unknown>; // ComfyUI API workflow
-  outputDir?: string;
-  clips?: RenderClip[];
-  assembledPath?: string;
-  rendererUsed?: "comfyui" | "ltx" | "wan" | "none";
-  renderStartedAt?: string;
-  renderCompletedAt?: string;
-  renderError?: string;
-}
-
-export interface RenderClip {
-  shotIndex: number;
-  status: "queued" | "generating" | "done" | "failed";
-  path?: string;
-  promptId?: string;           // ComfyUI prompt_id
-  durationSec: number;
-}
-
-// ─── The job record ───────────────────────────────────────────────────────────
-
-export interface VideoJob {
-  jobId: string;
-  correlationId: string;       // links to SSE and workflow traces
   status: VideoJobStatus;
-  degradeMode: VideoDegradeMode;
-  progress: number;            // 0–100
-  createdAt: string;           // ISO-8601
-  updatedAt: string;
-  completedAt?: string;
-  cancelledAt?: string;
-
-  // Input
-  prompt: string;              // raw user prompt
-  intent?: VideoJobIntent;     // classified intent
-
-  // Pipeline outputs (accumulated as stages complete)
-  plan?: string;               // free-form planning notes
-  script?: VideoScript;
-  storyboard?: VideoStoryboard;
-  render?: RenderManifest;
-
-  // Diagnostics
-  stages: VideoStageLog[];
-  error?: string;
-  warnings: string[];
-  pressureAtStart?: string;    // pressure level when job was created
-  modelTrace?: string[];       // which models were called
+  createdAt: string; // ISO 8601
+  estimatedDurationMs?: number;
+  message?: string;
 }
 
-export interface VideoStageLog {
-  stage: VideoJobStatus;
-  startedAt: string;
+// ─── Progress ─────────────────────────────────────────────────────────────────
+
+export interface VideoStageProgress {
+  stage: VideoJobStage;
+  /** 0–100 fractional progress within this stage. */
+  stageProgress: number;
+  /** Overall job progress 0–100. */
+  overallProgress: number;
+  message?: string;
+  startedAt?: string;
   completedAt?: string;
   durationMs?: number;
-  success: boolean;
-  notes?: string;
-  error?: string;
 }
 
-// ─── API contracts ────────────────────────────────────────────────────────────
+// ─── Output Metadata ──────────────────────────────────────────────────────────
 
-export interface CreateVideoJobRequest {
-  prompt: string;
-  style?: VideoStyle;
-  aspect?: VideoAspect;
-  length?: VideoLength;
-  targetPlatform?: VideoJobIntent["targetPlatform"];
+export interface VideoOutputMetadata {
+  /** Relative path under SWARM_VIDEO_OUTPUT_DIR. */
+  relativePath: string;
+  /** Absolute path on-disk — API-internal only. */
+  absolutePath: string;
+  /** Public URL served by the API. */
+  publicUrl: string;
+  fileSizeBytes: number;
+  durationSeconds: number;
+  widthPx: number;
+  heightPx: number;
+  fps: number;
+  format: "mp4" | "webm";
+  /** SHA-256 of the output file. */
+  checksum: string;
+  generatedAt: string; // ISO 8601
+  /** Script text used during scripting stage. */
+  scriptText?: string;
+  /** List of storyboard frame descriptions. */
+  storyboardFrames?: string[];
+  /** Ollama model tags actually used per stage. */
+  modelsUsed: Partial<Record<VideoJobStage, string>>;
 }
 
-export interface CreateVideoJobResponse {
-  jobId: string;
-  correlationId: string;
+// ─── Full Job Record ──────────────────────────────────────────────────────────
+
+export interface VideoJob {
+  id: string;
   status: VideoJobStatus;
-  message: string;
-  estimatedDurationSec?: number;
-  degradeWarning?: string;
-}
-
-export interface VideoJobListItem {
-  jobId: string;
-  correlationId: string;
-  status: VideoJobStatus;
-  degradeMode: VideoDegradeMode;
-  progress: number;
-  prompt: string;
+  request: VideoJobRequest;
+  stages: Partial<Record<VideoJobStage, VideoStageProgress>>;
+  currentStage?: VideoJobStage;
+  /** Overall progress 0–100. */
+  overallProgress: number;
+  output?: VideoOutputMetadata;
+  error?: VideoJobError;
   createdAt: string;
   updatedAt: string;
+  startedAt?: string;
   completedAt?: string;
-  hasScript: boolean;
-  hasStoryboard: boolean;
-  hasRender: boolean;
-  error?: string;
+  /** Retry count against the same job id (v1: 0 or 1). */
+  retryCount: number;
+  /** Pressure tier at job start. */
+  pressureTierAtStart?: "normal" | "high" | "critical";
+  clientRequestId?: string;
+}
+
+// ─── Errors ───────────────────────────────────────────────────────────────────
+
+export interface VideoJobError {
+  code: VideoErrorCode;
+  message: string;
+  stage?: VideoJobStage;
+  retryable: boolean;
+  details?: Record<string, unknown>;
+}
+
+export type VideoErrorCode =
+  | "PRESSURE_CRITICAL"
+  | "TIMEOUT"
+  | "OLLAMA_UNAVAILABLE"
+  | "COMFY_UNAVAILABLE"
+  | "SCRIPTING_FAILED"
+  | "STORYBOARD_FAILED"
+  | "RENDER_FAILED"
+  | "ASSET_WRITE_FAILED"
+  | "CANCELLED_BY_USER"
+  | "UNKNOWN";
+
+// ─── List / Filter ────────────────────────────────────────────────────────────
+
+export interface VideoJobListQuery {
+  status?: VideoJobStatus;
+  platform?: VideoJobRequest["platform"];
+  limit?: number;
+  offset?: number;
+}
+
+export interface VideoJobListResponse {
+  jobs: VideoJob[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+// ─── Cancel ───────────────────────────────────────────────────────────────────
+
+export interface VideoJobCancelResponse {
+  jobId: string;
+  cancelled: boolean;
+  previousStatus: VideoJobStatus;
+  message: string;
+}
+
+// ─── Utility ──────────────────────────────────────────────────────────────────
+
+export function isTerminalStatus(status: VideoJobStatus): boolean {
+  return status === "completed" || status === "failed" || status === "cancelled";
+}
+
+export function stageIndex(stage: VideoJobStage): number {
+  return VIDEO_JOB_STAGE_ORDER.indexOf(stage);
+}
+
+/**
+ * Compute overall progress (0–100) from individual stage progresses.
+ * Each stage is weighted equally; completed stages count as 100%.
+ */
+export function computeOverallProgress(
+  stages: Partial<Record<VideoJobStage, VideoStageProgress>>
+): number {
+  const total = VIDEO_JOB_STAGE_ORDER.length;
+  let sum = 0;
+  for (const stage of VIDEO_JOB_STAGE_ORDER) {
+    const sp = stages[stage];
+    if (sp) {
+      sum += sp.stageProgress;
+    }
+  }
+  return Math.round(sum / total);
 }
