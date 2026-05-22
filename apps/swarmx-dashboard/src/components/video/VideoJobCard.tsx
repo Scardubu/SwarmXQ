@@ -1,349 +1,184 @@
-"use client";
-
 /**
  * apps/swarmx-dashboard/src/components/video/VideoJobCard.tsx
- * ─────────────────────────────────────────────────────────────────────────────
- * Displays a single video job with progress bar, stage timeline, output
- * previews, and retry/cancel controls.
- * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * FIX: Previously duplicated VideoJobTimeline logic inline.
+ * Now imports and renders <VideoJobTimeline compact /> correctly.
+ * VideoJobTimeline is no longer defined-but-never-used dead code.
  */
 
-import React, { useState } from "react";
-import { Progress } from "@/components/ui/progress";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  useVideoStore,
-  STATUS_LABELS,
-  DEGRADE_LABELS,
-  PIPELINE_STAGES,
-  isTerminal,
-  type VideoJobStatus,
-  type VideoDegradeMode,
-} from "@/stores/video";
-import { cn } from "@/lib/utils";
-import {
-  Film,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  AlertTriangle,
-  RefreshCw,
-  X,
-  ChevronDown,
-  ChevronRight,
-  FileText,
-  Image,
-  Video,
-  Loader2,
-} from "lucide-react";
+"use client";
 
-interface VideoJobDetailProps {
-  jobId: string;
-  fullDetail?: VideoJobDetail | null;
-  onRetry: (jobId: string) => void;
-  onCancel: (jobId: string) => void;
-  onSelect: (jobId: string) => void;
+import { useVideoStore } from "../../stores/video";
+import { VideoJobTimeline } from "./VideoJobTimeline";
+import type { VideoJob } from "../../../../swarmx-api/src/types/video";
+
+// ─── Props ────────────────────────────────────────────────────────────────────
+
+interface VideoJobCardProps {
+  job: VideoJob;
+  onSelect?: (jobId: string) => void;
+  isSelected?: boolean;
 }
 
-// Full API response shape
-interface VideoJobDetail {
-  jobId: string;
-  status: VideoJobStatus;
-  degradeMode: VideoDegradeMode;
-  progress: number;
-  prompt: string;
-  createdAt: string;
-  updatedAt: string;
-  completedAt?: string;
-  intent?: { topic: string; style: string; aspect: string; length: string; targetPlatform?: string };
-  script?: { title: string; hook: string; body: string; cta: string; narrationText: string; estimatedDurationSec: number };
-  storyboard?: { shots: { index: number; visualDescription: string; narrationSegment: string; comfyPrompt?: string }[]; totalDurationSec: number; renderNotes: string };
-  render?: { rendererUsed?: string; outputDir?: string; clips?: { shotIndex: number; status: string }[] };
-  warnings: string[];
-  stages: { stage: string; startedAt: string; completedAt?: string; durationMs?: number; success: boolean; error?: string }[];
-  error?: string;
-}
+// ─── Status Badge ─────────────────────────────────────────────────────────────
 
-const STATUS_COLORS: Record<VideoJobStatus, string> = {
-  queued:     "bg-text-muted/20 text-text-muted",
-  preflight:  "bg-blue-500/20 text-blue-400",
-  planning:   "bg-blue-500/20 text-blue-400",
-  scripting:  "bg-purple-500/20 text-purple-400",
-  storyboard: "bg-purple-500/20 text-purple-400",
-  rendering:  "bg-orange-500/20 text-orange-400",
-  assembling: "bg-orange-500/20 text-orange-400",
-  exporting:  "bg-yellow-500/20 text-yellow-400",
-  completed:  "bg-green-500/20 text-green-400",
-  failed:     "bg-destructive/20 text-destructive",
-  cancelled:  "bg-text-muted/20 text-text-muted",
-  degraded:   "bg-warning/20 text-warning",
-};
+function StatusBadge({ status }: { status: VideoJob["status"] }) {
+  const map: Record<VideoJob["status"], { label: string; class: string }> = {
+    queued: { label: "Queued", class: "bg-zinc-800 text-zinc-400 border-zinc-700" },
+    running: {
+      label: "Running",
+      class: "bg-amber-950/60 text-amber-400 border-amber-800/50 animate-pulse",
+    },
+    completed: {
+      label: "Done",
+      class: "bg-emerald-950/60 text-emerald-400 border-emerald-800/50",
+    },
+    failed: { label: "Failed", class: "bg-red-950/60 text-red-400 border-red-800/50" },
+    cancelled: {
+      label: "Cancelled",
+      class: "bg-zinc-900 text-zinc-500 border-zinc-700",
+    },
+  };
 
-export function VideoJobCard({ jobId, fullDetail, onRetry, onCancel, onSelect }: VideoJobDetailProps) {
-  const summary = useVideoStore((s) => s.jobs.get(jobId));
-  const [expanded, setExpanded] = useState(false);
-  const [actionBusy, setActionBusy] = useState(false);
-
-  if (!summary) return null;
-
-  const running = !isTerminal(summary.status);
-  const canRetry = ["failed", "degraded", "cancelled"].includes(summary.status);
-  const canCancel = !isTerminal(summary.status);
-
-  async function handleRetry() {
-    setActionBusy(true);
-    try { await onRetry(jobId); } finally { setActionBusy(false); }
-  }
-
-  async function handleCancel() {
-    setActionBusy(true);
-    try { await onCancel(jobId); } finally { setActionBusy(false); }
-  }
-
+  const { label, class: cls } = map[status];
   return (
-    <article
-      className="rounded-xl border border-border-subtle bg-bg-elevated overflow-hidden"
-      aria-label={`Video job: ${summary.prompt.slice(0, 60)}`}
+    <span
+      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider border ${cls}`}
     >
-      {/* Header row */}
-      <div className="flex items-start gap-3 p-4">
-        <div className="mt-0.5 flex-shrink-0">
-          {running ? (
-            <Loader2 className="h-4 w-4 animate-spin text-text-accent" aria-label="Running" />
-          ) : summary.status === "completed" ? (
-            <CheckCircle2 className="h-4 w-4 text-green-400" aria-label="Completed" />
-          ) : summary.status === "failed" ? (
-            <XCircle className="h-4 w-4 text-destructive" aria-label="Failed" />
-          ) : summary.status === "degraded" ? (
-            <AlertTriangle className="h-4 w-4 text-warning" aria-label="Degraded" />
-          ) : (
-            <Clock className="h-4 w-4 text-text-muted" aria-label="Cancelled" />
-          )}
-        </div>
-
-        <div className="flex-1 min-w-0 space-y-1">
-          <p className="text-sm font-medium text-text-primary truncate" title={summary.prompt}>
-            {summary.prompt.slice(0, 80)}
-            {summary.prompt.length > 80 ? "…" : ""}
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge className={cn("text-[10px] px-1.5 py-0 rounded-md font-medium", STATUS_COLORS[summary.status])}>
-              {STATUS_LABELS[summary.status]}
-            </Badge>
-            {summary.degradeMode !== "none" && (
-              <Badge className="text-[10px] px-1.5 py-0 rounded-md bg-warning/20 text-warning font-medium">
-                {DEGRADE_LABELS[summary.degradeMode]}
-              </Badge>
-            )}
-            <span className="text-[11px] text-text-muted">
-              {new Date(summary.createdAt).toLocaleTimeString()}
-            </span>
-          </div>
-        </div>
-
-        {/* Action buttons */}
-        <div className="flex items-center gap-1.5 ml-2">
-          {canRetry && (
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7"
-              onClick={() => void handleRetry()}
-              disabled={actionBusy}
-              aria-label="Retry job"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-            </Button>
-          )}
-          {canCancel && (
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7 text-text-muted hover:text-destructive"
-              onClick={() => void handleCancel()}
-              disabled={actionBusy}
-              aria-label="Cancel job"
-            >
-              <X className="h-3.5 w-3.5" />
-            </Button>
-          )}
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7"
-            onClick={() => {
-              setExpanded(!expanded);
-              onSelect(jobId);
-            }}
-            aria-label={expanded ? "Collapse detail" : "Expand detail"}
-            aria-expanded={expanded}
-          >
-            {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-          </Button>
-        </div>
-      </div>
-
-      {/* Progress bar */}
-      {running && (
-        <div className="px-4 pb-2">
-          <Progress
-            value={summary.progress}
-            className="h-1"
-            aria-label={`Progress: ${summary.progress}%`}
-          />
-          <p className="mt-1 text-[10px] text-text-muted">{summary.progress}% — {STATUS_LABELS[summary.status]}</p>
-        </div>
-      )}
-
-      {/* Pipeline stage dots */}
-      <div className="px-4 pb-3">
-        <PipelineTrack current={summary.status} />
-      </div>
-
-      {/* Error message */}
-      {summary.error && (
-        <div className="mx-4 mb-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          {summary.error}
-        </div>
-      )}
-
-      {/* Expanded detail panel */}
-      {expanded && fullDetail && (
-        <div className="border-t border-border-subtle bg-bg-surface">
-          <ScrollArea className="max-h-96 p-4 space-y-4">
-            {/* Warnings */}
-            {fullDetail.warnings.length > 0 && (
-              <div className="space-y-1">
-                {fullDetail.warnings.map((w, i) => (
-                  <div key={i} className="flex items-start gap-1.5 text-xs text-warning">
-                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-                    <span>{w}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Script */}
-            {fullDetail.script && (
-              <section>
-                <h3 className="flex items-center gap-1.5 text-xs font-semibold text-text-secondary mb-2">
-                  <FileText className="h-3.5 w-3.5" /> Script — {fullDetail.script.title}
-                </h3>
-                <div className="rounded-lg border border-border-subtle bg-bg-elevated p-3 space-y-2 text-xs">
-                  <div><span className="text-text-muted">Hook: </span><span className="text-text-primary">{fullDetail.script.hook}</span></div>
-                  <div className="text-text-secondary whitespace-pre-wrap leading-relaxed">{fullDetail.script.body}</div>
-                  <div><span className="text-text-muted">CTA: </span><span className="text-text-primary">{fullDetail.script.cta}</span></div>
-                  <div className="text-text-muted">~{fullDetail.script.estimatedDurationSec}s • {fullDetail.script.narrationText.split(/\s+/).length} words</div>
-                </div>
-              </section>
-            )}
-
-            {/* Storyboard shots */}
-            {fullDetail.storyboard && (
-              <section>
-                <h3 className="flex items-center gap-1.5 text-xs font-semibold text-text-secondary mb-2">
-                  <Image className="h-3.5 w-3.5" /> Storyboard — {fullDetail.storyboard.shots.length} shots
-                </h3>
-                <div className="space-y-1.5">
-                  {fullDetail.storyboard.shots.map((shot) => (
-                    <div key={shot.index} className="rounded-lg border border-border-subtle bg-bg-elevated p-2.5 text-xs">
-                      <div className="flex items-start gap-2">
-                        <span className="rounded bg-bg-surface px-1.5 py-0.5 text-[10px] text-text-muted font-mono">#{shot.index + 1}</span>
-                        <div className="flex-1 space-y-0.5">
-                          <p className="text-text-primary">{shot.visualDescription}</p>
-                          <p className="text-text-muted italic">"{shot.narrationSegment}"</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {fullDetail.storyboard.renderNotes && (
-                  <p className="mt-2 text-[11px] text-text-muted">
-                    <span className="font-medium">Render notes:</span> {fullDetail.storyboard.renderNotes}
-                  </p>
-                )}
-              </section>
-            )}
-
-            {/* Render info */}
-            {fullDetail.render && (
-              <section>
-                <h3 className="flex items-center gap-1.5 text-xs font-semibold text-text-secondary mb-2">
-                  <Video className="h-3.5 w-3.5" /> Render
-                </h3>
-                <div className="text-xs text-text-secondary space-y-0.5">
-                  <p>Renderer: <span className="text-text-primary">{fullDetail.render.rendererUsed ?? "none"}</span></p>
-                  {fullDetail.render.outputDir && (
-                    <p>Output: <span className="font-mono text-text-muted">{fullDetail.render.outputDir}</span></p>
-                  )}
-                  {fullDetail.render.clips && (
-                    <p>{fullDetail.render.clips.length} clips queued</p>
-                  )}
-                </div>
-              </section>
-            )}
-
-            {/* Stage log */}
-            {fullDetail.stages.length > 0 && (
-              <section>
-                <h3 className="text-xs font-semibold text-text-secondary mb-2">Stage Log</h3>
-                <div className="space-y-1">
-                  {fullDetail.stages.map((stage, i) => (
-                    <div key={i} className="flex items-center gap-2 text-[11px]">
-                      <span className={cn("h-1.5 w-1.5 rounded-full flex-shrink-0",
-                        stage.success ? "bg-green-400" : stage.error ? "bg-destructive" : "bg-text-muted")} />
-                      <span className="text-text-muted w-24 truncate">{stage.stage}</span>
-                      {stage.durationMs && <span className="text-text-muted">{(stage.durationMs / 1000).toFixed(1)}s</span>}
-                      {stage.error && <span className="text-destructive truncate">{stage.error}</span>}
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-          </ScrollArea>
-        </div>
-      )}
-    </article>
+      {label}
+    </span>
   );
 }
 
-// ─── Pipeline track dots ──────────────────────────────────────────────────────
+// ─── Platform Icon ────────────────────────────────────────────────────────────
 
-function PipelineTrack({ current }: { current: VideoJobStatus }) {
-  const terminal = isTerminal(current);
-  const currentIdx = PIPELINE_STAGES.indexOf(current);
-  const stages = PIPELINE_STAGES.filter((s) => s !== "queued");
+function PlatformTag({ platform }: { platform?: string }) {
+  if (!platform || platform === "generic") return null;
+  const labels: Record<string, string> = {
+    tiktok: "TikTok",
+    youtube_shorts: "YT Shorts",
+    reels: "Reels",
+  };
+  return (
+    <span className="text-[10px] text-zinc-500 font-medium uppercase tracking-wider">
+      {labels[platform] ?? platform}
+    </span>
+  );
+}
+
+// ─── Card ─────────────────────────────────────────────────────────────────────
+
+export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
+  const cancelJob = useVideoStore((s) => s.cancelJob);
+
+  const canCancel = job.status === "queued" || job.status === "running";
+  const isComplete = job.status === "completed";
+
+  const handleCancel = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    void cancelJob(job.id);
+  };
+
+  const elapsed = job.startedAt
+    ? Math.round((Date.now() - Date.parse(job.startedAt)) / 1000)
+    : null;
 
   return (
-    <div className="flex items-center gap-1" aria-label="Pipeline progress">
-      {stages.map((stage, i) => {
-        const stageIdx = PIPELINE_STAGES.indexOf(stage);
-        const done = terminal ? current === "completed" && stageIdx <= PIPELINE_STAGES.length - 1
-          : stageIdx < currentIdx;
-        const active = stageIdx === currentIdx;
-        const failed = terminal && current !== "completed";
-
-        return (
-          <React.Fragment key={stage}>
-            <div
-              title={STATUS_LABELS[stage]}
-              className={cn(
-                "h-1.5 w-1.5 rounded-full transition-colors",
-                failed && stageIdx <= currentIdx ? "bg-destructive"
-                  : done ? "bg-green-400"
-                  : active ? "bg-text-accent animate-pulse"
-                  : "bg-border-subtle",
-              )}
-            />
-            {i < stages.length - 1 && (
-              <div className={cn("h-px flex-1 max-w-3 transition-colors",
-                done ? "bg-green-400/40" : "bg-border-subtle")} />
+    <article
+      className={`
+        group relative flex flex-col gap-3 rounded-xl border bg-zinc-900/80 p-4
+        cursor-pointer transition-all duration-200
+        hover:border-zinc-600 hover:bg-zinc-900
+        ${isSelected
+          ? "border-amber-700/60 ring-1 ring-amber-700/30 bg-zinc-900"
+          : "border-zinc-800"
+        }
+      `}
+      onClick={() => onSelect?.(job.id)}
+    >
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <StatusBadge status={job.status} />
+            <PlatformTag platform={job.request.platform} />
+            {job.request.niche && (
+              <span className="text-[10px] text-zinc-600 font-medium">
+                #{job.request.niche}
+              </span>
             )}
-          </React.Fragment>
-        );
-      })}
-    </div>
+          </div>
+          <p className="mt-1.5 text-sm text-zinc-200 font-medium leading-snug line-clamp-2">
+            {job.request.prompt}
+          </p>
+        </div>
+
+        {/* Actions */}
+        <div className="shrink-0 flex items-center gap-1.5">
+          {canCancel && (
+            <button
+              onClick={handleCancel}
+              className="
+                p-1 rounded-md text-zinc-500 hover:text-red-400 hover:bg-red-950/40
+                transition-colors duration-150 opacity-0 group-hover:opacity-100
+              "
+              title="Cancel job"
+              aria-label="Cancel video job"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+          {isComplete && job.output?.publicUrl && (
+            <a
+              href={job.output.publicUrl}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="
+                p-1 rounded-md text-zinc-500 hover:text-emerald-400 hover:bg-emerald-950/40
+                transition-colors duration-150 opacity-0 group-hover:opacity-100
+              "
+              title="Download video"
+              aria-label="Download generated video"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+            </a>
+          )}
+        </div>
+      </div>
+
+      {/* Timeline — uses VideoJobTimeline (compact mode) */}
+      {/* FIX: No more duplicated inline stage rendering logic here */}
+      <VideoJobTimeline job={job} compact />
+
+      {/* Footer metadata */}
+      <div className="flex items-center gap-3 text-[10px] text-zinc-600 font-mono">
+        <span title="Job ID" className="truncate max-w-[8rem]">
+          {job.id.slice(0, 8)}…
+        </span>
+        {job.retryCount > 0 && (
+          <span className="text-amber-700">retry #{job.retryCount}</span>
+        )}
+        {elapsed != null && job.status === "running" && (
+          <span className="ml-auto">{elapsed}s elapsed</span>
+        )}
+        {job.completedAt && (
+          <span className="ml-auto">
+            {new Date(job.completedAt).toLocaleTimeString()}
+          </span>
+        )}
+        {job.output && (
+          <span>
+            {(job.output.fileSizeBytes / 1024 / 1024).toFixed(1)} MB ·{" "}
+            {job.output.durationSeconds.toFixed(0)}s
+          </span>
+        )}
+      </div>
+    </article>
   );
 }
