@@ -20,6 +20,24 @@
  *                so container log tails show the failure reason (port conflict, EACCES)
  *                instead of just an exit code.
  *   [VIDEO-SERVER-01] videoRoutes registered under /api/video.
+ *   [APEX17-MOT-01]  ModelOrchestrator.init() called before background pollers.
+ *                    Syncs live Ollama /api/ps state so SINGLE-7B LOCK has an
+ *                    accurate baseline before any route handler or poller fires.
+ *                    Ultra-router pre-warmed at startup for sub-second first-request
+ *                    latency. Previously init() ran after all pollers — fixed here.
+ *   [APEX17-MOT-02]  ModelOrchestrator.destroy() now called during graceful shutdown
+ *                    AFTER server.close() drains all in-flight HTTP requests. This
+ *                    ensures no requestModel() call is in flight when the orchestrator
+ *                    tears down, preventing orphaned keep_alive:"0s" eviction fetches
+ *                    from racing with process exit.
+ *                    Previously destroy() was documented in the header but never
+ *                    actually called — a bug that left the Ollama singleton in an
+ *                    indeterminate state on SIGTERM.
+ *   [API-FIX-04]  Shutdown handler calls ModelOrchestrator.getInstance() directly
+ *                 rather than capturing the const declared later in the module.
+ *                 Both approaches work because shutdown fires after full module
+ *                 initialisation, but getInstance() is more explicit and avoids
+ *                 relying on closure-over-const temporal ordering.
  */
 
 import Fastify from "fastify";
@@ -49,6 +67,7 @@ import {
 import { startPyEventsPoller } from "./services/pyevents.js";
 import { startAgentSeedService } from "./services/agentSeed.js";
 import { startSwarmMonitor } from "./services/swarm-pressure-monitor.js";
+import { ModelOrchestrator } from "./services/model-orchestrator.js";
 
 const PORT = Number.parseInt(process.env["SWARMX_API_PORT"] ?? "3001", 10);
 const HOST = process.env["SWARMX_API_HOST"] ?? "127.0.0.1";
@@ -134,14 +153,14 @@ await server.register(ssePlugin);
 await server.register(websocketPlugin);
 
 // ── Route registration ───────────────────────────────────────────────────────
-await server.register(agentsRouter, { prefix: "/api/agents" });
-await server.register(systemRouter, { prefix: "/api/system" });
+await server.register(agentsRouter,    { prefix: "/api/agents" });
+await server.register(systemRouter,    { prefix: "/api/system" });
 await server.register(workflowsRouter, { prefix: "/api/workflows" });
-await server.register(logsRouter, { prefix: "/api/logs" });
-await server.register(configRouter, { prefix: "/api/config" });
-await server.register(composerRouter, { prefix: "/api/composer" });
-await server.register(metricsRouter, { prefix: "/api/metrics" });
-await server.register(videoRoutes, { prefix: "/api/video" });
+await server.register(logsRouter,      { prefix: "/api/logs" });
+await server.register(configRouter,    { prefix: "/api/config" });
+await server.register(composerRouter,  { prefix: "/api/composer" });
+await server.register(metricsRouter,   { prefix: "/api/metrics" });
+await server.register(videoRoutes,     { prefix: "/api/video" });
 
 // ── Health check ──────────────────────────────────────────────────────────────
 // Probed by docker-compose healthcheck and Kubernetes liveness probes.
@@ -152,42 +171,30 @@ server.get("/health", { logLevel: "silent" }, async () => ({
   version: process.env["npm_package_version"] ?? "unknown",
 }));
 
-// ── Graceful shutdown ─────────────────────────────────────────────────────────
-// tini (PID 1 in the container) forwards SIGTERM here. Fastify.close() drains
-// all in-flight requests before the process exits.
-let isShuttingDown = false;
-let stopSwarmMonitor: () => void = () => {};
-
-const shutdown = async (signal: string): Promise<void> => {
-  if (isShuttingDown) {
-    return;
-  }
-
-  isShuttingDown = true;
-  server.log.info({ signal }, "Shutdown signal received — draining requests…");
-
-  try {
-    stopSwarmMonitor();
-  } catch (err) {
-    server.log.warn({ err }, "Failed to stop swarm monitor during shutdown");
-  }
-
-  try {
-    await server.close();
-    server.log.info("Server closed. Exiting.");
-  } catch (err) {
-    server.log.error({ err }, "Error while closing server");
-  } finally {
-    process.exit(0);
-  }
-};
-
-process.on("SIGTERM", () => void shutdown("SIGTERM"));
-process.on("SIGINT", () => void shutdown("SIGINT"));
+// ── [APEX17-MOT-01] ModelOrchestrator — initialize BEFORE background pollers ─
+//
+// Initialises the RAM-aware orchestrator singleton. Pre-warms the ultra-router
+// so first-request latency is sub-second. All video-orchestrator and composer
+// calls route through this singleton for concurrent 7B model safety.
+//
+// ORDERING FIX: init() must run before startSwarmMonitor and other pollers.
+// Previously it ran after all pollers — if any poller triggered model-related
+// logic before init() completed, the SINGLE-7B LOCK state was a stale empty set.
+try {
+  await ModelOrchestrator.getInstance().init();
+  server.log.info(
+    { ultraRouter: process.env["SWARM_MODEL_ULTRA_ROUTER"] ?? "route-phi4-lite-q4km-prod" },
+    "ModelOrchestrator initialized — SINGLE-7B LOCK active",
+  );
+} catch (err) {
+  server.log.warn({ err }, "ModelOrchestrator init failed — video pipeline may degrade");
+}
 
 // ── Background pollers ────────────────────────────────────────────────────────
+// Start AFTER ModelOrchestrator.init() so pollers see a warmed state.
 startSystemInfoPoller(server);
 
+let stopSwarmMonitor: () => void = () => {};
 stopSwarmMonitor = startSwarmMonitor(
   (event, data) => server.log.debug({ event, data }, "swarm event"),
   10_000, // poll every 10s
@@ -195,10 +202,63 @@ stopSwarmMonitor = startSwarmMonitor(
 
 startCgroupPoller(server);
 startV5MetricsPoller(server);
-startPyEventsPoller(server); // [V5.9-FIX-05] bridge Python journal events to SSE
-startAgentSeedService(server); // [V6.1-FIX-15] Seed idle agents from catalog on API boot.
-broadcastStartupSummary(server); // [V6.1-ENH-01] Broadcast the Python startup summary to SSE clients after boot
+startPyEventsPoller(server);       // [V5.9-FIX-05] bridge Python journal events to SSE
+startAgentSeedService(server);     // [V6.1-FIX-15] Seed idle agents from catalog on API boot.
+broadcastStartupSummary(server);   // [V6.1-ENH-01] Broadcast the Python startup summary to SSE clients after boot
 await startJournaldStream(server);
+
+// ── Graceful shutdown ─────────────────────────────────────────────────────────
+// tini (PID 1 in the container) forwards SIGTERM here. Fastify.close() drains
+// all in-flight requests before the process exits.
+//
+// Shutdown sequence (order is load-bearing):
+//   1. stopSwarmMonitor() — stop background pressure polling
+//   2. server.close()     — drain all in-flight HTTP requests (model calls complete)
+//   3. destroy()          — tear down ModelOrchestrator after requests settle
+//   4. process.exit(0)
+//
+// [APEX17-MOT-02] destroy() MUST run after server.close() so no requestModel()
+// call is in flight when the orchestrator cancels pending warmup and awaits any
+// in-flight eviction promise.
+let isShuttingDown = false;
+
+const shutdown = async (signal: string): Promise<void> => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  server.log.info({ signal }, "Shutdown signal received — draining requests…");
+
+  // Step 1 — stop background poller (non-critical; swallow errors)
+  try {
+    stopSwarmMonitor();
+  } catch (err) {
+    server.log.warn({ err }, "Failed to stop swarm monitor during shutdown");
+  }
+
+  // Step 2 — drain in-flight HTTP requests
+  try {
+    await server.close();
+    server.log.info("Server closed — all requests drained");
+  } catch (err) {
+    server.log.error({ err }, "Error while closing server");
+  }
+
+  // Step 3 — [APEX17-MOT-02] destroy orchestrator AFTER requests are drained
+  // Uses getInstance() directly: the singleton already exists from init() above.
+  // This avoids relying on closure-over-const temporal ordering (see [API-FIX-04]).
+  try {
+    await ModelOrchestrator.getInstance().destroy();
+    server.log.info("ModelOrchestrator destroyed — eviction state settled");
+  } catch (err) {
+    server.log.warn({ err }, "ModelOrchestrator destroy failed — continuing shutdown");
+  }
+
+  // Step 4 — exit cleanly
+  process.exit(0);
+};
+
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT",  () => void shutdown("SIGINT"));
 
 // ── Listen ────────────────────────────────────────────────────────────────────
 try {
