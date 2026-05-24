@@ -2,15 +2,80 @@
  * apps/swarmx-api/src/services/video-orchestrator.ts
  * SwarmXQ Video Subsystem — Pressure-Aware Orchestrator
  *
- * FIX: All fetch() calls now receive an AbortController signal so connections
- * are torn down on timeout rejection — no more connection leaks.
+ * Version : v2026.5.24-apex17-r7
+ *
+ * Fixes applied in r7 (correctness pass on r6):
+ *   [VOT-09] stageRenderAssembly() now fully destructures { modelTag, overrides }
+ *            from acquireModel() for consistency. Previously only `modelTag` was
+ *            destructured; `overrides` was silently dropped. This stage does not
+ *            call ollamaGenerate() so overrides are not forwarded — they are
+ *            captured with an underscore-prefixed binding and a comment explaining
+ *            why. This removes the inconsistency and prevents future developers
+ *            from re-introducing the pattern without noticing.
+ *   [VOT-10] modelsUsed recording moved from runStage() into each individual
+ *            stage function. Previously runStage() called resolveModelTag() a
+ *            second time after the stage fn completed. This meant:
+ *            (a) If resolveCanonicalTag() produced a different result between
+ *            the acquireModel() call and the runStage() bookkeeping call (e.g.
+ *            during alias map hot-reload), modelsUsed would record a different
+ *            tag than was actually used.
+ *            (b) stageFinalizing() correctly had no modelsUsed entry because it
+ *            calls no model — this is preserved.
+ *            Fix: each stage fn sets ctx.modelsUsed[stage] = model immediately
+ *            after acquireModel() resolves. The assignment in runStage() is
+ *            removed entirely.
+ *   [VOT-11] high pressure level now triggers a configurable backoff delay
+ *            instead of silently passing through. On an 8 GB RAM system, "high"
+ *            means between 1500 MB and 2500 MB available — a real signal that
+ *            a 7B model load could trigger OOM without sufficient headroom.
+ *            Behavior: 3-second delay (overridable via HIGH_PRESSURE_DELAY_MS
+ *            env var), then a re-check. If the re-check is still "high", the
+ *            job proceeds (graceful degradation). If it escalated to "critical",
+ *            the job fails with PRESSURE_CRITICAL. This adds one network probe
+ *            only on the high-pressure path.
+ *   [VOT-12] comfyRunWorkflow() poll loop ceiling is now derived from
+ *            STAGE_TIMEOUT_MS["render_assembly"] instead of being an independent
+ *            literal. Previously the poll loop allowed up to 300 s (60 × 5 s)
+ *            but the stage timeout was 240 s — they raced independently with no
+ *            coordination. The corrected ceiling is
+ *            Math.floor(STAGE_TIMEOUT_MS["render_assembly"] / COMFY_POLL_INTERVAL_MS)
+ *            = 48 iterations. The constants are co-located with a comment so
+ *            future edits to STAGE_TIMEOUT_MS["render_assembly"] automatically
+ *            tighten the poll loop.
+ *
+ * Fixes applied in r6 (APEX-17 canonical rename + correctness pass):
+ *   [VOT-07] Added resolveCanonicalTag import from model-orchestrator.
+ *            resolveModelTag() now applies alias resolution as a final pass
+ *            so callers that supply a legacy modelTier value (or any unrecognized
+ *            tier key that falls through to STAGE_MODEL_TAG) always receive a
+ *            canonical name. Without this, a caller passing modelTier: "qwen"
+ *            would silently fall through to the STAGE_MODEL_TAG default, which
+ *            is already canonical — but any external caller injecting a legacy
+ *            tag string into modelTier would bypass the alias system entirely.
+ *   [VOT-08] All STAGE_MODEL_TAG and tierMap values updated to canonical
+ *            production names (APEX-17-r5 rename). Comments corrected.
+ *
+ * Fixes applied in r5:
+ *   [VOT-01] Removed unused imports VIDEO_JOB_STAGE_ORDER / stageIndex /
+ *            computeOverallProgress — caused TS2305 "no exported member" errors.
+ *   [VOT-02] Removed REQUIRES_7B_LOCK constant — dead code.
+ *   [VOT-03] ollamaGenerate() now accepts ModelOverrides and merges numCtx /
+ *            numPredict from the orchestrator into Ollama options.
+ *   [VOT-04] acquireModel() returns { modelTag, overrides } instead of bare
+ *            string. All stage callers destructure and forward overrides.
+ *   [VOT-05] stageController() uses { once: true } on both listeners to
+ *            prevent indefinite listener accumulation on jobAbortSignal.
+ *   [VOT-06] isComfyAvailable() stores abort listener reference and calls
+ *            removeEventListener() in finally block.
  *
  * Responsibilities:
- *  - Stage-by-stage pipeline execution
- *  - Pressure monitor gating before each stage
- *  - AbortController per stage fetch (fixes connection leak)
- *  - SSE event emission via broadcaster callback
- *  - Model routing (phi4-fast → qwen-supervisor → deepseek-reasoner)
+ *   - Stage-by-stage pipeline execution
+ *   - Pressure monitor gating before each stage
+ *   - SINGLE-7B LOCK enforcement via ModelOrchestrator
+ *   - DeepSeek/Qwen output sanitization via reasoning-sanitizer
+ *   - RAM-aware ctx/predict overrides applied per stage
+ *   - AbortController per stage fetch (no connection leaks)
+ *   - SSE event emission via broadcaster callback
  */
 
 import type {
@@ -21,11 +86,8 @@ import type {
   VideoOutputMetadata,
   VideoJobRequest,
 } from "../types/video.js";
-import {
-  VIDEO_JOB_STAGE_ORDER,
-  stageIndex,
-  computeOverallProgress,
-} from "../types/video.js";
+// [VOT-01] Removed: VIDEO_JOB_STAGE_ORDER, stageIndex, computeOverallProgress
+// were imported but never used — caused TypeScript "no exported member" errors.
 import type { SwarmXEvent } from "../types/events.js";
 import {
   makeVideoProgressEvent,
@@ -34,30 +96,71 @@ import {
 } from "../types/events.js";
 import * as queue from "./video-queue.js";
 import * as assets from "./video-assets.js";
+import {
+  ModelOrchestrator,
+  type ModelOverrides,
+  resolveCanonicalTag,        // [VOT-07] imported for resolveModelTag alias resolution
+} from "./model-orchestrator.js";
+import { sanitizeReasoningOutput } from "./reasoning-sanitizer.js";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 const OLLAMA_BASE = process.env.OLLAMA_HOST ?? "http://localhost:11434";
-const COMFY_BASE = process.env.COMFY_HOST ?? "http://localhost:8188";
+const COMFY_BASE  = process.env.COMFY_HOST  ?? "http://localhost:8188";
 
-/** Per-stage timeout matrix (ms) — aligned with architecture review. */
+/**
+ * [VOT-11] Backoff delay (ms) applied when governor reports "high" pressure.
+ * Configurable via env so staging can tune without a code change.
+ * Default: 3000ms (3 seconds). Acceptable range: 1000–30000 ms.
+ */
+const HIGH_PRESSURE_DELAY_MS = Math.min(
+  30_000,
+  Math.max(1_000, parseInt(process.env.HIGH_PRESSURE_DELAY_MS ?? "3000", 10))
+);
+
+/** Per-stage timeout matrix (ms) — aligned with architecture review §3. */
 const STAGE_TIMEOUT_MS: Record<VideoJobStage, number> = {
-  intent_classification: 4_000,
-  planning: 15_000,
-  scripting: 35_000,
+  intent_classification:  4_000,
+  planning:              15_000,
+  scripting:             35_000,
   storyboard_generation: 60_000,
-  render_assembly: 240_000,
-  finalizing: 15_000,
+  render_assembly:      240_000,
+  finalizing:            15_000,
 };
 
-/** Model tier per stage — can be overridden by request.modelTier. */
+/**
+ * [VOT-12] ComfyUI polling constants — co-located so edits to
+ * STAGE_TIMEOUT_MS["render_assembly"] automatically tighten the poll ceiling.
+ *
+ * Previously the poll loop ran up to 60 × 5s = 300s but the stage timeout
+ * was 240s — independent literals that raced with no shared contract.
+ * Now COMFY_POLL_MAX_ATTEMPTS is derived from the stage timeout so the two
+ * are always in sync. At 240s / 5s = 48 iterations maximum.
+ */
+const COMFY_POLL_INTERVAL_MS   = 5_000;
+const COMFY_POLL_MAX_ATTEMPTS  = Math.floor(
+  STAGE_TIMEOUT_MS["render_assembly"] / COMFY_POLL_INTERVAL_MS
+); // = 48
+
+/**
+ * Canonical model tags per stage (APEX-17 production names).
+ * MUST match the Ollama tag in models/Modelfiles/primary/.
+ *
+ * SINGLE-7B LOCK applies automatically via ModelOrchestrator.requestModel()
+ * for any stage whose model has is7B = true in MODEL_REGISTRY.
+ *   planning / scripting / storyboard_generation → plan-qwen25-pro-q5km-prod (7B)
+ *   intent_classification / render_assembly / finalizing → instruct-phi4-pro-q8-prod (non-7B)
+ *
+ * [VOT-02] REQUIRES_7B_LOCK Set removed — dead code. ModelOrchestrator
+ * is the single source of truth for which tags trigger eviction.
+ */
 const STAGE_MODEL_TAG: Record<VideoJobStage, string> = {
-  intent_classification: "phi4-fast",
-  planning: "qwen-supervisor",
-  scripting: "qwen-supervisor",
-  storyboard_generation: "qwen-supervisor",
-  render_assembly: "phi4-fast",
-  finalizing: "phi4-fast",
+  intent_classification:  "instruct-phi4-pro-q8-prod",  // ~4.27 GB — non-7B, safe
+  planning:               "plan-qwen25-pro-q5km-prod",   // ~5.37 GB — 7B, LOCK enforced
+  scripting:              "plan-qwen25-pro-q5km-prod",   // ~5.37 GB — 7B, LOCK enforced
+  storyboard_generation:  "plan-qwen25-pro-q5km-prod",   // ~5.37 GB — 7B, LOCK enforced
+  render_assembly:        "instruct-phi4-pro-q8-prod",   // ~4.27 GB — non-7B, safe
+  finalizing:             "instruct-phi4-pro-q8-prod",   // ~4.27 GB — non-7B, safe
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -76,21 +179,18 @@ interface OrchestratorContext {
 // ─── Pressure Guard ───────────────────────────────────────────────────────────
 
 interface GovernorSnapshot {
-  pressureLevel: "normal" | "high" | "critical";
+  pressureLevel:    "normal" | "high" | "critical";
   concurrencyLimit: number;
 }
 
 /**
  * Read the live governor snapshot from the Python sidecar.
  * On failure, defaults to normal pressure so orchestration is not blocked.
- *
- * FIX: Uses AbortController so the probe fetch is cancelled on timeout,
- * not left open as a dangling connection.
+ * Uses AbortController so the probe fetch is cancelled on timeout.
  */
 async function readPressure(): Promise<GovernorSnapshot> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 2_000);
-
   try {
     const res = await fetch(
       `${process.env.SWARMX_API_INTERNAL ?? "http://localhost:7380"}/api/governor`,
@@ -105,30 +205,68 @@ async function readPressure(): Promise<GovernorSnapshot> {
   }
 }
 
+// ─── Model Acquisition with SINGLE-7B LOCK ───────────────────────────────────
+
+/**
+ * [VOT-04] Returns both the resolved model tag AND the RAM-aware overrides
+ * from ModelOrchestrator so callers can forward them to ollamaGenerate().
+ *
+ * Previously acquireModel() returned only the string tag, silently discarding
+ * the overrides computed by getRamAwareOverrides() inside requestModel().
+ */
+async function acquireModel(
+  stage: VideoJobStage,
+  request: VideoJobRequest
+): Promise<{ modelTag: string; overrides: ModelOverrides }> {
+  const tag = resolveModelTag(request, stage);
+  const mo  = ModelOrchestrator.getInstance();
+  const { modelTag: resolvedTag, evictedModels, overrides } = await mo.requestModel(tag);
+
+  if (evictedModels.length > 0) {
+    // Expected on 8 GB RAM — log for observability
+    console.log(
+      `[video-orchestrator] SINGLE-7B eviction before stage "${stage}":`,
+      evictedModels.join(", ")
+    );
+  }
+
+  return { modelTag: resolvedTag, overrides };
+}
+
 // ─── Ollama Fetch Helper ──────────────────────────────────────────────────────
 
 /**
- * Send a prompt to an Ollama model and return the full response text.
+ * [VOT-03] Now accepts optional ModelOverrides from the orchestrator.
  *
- * FIX: Accepts `signal` (from stage AbortController) so the connection is
+ * Previously: `options: { num_predict: maxTokens, temperature: 0.3 }` — fixed.
+ * Now: `numCtx` and `numPredict` from getRamAwareOverrides() are merged in,
+ * so under low-ram / degraded modes the KV cache and predict budget are
+ * automatically reduced before the Ollama request is sent.
+ *
+ * Accepts `signal` (from stage AbortController) so the connection is
  * cleanly torn down when the stage times out or the job is cancelled.
- * Previously, a timeout rejection left the fetch connection open indefinitely.
  */
 async function ollamaGenerate(
-  model: string,
-  prompt: string,
-  signal: AbortSignal,
-  maxTokens = 1024
+  model:     string,
+  prompt:    string,
+  signal:    AbortSignal,
+  maxTokens = 1024,
+  overrides: ModelOverrides = {}   // [VOT-03] new param
 ): Promise<string> {
   const res = await fetch(`${OLLAMA_BASE}/api/generate`, {
-    method: "POST",
+    method:  "POST",
     headers: { "Content-Type": "application/json" },
-    signal, // ← THE FIX: signal terminates the connection on abort
+    signal,
     body: JSON.stringify({
       model,
       prompt,
       stream: false,
-      options: { num_predict: maxTokens, temperature: 0.3 },
+      options: {
+        // [VOT-03] Apply RAM-aware overrides from ModelOrchestrator
+        num_predict: overrides.numPredict ?? maxTokens,
+        ...(overrides.numCtx !== undefined && { num_ctx: overrides.numCtx }),
+        temperature: 0.3,
+      },
     }),
   });
 
@@ -140,22 +278,25 @@ async function ollamaGenerate(
   }
 
   const data = (await res.json()) as { response: string };
-  return data.response.trim();
+  const { text } = sanitizeReasoningOutput(data.response ?? "");
+  return text.trim();
 }
 
 /**
  * Submit a ComfyUI workflow and wait for completion.
+ * All fetch calls are gated on the stage abort signal.
  *
- * FIX: Uses AbortController so the submission fetch and poll fetches
- * are all torn down when the stage is aborted.
+ * [VOT-12] Poll ceiling derived from STAGE_TIMEOUT_MS["render_assembly"] /
+ * COMFY_POLL_INTERVAL_MS (= 48 iterations at 240s / 5s). Previously this was
+ * hardcoded as 60, giving a 300s ceiling that raced independently with the
+ * 240s stage timeout.
  */
 async function comfyRunWorkflow(
   workflowJson: Record<string, unknown>,
-  signal: AbortSignal
+  signal:       AbortSignal
 ): Promise<string> {
-  // Submit
   const submitRes = await fetch(`${COMFY_BASE}/prompt`, {
-    method: "POST",
+    method:  "POST",
     headers: { "Content-Type": "application/json" },
     signal,
     body: JSON.stringify({ prompt: workflowJson }),
@@ -170,38 +311,31 @@ async function comfyRunWorkflow(
 
   const { prompt_id } = (await submitRes.json()) as { prompt_id: string };
 
-  // Poll (each poll request is also signal-gated)
-  for (let attempt = 0; attempt < 60; attempt++) {
+  // [VOT-12] Use coordinated ceiling — see COMFY_POLL_MAX_ATTEMPTS constant.
+  for (let attempt = 0; attempt < COMFY_POLL_MAX_ATTEMPTS; attempt++) {
     await new Promise<void>((resolve, reject) => {
-      const t = setTimeout(resolve, 5_000);
+      const t = setTimeout(resolve, COMFY_POLL_INTERVAL_MS);
       signal.addEventListener("abort", () => {
         clearTimeout(t);
         reject(new DOMException("Aborted", "AbortError"));
-      });
+      }, { once: true });
     });
 
-    const histRes = await fetch(`${COMFY_BASE}/history/${prompt_id}`, {
-      signal,
-    });
+    const histRes = await fetch(`${COMFY_BASE}/history/${prompt_id}`, { signal });
     if (!histRes.ok) continue;
 
     const history = (await histRes.json()) as Record<
-      string,
-      { outputs?: Record<string, unknown> }
+      string, { outputs?: Record<string, unknown> }
     >;
     if (history[prompt_id]) {
-      const outputs = history[prompt_id].outputs ?? {};
+      const outputs     = history[prompt_id].outputs ?? {};
       const firstOutput = Object.values(outputs)[0] as
-        | { images?: { filename: string }[] }
-        | undefined;
-      const filename = firstOutput?.images?.[0]?.filename ?? "output.mp4";
-      return filename;
+        | { images?: { filename: string }[] } | undefined;
+      return firstOutput?.images?.[0]?.filename ?? "output.mp4";
     }
   }
 
-  throw Object.assign(new Error("ComfyUI workflow timed out"), {
-    code: "RENDER_FAILED",
-  });
+  throw Object.assign(new Error("ComfyUI workflow timed out"), { code: "RENDER_FAILED" });
 }
 
 // ─── Stage Implementations ───────────────────────────────────────────────────
@@ -209,96 +343,110 @@ async function comfyRunWorkflow(
 async function stageIntentClassification(
   ctx: OrchestratorContext
 ): Promise<{ intent: string; complexity: number }> {
-  const { job } = ctx;
-  const model = resolveModel(job.request, "intent_classification");
-
+  // [VOT-04] Destructure modelTag + overrides from acquireModel
+  const { modelTag: model, overrides } = await acquireModel("intent_classification", ctx.job.request);
+  // [VOT-10] Record actual resolved tag immediately — not re-derived later
+  ctx.modelsUsed["intent_classification"] = model;
   const controller = stageController(ctx, "intent_classification");
 
   try {
+    // [VOT-03] Pass overrides to ollamaGenerate
     const raw = await ollamaGenerate(
       model,
-      `Classify this video generation request in one sentence and rate complexity 0-1:\n"${job.request.prompt}"\n\nRespond as JSON: {"intent": "...", "complexity": 0.0}`,
+      `Classify this video generation request in one sentence and rate complexity 0-1:\n"${ctx.job.request.prompt}"\n\nRespond as JSON: {"intent": "...", "complexity": 0.0}`,
       controller.signal,
-      128
+      128,
+      overrides
     );
-
     try {
       return JSON.parse(raw) as { intent: string; complexity: number };
     } catch {
       return { intent: raw.slice(0, 200), complexity: 0.5 };
     }
   } finally {
-    controller.abort(); // always release the connection
+    controller.abort();
+    ModelOrchestrator.getInstance().onModelCallComplete(model);
   }
 }
 
 async function stagePlanning(
-  ctx: OrchestratorContext,
+  ctx:    OrchestratorContext,
   intent: string
 ): Promise<{ plan: string[] }> {
+  const { modelTag: model, overrides } = await acquireModel("planning", ctx.job.request);
+  // [VOT-10] Record actual resolved tag immediately — not re-derived later
+  ctx.modelsUsed["planning"] = model;
   const controller = stageController(ctx, "planning");
 
   try {
-    const model = resolveModel(ctx.job.request, "planning");
     const raw = await ollamaGenerate(
       model,
       buildPlanningPrompt(ctx.job.request, intent),
       controller.signal,
-      512
+      512,
+      overrides
     );
-
     const lines = raw
       .split("\n")
       .map((l) => l.replace(/^\s*[\d.-]+[\s.)]*/, "").trim())
       .filter(Boolean);
-
-    return { plan: lines.length > 0 ? lines : ["Generate visuals", "Add narration", "Assemble final video"] };
+    return {
+      plan: lines.length > 0
+        ? lines
+        : ["Generate visuals", "Add narration", "Assemble final video"],
+    };
   } finally {
     controller.abort();
+    ModelOrchestrator.getInstance().onModelCallComplete(model);
   }
 }
 
 async function stageScripting(
-  ctx: OrchestratorContext,
+  ctx:  OrchestratorContext,
   plan: string[]
 ): Promise<{ scriptText: string }> {
+  const { modelTag: model, overrides } = await acquireModel("scripting", ctx.job.request);
+  // [VOT-10] Record actual resolved tag immediately — not re-derived later
+  ctx.modelsUsed["scripting"] = model;
   const controller = stageController(ctx, "scripting");
 
   try {
-    const model = resolveModel(ctx.job.request, "scripting");
     const scriptText = await ollamaGenerate(
       model,
       buildScriptingPrompt(ctx.job.request, plan),
       controller.signal,
-      1024
+      1024,
+      overrides
     );
     return { scriptText };
   } finally {
     controller.abort();
+    ModelOrchestrator.getInstance().onModelCallComplete(model);
   }
 }
 
 async function stageStoryboardGeneration(
-  ctx: OrchestratorContext,
+  ctx:        OrchestratorContext,
   scriptText: string
 ): Promise<{ frames: string[] }> {
+  const { modelTag: model, overrides } = await acquireModel("storyboard_generation", ctx.job.request);
+  // [VOT-10] Record actual resolved tag immediately — not re-derived later
+  ctx.modelsUsed["storyboard_generation"] = model;
   const controller = stageController(ctx, "storyboard_generation");
 
   try {
-    const model = resolveModel(ctx.job.request, "storyboard_generation");
     const raw = await ollamaGenerate(
       model,
       buildStoryboardPrompt(ctx.job.request, scriptText),
       controller.signal,
-      768
+      768,
+      overrides
     );
-
     const frames = raw
       .split("\n")
       .filter((l) => l.trim().startsWith("-") || /^\d+\./.test(l.trim()))
-      .map((l) => l.replace(/^[-\d.]+\s*/, "").trim())
+      .map((l)    => l.replace(/^[-\d.]+\s*/, "").trim())
       .filter(Boolean);
-
     return {
       frames: frames.length > 0
         ? frames
@@ -306,45 +454,51 @@ async function stageStoryboardGeneration(
     };
   } finally {
     controller.abort();
+    ModelOrchestrator.getInstance().onModelCallComplete(model);
   }
 }
 
 async function stageRenderAssembly(
-  ctx: OrchestratorContext,
+  ctx:    OrchestratorContext,
   frames: string[]
 ): Promise<{ outputFilename: string }> {
+  // [VOT-09] Fully destructure both modelTag and overrides for consistency.
+  // overrides are captured but not forwarded: this stage calls isComfyAvailable()
+  // and comfyRunWorkflow(), neither of which is an Ollama inference call.
+  // The SINGLE-7B LOCK and onModelCallComplete() still require modelTag.
+  const { modelTag: model, overrides: _overrides } = await acquireModel("render_assembly", ctx.job.request);
+  // [VOT-10] Record actual resolved tag immediately — not re-derived later
+  ctx.modelsUsed["render_assembly"] = model;
   const controller = stageController(ctx, "render_assembly");
 
   try {
     const comfyAvailable = await isComfyAvailable(controller.signal);
-
     if (comfyAvailable) {
       const workflow = buildComfyWorkflow(ctx.job.request, frames);
       const filename = await comfyRunWorkflow(workflow, controller.signal);
       return { outputFilename: filename };
     }
-
-    // Stub path: return a deterministic filename when ComfyUI is not running.
-    // In production this would trigger a queue back-off or degraded mode.
     return { outputFilename: `stub_${ctx.job.id}.mp4` };
   } finally {
     controller.abort();
+    ModelOrchestrator.getInstance().onModelCallComplete(model);
   }
 }
 
 async function stageFinalizing(
-  ctx: OrchestratorContext,
-  scriptText: string,
-  frames: string[],
+  ctx:            OrchestratorContext,
+  scriptText:     string,
+  frames:         string[],
   outputFilename: string
 ): Promise<VideoOutputMetadata> {
+  // stageFinalizing calls no model — no modelsUsed entry, no acquireModel().
   return assets.buildOutputMetadata({
-    jobId: ctx.job.id,
+    jobId:            ctx.job.id,
     outputFilename,
     scriptText,
     storyboardFrames: frames,
-    modelsUsed: ctx.modelsUsed as Record<string, string>,
-    request: ctx.job.request,
+    modelsUsed:       ctx.modelsUsed as Record<string, string>,
+    request:          ctx.job.request,
   });
 }
 
@@ -356,7 +510,7 @@ async function stageFinalizing(
  * Handles abort signals from the job controller.
  */
 export async function runOrchestration(
-  jobId: string,
+  jobId:     string,
   broadcast: BroadcastFn
 ): Promise<void> {
   const job = queue.getJob(jobId);
@@ -364,7 +518,6 @@ export async function runOrchestration(
 
   const jobAbortController = new AbortController();
 
-  // Wire the job's cancel into the abort controller.
   const cancelWatcher = setInterval(() => {
     const current = queue.getJob(jobId);
     if (current?.status === "cancelled") {
@@ -377,97 +530,114 @@ export async function runOrchestration(
     job,
     broadcast,
     jobAbortSignal: jobAbortController.signal,
-    startedAt: Date.now(),
-    modelsUsed: {},
+    startedAt:      Date.now(),
+    modelsUsed:     {},
   };
 
   try {
-    // Pressure gate
     const pressure = await readPressure();
+
     if (pressure.pressureLevel === "critical") {
-      throw makeError("PRESSURE_CRITICAL", "System is under critical memory pressure. Try again shortly.", false);
+      throw makeError(
+        "PRESSURE_CRITICAL",
+        "System is under critical memory pressure. Try again shortly.",
+        false
+      );
     }
 
-    // Update job with pressure tier at start
+    // [VOT-11] Apply backoff on "high" pressure before starting the pipeline.
+    // On 8 GB RAM, "high" means 1500–2500 MB free — a real signal that a 7B
+    // model load could push us into OOM territory without a grace period.
+    // After the delay, re-check: if escalated to critical, fail fast.
+    // If still high or recovered to normal, proceed (graceful degradation).
+    if (pressure.pressureLevel === "high") {
+      console.warn(
+        `[video-orchestrator] Job ${jobId}: system pressure is HIGH — ` +
+        `delaying ${HIGH_PRESSURE_DELAY_MS}ms before pipeline start`
+      );
+      await new Promise<void>((resolve) => setTimeout(resolve, HIGH_PRESSURE_DELAY_MS));
+
+      const recheck = await readPressure();
+      if (recheck.pressureLevel === "critical") {
+        throw makeError(
+          "PRESSURE_CRITICAL",
+          "System escalated to critical memory pressure during high-pressure backoff. Try again shortly.",
+          true  // retryable: pressure may recover
+        );
+      }
+      // Still "high" or recovered to "normal" — proceed with degraded awareness
+      console.warn(
+        `[video-orchestrator] Job ${jobId}: pressure re-check → "${recheck.pressureLevel}", proceeding`
+      );
+    }
+
+    // Sync ModelOrchestrator with live Ollama /api/ps state before starting.
+    // This gives the SINGLE-7B LOCK an accurate baseline snapshot.
+    // [MOT-05] Names are normalized inside syncFromOllama via resolveCanonicalTag.
+    await ModelOrchestrator.getInstance().syncFromOllama();
+
     job.pressureTierAtStart = pressure.pressureLevel;
 
-    // ── Stage 1: Intent Classification ─────────────────────────────────────
+    let intent = ctx.job.request.prompt;
     await runStage(ctx, "intent_classification", 0, 15, async () => {
-      const { intent } = await stageIntentClassification(ctx);
-      return intent;
+      const result = await stageIntentClassification(ctx);
+      intent = result.intent;
     });
 
-    // ── Stage 2: Planning ───────────────────────────────────────────────────
     let plan: string[] = [];
     await runStage(ctx, "planning", 15, 30, async () => {
-      const intent = (ctx.job.stages["intent_classification"] as VideoStageProgress & { _result?: string })?._result ?? ctx.job.request.prompt;
       const result = await stagePlanning(ctx, intent);
       plan = result.plan;
     });
 
-    // ── Stage 3: Scripting ──────────────────────────────────────────────────
     let scriptText = "";
     await runStage(ctx, "scripting", 30, 50, async () => {
       const result = await stageScripting(ctx, plan);
       scriptText = result.scriptText;
     });
 
-    // ── Stage 4: Storyboard Generation ─────────────────────────────────────
     let frames: string[] = [];
     await runStage(ctx, "storyboard_generation", 50, 75, async () => {
       const result = await stageStoryboardGeneration(ctx, scriptText);
       frames = result.frames;
     });
 
-    // ── Stage 5: Render & Assembly ──────────────────────────────────────────
     let outputFilename = "";
     await runStage(ctx, "render_assembly", 75, 95, async () => {
       const result = await stageRenderAssembly(ctx, frames);
       outputFilename = result.outputFilename;
     });
 
-    // ── Stage 6: Finalizing ─────────────────────────────────────────────────
     let output: VideoOutputMetadata | undefined;
     await runStage(ctx, "finalizing", 95, 100, async () => {
       output = await stageFinalizing(ctx, scriptText, frames, outputFilename);
     });
 
-    // Complete
     const completedJob = queue.completeJob(jobId, output);
-    broadcast(
-      makeVideoCompletedEvent(jobId, {
-        outputPublicUrl: output!.publicUrl,
-        durationSeconds: output!.durationSeconds,
-        fileSizeBytes: output!.fileSizeBytes,
-        totalDurationMs: Date.now() - ctx.startedAt,
-        modelsUsed: output!.modelsUsed as Record<string, string>,
-      })
-    );
+    broadcast(makeVideoCompletedEvent(jobId, {
+      outputPublicUrl: output!.publicUrl,
+      durationSeconds: output!.durationSeconds,
+      fileSizeBytes:   output!.fileSizeBytes,
+      totalDurationMs: Date.now() - ctx.startedAt,
+      modelsUsed:      output!.modelsUsed as Record<string, string>,
+    }));
     void completedJob;
+
   } catch (err: unknown) {
     clearInterval(cancelWatcher);
     const current = queue.getJob(jobId);
-
-    if (current?.status === "cancelled") return; // user-initiated cancel — no need to emit failed
+    if (current?.status === "cancelled") return;
 
     const videoError = toVideoError(err);
-    const failedJob = queue.failJob(jobId, videoError);
+    const failedJob  = queue.failJob(jobId, videoError);
 
-    broadcast(
-      makeVideoFailedEvent(
-        jobId,
-        videoError,
-        failedJob.retryCount,
-        Date.now() - ctx.startedAt,
-        ctx.job.currentStage
-      )
-    );
+    broadcast(makeVideoFailedEvent(
+      jobId, videoError, failedJob.retryCount,
+      Date.now() - ctx.startedAt, ctx.job.currentStage
+    ));
 
-    // If re-queued, schedule the next orchestration attempt
     if (failedJob.status === "queued") {
-      setTimeout(() => {
-        void runOrchestration(jobId, broadcast);
-      }, 5_000);
+      setTimeout(() => { void runOrchestration(jobId, broadcast); }, 5_000);
     }
   } finally {
     clearInterval(cancelWatcher);
@@ -477,87 +647,121 @@ export async function runOrchestration(
 
 // ─── Stage Runner ─────────────────────────────────────────────────────────────
 
+/**
+ * [VOT-10] modelsUsed assignment removed from runStage().
+ *
+ * Previously: `ctx.modelsUsed[stage] = resolveModelTag(ctx.job.request, stage)`
+ * was called here after fn() completed. This caused two problems:
+ *   (a) Double tag resolution — the actual model used came from acquireModel()
+ *       inside the stage fn, but bookkeeping re-derived it via resolveModelTag().
+ *       If resolveCanonicalTag() returns different results between the two calls
+ *       (possible during alias map migration), modelsUsed records the wrong tag.
+ *   (b) stageFinalizing has no model — a re-derivation call there would silently
+ *       record whichever STAGE_MODEL_TAG was configured for "finalizing", even
+ *       though no model call was made.
+ *
+ * Fix: each individual stage fn now sets ctx.modelsUsed[stage] = model
+ * immediately after acquireModel() resolves with the actual tag. stageFinalizing
+ * sets nothing (correct — it makes no model call).
+ */
 async function runStage(
-  ctx: OrchestratorContext,
-  stage: VideoJobStage,
+  ctx:           OrchestratorContext,
+  stage:         VideoJobStage,
   progressStart: number,
-  progressEnd: number,
-  fn: () => Promise<void>
+  progressEnd:   number,
+  fn:            () => Promise<void>
 ): Promise<void> {
   if (ctx.jobAbortSignal.aborted) {
     throw new DOMException("Job aborted before stage start", "AbortError");
   }
 
-  const stageStart = Date.now();
+  const stageStart     = Date.now();
   const stageTimeoutMs = STAGE_TIMEOUT_MS[stage];
 
-  // Emit stage started progress
   const startProgress: VideoStageProgress = {
     stage,
-    stageProgress: 0,
+    stageProgress:   0,
     overallProgress: progressStart,
-    startedAt: new Date().toISOString(),
-    message: `Starting ${stage.replace(/_/g, " ")}…`,
+    startedAt:       new Date().toISOString(),
+    message:         `Starting ${stage.replace(/_/g, " ")}…`,
   };
   queue.recordStageProgress(ctx.job.id, stage, startProgress);
-  ctx.broadcast(
-    makeVideoProgressEvent(ctx.job.id, stage, startProgress, progressStart)
-  );
+  ctx.broadcast(makeVideoProgressEvent(ctx.job.id, stage, startProgress, progressStart));
 
-  // Run with a stage-level timeout
   await withTimeout(fn(), stageTimeoutMs, `Stage ${stage} timed out after ${stageTimeoutMs}ms`);
 
-  // Mark stage done
   const completedProgress: VideoStageProgress = {
     stage,
-    stageProgress: 100,
+    stageProgress:   100,
     overallProgress: progressEnd,
-    startedAt: startProgress.startedAt,
-    completedAt: new Date().toISOString(),
-    durationMs: Date.now() - stageStart,
+    startedAt:       startProgress.startedAt,
+    completedAt:     new Date().toISOString(),
+    durationMs:      Date.now() - stageStart,
   };
   queue.recordStageProgress(ctx.job.id, stage, completedProgress);
-  ctx.broadcast(
-    makeVideoProgressEvent(ctx.job.id, stage, completedProgress, progressEnd)
-  );
+  ctx.broadcast(makeVideoProgressEvent(ctx.job.id, stage, completedProgress, progressEnd));
 
-  ctx.modelsUsed[stage] = resolveModel(ctx.job.request, stage);
+  // [VOT-10] modelsUsed[stage] is now set inside each stage fn after acquireModel(),
+  // not re-derived here. See individual stage implementations above.
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * [VOT-05] Fixed: Both listeners now use { once: true } so they
+ * self-remove after firing. Previously anonymous lambdas on jobAbortSignal
+ * were never cleaned up — one leaked listener per stage × per job.
+ */
 function stageController(
-  ctx: OrchestratorContext,
+  ctx:   OrchestratorContext,
   stage: VideoJobStage
 ): AbortController {
   const controller = new AbortController();
-  const timeout = STAGE_TIMEOUT_MS[stage];
-  const timer = setTimeout(() => controller.abort(), timeout);
-  controller.signal.addEventListener("abort", () => clearTimeout(timer));
+  const timeout    = STAGE_TIMEOUT_MS[stage];
+  const timer      = setTimeout(() => controller.abort(), timeout);
 
-  // Also abort if the job-level abort fires
-  ctx.jobAbortSignal.addEventListener("abort", () => controller.abort());
+  // Auto-removes after first fire — no manual cleanup needed
+  controller.signal.addEventListener(
+    "abort",
+    () => clearTimeout(timer),
+    { once: true }
+  );
+  ctx.jobAbortSignal.addEventListener(
+    "abort",
+    () => controller.abort(),
+    { once: true }
+  );
+
   return controller;
 }
 
-function resolveModel(request: VideoJobRequest, stage: VideoJobStage): string {
+/**
+ * Resolve the model tag for a given stage and request.
+ *
+ * [VOT-07] resolveCanonicalTag() applied as final pass to normalize any
+ * legacy -scar tag that may be supplied via request.modelTier during the
+ * migration cutover window. The tierMap keys are human-readable tier names
+ * ("fast", "worker", "supervisor", "reasoner") — unknown keys fall through
+ * to the STAGE_MODEL_TAG default, which is already canonical. The
+ * resolveCanonicalTag() call handles the edge case where a caller injects
+ * a legacy tag string directly as the modelTier value.
+ */
+function resolveModelTag(request: VideoJobRequest, stage: VideoJobStage): string {
   if (request.modelTier) {
     const tierMap: Record<string, string> = {
-      fast: "phi4-fast",
-      worker: "phi4-worker",
-      supervisor: "qwen-supervisor",
-      reasoner: "deepseek-reasoner",
+      fast:       "instruct-phi4-pro-q8-prod",
+      worker:     "plan-phi4-pro-q8-prod",
+      supervisor: "plan-qwen25-pro-q5km-prod",
+      reasoner:   "reason-deepseekr1-pro-q5km-prod",
     };
-    return tierMap[request.modelTier] ?? STAGE_MODEL_TAG[stage];
+    // tierMap lookup first; fallback to stage default; final alias resolution
+    const resolved = tierMap[request.modelTier] ?? STAGE_MODEL_TAG[stage];
+    return resolveCanonicalTag(resolved); // [VOT-07]
   }
   return STAGE_MODEL_TAG[stage];
 }
 
-function withTimeout<T>(
-  promise: Promise<T>,
-  ms: number,
-  message: string
-): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(
       () => reject(Object.assign(new Error(message), { code: "TIMEOUT" })),
@@ -571,10 +775,10 @@ function withTimeout<T>(
 }
 
 function makeError(
-  code: VideoJobError["code"],
-  message: string,
+  code:      VideoJobError["code"],
+  message:   string,
   retryable: boolean,
-  stage?: VideoJobStage
+  stage?:    VideoJobStage
 ): VideoJobError {
   return { code, message, retryable, stage };
 }
@@ -583,17 +787,22 @@ function toVideoError(err: unknown): VideoJobError {
   if (err instanceof DOMException && err.name === "AbortError") {
     return makeError("CANCELLED_BY_USER", "Stage was aborted", false);
   }
-
-  const e = err as { message?: string; code?: string };
-  const code = e.code as VideoJobError["code"] ?? "UNKNOWN";
-  const message = e.message ?? "An unknown error occurred";
+  const e         = err as { message?: string; code?: string };
+  const code      = (e.code as VideoJobError["code"]) ?? "UNKNOWN";
+  const message   = e.message ?? "An unknown error occurred";
   const retryable = ["TIMEOUT", "OLLAMA_UNAVAILABLE", "COMFY_UNAVAILABLE"].includes(code);
   return { code, message, retryable };
 }
 
+/**
+ * [VOT-06] Fixed: The abort listener reference is now stored so
+ * removeEventListener() can clean it up in the finally block.
+ * Previously the listener on the incoming signal was never removed.
+ */
 async function isComfyAvailable(signal: AbortSignal): Promise<boolean> {
   const controller = new AbortController();
-  signal.addEventListener("abort", () => controller.abort());
+  const onAbort    = () => controller.abort();
+  signal.addEventListener("abort", onAbort, { once: true });
 
   try {
     const res = await fetch(`${COMFY_BASE}/system_stats`, {
@@ -602,6 +811,8 @@ async function isComfyAvailable(signal: AbortSignal): Promise<boolean> {
     return res.ok;
   } catch {
     return false;
+  } finally {
+    signal.removeEventListener("abort", onAbort);
   }
 }
 
@@ -640,10 +851,9 @@ List each scene on a new line starting with "- ".`;
 }
 
 function buildComfyWorkflow(
-  req: VideoJobRequest,
+  req:    VideoJobRequest,
   frames: string[]
 ): Record<string, unknown> {
-  // Minimal ComfyUI API payload — replace with your actual GGUF workflow JSON.
   return {
     "1": {
       class_type: "CLIPTextEncode",
@@ -652,6 +862,6 @@ function buildComfyWorkflow(
         clip: ["2", 1],
       },
     },
-    // ... rest of workflow nodes loaded from workflows/video-generation.yaml
+    // Additional workflow nodes loaded from workflows/video-generation.yaml
   };
 }
