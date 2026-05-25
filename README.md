@@ -1,213 +1,204 @@
-# SwarmX Operator Platform V6
+# SwarmXQ — Autonomous Multi-Agent Orchestration Platform
 
-SwarmX V6 is the self-improving operator layer on top of the existing control plane. It keeps the bounded mission runtime, live dashboard, audit trail, and workflow engine, and adds an autonomous evolution overlay that can observe, critique, mutate, validate, and stage improvements without mutating the base system blindly.
+**Version: APEX-17 r7** · Optimized for 8 GB RAM · CPU-only · WSL2
+
+SwarmXQ is a self-improving, pressure-aware multi-agent system that runs a fleet of specialized local LLMs through Ollama. It observes, critiques, mutates, validates, and deploys improvements autonomously — bounded by memory constraints, safety guardrails, and a deterministic governance layer.
+
+---
+
+## Operator Taxonomy
+
+SwarmXQ organizes its model fleet through a **dual-layer naming system** — memorable Operator names for humans, canonical runtime tags for machines.
+
+| Operator | Purpose | Canonical Tag | RAM | 7B? |
+|----------|---------|--------------|-----|-----|
+| **Relay** | Ultra-light routing / intent classification | `route-phi4-lite-q4km-prod` | ~2.5 GB | No |
+| **Pilot** | Fast generalist / intake / session routing | `instruct-phi4-pro-q8-prod` | ~4.3 GB | No |
+| **Architect** | Planning / orchestration / strategy | `plan-{phi4,qwen25,deepseekr1}-pro-*-prod` | 4.3–5.4 GB | Varies |
+| **Forge** | Code generation / execution / tool use | `code-qwen25-pro-q5km-prod` | ~5.4 GB | Yes |
+| **Oracle** | Deep reasoning / diagnosis / architecture | `reason-deepseekr1-pro-q5km-prod` | ~5.4 GB | Yes |
+| **Auditor** | Adversarial review / critique / safety | `critique-deepseekr1-pro-q5km-prod` | ~5.4 GB | Yes |
+| **Lab** | Experimental / evolution / non-production | `synth-*-exp-*-dev` | 4.4–5.4 GB | Varies |
+
+**Naming rules:** Code, configs, and Ollama commands use canonical tags only. Docs, dashboards, logs, and UI use Operator names. Both layers are synchronized through `MODEL_OPERATOR_MAP` — the single source of truth (defined in `packages/swarmx-types/src/operator-map.ts` and `src/swarmx/operator_map.py`).
+
+---
 
 ## Quick Start
 
 ### Prerequisites
-- Python 3.11+ with venv activated
-- Node.js 22+
-- Ollama running locally (or models available in registry)
 
-### Launch Full Stack (API + Dashboard)
+- Python 3.11+ with venv
+- Node.js 22+ / pnpm
+- Ollama running locally
+- GGUF models in `~/llm-local/gguf/`
 
-Recommended (enhanced startup with health checks and stale-process eviction):
+### Launch
 
 ```bash
-cd SwarmXQ
+# Enhanced startup (recommended — includes health checks + stale-process eviction)
 bash scripts/startup-enhanced.sh --dashboard
-```
 
-Classic path:
-
-```bash
-cd SwarmXQ
+# Or classic path
 source .venv/bin/activate
 python -m cli up --dashboard --host 127.0.0.1 --port 3001
 ```
 
-Then open the dashboard at **http://localhost:3000**
+Dashboard: **http://localhost:3000** · API: **http://localhost:3001/health**
 
 ### Environment Variables
 
-- `SWARMX_API_URL` — API endpoint for dashboard rewrites (default: `http://127.0.0.1:3001`)
-- `SWARMX_COMPOSER_TIMEOUT_MS` — Composer model timeout in ms (default: `60000` in API)
-- `SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS` — Short-prompt timeout cap in ms (default: `45000`)
-- `SWARMX_COMPOSER_NUM_PREDICT` — Composer token cap (recommended `96` on constrained hosts)
-- `SWARMX_V5_POLL_TIMEOUT_MS` — Metrics poll subprocess timeout in ms (default: `25000`)
-- `SWARMX_OLLAMA_URL` — Ollama endpoint (default: `http://127.0.0.1:11434`)
-- `SWARMX_OLLAMA_PROBE_TIMEOUT_MS` — Fast Ollama probe timeout in ms (default: `2000`, use `5000` on cold hosts)
-- `SWARMX_DASHBOARD_ORIGIN` — CORS allowlist for browser requests (default: auto-configured by `swarm up`)
-  - For local dev: `http://localhost:3000,http://127.0.0.1:3000` (auto-set)
-  - For production: Set explicitly, e.g. `https://swarmx.example.com`
-  - See [CORS Configuration Guide](docs/CORS_CONFIGURATION.md) for details
-- `SWARMX_REPO_ROOT` — Absolute path to SwarmX repository (auto-detected by `swarm up`, [V6.1-FIX-06])
-- `SWARMX_PYTHON` — Python interpreter for metrics poller (auto-detected from active venv, [V6.1-FIX-06])
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `SWARMX_OLLAMA_URL` | `http://127.0.0.1:11434` | Ollama endpoint |
+| `SWARMX_API_URL` | `http://127.0.0.1:3001` | API endpoint for dashboard |
+| `SWARM_MODEL_FAST` | `instruct-phi4-pro-q8-prod` | Pilot model override |
+| `SWARM_MODEL_CODE` | `code-qwen25-pro-q5km-prod` | Forge model override |
+| `SWARM_MODEL_REASON` | `reason-deepseekr1-pro-q5km-prod` | Oracle model override |
+| `SWARM_MODEL_ULTRA_ROUTER` | `route-phi4-lite-q4km-prod` | Relay model override |
+| `SWARMX_DASHBOARD_ORIGIN` | auto-configured | CORS allowlist |
 
-### CORS Configuration
+---
 
-SwarmX uses **environment-driven CORS** to protect the API from unauthorized cross-origin requests:
+## Architecture
 
-- **Local Development:** `swarm up` automatically configures CORS for `localhost:3000` — no manual env setup needed ✅
-- **Production:** Set `SWARMX_DASHBOARD_ORIGIN` to your dashboard domain and `NODE_ENV=production` for strict validation
-- **Troubleshooting:** See [CORS Configuration Guide](docs/CORS_CONFIGURATION.md) for browser errors and solutions
+### Model Orchestration
 
-### Troubleshooting
+The `ModelOrchestrator` singleton enforces memory safety on 8 GB systems:
 
-**Dashboard shows "404: This page could not be found"**
-- Ensure the API is running: `curl http://127.0.0.1:3001/health`
-- Check dashboard logs: `tail ~/.swarmx/logs/swarmx-dashboard.log`
-- Verify SWARMX_API_URL is set correctly (should be `http://127.0.0.1:3001`, not `localhost`)
+- **SINGLE-7B LOCK** — only one 7B model may be resident at any time
+- **Pressure-adaptive keep-alive** — models are evicted faster under memory pressure
+- **Predictive warmup** — after Relay classifies intent, the next specialist is preloaded
+- **Serialized transitions** — mutex prevents concurrent 7B races that cause OOM
+- **Degraded mode** — under critical pressure (<800 MB available), context windows and token budgets are halved
 
-**Composer endpoint hangs or times out**
-- Cold model loads can take 60–120s on constrained hosts; composer now returns a warming-up fallback and starts a background preload instead of hard failing
-- Common operator prompts (for example, simple welcome/greeting copy) are now answered locally without waiting for model warmup
-- Presence checks like `are you there?` and `ping` are answered locally from live fleet state
-- Idle-assignment prompts like `how many are idle and why are they not assigned tasks?` are answered locally with assignment guidance
-- Simple code prompts like a small Python calculator are also answered locally without waiting for model warmup
-- Start Ollama: `ollama serve`
-- Ensure `SWARMX_COMPOSER_MODEL` (or `SWARMX_MODEL_FAST`) resolves to an installed Ollama tag (`:latest` is auto-appended when omitted)
-- Tune timeout with `SWARMX_COMPOSER_TIMEOUT_MS` if your host is slower/faster
+### Pressure Tiers
 
-**Health diagnostics**
-- API service health: `curl http://127.0.0.1:3001/health`
-- Structured system + swarm health: `curl http://127.0.0.1:3001/api/system/health`
+| Available RAM | Tier | Behavior |
+|---------------|------|----------|
+| ≥ 2500 MB | Normal | Full context, standard keep-alive |
+| 1500–2499 MB | Low-RAM | 75% context, shortened keep-alive, non-router eviction |
+| 800–1499 MB | High | Backoff delay before model loads |
+| < 800 MB | Degraded | 50% context, minimal tokens, immediate eviction |
 
-**V5 metrics poll logs repeated "poll skipped" with SIGTERM**
-- On slower hosts, `python -m swarmx metrics` can exceed the poll timeout
-- Increase the subprocess timeout: `export SWARMX_V5_POLL_TIMEOUT_MS=30000`
-- The poller now avoids overlapping subprocesses and skips while an existing poll is still running
+### Core Components
 
-**Agent fleet shows 0 agents after startup**
-- API now seeds agent registry from `agents/catalog.yaml` on boot so dashboard starts with idle agents
-- If catalog file is unavailable, a static built-in catalog snapshot is used (fail-open)
-- Send `SIGHUP` to API process to force a catalog re-seed without full restart
+- **Relay** (`route-phi4-lite-q4km-prod`) — always-resident router, sub-second intent classification
+- **ModelOrchestrator** (`apps/swarmx-api/src/services/model-orchestrator.ts`) — SINGLE-7B LOCK, RAM polling, adaptive timeouts
+- **Reasoning Sanitizer** (`apps/swarmx-api/src/services/reasoning-sanitizer.ts`) — strips `<think>` blocks from DeepSeek/Qwen output
+- **Swarm Pressure Monitor** (`apps/swarmx-api/src/services/swarm-pressure-monitor.ts`) — procfs-based RAM/ZRAM sampling
+- **Evolution Layer** (`src/swarmx/evolution_layer/`) — observe → critique → mutate → validate → deploy cycle
 
-**Port 3000 or 3001 already in use**
-```bash
-# Kill existing processes
-lsof -i :3000  # Find process on port 3000
-lsof -i :3001  # Find process on port 3001
-kill -9 <PID>
+---
+
+## Video Generation Pipeline
+
+SwarmXQ includes a pressure-aware, faceless video generation subsystem optimized for TikTok and YouTube Shorts.
+
+### Pipeline Stages
+
+1. **Intent Classification** (Pilot) — parse user request into structured video intent
+2. **Planning** (Architect/Forge) — generate shot list, timing, and asset requirements
+3. **Scripting** (Architect/Forge) — produce narration script and visual directions
+4. **Storyboard Generation** (Architect/Forge) — frame-by-frame visual specification
+5. **Render Assembly** (Pilot) — ComfyUI workflow dispatch + asset composition
+6. **Finalizing** (Pilot) — metadata, thumbnail generation, export
+
+### Integration Points
+
+- **ComfyUI** — image/video generation backend (LTX / Wan GGUF models)
+- **Kokoro TTS** — text-to-speech narration synthesis
+- **Memory-pressure gating** — each stage checks RAM before loading a 7B model
+- **Graceful degradation** — high-pressure backoff, critical-pressure abort
+
+Dashboard: `/video` route with job cards, timeline view, and real-time SSE progress.
+
+---
+
+## Migration & Compatibility
+
+### From -scar tags (APEX-17 r1–r6)
+
+All legacy `-scar` tags resolve automatically through `MODEL_ALIASES`:
+
+```
+phi4-fast-scar         → instruct-phi4-pro-q8-prod  (Pilot)
+deepseek-reasoner-scar → reason-deepseekr1-pro-q5km-prod  (Oracle)
+qwen-worker-scar       → code-qwen25-pro-q5km-prod  (Forge)
 ```
 
-## Model Triad
+### From pre-scar tags (V5 and earlier)
 
-The bundled routing is aligned to this local triad (canonical tags):
-
-- `phi4-fast-scar` — router / orchestration complexity scoring
-- `deepseek-reasoner-scar` — reasoning / critique / architecture
-- `qwen-worker-scar` — execution / code / tool use
-
-Legacy tags are normalized at config load time:
-
-- `phi4-mini` -> `phi4-fast`
-- `deepseek-r1:7b` -> `deepseek-reasoner`
-- `qwen2.5-coder` -> `qwen-worker`
-
-Local GGUF filenames used by the bundle:
-
-- `Phi-4-mini-Instruct-Q8_0.gguf`
-- `DeepSeek-R1-Distill-Qwen-7B-Q5_K_M.gguf`
-- `Qwen2.5-Coder-7B-Instruct-Q5_K_M.gguf`
-
-## What is new in V6
-
-- a self-improving autonomous swarm layer
-- observation → critique → mutation → validation → deployment cycle
-- candidate storage instead of blind auto-mutation
-- model-aware evolution telemetry and artifact capture
-- V6 workflow and model registry manifests
-- a pressure-aware runtime governor for 8 GB RAM + ZRAM environments
-
-## Runtime Governor
-
-SwarmX now includes a deterministic runtime governor that keeps the local stack stable under memory pressure.
-
-- Procfs-driven pressure sampling from `/proc/meminfo` and `/proc/swaps`
-- Three pressure tiers: `normal`, `high`, `critical`
-- Concurrency degradation for graph-root fanout under pressure
-- Per-tier output token ceilings for fast, worker, supervisor, reasoner, and critic roles
-- Typed SSE governor snapshots surfaced to the dashboard
-
-The runtime governor is configured in [orchestration/swarmx_config.yaml](orchestration/swarmx_config.yaml) under `governance:`.
-
-Key knobs:
-
-- `governance.pressure.warn_available_mb`
-- `governance.pressure.critical_available_mb`
-- `governance.pressure.zram_warn_used_pct`
-- `governance.pressure.zram_critical_used_pct`
-- `governance.concurrency.*`
-- `governance.token_ceilings.*`
-- `governance.observe_only`
-
-## Quick start
-
-```bash
-chmod +x scripts/install.sh
-./scripts/install.sh
-
-swarm doctor
-swarm up --dashboard
-swarm status
-swarm evolve-layer --cycles 1
+```
+phi4-mini    → instruct-phi4-pro-q8-prod  (Pilot)
+deepseek-r1  → reason-deepseekr1-pro-q5km-prod  (Oracle)
+qwen2.5-coder → code-qwen25-pro-q5km-prod  (Forge)
 ```
 
-## Main entry points
+### Rebuild Models
 
-- `swarm run` — mission execution
-- `swarm evolve` — proposal generation and gated application
-- `swarm evolve-layer` — the V6 autonomous self-improvement cycle
-- `swarm status` — runtime state and telemetry
-- `swarm dashboard` — browser dashboard
+```bash
+# Rebuild all models with canonical tags
+bash scripts/rebuild-all-modelfiles.sh
 
-Runtime boundary notes:
+# Evict legacy -scar models from Ollama
+bash scripts/rebuild-all-modelfiles.sh --evict-legacy
 
-- Shell wrappers (`swarm-*.sh`) resolve through `swarm.sh` and prefer `python -m cli`.
-- Installed package scripts (`swarm`, `swarmx`) currently resolve through `swarmx.cli:main` for compatibility.
+# Validate naming standard compliance
+bash scripts/rebuild-all-modelfiles.sh --validate
+```
 
-## Execution Policy Coverage
+---
 
-Execution policy is now enforced consistently across all execution surfaces:
+## CLI Entry Points
 
-- `src/swarmx/cli.py` gates direct CLI execution before `execute_plan()`.
-- `src/swarmx/server.py` gates `/api/run` and returns `policy_blocked` with HTTP 403 on deny.
-- `src/swarmx/worker.py` gates `run/mission` and `resume` job paths.
-- `src/swarmx/execution_gate.py` is the shared fail-closed helper used by server and worker.
+| Command | Purpose |
+|---------|---------|
+| `swarm run` | Mission execution |
+| `swarm evolve` | Proposal generation and gated application |
+| `swarm evolve-layer` | Autonomous self-improvement cycle |
+| `swarm status` | Runtime state and telemetry |
+| `swarm dashboard` | Browser dashboard |
+| `swarm doctor` | Health diagnostics |
 
-## Dashboard UX
+---
 
-The dashboard now renders governor state end-to-end:
+## Testing & Validation
 
-- `system:governor` SSE events are emitted by the API from Python runtime metrics
-- the command bar shows a compact pressure badge (`MEM OK`, `MEM HIGH`, `MEM CRITICAL`)
-- the telemetry rail shows pressure tier, available RAM, ZRAM usage, active concurrency limit, and token ceilings
-- Python lifecycle events (`mission`, `run`, `task`, `evolution`, `worker`) are bridged from `journal.jsonl` into the same Fastify SSE stream consumed by the Next.js dashboard
-- the dashboard bootstraps recent lifecycle history from `/api/logs/events` and then tails new activity over `/api/events`, so the Recent Events and Log Explorer panels hydrate immediately after refresh
-- the Agents page now normalizes `active` and `running` states (and error variants) consistently across status dots, filters, and counters
+```bash
+# Run naming validation tests
+python -m pytest tests/test_naming_validation.py -v
 
-## Startup Autopilot
+# Run full test suite
+python -m pytest tests/ -v
 
-`swarm up` now runs a deterministic startup autopilot before the API comes online.
+# Validate naming standard (no code changes)
+bash scripts/rebuild-all-modelfiles.sh --validate
+```
 
-- health probe against Ollama plus a fresh procfs pressure snapshot
-- lightweight warmup ping for the fast model
-- dry-run evolver sync with proposal count capture
-- persisted startup summary at `~/.swarmx/state/startup_summary.json`
-- typed `system:startup` SSE replay so dashboards that connect after boot still receive the latest launch state
-
-The dashboard surfaces that summary in two places:
-
-- a compact `BOOT READY` / `BOOT DEGRADED` / `BOOT CRITICAL` chip in the command bar
-- a startup card in the telemetry rail with narrative, pressure tier, warmup, evolver, and effective fanout
+---
 
 ## Documentation
 
-- `ARCHITECTURE.md`
-- `SAFETY.md`
-- `INTEGRATION.md`
-- `SYSTEM-PROMPT.md`
-- `configs/`
-- `models/`
-- `workflows/`
+| Document | Purpose |
+|----------|---------|
+| [SWARMXQ-APEX17-UPGRADE.md](docs/SWARMXQ-APEX17-UPGRADE.md) | Full APEX-17 r7 upgrade changelog |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | System architecture deep dive |
+| [VIDEO-GENERATION.md](docs/VIDEO-GENERATION.md) | Video pipeline technical reference |
+| [SAFETY.md](SAFETY.md) | Safety guardrails and execution policy |
+| [CORS_CONFIGURATION.md](docs/CORS_CONFIGURATION.md) | Cross-origin request setup |
+| [OPERATIONS.md](docs/OPERATIONS.md) | Production operations runbook |
+
+---
+
+## Troubleshooting
+
+**Dashboard shows 404** — Ensure API is running: `curl http://127.0.0.1:3001/health`
+
+**Composer hangs on first call** — Cold model loads take 60–120s on constrained hosts. Relay answers common prompts locally while the specialist warms up.
+
+**Agent fleet shows 0 agents** — API seeds from `agents/catalog.yaml` on boot. Send `SIGHUP` to force re-seed.
+
+**Port conflict** — `lsof -i :3000` / `lsof -i :3001` to find and kill stale processes.
+
+**OOM on 7B load** — Evict with: `bash scripts/rebuild-all-modelfiles.sh --evict-legacy` or use the VS Code task "Evict 7B Models".
