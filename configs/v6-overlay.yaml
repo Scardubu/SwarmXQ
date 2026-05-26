@@ -1,12 +1,17 @@
-# SwarmX V6 overlay
-# [V5.9-FIX-01] Updated model tags to canonical names.
+# SwarmX APEX-17 r7 · configs/v6-overlay.yaml
+# Evolution layer overlay — V6 production-grade settings.
+#
+# Changelog v2026.5.25-apex17-r7:
+#   [V6-r7-01] Lab Operator models for evolve workflow.
+#              Production live traffic stays on Pilot/Oracle/Forge canonical tags.
 self_improving_layer:
   enabled: true
   default_cycles: 1
   artifact_store: evolution-layer
-  observer_model: phi4-fast          # [V5.9-FIX-01] was phi4-mini
-  critic_model: deepseek-reasoner    # [V5.9-FIX-01] was deepseek-r1:7b
-  mutator_model: qwen-worker         # [V5.9-FIX-01] was qwen2.5-coder
+  # Lab Operator assignments (exp/dev tier — require --enable-evolve)
+  observer_model: synth-phi4-exp-q8-dev          # Lab phi4
+  critic_model:   synth-deepseekr1-exp-q5km-dev  # Lab deepseekr1
+  mutator_model:  synth-qwen25-exp-q5km-dev      # Lab qwen25
   default_mode: staged
   allow_auto_deploy: false
   require_baseline_comparison: true
