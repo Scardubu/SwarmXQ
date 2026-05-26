@@ -1,946 +1,132 @@
 {
-	"version": "2.0.0",
-	"tasks": [
-		{
-			"label": "swarmx-git-status",
-			"type": "shell",
-			"command": "git",
-			"args": [
-				"status",
-				"--short"
-			]
-		},
-		{
-			"label": "swarmx-api-build",
-			"type": "shell",
-			"command": "pnpm",
-			"args": [
-				"--dir",
-				"apps/swarmx-api",
-				"build"
-			]
-		},
-		{
-			"label": "swarmx-stage-targeted",
-			"type": "shell",
-			"command": "git",
-			"args": [
-				"add",
-				"cli/__main__.py",
-				"apps/swarmx-api/src/services/ollama.ts",
-				"apps/swarmx-api/src/routes/composer.ts",
-				"apps/swarmx-api/src/routes/system.ts",
-				"apps/swarmx-dashboard/src/app/(dashboard)/composer/page.tsx",
-				"scripts/startup-enhanced.sh",
-				"docs/STARTUP_GUIDE.md",
-				"docs/CORS_CONFIGURATION.md",
-				"INTEGRATION.md"
-			]
-		},
-		{
-			"label": "swarmx-stage-targeted-escaped",
-			"type": "shell",
-			"command": "git",
-			"args": [
-				"add",
-				"cli/__main__.py",
-				"apps/swarmx-api/src/services/ollama.ts",
-				"apps/swarmx-api/src/routes/composer.ts",
-				"apps/swarmx-api/src/routes/system.ts",
-				"apps/swarmx-dashboard/src/app/\\(dashboard\\)/composer/page.tsx",
-				"scripts/startup-enhanced.sh",
-				"docs/STARTUP_GUIDE.md",
-				"docs/CORS_CONFIGURATION.md",
-				"INTEGRATION.md"
-			]
-		},
-		{
-			"label": "swarmx-git-status-after-stage",
-			"type": "shell",
-			"command": "git",
-			"args": [
-				"status",
-				"--short"
-			]
-		},
-		{
-			"label": "swarmx-commit",
-			"type": "shell",
-			"command": "git",
-			"args": [
-				"commit",
-				"-m",
-				"fix(composer,dashboard,docs): correct Ollama port in .env.local, stale project path, http-health early-exit, Ollama tuning docs"
-			]
-		},
-		{
-			"label": "swarmx-push",
-			"type": "shell",
-			"command": "git",
-			"args": [
-				"push"
-			]
-		},
-		{
-			"label": "swarmx-restart-dashboard",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"scripts/startup-enhanced.sh",
-				"--dashboard"
-			],
-			"isBackground": true
-		},
-		{
-			"label": "swarmx-git-status-final",
-			"type": "shell",
-			"command": "git",
-			"args": [
-				"status",
-				"--short"
-			]
-		},
-		{
-			"label": "swarmx-api-typecheck",
-			"type": "shell",
-			"command": "pnpm",
-			"args": [
-				"--dir",
-				"apps/swarmx-api",
-				"typecheck"
-			]
-		},
-		{
-			"label": "swarmx-dashboard-typecheck",
-			"type": "shell",
-			"command": "pnpm",
-			"args": [
-				"--dir",
-				"apps/swarmx-dashboard",
-				"typecheck"
-			]
-		},
-		{
-			"label": "swarmx-stage-extra",
-			"type": "shell",
-			"command": "git",
-			"args": [
-				"add",
-				"src/swarmx/startup.py",
-				"models/registry.yaml",
-				"models/README.md"
-			]
-		},
-		{
-			"label": "swarmx-api-typecheck-once",
-			"type": "shell",
-			"command": "pnpm",
-			"args": [
-				"--dir",
-				"apps/swarmx-api",
-				"typecheck"
-			]
-		},
-		{
-			"label": "swarmx-dashboard-typecheck-once",
-			"type": "shell",
-			"command": "pnpm",
-			"args": [
-				"--dir",
-				"apps/swarmx-dashboard",
-				"typecheck"
-			]
-		},
-		{
-			"label": "swarmx-commit-hotfix-latency",
-			"type": "shell",
-			"command": "git",
-			"args": [
-				"commit",
-				"-m",
-				"fix(composer,startup): reduce cold-start timeout regressions and align model runtime docs"
-			]
-		},
-		{
-			"label": "swarmx-last-commit",
-			"type": "shell",
-			"command": "git",
-			"args": [
-				"log",
-				"-1",
-				"--oneline"
-			]
-		},
-		{
-			"label": "swarmx-dashboard-typecheck-integration",
-			"type": "shell",
-			"command": "pnpm",
-			"args": [
-				"--dir",
-				"apps/swarmx-dashboard",
-				"typecheck"
-			]
-		},
-		{
-			"label": "swarmx-stage-integration-pass2",
-			"type": "shell",
-			"command": "git",
-			"args": [
-				"add",
-				"src/swarmx/console/commands/up.py",
-				"apps/swarmx-dashboard/src/app/(dashboard)/composer/page.tsx",
-				"docker-compose.yml",
-				"README.md",
-				"docs/STARTUP_GUIDE.md",
-				"docs/CORS_CONFIGURATION.md"
-			]
-		},
-		{
-			"label": "swarmx-stage-pass2-extra",
-			"type": "shell",
-			"command": "git",
-			"args": [
-				"add",
-				"src/swarmx/console/commands/up.py",
-				"docker-compose.yml",
-				"README.md"
-			]
-		},
-		{
-			"label": "swarmx-commit-integration-pass2",
-			"type": "shell",
-			"command": "git",
-			"args": [
-				"commit",
-				"-m",
-				"chore(integration): align runtime defaults and harden composer UX accessibility"
-			]
-		},
-		{
-			"label": "smoke-health-final",
-			"type": "shell",
-			"command": "curl",
-			"args": [
-				"-sS",
-				"-i",
-				"http://127.0.0.1:3001/health"
-			]
-		},
-		{
-			"label": "smoke-restart-stack-final",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"scripts/startup-enhanced.sh",
-				"--dashboard"
-			],
-			"isBackground": true
-		},
-		{
-			"label": "smoke-health-final-retry",
-			"type": "shell",
-			"command": "curl",
-			"args": [
-				"--retry",
-				"20",
-				"--retry-delay",
-				"1",
-				"--retry-connrefused",
-				"-sS",
-				"-i",
-				"http://127.0.0.1:3001/health"
-			]
-		},
-		{
-			"label": "smoke-dashboard-final-retry",
-			"type": "shell",
-			"command": "curl",
-			"args": [
-				"--retry",
-				"20",
-				"--retry-delay",
-				"1",
-				"--retry-connrefused",
-				"-sS",
-				"-i",
-				"http://127.0.0.1:3000"
-			]
-		},
-		{
-			"label": "smoke-tail-startup-log",
-			"type": "shell",
-			"command": "tail",
-			"args": [
-				"-n",
-				"120",
-				"/home/scar/.swarmx/logs/startup-enhanced.log"
-			]
-		},
-		{
-			"label": "smoke-list-runtime-logs",
-			"type": "shell",
-			"command": "ls",
-			"args": [
-				"-lah",
-				"/home/scar/.swarmx/logs"
-			]
-		},
-		{
-			"label": "smoke-tail-api-log",
-			"type": "shell",
-			"command": "tail",
-			"args": [
-				"-n",
-				"120",
-				"/home/scar/.swarmx/logs/swarmx-api.log"
-			]
-		},
-		{
-			"label": "smoke-tail-dashboard-log",
-			"type": "shell",
-			"command": "tail",
-			"args": [
-				"-n",
-				"120",
-				"/home/scar/.swarmx/logs/swarmx-dashboard.log"
-			]
-		},
-		{
-			"label": "smoke-cli-up-help",
-			"type": "shell",
-			"command": "python",
-			"args": [
-				"-m",
-				"cli",
-				"up",
-				"--help"
-			]
-		},
-		{
-			"label": "smoke-cli-up-help-venv",
-			"type": "shell",
-			"command": "/home/scar/Downloads/SwarmXQ/.venv/bin/python",
-			"args": [
-				"-m",
-				"cli",
-				"up",
-				"--help"
-			]
-		},
-		{
-			"label": "smoke2-health",
-			"type": "shell",
-			"command": "curl",
-			"args": [
-				"-sS",
-				"-i",
-				"http://127.0.0.1:3001/health"
-			]
-		},
-		{
-			"label": "smoke2-composer",
-			"type": "shell",
-			"command": "curl",
-			"args": [
-				"-sS",
-				"-i",
-				"http://127.0.0.1:3001/api/composer/chat",
-				"-H",
-				"Content-Type: application/json",
-				"--data",
-				"{\"sessionId\":\"smoke-final-2\",\"message\":\"are you there?\",\"context\":{}}"
-			]
-		},
-		{
-			"label": "smoke2-dashboard",
-			"type": "shell",
-			"command": "curl",
-			"args": [
-				"-sS",
-				"-i",
-				"http://127.0.0.1:3000"
-			]
-		},
-		{
-			"label": "smoke-ollama-version",
-			"type": "shell",
-			"command": "curl",
-			"args": [
-				"-sS",
-				"-i",
-				"http://localhost:11434/api/version"
-			]
-		},
-		{
-			"label": "smoke-ollama-version-timeout",
-			"type": "shell",
-			"command": "curl",
-			"args": [
-				"--max-time",
-				"5",
-				"-sS",
-				"-i",
-				"http://localhost:11434/api/version"
-			]
-		},
-		{
-			"label": "smoke-composer-corrected",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"curl --max-time 10 -sS -i http://127.0.0.1:3001/api/composer/chat -H 'Content-Type: application/json' --data '{\"sessionId\":\"smoke-final-3\",\"message\":\"are you there?\",\"context\":{}}'"
-			]
-		},
-		{
-			"label": "smoke-start-ollama",
-			"type": "shell",
-			"command": "ollama",
-			"args": [
-				"serve"
-			],
-			"isBackground": true
-		},
-		{
-			"label": "smoke-ollama-version-recheck",
-			"type": "shell",
-			"command": "curl",
-			"args": [
-				"--retry",
-				"10",
-				"--retry-delay",
-				"1",
-				"--retry-connrefused",
-				"--max-time",
-				"5",
-				"-sS",
-				"-i",
-				"http://localhost:11434/api/version"
-			]
-		},
-		{
-			"label": "smoke-find-11434-listener",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"ss -ltnp | rg 11434 || true"
-			]
-		},
-		{
-			"label": "smoke-lsof-11434",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"lsof -nP -iTCP:11434 -sTCP:LISTEN || true"
-			]
-		},
-		{
-			"label": "smoke-recover-ollama-process",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"pkill -f 'ollama|/usr/bin/ollama' || true; sleep 1; ollama serve"
-			],
-			"isBackground": true
-		},
-		{
-			"label": "smoke-ollama-health-post-recover",
-			"type": "shell",
-			"command": "curl",
-			"args": [
-				"--retry",
-				"15",
-				"--retry-delay",
-				"1",
-				"--retry-connrefused",
-				"--max-time",
-				"5",
-				"-sS",
-				"-i",
-				"http://127.0.0.1:11434/api/version"
-			]
-		},
-		{
-			"label": "smoke-direct-cli-up-detach",
-			"type": "shell",
-			"command": "/home/scar/Downloads/SwarmXQ/.venv/bin/python",
-			"args": [
-				"-m",
-				"cli",
-				"up",
-				"--dashboard",
-				"--detach",
-				"--host",
-				"127.0.0.1",
-				"--port",
-				"3001"
-			]
-		},
-		{
-			"label": "smoke-direct-health-check",
-			"type": "shell",
-			"command": "curl",
-			"args": [
-				"--retry",
-				"8",
-				"--retry-delay",
-				"1",
-				"--retry-connrefused",
-				"--max-time",
-				"5",
-				"-sS",
-				"-i",
-				"http://127.0.0.1:3001/health"
-			]
-		},
-		{
-			"label": "smoke-direct-dashboard-check",
-			"type": "shell",
-			"command": "curl",
-			"args": [
-				"--retry",
-				"8",
-				"--retry-delay",
-				"1",
-				"--retry-connrefused",
-				"--max-time",
-				"5",
-				"-sS",
-				"-i",
-				"http://127.0.0.1:3000"
-			]
-		},
-		{
-			"label": "smoke-cli-detach-and-probe",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"/home/scar/Downloads/SwarmXQ/.venv/bin/python -m cli up --dashboard --detach --host 127.0.0.1 --port 3001; curl --max-time 5 -sS -i http://127.0.0.1:3001/health | head -n 20; curl --max-time 5 -sS -i http://127.0.0.1:3000 | head -n 20"
-			]
-		},
-		{
-			"label": "smoke-final-composer-post",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"curl --max-time 15 -sS -i http://127.0.0.1:3001/api/composer/chat -H \"Content-Type: application/json\" --data '{\"sessionId\":\"smoke-final-4\",\"message\":\"are you there?\"}'"
-			]
-		},
-		{
-			"label": "smoke-final-composer-post-json",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"cat <<'JSON' | curl --max-time 15 -sS -i http://127.0.0.1:3001/api/composer/chat -H \"Content-Type: application/json\" --data-binary @-\n{\"sessionId\":\"smoke-final-5\",\"message\":\"are you there?\"}\nJSON"
-			]
-		},
-		{
-			"label": "smoke-final-health-ok",
-			"type": "shell",
-			"command": "curl",
-			"args": [
-				"--max-time",
-				"10",
-				"-sS",
-				"-i",
-				"http://127.0.0.1:3001/health"
-			]
-		},
-		{
-			"label": "smoke-final-dashboard-ok",
-			"type": "shell",
-			"command": "curl",
-			"args": [
-				"--max-time",
-				"10",
-				"-sS",
-				"-i",
-				"http://127.0.0.1:3000"
-			]
-		},
-		{
-			"label": "smoke-final-dashboard-ok-bash",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"curl --max-time 10 -sS -i http://127.0.0.1:3000 | head -n 25"
-			]
-		},
-		{
-			"label": "smoke-final-composer-model-path",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"cat <<'JSON' | curl --max-time 30 -sS -i http://127.0.0.1:3001/api/composer/chat -H \"Content-Type: application/json\" --data-binary @-\n{\"sessionId\":\"smoke-final-6\",\"message\":\"Write a two-line haiku about distributed systems.\"}\nJSON"
-			]
-		},
-		{
-			"label": "immediate-check-ollama-quick",
-			"type": "shell",
-			"command": "curl",
-			"args": [
-				"--max-time",
-				"3",
-				"-sS",
-				"-i",
-				"http://127.0.0.1:11434/api/version"
-			]
-		},
-		{
-			"label": "immediate-check-ollama-tags",
-			"type": "shell",
-			"command": "curl",
-			"args": [
-				"--max-time",
-				"8",
-				"-sS",
-				"http://127.0.0.1:11434/api/tags"
-			]
-		},
-		{
-			"label": "immediate-check-ollama-listener",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"ss -ltnp | rg 11434 || true"
-			]
-		},
-		{
-			"label": "immediate-start-ollama-11435",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"OLLAMA_HOST=127.0.0.1:11435 ollama serve"
-			],
-			"isBackground": true
-		},
-		{
-			"label": "immediate-check-ollama-11435-version",
-			"type": "shell",
-			"command": "curl",
-			"args": [
-				"--retry",
-				"10",
-				"--retry-delay",
-				"1",
-				"--retry-connrefused",
-				"--max-time",
-				"5",
-				"-sS",
-				"-i",
-				"http://127.0.0.1:11435/api/version"
-			]
-		},
-		{
-			"label": "immediate-restart-stack-11435",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"pkill -f '/home/scar/Downloads/SwarmXQ/.venv/bin/python -m cli up' || true; pkill -f '/home/scar/Downloads/SwarmXQ/apps/swarmx-api/dist/server.js' || true; pkill -f '@swarmx/dashboard|next start' || true; SWARMX_OLLAMA_URL=http://127.0.0.1:11435 SWARMX_OLLAMA_BASE_URL=http://127.0.0.1:11435 OLLAMA_HOST=http://127.0.0.1:11435 /home/scar/Downloads/SwarmXQ/.venv/bin/python -m cli up --dashboard --detach --host 127.0.0.1 --port 3001"
-			]
-		},
-		{
-			"label": "immediate-kill-cli-up",
-			"type": "shell",
-			"command": "pkill",
-			"args": [
-				"-f",
-				"/home/scar/Downloads/SwarmXQ/.venv/bin/python -m cli up"
-			]
-		},
-		{
-			"label": "immediate-kill-api-node",
-			"type": "shell",
-			"command": "pkill",
-			"args": [
-				"-f",
-				"/home/scar/Downloads/SwarmXQ/apps/swarmx-api/dist/server.js"
-			]
-		},
-		{
-			"label": "immediate-kill-dashboard-next",
-			"type": "shell",
-			"command": "pkill",
-			"args": [
-				"-f",
-				"next start"
-			]
-		},
-		{
-			"label": "immediate-cli-up-detach-11435",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"export SWARMX_OLLAMA_URL=http://127.0.0.1:11435; export SWARMX_OLLAMA_BASE_URL=http://127.0.0.1:11435; export OLLAMA_HOST=http://127.0.0.1:11435; /home/scar/Downloads/SwarmXQ/.venv/bin/python -m cli up --dashboard --detach --host 127.0.0.1 --port 3001"
-			]
-		},
-		{
-			"label": "immediate-health-verify",
-			"type": "shell",
-			"command": "curl",
-			"args": [
-				"--max-time",
-				"10",
-				"-sS",
-				"-i",
-				"http://127.0.0.1:3001/health"
-			]
-		},
-		{
-			"label": "immediate-composer-model-verify-60s",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"cat <<'JSON' | curl --max-time 70 -sS -i http://127.0.0.1:3001/api/composer/chat -H \"Content-Type: application/json\" --data-binary @-\n{\"sessionId\":\"smoke-final-7\",\"message\":\"Write a two-line haiku about distributed systems.\"}\nJSON"
-			]
-		},
-		{
-			"label": "immediate-ollama-11435-list",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"OLLAMA_HOST=http://127.0.0.1:11435 ollama list"
-			]
-		},
-		{
-			"label": "integration-probe-composer-model-after-fix",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"cat <<'JSON' | curl --max-time 70 -sS -i http://127.0.0.1:3001/api/composer/chat -H \"Content-Type: application/json\" --data-binary @-\n{\"sessionId\":\"integration-fix-1\",\"message\":\"Write a two-line haiku about distributed systems.\"}\nJSON"
-			]
-		},
-		{
-			"label": "integration-probe-health-after-fix",
-			"type": "shell",
-			"command": "curl",
-			"args": [
-				"--max-time",
-				"10",
-				"-sS",
-				"-i",
-				"http://127.0.0.1:3001/health"
-			]
-		},
-		{
-			"label": "integration-probe-composer-quick-local-after-fix",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"cat <<'JSON' | curl --max-time 20 -sS -i http://127.0.0.1:3001/api/composer/chat -H \"Content-Type: application/json\" --data-binary @-\n{\"sessionId\":\"integration-fix-2\",\"message\":\"are you there?\"}\nJSON"
-			]
-		},
-		{
-			"label": "integration-restart-api-dashboard-after-fix",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"pkill -f '/home/scar/Downloads/SwarmXQ/apps/swarmx-api/dist/server.js' || true; pkill -f 'next start' || true; export SWARMX_OLLAMA_URL=http://127.0.0.1:11435; export SWARMX_OLLAMA_BASE_URL=http://127.0.0.1:11435; export OLLAMA_HOST=http://127.0.0.1:11435; /home/scar/Downloads/SwarmXQ/.venv/bin/python -m cli up --dashboard --detach --host 127.0.0.1 --port 3001"
-			]
-		},
-		{
-			"label": "integration-postfix-health",
-			"type": "shell",
-			"command": "curl",
-			"args": [
-				"--max-time",
-				"10",
-				"-sS",
-				"-i",
-				"http://127.0.0.1:3001/health"
-			]
-		},
-		{
-			"label": "integration-postfix-composer-local",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"cat <<'JSON' | curl --max-time 20 -sS -i http://127.0.0.1:3001/api/composer/chat -H \"Content-Type: application/json\" --data-binary @-\n{\"sessionId\":\"integration-postfix-local\",\"message\":\"are you there?\"}\nJSON"
-			]
-		},
-		{
-			"label": "integration-postfix-composer-model",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"cat <<'JSON' | curl --max-time 70 -sS -i http://127.0.0.1:3001/api/composer/chat -H \"Content-Type: application/json\" --data-binary @-\n{\"sessionId\":\"integration-postfix-model\",\"message\":\"Write a two-line haiku about distributed systems.\"}\nJSON"
-			]
-		},
-		{
-			"label": "integration-stage-ollama-composer-fix",
-			"type": "shell",
-			"command": "git",
-			"args": [
-				"add",
-				"apps/swarmx-api/src/services/ollama.ts",
-				"apps/swarmx-api/src/routes/composer.ts",
-				"apps/swarmx-api/src/routes/system.ts"
-			]
-		},
-		{
-			"label": "integration-commit-ollama-discovery-fix",
-			"type": "shell",
-			"command": "git",
-			"args": [
-				"commit",
-				"-m",
-				"fix(api): improve Ollama model discovery and composer fallback diagnostics"
-			]
-		},
-		{
-			"label": "integration-last-commit-check",
-			"type": "shell",
-			"command": "git",
-			"args": [
-				"log",
-				"-1",
-				"--oneline"
-			]
-		},
-		{
-			"label": "integration-status-verify",
-			"type": "shell",
-			"command": "git",
-			"args": [
-				"status",
-				"-sb"
-			]
-		},
-		{
-			"label": "stage-config-warmup-timeout",
-			"type": "shell",
-			"command": "git",
-			"args": [
-				"add",
-				"configs/swarmx.defaults.yaml"
-			]
-		},
-		{
-			"label": "final-smoke-health",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"curl --max-time 10 -sS -i http://127.0.0.1:3001/health"
-			],
-			"isBackground": false
-		},
-		{
-			"label": "final-smoke-dashboard-composer",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"curl --max-time 10 -sS -i http://127.0.0.1:3000/composer"
-			],
-			"isBackground": false
-		},
-		{
-			"label": "final-smoke-composer-local",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"cat <<'JSON' | curl --max-time 20 -sS -i http://127.0.0.1:3001/api/composer/chat -H \"Content-Type: application/json\" --data-binary @-\n{\"sessionId\":\"final-smoke-local\",\"message\":\"are you there?\"}\nJSON"
-			],
-			"isBackground": false
-		},
-		{
-			"label": "copilot-force-restart-and-smoke",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"fuser -k 3001/tcp 2>/dev/null || true; fuser -k 3000/tcp 2>/dev/null || true; .venv/bin/python -m cli up --dashboard --detach --host 127.0.0.1 --port 3001; echo \"=== /health ===\"; curl --retry 12 --retry-delay 1 --retry-connrefused --max-time 5 -sS -i http://127.0.0.1:3001/health; echo; echo \"=== /api/system/health ===\"; curl --retry 5 --retry-delay 1 --retry-connrefused --max-time 10 -sS -i http://127.0.0.1:3001/api/system/health; echo; echo \"=== composer ===\"; printf \"{\\\"sessionId\\\":\\\"smoke-final\\\",\\\"message\\\":\\\"are you there?\\\"}\" | curl --retry 3 --retry-delay 1 --retry-connrefused --max-time 20 -sS -i http://127.0.0.1:3001/api/composer/chat -H \"Content-Type: application/json\" --data-binary @-"
-			],
-			"isBackground": false
-		},
-		{
-			"label": "copilot-restart-with-local-ollama-11435",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"set -a && source .env.local && set +a && fuser -k 3001/tcp 2>/dev/null || true; fuser -k 3000/tcp 2>/dev/null || true; /home/scar/Downloads/SwarmXQ/.venv/bin/python -m cli up --dashboard --detach --host 127.0.0.1 --port 3001; echo '=== system health ==='; curl --retry 10 --retry-delay 1 --retry-connrefused --max-time 10 -sS -i http://127.0.0.1:3001/api/system/health; echo; echo '=== composer ==='; cat <<'JSON' | curl --retry 2 --retry-delay 1 --retry-connrefused --max-time 150 -sS -i http://127.0.0.1:3001/api/composer/chat -H 'Content-Type: application/json' --data-binary @-\n{\"sessionId\":\"copilot-11435-test\",\"message\":\"write a simple python script that prints hello world\"}\nJSON"
-			],
-			"isBackground": false
-		},
-		{
-			"label": "swarmx-stage-v620-fixes",
-			"type": "shell",
-			"command": "git",
-			"args": [
-				"add",
-				"apps/swarmx-api/src/routes/composer.ts",
-				"apps/swarmx-api/src/types/events.ts",
-				"apps/swarmx-dashboard/src/app/(dashboard)/composer/page.tsx",
-				"docs/STARTUP_GUIDE.md",
-				"src/swarmx/console/commands/up.py",
-				".vscode/tasks.json"
-			]
-		},
-		{
-			"label": "swarmx-commit-v620-fixes",
-			"type": "shell",
-			"command": "git",
-			"args": [
-				"commit",
-				"-m",
-				"fix(composer,dashboard,docs): correct stale project scope, http-health early-exit, and document Ollama tuning"
-			]
-		},
-		{
-			"label": "composer-workflow-last-hour-smoke",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"printf '{\"sessionId\":\"workflow-smoke\",\"message\":\"What workflows have run in the last hour? Show success/fail breakdown.\"}' | curl --max-time 20 -sS -i http://127.0.0.1:3001/api/composer/chat -H \"Content-Type: application/json\" --data-binary @-"
-			],
-			"isBackground": false
-		},
-		{
-			"label": "final-smoke-composer-workflow-last-hour",
-			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"cat <<'JSON' | curl --max-time 20 -sS -i http://127.0.0.1:3001/api/composer/chat -H \"Content-Type: application/json\" --data-binary @-\n{\"sessionId\":\"final-smoke-workflow-hour\",\"message\":\"What workflows have run in the last hour? Show success/fail breakdown.\"}\nJSON"
-			],
-			"isBackground": false
-		},
-		{
-			"label": "smoke2-composer-workflow-hour",
-			"type": "shell",
-			"command": "curl",
-			"args": [
-				"-sS",
-				"-i",
-				"http://127.0.0.1:3001/api/composer/chat",
-				"-H",
-				"Content-Type: application/json",
-				"--data",
-				"{\"sessionId\":\"smoke-workflow-hour\",\"message\":\"What workflows have run in the last hour? Show success/fail breakdown.\",\"context\":{}}"
-			]
-		}
-	]
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "SwarmX: Launch Full Stack",
+      "type": "shell",
+      "command": "bash scripts/startup-enhanced.sh --dashboard",
+      "group": "build",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "new" },
+      "detail": "Starts API + dashboard with operator-aware pressure monitoring"
+    },
+    {
+      "label": "SwarmX: Migrate to APEX-17 r7",
+      "type": "shell",
+      "command": "bash scripts/migrate-to-r7.sh --apply",
+      "group": "build",
+      "problemMatcher": [],
+      "detail": "Full r7 migration: backup, install, patch llm.py, rename Ollama models, validate"
+    },
+    {
+      "label": "SwarmX: Migration Dry Run",
+      "type": "shell",
+      "command": "bash scripts/migrate-to-r7.sh --dry-run",
+      "group": "test",
+      "problemMatcher": [],
+      "detail": "Show what the r7 migration would do without making any changes"
+    },
+    {
+      "label": "SwarmX: Migration Rollback",
+      "type": "shell",
+      "command": "bash scripts/migrate-to-r7.sh --rollback",
+      "group": "build",
+      "problemMatcher": [],
+      "detail": "Restore previous configuration from latest .r6-backup-* directory"
+    },
+    {
+      "label": "SwarmX: Rebuild All Models (Canonical)",
+      "type": "shell",
+      "command": "bash scripts/rebuild-all-modelfiles.sh",
+      "group": "build",
+      "problemMatcher": [],
+      "detail": "Rebuild all 11 canonical models (Relay → Lab)"
+    },
+    {
+      "label": "SwarmX: Validate Naming Standard",
+      "type": "shell",
+      "command": "bash scripts/rebuild-all-modelfiles.sh --validate",
+      "group": "test",
+      "problemMatcher": [],
+      "detail": "Verify no -scar tags remain in active runtime paths"
+    },
+    {
+      "label": "SwarmX: Evict Legacy -scar Models",
+      "type": "shell",
+      "command": "bash scripts/rebuild-all-modelfiles.sh --evict-legacy",
+      "group": "build",
+      "problemMatcher": [],
+      "detail": "Remove all legacy -scar models from Ollama (post-migration cleanup)"
+    },
+    {
+      "label": "SwarmX: Run Naming Tests",
+      "type": "shell",
+      "command": "python -m pytest tests/test_naming_validation.py -v",
+      "group": "test",
+      "problemMatcher": [],
+      "detail": "Run 30+ test cases validating dual-layer naming consistency"
+    },
+    {
+      "label": "SwarmX: Healthcheck (APEX-17 r7)",
+      "type": "shell",
+      "command": "bash scripts/swarm-healthcheck-apex17.sh",
+      "group": "test",
+      "problemMatcher": [],
+      "detail": "Ollama + models + Relay + API + memory + naming compliance"
+    },
+    {
+      "label": "SwarmX: Evict 7B Models (Free RAM)",
+      "type": "shell",
+      "command": "for model in reason-deepseekr1-pro-q5km-prod code-qwen25-pro-q5km-prod plan-qwen25-pro-q5km-prod critique-deepseekr1-pro-q5km-prod plan-deepseekr1-pro-q5km-prod; do curl -s -X POST http://localhost:11434/api/generate -H 'Content-Type: application/json' -d \"{\\\"model\\\":\\\"$model\\\",\\\"prompt\\\":\\\"\\\",\\\"keep_alive\\\":\\\"0s\\\",\\\"stream\\\":false}\" > /dev/null && echo \"Evicted $model\"; done",
+      "group": "build",
+      "problemMatcher": [],
+      "detail": "Evict all 7B operators (Oracle, Forge, Architect-qwen/deepseek, Auditor)"
+    },
+    {
+      "label": "SwarmX: Doctor",
+      "type": "shell",
+      "command": "python -m cli doctor",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "SwarmX: Status",
+      "type": "shell",
+      "command": "python -m cli status",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "SwarmX: Evolve Layer (1 cycle)",
+      "type": "shell",
+      "command": "python -m cli evolve-layer --cycles 1",
+      "group": "build",
+      "problemMatcher": [],
+      "detail": "Run one cycle of Lab Operator evolution pipeline"
+    },
+    {
+      "label": "SwarmX: Dashboard Only",
+      "type": "shell",
+      "command": "cd apps/swarmx-dashboard && pnpm dev",
+      "group": "build",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "new" }
+    },
+    {
+      "label": "SwarmX: API Only",
+      "type": "shell",
+      "command": "cd apps/swarmx-api && pnpm dev",
+      "group": "build",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "new" }
+    },
+    {
+      "label": "SwarmX: Warm Relay (preload router)",
+      "type": "shell",
+      "command": "curl -s -X POST http://localhost:11434/api/generate -H 'Content-Type: application/json' -d '{\"model\":\"route-phi4-lite-q4km-prod\",\"prompt\":\"classify: ping\",\"keep_alive\":\"30m\",\"stream\":false,\"options\":{\"num_predict\":8}}' | python3 -m json.tool",
+      "group": "build",
+      "problemMatcher": [],
+      "detail": "Preload Relay with 30m keep_alive for fast first-token latency"
+    }
+  ]
 }
