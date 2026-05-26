@@ -1,25 +1,28 @@
-# SwarmXQ APEX-17 r7 · models/registry.yaml
+# SwarmXQ APEX-17 r7-final · models/registry.yaml
 # ─────────────────────────────────────────────────────────────────────────────
 # Single source of truth for the local Ollama model stack.
-#
-# APEX-17 r7 UPDATES:
-#   [REG-06] All tags migrated from -scar suffix to canonical grammar:
-#            <role>-<family>-<tier>-<quant>-<env>
-#   [REG-07] operator_name field added to each entry for human-facing display.
-#   [REG-08] legacy_aliases added to every entry for migration compatibility.
-#   [REG-09] role field uses canonical vocabulary: route|instruct|plan|code|
-#            reason|critique|synth
 #
 # Naming layers:
 #   Layer 1 — Canonical runtime tag (used by code, routing, Ollama commands)
 #   Layer 2 — Operator name (used by docs, dashboards, logs, humans)
 #
+# APEX-17 r7 changes from r6:
+#   [REG-r7-01] All -scar suffixes replaced with canonical production grammar:
+#               <role>-<family>-<tier>-<quant>-<env>
+#   [REG-r7-02] operator_name field added to every entry
+#   [REG-r7-03] legacy_aliases field replaces ad-hoc aliases list, lists
+#               BOTH -scar tag AND pre-scar tags
+#   [REG-r7-04] role field uses canonical vocabulary: route|instruct|plan|code|
+#               reason|critique|synth
+#   [REG-r7-05] composer_tier added for ModelOrchestrator.selectComposerTier()
+#               dispatch (0=local, 1=Relay, 2=Pilot, 3=Architect/Forge, 4=Oracle/Auditor)
+#
 # To swap a model:
 #   1. Place the new GGUF in ~/llm-local/gguf/
-#   2. Update gguf_file, ollama_tag, quant, context_window
-#   3. ollama rm <old-tag>
-#   4. ollama create <new-tag> -f models/Modelfiles/primary/<new>.modelfile
-#   5. swarm doctor
+#   2. Update gguf_file, ollama_tag, quant, context_window in this file
+#   3. ollama rm <old-canonical-tag>
+#   4. ollama create <new-canonical-tag> -f models/Modelfiles/primary/<new>.modelfile
+#   5. python -m cli doctor
 # ─────────────────────────────────────────────────────────────────────────────
 version: APEX-17-r7
 provider: ollama
@@ -30,9 +33,11 @@ ultra_router:
   name: route-phi4-lite-q4km-prod
   gguf_file: microsoft_Phi-4-mini-instruct-Q4_K_M.gguf
   ollama_tag: route-phi4-lite-q4km-prod
-  legacy_aliases: [phi4-router-lite-scar]
+  legacy_aliases:
+    - phi4-router-lite-scar
   quant: Q4_K_M
   role: route
+  composer_tier: 1
   context_window: 2048
   num_predict: 128
   keep_alive: "10m"
@@ -43,14 +48,20 @@ ultra_router:
 
 # ── Core production triad ─────────────────────────────────────────────────────
 triad:
-  router:                                                # Pilot — fast-chat / session router
+  router:                                                # Pilot — fast generalist
     operator_name: Pilot
     name: instruct-phi4-pro-q8-prod
     gguf_file: microsoft_Phi-4-mini-instruct-Q8_0.gguf
     ollama_tag: instruct-phi4-pro-q8-prod
-    legacy_aliases: [phi4-fast-scar, phi4-fast, phi4-mini, phi4:mini]
+    legacy_aliases:
+      - phi4-fast-scar
+      - phi4-fast
+      - phi4-mini
+      - phi4:mini
+      - phi4-mini-instruct
     quant: Q8_0
     role: instruct
+    composer_tier: 2
     context_window: 2048
     num_predict: 256
     keep_alive: "5m"
@@ -59,14 +70,19 @@ triad:
     is_7b: false
     ram_mb: 4270
 
-  reason:                                                # Oracle — deep reasoning specialist
+  reason:                                                # Oracle — deep reasoning
     operator_name: Oracle
     name: reason-deepseekr1-pro-q5km-prod
     gguf_file: DeepSeek-R1-Distill-Qwen-7B-Q5_K_M.gguf
     ollama_tag: reason-deepseekr1-pro-q5km-prod
-    legacy_aliases: [deepseek-reasoner-scar, deepseek-reasoner, deepseek-r1, deepseek-r1:7b]
+    legacy_aliases:
+      - deepseek-reasoner-scar
+      - deepseek-reasoner
+      - deepseek-r1
+      - deepseek-r1:7b
     quant: Q5_K_M
     role: reason
+    composer_tier: 4
     context_window: 6144
     num_predict: 2048
     keep_alive: "0s"
@@ -75,14 +91,19 @@ triad:
     is_7b: true
     ram_mb: 5370
 
-  code:                                                  # Forge — code + execution specialist
+  code:                                                  # Forge — code execution
     operator_name: Forge
     name: code-qwen25-pro-q5km-prod
     gguf_file: Qwen2.5-7B-Instruct-Q5_K_M.gguf
     ollama_tag: code-qwen25-pro-q5km-prod
-    legacy_aliases: [qwen-worker-scar, qwen-worker, qwen2.5-coder, qwen2.5-coder:7b]
+    legacy_aliases:
+      - qwen-worker-scar
+      - qwen-worker
+      - qwen2.5-coder
+      - qwen2.5-coder:7b
     quant: Q5_K_M
     role: code
+    composer_tier: 3
     context_window: 6144
     num_predict: 4096
     keep_alive: "0s"
@@ -91,15 +112,18 @@ triad:
     is_7b: true
     ram_mb: 5370
 
-# ── Optional overlay profiles ─────────────────────────────────────────────────
+# ── Optional overlay profiles (load on demand) ────────────────────────────────
 optional_profiles:
   - operator_name: Architect
     name: plan-phi4-pro-q8-prod
     gguf_file: microsoft_Phi-4-mini-instruct-Q8_0.gguf
     ollama_tag: plan-phi4-pro-q8-prod
-    legacy_aliases: [phi4-worker-scar]
+    legacy_aliases:
+      - phi4-worker-scar
+      - phi4-worker
     quant: Q8_0
     role: plan
+    composer_tier: 3
     context_window: 4096
     is_7b: false
     ram_mb: 4340
@@ -108,9 +132,12 @@ optional_profiles:
     name: plan-qwen25-pro-q5km-prod
     gguf_file: Qwen2.5-7B-Instruct-Q5_K_M.gguf
     ollama_tag: plan-qwen25-pro-q5km-prod
-    legacy_aliases: [qwen-supervisor-scar]
+    legacy_aliases:
+      - qwen-supervisor-scar
+      - qwen-supervisor
     quant: Q5_K_M
     role: plan
+    composer_tier: 3
     context_window: 6144
     is_7b: true
     ram_mb: 5370
@@ -119,9 +146,11 @@ optional_profiles:
     name: plan-deepseekr1-pro-q5km-prod
     gguf_file: DeepSeek-R1-Distill-Qwen-7B-Q5_K_M.gguf
     ollama_tag: plan-deepseekr1-pro-q5km-prod
-    legacy_aliases: [deepseek-supervisor-scar]
+    legacy_aliases:
+      - deepseek-supervisor-scar
     quant: Q5_K_M
     role: plan
+    composer_tier: 4
     context_window: 6144
     is_7b: true
     ram_mb: 5370
@@ -130,14 +159,17 @@ optional_profiles:
     name: critique-deepseekr1-pro-q5km-prod
     gguf_file: DeepSeek-R1-Distill-Qwen-7B-Q5_K_M.gguf
     ollama_tag: critique-deepseekr1-pro-q5km-prod
-    legacy_aliases: [deepseek-critic-scar]
+    legacy_aliases:
+      - deepseek-critic-scar
+      - deepseek-critic
     quant: Q5_K_M
     role: critique
+    composer_tier: 4
     context_window: 8192
     is_7b: true
     ram_mb: 5420
 
-# ── Evolve models (Lab) ──────────────────────────────────────────────────────
+# ── Lab — evolve models (disabled by default) ─────────────────────────────────
 evolve_workflow:
   enabled_by_default: false
   models:
@@ -145,9 +177,13 @@ evolve_workflow:
       name: synth-phi4-exp-q8-dev
       gguf_file: microsoft_Phi-4-mini-instruct-Q8_0.gguf
       ollama_tag: synth-phi4-exp-q8-dev
-      legacy_aliases: [phi4-evolve-scar]
+      legacy_aliases:
+        - phi4-evolve-scar
+        - phi4-fast:swarmx-evolve
+        - phi4-mini:swarmx-evolve
       quant: Q8_0
       role: synth
+      composer_tier: 2
       context_window: 6144
       is_7b: false
       ram_mb: 4440
@@ -156,9 +192,12 @@ evolve_workflow:
       name: synth-deepseekr1-exp-q5km-dev
       gguf_file: DeepSeek-R1-Distill-Qwen-7B-Q5_K_M.gguf
       ollama_tag: synth-deepseekr1-exp-q5km-dev
-      legacy_aliases: [deepseek-evolve-scar]
+      legacy_aliases:
+        - deepseek-evolve-scar
+        - deepseek-r1:swarmx-evolve
       quant: Q5_K_M
       role: synth
+      composer_tier: 4
       context_window: 6144
       is_7b: true
       ram_mb: 5370
@@ -167,9 +206,12 @@ evolve_workflow:
       name: synth-qwen25-exp-q5km-dev
       gguf_file: Qwen2.5-7B-Instruct-Q5_K_M.gguf
       ollama_tag: synth-qwen25-exp-q5km-dev
-      legacy_aliases: [qwen-evolve-scar]
+      legacy_aliases:
+        - qwen-evolve-scar
+        - qwen2.5:swarmx-evolve
       quant: Q5_K_M
       role: synth
+      composer_tier: 3
       context_window: 6144
       is_7b: true
       ram_mb: 5370
@@ -180,3 +222,14 @@ constraints:
   max_resident_7b_models: 1
   max_resident_non7b_models: 2
   evolve_requires_explicit_mode: true
+  always_resident_relay: true   # [REG-r7-05] Relay is always-on; never evict
+
+# ── Operator taxonomy (informational; do not edit) ────────────────────────────
+operator_taxonomy:
+  Relay:     {role: route,    purpose: "Ultra-light routing and intent classification"}
+  Pilot:     {role: instruct, purpose: "Fast generalist, session routing, intake"}
+  Architect: {role: plan,     purpose: "Planning, orchestration, strategy"}
+  Forge:     {role: code,     purpose: "Code generation, execution, tool use"}
+  Oracle:    {role: reason,   purpose: "Deep reasoning, diagnosis, architecture"}
+  Auditor:   {role: critique, purpose: "Adversarial review, validation, safety"}
+  Lab:       {role: synth,    purpose: "Experimental evolution and synthesis"}
