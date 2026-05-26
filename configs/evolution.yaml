@@ -1,4 +1,13 @@
-# SwarmX V6 evolution overlay
+# SwarmX APEX-17 r7 · configs/evolution.yaml
+# Evolution overlay — Lab Operator assignments.
+#
+# Changelog v2026.5.25-apex17-r7:
+#   [EVO-r7-01] observer_model, critic_model, mutator_model migrated from
+#               pre-scar canonical names to APEX-17 canonical production tags.
+#               Lab is the Operator name for all evolve models.
+#               Note: evolve models are exp/dev tier — only loaded under
+#               --enable-evolve flag.
+
 proposal_only_by_default: true
 fitness_threshold: 0.74
 selection: tournament
@@ -25,28 +34,27 @@ scoring_axes:
 
 self_improving_layer:
   enabled: true
-  default_cycles: 1  # unified with v6-overlay.yaml key name
+  default_cycles: 1
 
-  # Model assignments for the observe → critique → mutate pipeline
-  # [V5.9-FIX-01] Updated to canonical model tags.
-  observer_model: phi4-fast          # was phi4-mini
-  critic_model: deepseek-reasoner    # was deepseek-r1:7b
-  mutator_model: qwen-worker         # was qwen2.5-coder
+  # Model assignments for the observe → critique → mutate pipeline.
+  # All three are Lab Operators (synth-* role) and require explicit --enable-evolve.
+  # The non-Lab production models (Pilot, Oracle, Forge) handle live traffic only.
+  observer_model: synth-phi4-exp-q8-dev          # Lab (phi4) — Phase 1 fitness snapshot
+  critic_model:   synth-deepseekr1-exp-q5km-dev  # Lab (deepseek) — Phase 2 + Phase 4
+  mutator_model:  synth-qwen25-exp-q5km-dev      # Lab (qwen25) — Phase 3 mutation
 
-  # Deployment gate — a candidate must clear ALL of these before staging
   deploy_requires:
-    min_score_delta: 0.05  # must improve baseline score by at least 5%
-    risk: low              # only low-risk mutations may auto-stage
+    min_score_delta: 0.05
+    risk: low
 
   artifact_store: evolution-layer
 
-  # stage_only_mode: true means winning mutations are written as staged proposals
-  # and never auto-applied to the live swarm — this is the hard safety boundary.
-  # allow_auto_deploy: false (in v6-overlay.yaml) reinforces the same constraint
-  # at the overlay level; the two settings are intentionally redundant.
+  # stage_only_mode: true → winning mutations written as staged proposals,
+  # never auto-applied to the live swarm. allow_auto_deploy: false in
+  # v6-overlay.yaml reinforces this at the overlay level.
   stage_only_mode: true
 
   validate_against:
-    - baseline        # must outperform the current production baseline
-    - previous_best   # must also outperform the prior staged winner
-    - safety_rules    # must pass the guardrails safety ruleset
+    - baseline        # must outperform current production baseline
+    - previous_best   # must outperform prior staged winner
+    - safety_rules    # must pass guardrails safety ruleset
