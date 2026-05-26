@@ -1,508 +1,205 @@
-# SwarmXQ APEX-17 r7 — Setup & Implementation Guide
+# SwarmXQ APEX-17 r7 Upgrade — Dual-Layer Naming · Video Pipeline · Architectural Hardening
 
 **Version:** v2026.5.25-apex17-r7-final
-**Target Hardware:** HP EliteBook 850 G3 · 8 GB RAM · CPU-only · WSL2
-
-This guide walks you through installing the APEX-17 r7 bundle onto an existing SwarmXQ repository, performing the dual-layer naming migration, renaming Ollama models, and validating the result.
+**Hardware target:** HP EliteBook 850 G3 · 8 GB RAM · CPU-only · WSL2
 
 ---
 
-## Table of Contents
+## 1. Summary
 
-1. [Prerequisites](#1-prerequisites)
-2. [Bundle Contents Overview](#2-bundle-contents-overview)
-3. [Fastest Path — Automated Migration](#3-fastest-path--automated-migration)
-4. [Manual Step-by-Step Installation](#4-manual-step-by-step-installation)
-5. [Ollama Model Rename](#5-ollama-model-rename)
-6. [Validation](#6-validation)
-7. [Rollback Procedure](#7-rollback-procedure)
-8. [Common Issues](#8-common-issues)
-9. [Post-Migration Checklist](#9-post-migration-checklist)
+APEX-17 r7 resolves the naming bifurcation that had accumulated across six prior revisions: the TypeScript layer had already migrated to canonical tags in r6, while the Python layer, YAML configs, and Modelfiles still used `-scar` suffixes. r7 completes the migration by establishing a single `MODEL_OPERATOR_MAP` as the authoritative source of truth for both layers, introduces a human-readable Operator identity layer (Relay, Pilot, Architect, Forge, Oracle, Auditor, Lab) and ships a one-shot migration script.
+
+Three pillars:
+
+1. **Dual-Layer Naming System** — canonical runtime tags for machines, Operator names for humans, synchronized through `MODEL_OPERATOR_MAP`.
+2. **Video Generation Pipeline** — pressure-aware faceless video production: ComfyUI + LTX/Wan GGUF + Kokoro TTS, integrated with the agent council orchestration layer.
+3. **Architectural Hardening** — SINGLE-7B LOCK serialization, predictive warmup, adaptive timeouts per Operator, degraded-mode handling, and full lifecycle management on `ModelOrchestrator`.
 
 ---
 
-## 1. Prerequisites
+## 2. Operator Taxonomy
 
-### Required
-
-- An existing SwarmXQ repository at any prior version (r5, r6, or pre-scar)
-- Python 3.11+ with the SwarmX virtual environment activated
-- Node.js 22+ with pnpm
-- Ollama running locally with GGUF models in `~/llm-local/gguf/`
-- At least 500 MB free disk for backup
-- At least 2 GB free RAM during the migration
-
-### Verify Prerequisites
-
-```bash
-# Python and venv
-python3 --version                           # 3.11+
-which python3                               # should point to .venv
-
-# Node + pnpm
-node --version                              # v22+
-pnpm --version                              # 9+
-
-# Ollama
-ollama --version
-curl -s http://localhost:11434/api/tags | python3 -m json.tool | head -20
-
-# GGUF files
-ls ~/llm-local/gguf/
-# Expected:
-#   DeepSeek-R1-Distill-Qwen-7B-Q5_K_M.gguf
-#   Qwen2.5-7B-Instruct-Q5_K_M.gguf
-#   microsoft_Phi-4-mini-instruct-Q4_K_M.gguf  (for Relay)
-#   microsoft_Phi-4-mini-instruct-Q8_0.gguf    (for Pilot)
-
-# Free RAM and disk
-free -m | head -2
-df -h .
-```
+| Operator | Role | Canonical Tag(s) | Family | Quant | RAM | 7B |
+|----------|------|-------------------|--------|-------|-----|----|
+| **Relay** | `route` | `route-phi4-lite-q4km-prod` | phi4 | Q4_K_M | ~2.5 GB | No |
+| **Pilot** | `instruct` | `instruct-phi4-pro-q8-prod` | phi4 | Q8_0 | ~4.3 GB | No |
+| **Architect** | `plan` | `plan-phi4-pro-q8-prod`, `plan-qwen25-pro-q5km-prod`, `plan-deepseekr1-pro-q5km-prod` | Mixed | Mixed | 4.3–5.4 GB | Mixed |
+| **Forge** | `code` | `code-qwen25-pro-q5km-prod` | qwen25 | Q5_K_M | ~5.4 GB | Yes |
+| **Oracle** | `reason` | `reason-deepseekr1-pro-q5km-prod` | deepseekr1 | Q5_K_M | ~5.4 GB | Yes |
+| **Auditor** | `critique` | `critique-deepseekr1-pro-q5km-prod` | deepseekr1 | Q5_K_M | ~5.4 GB | Yes |
+| **Lab** | `synth` | `synth-phi4-exp-q8-dev`, `synth-qwen25-exp-q5km-dev`, `synth-deepseekr1-exp-q5km-dev` | Mixed | Mixed | 4.4–5.4 GB | Mixed |
 
 ---
 
-## 2. Bundle Contents Overview
+## 3. Naming Standard
 
-The bundle delivers **22 files** organized into 8 categories:
+### Tag Grammar
 
-### Source of Truth (2 files — install FIRST)
-- `packages/swarmx-types/src/operator-map.ts` — TypeScript authoritative MODEL_OPERATOR_MAP
-- `src/swarmx/operator_map.py` — Python mirror
+```
+<role>-<family>-<tier>-<quant>-<env>
+```
 
-### Python Layer (3 files)
-- `src/swarmx/config.py` — full replacement with canonical defaults
-- `src/swarmx/llm_patch_r7.py` — patch instructions for llm.py (applied via migrate script)
-- `tests/test_naming_validation.py` — 30+ validation test cases
+| Field | Values |
+|-------|--------|
+| `role` | `route`, `instruct`, `plan`, `code`, `reason`, `critique`, `synth` |
+| `family` | `phi4`, `qwen25`, `deepseekr1` |
+| `tier` | `lite` (smallest), `pro` (production), `exp` (experimental) |
+| `quant` | `q4km`, `q8`, `q5km` |
+| `env` | `prod`, `dev` |
 
-### TypeScript Layer (1 file)
-- `apps/swarmx-api/src/services/adaptive-timeout-config.ts` — canonical MODEL_BASE_PROFILES
+### Usage Rules
 
-### Configs (5 files — replace existing)
-- `configs/swarmx.defaults.yaml`
-- `configs/routing.yaml`
-- `configs/evolution.yaml`
-- `configs/v6-overlay.yaml`
-- `models/registry.yaml`
+| Context | Use |
+|---------|-----|
+| Code, configs, Ollama commands, registry | Canonical runtime tag |
+| Docs, dashboards, logs, UI, comments | Operator name |
+| Mixed contexts (structured logs) | `Operator (canonical-tag)` via `format_operator_label()` |
 
-### Modelfiles (5 files — canonical names)
-- `models/Modelfiles/primary/route-phi4-lite-q4km-prod.modelfile` (Relay)
-- `models/Modelfiles/primary/instruct-phi4-pro-q8-prod.modelfile` (Pilot)
-- `models/Modelfiles/primary/code-qwen25-pro-q5km-prod.modelfile` (Forge)
-- `models/Modelfiles/primary/reason-deepseekr1-pro-q5km-prod.modelfile` (Oracle)
-- `models/Modelfiles/primary/critique-deepseekr1-pro-q5km-prod.modelfile` (Auditor)
+### Source of Truth
 
-### Scripts (3 files)
-- `scripts/migrate-to-r7.sh` — one-shot migration
-- `scripts/rebuild-all-modelfiles.sh` — canonical model rebuild + validation
-- `scripts/swarm-healthcheck-apex17.sh` — production healthcheck
-
-### Manifest + VS Code (2 files)
-- `manifests/swarmx_model_manifest.yaml`
-- `.vscode/tasks.json`
-
-### Documentation (3 files)
-- `README.md`
-- `docs/SWARMXQ-APEX17-UPGRADE.md`
-- `docs/SETUP_AND_IMPLEMENTATION.md` (this file)
+| Layer | File |
+|-------|------|
+| TypeScript | `packages/swarmx-types/src/operator-map.ts` |
+| Python | `src/swarmx/operator_map.py` |
+| YAML registry | `models/registry.yaml` (with `operator_name` field) |
 
 ---
 
-## 3. Fastest Path — Automated Migration
+## 4. Changelog
 
-If you trust the migration script (recommended for clean r5/r6 repos):
+### 4.1 Naming Migration
 
-```bash
-# 1. Extract the bundle into a sibling directory
-unzip SwarmXQ-APEX17-r7-final.zip -d /tmp/
+| ID | File | Change |
+|----|------|--------|
+| NM-01 | `packages/swarmx-types/src/operator-map.ts` | **NEW** — authoritative TypeScript `MODEL_OPERATOR_MAP` with full `OperatorEntry` metadata (estimatedRamMb, defaultCtx, temperature, topP, description), `MODEL_ALIASES` covering 25+ legacy tags, resolution helpers |
+| NM-02 | `src/swarmx/operator_map.py` | **NEW** — Python mirror with identical semantics; `OperatorEntry` TypedDict, same alias map, same helpers (snake_case) |
+| NM-03 | `src/swarmx/config.py` | **FULL REPLACEMENT** — `_model_alias_map()` sources from `operator_map.MODEL_ALIASES`; `_DEFAULT_RELAY/PILOT/FORGE/ORACLE` constants use canonical tags; `runtime_profile()` emits dual-layer `{tag, operator}` per model entry; `_LEGACY_TAGS` validation set includes both pre-scar AND -scar tags |
+| NM-04 | `src/swarmx/llm_patch_r7.py` | **NEW** — surgical `llm.py` patch instructions + Python script for automated `_MODEL_TEMPERATURES` / `_MODEL_TOP_P` prepend |
+| NM-05 | `apps/swarmx-api/src/services/adaptive-timeout-config.ts` | **FULL REPLACEMENT** — `MODEL_BASE_PROFILES` rebuilt with canonical keys; circuit breaker key normalization via `resolveCanonicalTag()`; `AdaptiveCallConfig` adds `operator` field; all log messages use `formatOperatorLabel()` |
+| NM-06 | `models/registry.yaml` | **FULL REPLACEMENT** — all `ollama_tag` values canonical; `operator_name`, `legacy_aliases`, `composer_tier` fields added to every entry; `operator_taxonomy` section documents all 7 Operators |
+| NM-07 | `configs/swarmx.defaults.yaml` | Migrated — all `model_fast/reason/code` defaults → canonical; triadic_dispatch keys → canonical |
+| NM-08 | `configs/routing.yaml` | **FULL REPLACEMENT** — all triadic_model_config keys → canonical; `adversarial_check.critic_model` fixed (was incorrectly set to Relay, now Pilot); `narrative.model` fixed (was Relay, now Pilot); `exclusive_pairs` expanded with all 7B combos; escalation chain updated |
+| NM-09 | `configs/evolution.yaml` | Lab Operator tags (`synth-*`) for observe/critique/mutate |
+| NM-10 | `configs/v6-overlay.yaml` | Lab Operator tags; annotated with Operator name comments |
+| NM-11 | `manifests/swarmx_model_manifest.yaml` | **FULL REPLACEMENT** — canonical model identifiers; `operator`, `legacy_alias` fields per stack entry; `replaces[]` matrix |
+| NM-12 | `tests/test_naming_validation.py` | **NEW** — 30+ tests covering grammar validation, alias resolution, operator lookup, TS/Python mirror consistency, repo-wide audit |
 
-# 2. Set the bundle root and run the migrate script from your repo
-cd /path/to/your/SwarmXQ
-export SWARMXQ_BUNDLE_ROOT=/tmp/SwarmXQ-APEX17-r7-final
+### 4.2 Fixes Included in This Bundle (Bugs in r5/r6)
 
-# 3. Preview what will happen
-bash $SWARMXQ_BUNDLE_ROOT/scripts/migrate-to-r7.sh --dry-run
+| ID | File | Bug Fixed |
+|----|------|-----------|
+| BUG-01 | `configs/routing.yaml` | `adversarial_check.critic_model` was `phi4-router-lite-scar` (Relay). Relay is a deterministic JSON router with a 96-token output ceiling — it cannot produce adversarial critique. Fixed to Pilot (`instruct-phi4-pro-q8-prod`). |
+| BUG-02 | `configs/routing.yaml` | `llm_retry.narrative.model` was `phi4-router-lite-scar` (Relay). Relay is JSON-only; narrative synthesis requires 3–5 natural sentences. Fixed to Pilot. |
+| BUG-03 | `apps/swarmx-api/src/services/adaptive-timeout-config.ts` | `MODEL_BASE_PROFILES` used `-scar` keys — profiles never matched after TypeScript layer migrated to canonical tags in r6. Fixed by rebuilding with canonical keys. |
+| BUG-04 | `apps/swarmx-api/src/services/adaptive-timeout-config.ts` | `getCircuit()` used raw model key without canonicalization — legacy and canonical tags tracked separate circuit breaker state for the same model. Fixed with `resolveCanonicalTag()` at entry. |
 
-# 4. Run the actual migration (creates timestamped backup)
-bash $SWARMXQ_BUNDLE_ROOT/scripts/migrate-to-r7.sh --apply
+### 4.3 New Scripts
 
-# 5. Verify
-bash scripts/swarm-healthcheck-apex17.sh
-```
+| Script | Purpose |
+|--------|---------|
+| `scripts/migrate-to-r7.sh` | One-shot migration with `--dry-run`, `--apply`, `--rollback`, `--rename-only`, `--validate-only` modes |
+| `scripts/rebuild-all-modelfiles.sh` | Canonical model rebuild with `--validate`, `--evict-legacy`, `--only` modes |
+| `scripts/swarm-healthcheck-apex17.sh` | Production healthcheck covering Ollama, canonical models, Relay warmth, API, memory, naming |
 
-The `--apply` mode performs all of these in sequence:
+### 4.4 New Modelfiles (5 canonical names)
 
-1. Pre-flight checks (Ollama, Python, disk, repo)
-2. Backup all replaced files to `.r6-backup-YYYYMMDD-HHMMSS/`
-3. Copy bundle files into your repo
-4. Patch `src/swarmx/llm.py` (adds operator_map import + canonical temperature/topP entries)
-5. Rename Ollama models via `ollama cp` + `ollama rm`
-6. Rebuild Modelfiles from canonical definitions
-7. Run validation tests + healthcheck
+| Modelfile | Operator | Was |
+|-----------|----------|-----|
+| `route-phi4-lite-q4km-prod.modelfile` | Relay | `phi4-router-lite-scar.modelfile` |
+| `instruct-phi4-pro-q8-prod.modelfile` | Pilot | `phi4-fast-scar.modelfile` |
+| `code-qwen25-pro-q5km-prod.modelfile` | Forge | `qwen-worker-scar.modelfile` |
+| `reason-deepseekr1-pro-q5km-prod.modelfile` | Oracle | `deepseek-reasoner-scar.modelfile` |
+| `critique-deepseekr1-pro-q5km-prod.modelfile` | Auditor | `deepseek-critic-scar.modelfile` |
 
-If anything fails, see [Rollback Procedure](#7-rollback-procedure).
+Each Modelfile has a substantially improved SYSTEM prompt:
+- Operator-branded identity (name + canonical tag + version)
+- Clear purpose statement and delegation rules
+- Correct model-specific stop tokens
+- Operator-level memory math in header comments
 
----
+### 4.5 Video Pipeline
 
-## 4. Manual Step-by-Step Installation
+| ID | File | Change |
+|----|------|--------|
+| VP-01 | `apps/swarmx-api/src/services/video-orchestrator.ts` | VOT-11: high-pressure backoff (3s) before 7B load; VOT-12: poll ceiling alignment |
+| VP-02–06 | Various | Video queue, assets, types, routes, dashboard page — functional in r5; r7 updates operator references in logs |
 
-If you prefer surgical control:
+### 4.6 Documentation
 
-### Step 4.1 — Create a Backup
-
-```bash
-cd /path/to/your/SwarmXQ
-BACKUP_DIR=".r6-backup-$(date +%Y%m%d-%H%M%S)"
-mkdir -p "$BACKUP_DIR"
-
-# Back up everything we'll replace
-for f in \
-    packages/swarmx-types/src/operator-map.ts \
-    src/swarmx/operator_map.py \
-    src/swarmx/config.py \
-    apps/swarmx-api/src/services/adaptive-timeout-config.ts \
-    configs/swarmx.defaults.yaml \
-    configs/routing.yaml \
-    configs/evolution.yaml \
-    configs/v6-overlay.yaml \
-    models/registry.yaml \
-    manifests/swarmx_model_manifest.yaml \
-    .vscode/tasks.json \
-    README.md \
-    docs/SWARMXQ-APEX17-UPGRADE.md \
-    tests/test_naming_validation.py \
-    scripts/rebuild-all-modelfiles.sh \
-    scripts/swarm-healthcheck-apex17.sh; do
-  [[ -f "$f" ]] && { mkdir -p "$BACKUP_DIR/$(dirname "$f")"; cp "$f" "$BACKUP_DIR/$f"; }
-done
-
-# Back up the -scar Modelfiles
-mkdir -p models/Modelfiles/_legacy_prescar_backup
-cp models/Modelfiles/primary/*-scar.modelfile models/Modelfiles/_legacy_prescar_backup/ 2>/dev/null || true
-```
-
-### Step 4.2 — Install the Source of Truth FIRST
-
-These must go in before anything that imports them:
-
-```bash
-# TypeScript SoT
-mkdir -p packages/swarmx-types/src
-cp /path/to/bundle/packages/swarmx-types/src/operator-map.ts packages/swarmx-types/src/
-
-# Python SoT
-cp /path/to/bundle/src/swarmx/operator_map.py src/swarmx/
-```
-
-Verify:
-```bash
-python3 -c "from swarmx.operator_map import MODEL_OPERATOR_MAP; print(len(MODEL_OPERATOR_MAP), 'canonical tags')"
-# Expected: 11 canonical tags
-```
-
-### Step 4.3 — Replace config.py
-
-```bash
-cp /path/to/bundle/src/swarmx/config.py src/swarmx/config.py
-```
-
-Verify it loads:
-```bash
-python3 -c "from swarmx.config import SwarmConfig; c = SwarmConfig(); print(c.model_fast)"
-# Expected: instruct-phi4-pro-q8-prod
-```
-
-### Step 4.4 — Patch llm.py (Two Surgical Edits)
-
-You have two options:
-
-**Option A — Use the migrate script for this single step:**
-```bash
-bash /path/to/bundle/scripts/migrate-to-r7.sh --apply  # patches llm.py among other things
-```
-
-**Option B — Apply manually:**
-
-1. Open `src/swarmx/llm.py`
-2. Find the existing relative imports (search for `from .utils`)
-3. Add this import block immediately after:
-   ```python
-   from .operator_map import (
-       resolve_canonical_tag,
-       resolve_operator_name,
-       format_operator_label,
-   )
-   ```
-4. Find `_MODEL_TEMPERATURES: dict[str, float] = {` and immediately after the opening `{` insert the canonical block from `src/swarmx/llm_patch_r7.py` (TEMPERATURE_PREPEND constant)
-5. Do the same for `_MODEL_TOP_P: dict[str, float] = {` using TOP_P_PREPEND
-
-### Step 4.5 — Replace TypeScript and Configs
-
-```bash
-# TypeScript
-cp /path/to/bundle/apps/swarmx-api/src/services/adaptive-timeout-config.ts apps/swarmx-api/src/services/
-
-# Configs
-cp /path/to/bundle/configs/swarmx.defaults.yaml configs/
-cp /path/to/bundle/configs/routing.yaml configs/
-cp /path/to/bundle/configs/evolution.yaml configs/
-cp /path/to/bundle/configs/v6-overlay.yaml configs/
-cp /path/to/bundle/models/registry.yaml models/
-
-# Manifest
-cp /path/to/bundle/manifests/swarmx_model_manifest.yaml manifests/
-
-# Modelfiles
-cp /path/to/bundle/models/Modelfiles/primary/*.modelfile models/Modelfiles/primary/
-```
-
-### Step 4.6 — Install Scripts and Tests
-
-```bash
-cp /path/to/bundle/scripts/*.sh scripts/
-chmod +x scripts/*.sh
-
-mkdir -p tests
-cp /path/to/bundle/tests/test_naming_validation.py tests/
-```
-
-### Step 4.7 — Install VS Code and Docs
-
-```bash
-cp /path/to/bundle/.vscode/tasks.json .vscode/
-cp /path/to/bundle/README.md ./
-cp /path/to/bundle/docs/*.md docs/
-```
+| Document | Change |
+|----------|--------|
+| `README.md` | Rewritten — Operator taxonomy table, canonical naming rules, architecture, video pipeline, migration guide |
+| `docs/SWARMXQ-APEX17-UPGRADE.md` | This document |
+| `docs/SETUP_AND_IMPLEMENTATION.md` | **NEW** — step-by-step installation with prerequisites, manual steps, automated path, rollback, validation, common issues, post-migration checklist |
 
 ---
 
-## 5. Ollama Model Rename
+## 5. Legacy Alias Map (complete)
 
-The `-scar` Ollama models must be renamed to canonical tags so requests for canonical names resolve correctly.
+| Legacy Tag | Resolves To | Operator |
+|------------|-------------|----------|
+| `phi4-router-lite-scar` | `route-phi4-lite-q4km-prod` | Relay |
+| `phi4-fast-scar` | `instruct-phi4-pro-q8-prod` | Pilot |
+| `phi4-worker-scar` | `plan-phi4-pro-q8-prod` | Architect |
+| `phi4-evolve-scar` | `synth-phi4-exp-q8-dev` | Lab |
+| `qwen-worker-scar` | `code-qwen25-pro-q5km-prod` | Forge |
+| `qwen-supervisor-scar` | `plan-qwen25-pro-q5km-prod` | Architect |
+| `qwen-evolve-scar` | `synth-qwen25-exp-q5km-dev` | Lab |
+| `deepseek-reasoner-scar` | `reason-deepseekr1-pro-q5km-prod` | Oracle |
+| `deepseek-supervisor-scar` | `plan-deepseekr1-pro-q5km-prod` | Architect |
+| `deepseek-critic-scar` | `critique-deepseekr1-pro-q5km-prod` | Auditor |
+| `deepseek-evolve-scar` | `synth-deepseekr1-exp-q5km-dev` | Lab |
+| `phi4-fast` | `instruct-phi4-pro-q8-prod` | Pilot |
+| `phi4-mini` | `instruct-phi4-pro-q8-prod` | Pilot |
+| `deepseek-r1` | `reason-deepseekr1-pro-q5km-prod` | Oracle |
+| `deepseek-r1:7b` | `reason-deepseekr1-pro-q5km-prod` | Oracle |
+| `qwen-worker` | `code-qwen25-pro-q5km-prod` | Forge |
+| `qwen2.5-coder` | `code-qwen25-pro-q5km-prod` | Forge |
 
-### Option A — Rename in place (preserves weights, fast)
+Resolution happens at the first entry point in each layer: `resolveCanonicalTag()` in TypeScript, `resolve_canonical_tag()` in Python. Both are O(1) hash lookups.
 
-```bash
-bash scripts/migrate-to-r7.sh --rename-only
-```
-
-This iterates through 11 legacy → canonical pairs and runs `ollama cp` followed by `ollama rm`. No re-quantization, no GGUF re-read.
-
-### Option B — Rebuild from canonical Modelfiles (slower, cleaner)
-
-```bash
-bash scripts/rebuild-all-modelfiles.sh
-bash scripts/rebuild-all-modelfiles.sh --evict-legacy  # remove the old -scar versions
-```
-
-### Option C — Manual rename
-
-```bash
-ollama cp phi4-router-lite-scar    route-phi4-lite-q4km-prod
-ollama cp phi4-fast-scar           instruct-phi4-pro-q8-prod
-ollama cp qwen-worker-scar         code-qwen25-pro-q5km-prod
-ollama cp deepseek-reasoner-scar   reason-deepseekr1-pro-q5km-prod
-ollama cp deepseek-critic-scar     critique-deepseekr1-pro-q5km-prod
-
-# Then remove the old ones
-ollama rm phi4-router-lite-scar phi4-fast-scar qwen-worker-scar deepseek-reasoner-scar deepseek-critic-scar
-```
-
-Verify:
-```bash
-ollama list | grep -E "(route-|instruct-|code-|reason-|critique-)"
-```
+**Removal criteria:** after one full production cycle with zero -scar log entries, run `rg -rn "\-scar" . | grep -v "alias\|legacy\|ALIAS\|LEGACY"`. When that returns zero hits, the alias maps can be dropped from both source files.
 
 ---
 
-## 6. Validation
+## 6. Migration Path Reference
 
-Run all three layers of validation:
-
-### 6.1 — Naming Tests
-
-```bash
-python -m pytest tests/test_naming_validation.py -v
-```
-
-Expected: 30+ tests pass. Validates grammar, alias resolution, TS/Python mirror consistency, operator lookup, repo-wide -scar audit.
-
-### 6.2 — Standard Compliance
-
-```bash
-bash scripts/rebuild-all-modelfiles.sh --validate
-```
-
-Expected: confirms operator_map.py/ts exist, registry.yaml uses canonical tags, no -scar in primary model assignments.
-
-### 6.3 — Production Healthcheck
-
-```bash
-bash scripts/swarm-healthcheck-apex17.sh
-```
-
-Expected: PASS for Ollama, canonical models registered, Relay warmth check, API health, memory tier, naming compliance.
-
-### 6.4 — Live Smoke Test
-
-```bash
-# Test that Relay routes a request correctly
-curl -s -X POST http://localhost:11434/api/generate \
-  -H 'Content-Type: application/json' \
-  -d '{"model":"route-phi4-lite-q4km-prod","prompt":"classify: implement a Fastify route","stream":false,"options":{"num_predict":80}}' \
-  | python3 -m json.tool
-
-# Test that the Python layer resolves legacy names
-python3 -c "
-from swarmx.operator_map import resolve_canonical_tag, resolve_operator_name
-print('phi4-fast-scar →', resolve_canonical_tag('phi4-fast-scar'))
-print('which is Operator:', resolve_operator_name('phi4-fast-scar'))
-"
-# Expected:
-# phi4-fast-scar → instruct-phi4-pro-q8-prod
-# which is Operator: Pilot
-```
+| From | To | Automated | Notes |
+|------|----|-----------|-------|
+| APEX-17 r6 | APEX-17 r7 | `--apply` | TS layer was already canonical; Python + YAML + Modelfiles need migration |
+| APEX-17 r5 | APEX-17 r7 | `--apply` | Same as r6 path |
+| V5 / pre-scar | APEX-17 r7 | `--apply` | Pre-scar aliases also covered |
 
 ---
 
-## 7. Rollback Procedure
+## 7. Files Replaced by This Bundle
 
-If anything goes wrong:
-
-### Automated rollback
-
-```bash
-bash scripts/migrate-to-r7.sh --rollback
 ```
-
-This restores the latest `.r6-backup-*` directory contents.
-
-### Manual rollback
-
-```bash
-LATEST_BACKUP=$(ls -td .r6-backup-* | head -1)
-cd "$LATEST_BACKUP"
-for f in $(find . -type f); do cp "$f" "../$f"; done
-cd ..
-```
-
-### Restore Ollama models
-
-If you used `ollama rm` on the -scar models:
-
-```bash
-# Rebuild from the backed-up Modelfiles
-cd /path/to/your/SwarmXQ
-for mf in models/Modelfiles/_legacy_prescar_backup/*.modelfile; do
-  tag=$(basename "$mf" .modelfile)
-  ollama create "$tag" -f "$mf"
-done
+packages/swarmx-types/src/operator-map.ts
+src/swarmx/operator_map.py
+src/swarmx/config.py
+apps/swarmx-api/src/services/adaptive-timeout-config.ts
+configs/swarmx.defaults.yaml
+configs/routing.yaml
+configs/evolution.yaml
+configs/v6-overlay.yaml
+models/registry.yaml
+manifests/swarmx_model_manifest.yaml
+.vscode/tasks.json
+README.md
+docs/SWARMXQ-APEX17-UPGRADE.md
+docs/SETUP_AND_IMPLEMENTATION.md        (new)
+tests/test_naming_validation.py          (new)
+scripts/migrate-to-r7.sh                 (new)
+scripts/rebuild-all-modelfiles.sh
+scripts/swarm-healthcheck-apex17.sh
+models/Modelfiles/primary/route-phi4-lite-q4km-prod.modelfile
+models/Modelfiles/primary/instruct-phi4-pro-q8-prod.modelfile
+models/Modelfiles/primary/code-qwen25-pro-q5km-prod.modelfile
+models/Modelfiles/primary/reason-deepseekr1-pro-q5km-prod.modelfile
+models/Modelfiles/primary/critique-deepseekr1-pro-q5km-prod.modelfile
 ```
 
 ---
-
-## 8. Common Issues
-
-### "ModuleNotFoundError: No module named 'swarmx.operator_map'"
-
-You skipped step 4.2. Install `src/swarmx/operator_map.py` first.
-
-### Tests fail with "Mirror desync"
-
-The Python and TypeScript MODEL_OPERATOR_MAP got out of sync. Run:
-```bash
-diff <(grep -E '^\s*"[\w-]+":' src/swarmx/operator_map.py | sort) \
-     <(grep -E '^\s*"[\w-]+":' packages/swarmx-types/src/operator-map.ts | sort)
-```
-Re-copy whichever file is behind.
-
-### "Tag 'phi4-fast-scar' is using legacy tag" warning at startup
-
-Expected during transition — `config.py` warns when it resolves a -scar tag. To silence permanently, update your `.env` / shell rc:
-```bash
-export SWARM_MODEL_FAST=instruct-phi4-pro-q8-prod
-export SWARM_MODEL_CODE=code-qwen25-pro-q5km-prod
-export SWARM_MODEL_REASON=reason-deepseekr1-pro-q5km-prod
-```
-
-### `ollama cp` says "model not found"
-
-The legacy model wasn't registered. Either:
-- It was already renamed (verify with `ollama list`), or
-- It was never built — skip the rename for that one and let `rebuild-all-modelfiles.sh` create the canonical version from scratch
-
-### Relay cold-start takes > 30s
-
-Q4_K_M Phi-4-mini should cold-start in <2s. Check:
-- GGUF file path: `ls -la ~/llm-local/gguf/microsoft_Phi-4-mini-instruct-Q4_K_M.gguf`
-- num_thread is set: `ollama show route-phi4-lite-q4km-prod | grep num_thread`
-- No swap thrashing: `free -m && swapon --show`
-
-### Dashboard shows old -scar names in logs
-
-Frontend may be cached. Restart the dashboard:
-```bash
-cd apps/swarmx-dashboard && pnpm dev
-```
-And/or hard-refresh the browser.
-
-### `pytest: command not found`
-
-The test suite uses pytest. Install in your venv:
-```bash
-pip install pytest pyyaml structlog
-```
-
----
-
-## 9. Post-Migration Checklist
-
-After a successful migration, verify the following are true:
-
-- [ ] `python3 -c "from swarmx.operator_map import MODEL_OPERATOR_MAP; assert len(MODEL_OPERATOR_MAP) == 11"`
-- [ ] `python -m pytest tests/test_naming_validation.py -v` — all pass
-- [ ] `bash scripts/rebuild-all-modelfiles.sh --validate` — exit 0
-- [ ] `bash scripts/swarm-healthcheck-apex17.sh` — HEALTH: OK
-- [ ] `ollama list | grep -c "scar"` — returns 0 (no -scar models remain in Ollama, optional)
-- [ ] `grep -rn "scar" configs/*.yaml | grep -v "legacy\|alias"` — only legacy_alias fields contain "scar"
-- [ ] Dashboard at http://localhost:3000 shows Operator names (Relay, Pilot, Forge, etc.) in agent cards
-- [ ] First-token latency for routing: <1s after Relay warm
-- [ ] First-token latency for code generation: <5s after Forge warm (~60-120s cold)
-- [ ] No `-scar` strings in any structured log output
-
-### Optional Cleanup
-
-After one full production cycle without issues, you may:
-
-```bash
-# Permanently remove -scar Ollama models
-bash scripts/rebuild-all-modelfiles.sh --evict-legacy
-
-# Archive the backup
-mv .r6-backup-* ~/swarmxq-r6-archive/
-
-# Remove the legacy Modelfile backups
-rm -rf models/Modelfiles/_legacy_prescar_backup/
-```
-
-The MODEL_ALIASES map in operator_map.{py,ts} stays — it's the safety net for any code path that hasn't been migrated yet.
-
----
-
-## Quick Reference Card
-
-```
-Layer 1 (machine):  <role>-<family>-<tier>-<quant>-<env>
-Layer 2 (human):    Relay · Pilot · Architect · Forge · Oracle · Auditor · Lab
-
-Source of truth:    packages/swarmx-types/src/operator-map.ts
-                    src/swarmx/operator_map.py
-
-Migrate:            bash scripts/migrate-to-r7.sh --apply
-Validate:           bash scripts/rebuild-all-modelfiles.sh --validate
-Healthcheck:        bash scripts/swarm-healthcheck-apex17.sh
-Tests:              python -m pytest tests/test_naming_validation.py -v
-Rollback:           bash scripts/migrate-to-r7.sh --rollback
-```
 
 *The incision is precise.*
