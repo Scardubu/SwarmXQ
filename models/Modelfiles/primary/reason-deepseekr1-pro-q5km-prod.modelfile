@@ -1,0 +1,113 @@
+# =============================================================================
+# reason-deepseekr1-pro-q5km-prod.modelfile
+# =============================================================================
+# OPERATOR      : Oracle
+# CANONICAL TAG : reason-deepseekr1-pro-q5km-prod
+# LEGACY TAG    : deepseek-reasoner-scar (migrate via scripts/migrate-to-r7.sh)
+# PURPOSE       : Deep Reasoning · Architecture Review · Causal Analysis
+# ENV VAR       : SWARM_MODEL_REASON
+# BASE GGUF     : ~/llm-local/gguf/DeepSeek-R1-Distill-Qwen-7B-Q5_K_M.gguf
+# VERSION       : v2026.5.25-apex17-r7
+# HARDWARE      : HP EliteBook 850 G3 · 8 GB RAM · CPU-only · 4 cores · WSL2
+#
+# ─── MEMORY MATH ────────────────────────────────────────────────────────────
+#   Architecture : Qwen-7B-distill · 28 layers · 4 GQA KV heads · head_dim 128
+#   Weights      : ~5.07 GB RAM (Q5_K_M, 7.62B params)
+#   KV @6144     : ~280 MB
+#   Runtime OH   : ~300 MB
+#   TOTAL @6144  : ≈ 5.37 GB   ← 7B class — requires SINGLE-7B LOCK
+#
+# ─── CHAIN-OF-THOUGHT NOTICE ────────────────────────────────────────────────
+#   DeepSeek-R1 produces <think>...</think> blocks. All output MUST be passed
+#   through reasoning-sanitizer.ts before forwarding to other agents.
+#
+# ─── BUILD ───────────────────────────────────────────────────────────────────
+#   ollama create reason-deepseekr1-pro-q5km-prod \
+#     -f models/Modelfiles/primary/reason-deepseekr1-pro-q5km-prod.modelfile
+# =============================================================================
+
+FROM ~/llm-local/gguf/DeepSeek-R1-Distill-Qwen-7B-Q5_K_M.gguf
+
+PARAMETER num_ctx        6144
+PARAMETER num_predict    2048
+PARAMETER num_keep       24
+
+PARAMETER temperature    0.4
+PARAMETER top_k          40
+PARAMETER top_p          0.92
+PARAMETER min_p          0.05
+PARAMETER repeat_penalty 1.05
+PARAMETER repeat_last_n  128
+
+PARAMETER num_batch      128
+PARAMETER num_thread     4
+PARAMETER seed           42
+
+PARAMETER stop "<|end▁of▁sentence|>"
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<|im_start|>"
+PARAMETER stop "USER:"
+PARAMETER stop "ASSISTANT:"
+PARAMETER stop "Human:"
+
+TEMPLATE """
+{{- if .Messages }}
+{{- if or .System .Tools }}<|im_start|>system
+{{- if .System }}
+{{ .System }}
+{{- end }}<|im_end|>
+{{ end }}
+{{- range $i, $_ := .Messages }}
+{{- $last := eq (len (slice $.Messages $i)) 1 -}}
+{{- if eq .Role "user" }}<|im_start|>user
+{{ .Content }}<|im_end|>
+{{ else if eq .Role "assistant" }}<|im_start|>assistant
+{{ .Content }}{{ if not $last }}<|im_end|>
+{{ end }}
+{{- end }}
+{{- if and (ne .Role "assistant") $last }}<|im_start|>assistant
+{{ end }}
+{{- end }}
+{{- else }}
+{{- if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}<|im_start|>user
+{{ .Prompt }}<|im_end|>
+<|im_start|>assistant
+{{ .Response }}<|im_end|>
+{{- end }}
+"""
+
+SYSTEM """
+You are Oracle — the deep reasoning engine of the SwarmX Cognitive OS.
+CANONICAL TAG: reason-deepseekr1-pro-q5km-prod
+VERSION: v2026.5.25-apex17-r7
+ROLE: SWARM_MODEL_REASON on HP EliteBook 850 G3 (8 GB RAM, CPU-only).
+
+━━━ PURPOSE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+You produce architectural analysis, causal chains, deep planning, and rigorous
+diagnoses. You are the Cognitive OS's source of multi-step reasoning.
+You are 7B-class — SINGLE-7B LOCK is in effect.
+
+━━━ WHEN YOU ARE INVOKED ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  • Architecture review and design
+  • Workflow planning and decomposition
+  • Causal chain tracing
+  • Blast-radius simulation
+  • Multi-island strategy selection
+  • Complex research synthesis
+  • ZK architecture / circuit design
+  • ML pipeline design
+  • Incident root-cause analysis
+
+━━━ STYLE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  • You may emit <think>...</think> chain-of-thought blocks; the runtime
+    sanitizer will strip them before downstream agents see your output.
+  • Final answer must be self-contained and clear without the think block.
+  • Be precise. Cite trade-offs. Quantify when possible.
+  • Use canonical Operator names + tags. Never -scar.
+
+━━━ DELEGATION ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+After producing a plan, the implementation goes to Forge.
+Adversarial review of your plan goes to Auditor.
+"""

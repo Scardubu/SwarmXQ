@@ -1,0 +1,167 @@
+# =============================================================================
+# route-phi4-lite-q4km-prod.modelfile
+# =============================================================================
+# OPERATOR      : Relay
+# CANONICAL TAG : route-phi4-lite-q4km-prod
+# LEGACY TAG    : phi4-router-lite-scar (migrate via scripts/migrate-to-r7.sh)
+# PURPOSE       : Ultra-Light Router · Intent Classification · Safety Gate
+# ENV VAR       : SWARM_MODEL_ULTRA_ROUTER
+# BASE GGUF     : ~/llm-local/gguf/microsoft_Phi-4-mini-instruct-Q4_K_M.gguf
+# VERSION       : v2026.5.25-apex17-r7
+# HARDWARE      : HP EliteBook 850 G3 · 8 GB RAM · CPU-only · 4 cores · WSL2
+#
+# ─── WHY A SEPARATE ULTRA-LIGHT ROUTER EXISTS ───────────────────────────────
+#   Pilot (instruct-phi4-pro-q8-prod, Q8_0, 2k ctx) costs ~4.27 GB RAM and
+#   3–5s cold start. On 8 GB RAM this router load → specialist load causes:
+#     • KV cache pressure and page eviction
+#     • zRAM spike and swap churn
+#     • Orchestration jitter during swarm_triad and evolver runs
+#
+#   Relay (this model, Q4_K_M, 2k ctx) costs ~2.5 GB RAM and <1s cold start.
+#   This preserves >5 GB headroom for specialist models before they even load.
+#
+#   USE THIS MODEL FOR:
+#     • Intent classification (routing decision only)
+#     • Safety filtering (pass / redirect)
+#     • Fallback selection under memory pressure
+#     • Degraded-state orchestration
+#
+#   DO NOT USE FOR:
+#     • Conversation      → Pilot (instruct-phi4-pro-q8-prod)
+#     • Code generation   → Forge (code-qwen25-pro-q5km-prod)
+#     • Planning          → Architect (plan-qwen25-pro-q5km-prod)
+#     • Deep reasoning    → Oracle (reason-deepseekr1-pro-q5km-prod)
+#     • Critique          → Auditor (critique-deepseekr1-pro-q5km-prod)
+#
+# ─── MEMORY MATH ────────────────────────────────────────────────────────────
+#   Architecture : Phi-4-mini · 32 layers · 8 GQA KV heads · head_dim 96
+#   Weights      : ~2.10 GB RAM (Q4_K_M quantisation, 3.8B params)
+#   KV @2048     : ~96 MB
+#   Runtime OH   : ~300 MB
+#   TOTAL @2048  : ≈ 2.50 GB   ← SAFE on 8 GB (leaves ~5.5 GB headroom)
+#
+# ─── ROUTER TOPOLOGY POSITION ────────────────────────────────────────────────
+#   Tier 0: Local rule engine (shell intents, health checks, <100ms)
+#   Tier 1: Relay (route-phi4-lite-q4km-prod) — ultra-fast intent classify
+#   Tier 2: Pilot (instruct-phi4-pro-q8-prod) — fast chat, session Q&A
+#   Tier 3: Architect / Forge (plan-* / code-qwen25-pro-q5km-prod)
+#   Tier 4: Oracle / Auditor (reason-* / critique-deepseekr1-pro-q5km-prod)
+#
+# ─── BUILD & INSTALL ─────────────────────────────────────────────────────────
+#   ollama create route-phi4-lite-q4km-prod \
+#     -f models/Modelfiles/primary/route-phi4-lite-q4km-prod.modelfile
+#
+# ─── VERIFY AFTER BUILD ──────────────────────────────────────────────────────
+#   ollama run route-phi4-lite-q4km-prod \
+#     'Classify: "plan a 3-month database migration to PostgreSQL"'
+#   # Expected:
+#   #   {"type":"route","routed_to":"plan-qwen25-pro-q5km-prod","confidence":"HIGH","risk":"low"}
+# =============================================================================
+
+FROM ~/llm-local/gguf/microsoft_Phi-4-mini-instruct-Q4_K_M.gguf
+
+# ─── CONTEXT & PREDICTION ────────────────────────────────────────────────────
+PARAMETER num_ctx        2048
+PARAMETER num_predict    96
+PARAMETER num_keep       16
+
+# ─── SAMPLING — MAXIMUM DETERMINISM ─────────────────────────────────────────
+PARAMETER temperature    0.0
+PARAMETER top_k          5
+PARAMETER top_p          0.75
+PARAMETER min_p          0.15
+PARAMETER repeat_penalty 1.03
+PARAMETER repeat_last_n  16
+
+# ─── COMPUTE BUDGET ──────────────────────────────────────────────────────────
+PARAMETER num_batch      32
+PARAMETER num_thread     4
+PARAMETER seed           42
+
+# ─── STOP TOKENS ─────────────────────────────────────────────────────────────
+PARAMETER stop "<|end|>"
+PARAMETER stop "<|endoftext|>"
+PARAMETER stop "<|user|>"
+PARAMETER stop "<|assistant|>"
+PARAMETER stop "<|system|>"
+PARAMETER stop "\n\n"
+PARAMETER stop "USER:"
+PARAMETER stop "ASSISTANT:"
+PARAMETER stop "Human:"
+
+# ─── TEMPLATE ────────────────────────────────────────────────────────────────
+TEMPLATE """
+{{- if .Messages }}
+{{- if or .System .Tools }}<|system|>
+{{- if .System }}
+{{ .System }}
+{{- end }}<|end|>
+{{ end }}
+{{- range $i, $_ := .Messages }}
+{{- $last := eq (len (slice $.Messages $i)) 1 -}}
+{{- if eq .Role "user" }}<|user|>
+{{ .Content }}<|end|>
+{{ else if eq .Role "assistant" }}<|assistant|>
+{{ .Content }}{{ if not $last }}<|end|>
+{{ end }}
+{{- end }}
+{{- if and (ne .Role "assistant") $last }}<|assistant|>
+{{ end }}
+{{- end }}
+{{- else }}
+{{- if .System }}<|system|>
+{{ .System }}<|end|>
+{{ end }}<|user|>
+{{ .Prompt }}<|end|>
+<|assistant|>
+{{ .Response }}<|end|>
+{{- end }}
+"""
+
+# ─── SYSTEM PROMPT ────────────────────────────────────────────────────────────
+SYSTEM """
+You are Relay — the ultra-light intent classifier and router of the SwarmX Cognitive OS.
+CANONICAL TAG: route-phi4-lite-q4km-prod
+VERSION: v2026.5.25-apex17-r7
+ROLE: SWARM_MODEL_ULTRA_ROUTER on HP EliteBook 850 G3 (8 GB RAM, CPU-only).
+
+━━━ SOLE PURPOSE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Classify incoming requests and emit a routing decision. Nothing else.
+You do NOT converse, reason, code, plan, or explain. You classify and route.
+Speed is your primary metric. One JSON object. Done.
+
+━━━ ROUTING TABLE (canonical tags only) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  lookup / status / health / ping / classify     → instruct-phi4-pro-q8-prod        (Pilot)
+  single tool call / fast boolean decision       → plan-phi4-pro-q8-prod            (Architect-phi4)
+  code generation / implementation               → code-qwen25-pro-q5km-prod        (Forge)
+  multi-step plan / coordination                 → plan-qwen25-pro-q5km-prod        (Architect-qwen)
+  deep analysis / architecture / math            → reason-deepseekr1-pro-q5km-prod  (Oracle)
+  adversarial audit / critique / review          → critique-deepseekr1-pro-q5km-prod (Auditor)
+  long-horizon planning                          → plan-deepseekr1-pro-q5km-prod    (Architect-deepseek)
+
+━━━ DEGRADED MODE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+If RAM < 1500 MB free: route ALL requests to instruct-phi4-pro-q8-prod (Pilot) with memory_warning.
+If Ollama is unreachable: emit {"type":"triage","action":"wait_or_evict"}.
+
+━━━ SAFETY GATE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+If request involves: credentials, production data writes, Prisma migrations,
+webhook bypass, system-level destructive operations → emit BLOCK immediately.
+
+━━━ OUTPUT SCHEMAS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ROUTE:
+{"type":"route","routed_to":"plan-qwen25-pro-q5km-prod","confidence":"HIGH|MEDIUM|LOW","risk":"low|medium|high"}
+
+TRIAGE (memory/health issue):
+{"type":"triage","action":"wait_or_evict|retry_later","reason":"<5 words>"}
+
+BLOCK (safety gate):
+{"type":"block","reason":"<10 words max>","requires_approval":true}
+
+━━━ HARD RULES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. One JSON object only. No prose. No markdown. No explanation.
+2. Always emit canonical production model names — never legacy -scar names.
+3. Maximum output: 96 tokens. Stay well under this limit.
+4. Never emit "self" as routed_to — route to the appropriate specialist.
+5. The seven canonical Operators are: Relay, Pilot, Architect, Forge, Oracle, Auditor, Lab.
+   Lab is non-production — never route normal traffic to a synth-* tag.
+"""

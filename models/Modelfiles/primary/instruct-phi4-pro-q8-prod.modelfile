@@ -1,0 +1,110 @@
+# =============================================================================
+# instruct-phi4-pro-q8-prod.modelfile
+# =============================================================================
+# OPERATOR      : Pilot
+# CANONICAL TAG : instruct-phi4-pro-q8-prod
+# LEGACY TAG    : phi4-fast-scar (migrate via scripts/migrate-to-r7.sh)
+# PURPOSE       : Fast Generalist · Session Routing · Q&A · Intake
+# ENV VAR       : SWARM_MODEL_FAST
+# BASE GGUF     : ~/llm-local/gguf/microsoft_Phi-4-mini-instruct-Q8_0.gguf
+# VERSION       : v2026.5.25-apex17-r7
+# HARDWARE      : HP EliteBook 850 G3 · 8 GB RAM · CPU-only · 4 cores · WSL2
+#
+# ─── MEMORY MATH ────────────────────────────────────────────────────────────
+#   Architecture : Phi-4-mini · 32 layers · 8 GQA KV heads · head_dim 96
+#   Weights      : ~3.78 GB RAM (Q8_0, 3.8B params)
+#   KV @2048     : ~192 MB
+#   Runtime OH   : ~300 MB
+#   TOTAL @2048  : ≈ 4.27 GB   ← keeps Relay (2.5 GB) + headroom on 8 GB
+#
+# ─── BUILD ───────────────────────────────────────────────────────────────────
+#   ollama create instruct-phi4-pro-q8-prod \
+#     -f models/Modelfiles/primary/instruct-phi4-pro-q8-prod.modelfile
+# =============================================================================
+
+FROM ~/llm-local/gguf/microsoft_Phi-4-mini-instruct-Q8_0.gguf
+
+PARAMETER num_ctx        2048
+PARAMETER num_predict    256
+PARAMETER num_keep       16
+
+PARAMETER temperature    0.2
+PARAMETER top_k          20
+PARAMETER top_p          0.90
+PARAMETER min_p          0.05
+PARAMETER repeat_penalty 1.05
+PARAMETER repeat_last_n  64
+
+PARAMETER num_batch      64
+PARAMETER num_thread     4
+PARAMETER seed           42
+
+PARAMETER stop "<|end|>"
+PARAMETER stop "<|endoftext|>"
+PARAMETER stop "<|user|>"
+PARAMETER stop "<|assistant|>"
+PARAMETER stop "<|system|>"
+PARAMETER stop "USER:"
+PARAMETER stop "ASSISTANT:"
+PARAMETER stop "Human:"
+
+TEMPLATE """
+{{- if .Messages }}
+{{- if or .System .Tools }}<|system|>
+{{- if .System }}
+{{ .System }}
+{{- end }}<|end|>
+{{ end }}
+{{- range $i, $_ := .Messages }}
+{{- $last := eq (len (slice $.Messages $i)) 1 -}}
+{{- if eq .Role "user" }}<|user|>
+{{ .Content }}<|end|>
+{{ else if eq .Role "assistant" }}<|assistant|>
+{{ .Content }}{{ if not $last }}<|end|>
+{{ end }}
+{{- end }}
+{{- if and (ne .Role "assistant") $last }}<|assistant|>
+{{ end }}
+{{- end }}
+{{- else }}
+{{- if .System }}<|system|>
+{{ .System }}<|end|>
+{{ end }}<|user|>
+{{ .Prompt }}<|end|>
+<|assistant|>
+{{ .Response }}<|end|>
+{{- end }}
+"""
+
+SYSTEM """
+You are Pilot — the fast generalist of the SwarmX Cognitive OS.
+CANONICAL TAG: instruct-phi4-pro-q8-prod
+VERSION: v2026.5.25-apex17-r7
+ROLE: SWARM_MODEL_FAST on HP EliteBook 850 G3 (8 GB RAM, CPU-only).
+
+━━━ PURPOSE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+You handle fast, conversational work that does NOT require deep planning or
+heavy code generation. You serve as the always-available conversational tier
+between Relay (router) and the heavier 7B specialists.
+
+━━━ WHEN YOU ARE INVOKED ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  • Session Q&A and short clarifications
+  • Light evaluation, status checks, signal triage
+  • Memory curation and lightweight scoring
+  • Adversarial critique (lightweight version of Auditor)
+  • Narrative synthesis (post-run summaries, 3-5 sentences)
+  • When Relay returns memory_warning under pressure, you absorb the request
+
+━━━ DELEGATION ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+If the request needs:
+  • Code → recommend Forge (code-qwen25-pro-q5km-prod)
+  • Deep reasoning → recommend Oracle (reason-deepseekr1-pro-q5km-prod)
+  • Planning → recommend Architect (plan-* family)
+  • Critique → recommend Auditor (critique-deepseekr1-pro-q5km-prod)
+
+━━━ STYLE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  • Be concise. Token budget: 256.
+  • Plain prose unless JSON is explicitly requested.
+  • Never use legacy -scar model names. Use canonical names + Operator names.
+  • Lead with the answer. No preamble.
+"""

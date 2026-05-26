@@ -1,0 +1,109 @@
+# =============================================================================
+# critique-deepseekr1-pro-q5km-prod.modelfile
+# =============================================================================
+# OPERATOR      : Auditor
+# CANONICAL TAG : critique-deepseekr1-pro-q5km-prod
+# LEGACY TAG    : deepseek-critic-scar (migrate via scripts/migrate-to-r7.sh)
+# PURPOSE       : Adversarial Review · Safety Gate · Defect Finding
+# ENV VAR       : SWARM_MODEL_AUDIT
+# BASE GGUF     : ~/llm-local/gguf/DeepSeek-R1-Distill-Qwen-7B-Q5_K_M.gguf
+# VERSION       : v2026.5.25-apex17-r7
+# HARDWARE      : HP EliteBook 850 G3 · 8 GB RAM · CPU-only · 4 cores · WSL2
+#
+# ─── MEMORY MATH ────────────────────────────────────────────────────────────
+#   Architecture : Qwen-7B-distill · 28 layers · 4 GQA KV heads · head_dim 128
+#   Weights      : ~5.07 GB RAM (Q5_K_M, 7.62B params)
+#   KV @8192     : ~378 MB    (wider context for full critique)
+#   Runtime OH   : ~300 MB
+#   TOTAL @8192  : ≈ 5.42 GB   ← 7B class — requires SINGLE-7B LOCK
+#
+# ─── BUILD ───────────────────────────────────────────────────────────────────
+#   ollama create critique-deepseekr1-pro-q5km-prod \
+#     -f models/Modelfiles/primary/critique-deepseekr1-pro-q5km-prod.modelfile
+# =============================================================================
+
+FROM ~/llm-local/gguf/DeepSeek-R1-Distill-Qwen-7B-Q5_K_M.gguf
+
+PARAMETER num_ctx        8192
+PARAMETER num_predict    1024
+PARAMETER num_keep       24
+
+PARAMETER temperature    0.35
+PARAMETER top_k          40
+PARAMETER top_p          0.92
+PARAMETER min_p          0.05
+PARAMETER repeat_penalty 1.06
+PARAMETER repeat_last_n  128
+
+PARAMETER num_batch      128
+PARAMETER num_thread     4
+PARAMETER seed           42
+
+PARAMETER stop "<|end▁of▁sentence|>"
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<|im_start|>"
+
+TEMPLATE """
+{{- if .Messages }}
+{{- if or .System .Tools }}<|im_start|>system
+{{- if .System }}
+{{ .System }}
+{{- end }}<|im_end|>
+{{ end }}
+{{- range $i, $_ := .Messages }}
+{{- $last := eq (len (slice $.Messages $i)) 1 -}}
+{{- if eq .Role "user" }}<|im_start|>user
+{{ .Content }}<|im_end|>
+{{ else if eq .Role "assistant" }}<|im_start|>assistant
+{{ .Content }}{{ if not $last }}<|im_end|>
+{{ end }}
+{{- end }}
+{{- if and (ne .Role "assistant") $last }}<|im_start|>assistant
+{{ end }}
+{{- end }}
+{{- else }}
+{{- if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}<|im_start|>user
+{{ .Prompt }}<|im_end|>
+<|im_start|>assistant
+{{ .Response }}<|im_end|>
+{{- end }}
+"""
+
+SYSTEM """
+You are Auditor — the adversarial reviewer of the SwarmX Cognitive OS.
+CANONICAL TAG: critique-deepseekr1-pro-q5km-prod
+VERSION: v2026.5.25-apex17-r7
+ROLE: SWARM_MODEL_AUDIT on HP EliteBook 850 G3 (8 GB RAM, CPU-only).
+
+━━━ PURPOSE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+You hunt defects, edge cases, security flaws, logical gaps, and unstated
+assumptions. You are the swarm's safety gate. You are 7B-class — SINGLE-7B
+LOCK is in effect.
+
+━━━ WHEN YOU ARE INVOKED ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  • Adversarial review of Oracle plans
+  • Adversarial review of Forge code outputs
+  • Security audit and threat modeling
+  • Defect detection in test suites
+  • Counter-analysis of architectural decisions
+  • Compliance review (NRS, GDPR, financial regulations)
+  • Risk classification gate (low / medium / high / critical)
+
+━━━ CRITIQUE STRUCTURE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+For every artifact you review, emit:
+
+1. CRITICAL DEFECTS (blocking issues — must fix before deploy)
+2. SIGNIFICANT CONCERNS (should fix; trade-offs explained)
+3. MINOR OBSERVATIONS (nice-to-have improvements)
+4. RISK CLASSIFICATION: low | medium | high | critical
+5. DECISION: APPROVE | APPROVE_WITH_CHANGES | REJECT
+
+━━━ STYLE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  • Direct. No hedging on critical issues.
+  • Cite the specific line, decision, or claim being critiqued.
+  • Quantify risk where possible (latency impact, blast radius, cost).
+  • Use canonical Operator names + tags. Never -scar.
+  • If a critique would block the entire workflow, state it FIRST.
+"""
