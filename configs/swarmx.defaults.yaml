@@ -1,14 +1,19 @@
-# SwarmX · configs/swarmx.defaults.yaml
-# Version: 2026.04-v4 · mission-aware control plane
-# Model triad upgrade: phi4-fast (router/orchestrator) · deepseek-reasoner (reasoning) · qwen-worker (execution)
+# SwarmX APEX-17 r7 · configs/swarmx.defaults.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Mission-aware control plane defaults.
 #
-# CHANGELOG vs apex13:
-#   [MODEL-01] model_fast   → phi4-fast             (Phi-4-mini always-on orchestrator)
-#   [MODEL-02] model_reason → deepseek-reasoner     (reasoning engine, planning, logic chains)
-#   [MODEL-03] model_code   → qwen-worker           (execution engine, coding, tool-use)
-#   [ADD-01]   routing.triadic_dispatch — explicit 3-role model routing rules
-#   [ADD-02]   routing.escalation_chain — fallback cascade when primary model unavailable
-#   [ADD-03]   gate_mu1/mu3 fixes already reflected (APEX.15 runtime)
+# CHANGELOG v2026.5.25-apex17-r7:
+#   [DEF-r7-01] All model_* fields migrated to canonical production tags
+#               (was -scar in r5–r6, pre-scar before that)
+#   [DEF-r7-02] triadic_dispatch keys use canonical Operator tags
+#   [DEF-r7-03] Operator name annotations added in comments
+#
+# Operator → canonical tag map:
+#   Pilot     → instruct-phi4-pro-q8-prod         (router/orchestrator)
+#   Oracle    → reason-deepseekr1-pro-q5km-prod   (reasoning/planning)
+#   Forge     → code-qwen25-pro-q5km-prod         (execution/code)
+#   Relay     → route-phi4-lite-q4km-prod         (ultra-light first-pass)
+# ─────────────────────────────────────────────────────────────────────────────
 
 runtime:
   autonomous: true
@@ -19,33 +24,24 @@ runtime:
   signal_triage_on_entry: true
   output_quality_gate_on_exit: true
 
-  # V4 operational settings
   mission_budget: 4
   worker_pool_size: 1
   worker_interval: 2.0
   control_mode: hybrid
 
-# ── MODEL TRIAD (phi4-fast · deepseek-reasoner · qwen-worker) ─────────────────────
+# ── MODEL TRIAD — Canonical Operator Tags ─────────────────────────────────────
 routing:
-  provider: ollama                 # ollama | openai | anthropic | custom
-  base_url: http://localhost:11434 # default Ollama endpoint
+  provider: ollama
+  base_url: http://localhost:11434
 
-  # ── Primary model assignments ──────────────────────────────────────────────
-  # ORCHESTRATOR: phi4-fast — always-on, lightweight, routing + decision logic
-  model_fast: phi4-fast
+  # Primary model assignments (canonical tags)
+  model_fast:   instruct-phi4-pro-q8-prod         # Pilot — always-on orchestrator
+  model_reason: reason-deepseekr1-pro-q5km-prod   # Oracle — reasoning/planning
+  model_code:   code-qwen25-pro-q5km-prod         # Forge — execution/code
 
-  # REASONING ENGINE: deepseek-reasoner — planning, logic chains, complex reasoning
-  model_reason: deepseek-reasoner
-
-  # EXECUTION ENGINE: qwen-worker — coding, tool-use, agentic tasks
-  model_code: qwen-worker
-
-  # ── Triadic dispatch rules ─────────────────────────────────────────────────
-  # Which model handles which agent roles. phi4-fast is the default for all roles
-  # not explicitly assigned here — it is the always-on router brain.
+  # Triadic dispatch rules — Operator → agent roles
   triadic_dispatch:
-    # phi4-fast roles: routing, light evaluation, memory curation, status checks
-    phi4-fast:
+    instruct-phi4-pro-q8-prod:  # Pilot — light routing, evaluation, status
       - strategist
       - workflow-router
       - memory-curator
@@ -54,10 +50,9 @@ routing:
       - skill-sentinel
       - skill-check
       - release-manager
-      - tournament-judge   # lightweight scoring pass
+      - tournament-judge
 
-    # deepseek-reasoner roles: deep planning, causal chains, architecture review
-    deepseek-reasoner:
+    reason-deepseekr1-pro-q5km-prod:  # Oracle — deep planning, architecture
       - chief-architect
       - workflow-composer
       - research-analyst
@@ -69,8 +64,7 @@ routing:
       - incident-commander
       - prompt-architect
 
-    # qwen-worker roles: implementation, code generation, tool-use, testing
-    qwen-worker:
+    code-qwen25-pro-q5km-prod:  # Forge — implementation, code, tool execution
       - backend-engineer
       - frontend-architect
       - data-engineer
@@ -85,20 +79,16 @@ routing:
       - skill-librarian
       - skill-curator
 
-  # ── Escalation chain ───────────────────────────────────────────────────────
-  # If the primary model is unavailable, fall back in order.
-  # This ensures the swarm degrades gracefully when a model isn't pulled yet.
+  # Escalation chain — primary unavailable → fall back in order
   escalation_chain:
-    phi4-fast:          [phi4-fast, deepseek-reasoner, qwen-worker]
-    deepseek-reasoner:  [deepseek-reasoner, qwen-worker, phi4-fast]
-    qwen-worker:        [qwen-worker, deepseek-reasoner, phi4-fast]
+    instruct-phi4-pro-q8-prod:       [instruct-phi4-pro-q8-prod, reason-deepseekr1-pro-q5km-prod, code-qwen25-pro-q5km-prod]
+    reason-deepseekr1-pro-q5km-prod: [reason-deepseekr1-pro-q5km-prod, code-qwen25-pro-q5km-prod, instruct-phi4-pro-q8-prod]
+    code-qwen25-pro-q5km-prod:       [code-qwen25-pro-q5km-prod, reason-deepseekr1-pro-q5km-prod, instruct-phi4-pro-q8-prod]
 
-  # ── Legacy aliases (backward compat with legacy env vars) ────────────────
-  # MODEL_FAST and MODEL_CODE env vars still respected; triadic_dispatch takes
-  # precedence when set. MODEL_REASON is new in apex15.
-  model_fast_alias: phi4-fast
-  model_reason_alias: deepseek-reasoner
-  model_code_alias: qwen-worker
+  # Legacy aliases — kept ONLY for SwarmConfig.normalize_model_tag()
+  model_fast_alias:   phi4-fast-scar
+  model_reason_alias: deepseek-reasoner-scar
+  model_code_alias:   qwen-worker-scar
 
 safety:
   approval_required_for: [high, critical]
@@ -117,12 +107,9 @@ evolution:
   promptbreeder:
     strategy_promotion_wins: 2
     max_active_strategies: 5
-  # FIX v2.1: config.py reads evolution.budget.refinement_passes and
-  # evolution.budget.proposals_per_run but this section was absent — those
-  # YAML keys were permanently inert, silently falling to Python defaults.
   budget:
-    refinement_passes: 2      # evaluator_passes — refinement loops per task
-    proposals_per_run: 3      # proposal_budget  — evolution proposals per cycle
+    refinement_passes: 2
+    proposals_per_run: 3
 
 observability:
   trace_every_stage: true
@@ -132,32 +119,25 @@ observability:
   mission_retention: 100
 
 # ── Startup autopilot ───────────────────────────────────────────────────────
-# [V6.1-ENH-01] Budgets for the launch-time health/pressure/warmup/evolver pass.
 startup:
   health_timeout_s: 6.0
   warmup_timeout_s: 20.0
   evolver_timeout_s: 15.0
+  # [DEF-r7-04] Predictive warmup target — Relay (Q4_K_M, ~2.5GB) loads on boot
+  warmup_target: route-phi4-lite-q4km-prod
 
-
-# ── Memory ──────────────────────────────────────────────────────────────────
-# FIX v4.1-post: config.py reads memory.graph_limit and memory.search_limit
-# but this section was absent — those YAML keys were permanently inert,
-# silently falling to Python defaults (250 and 20 respectively).
+# ── Memory ───────────────────────────────────────────────────────────────────
 memory:
-  graph_limit: 250          # max nodes in the in-memory knowledge graph
-  search_limit: 20          # max results from memory_search_graph / semantic retrieval
-  retain_recent_runs: 50    # jsonl trim limit for runs.jsonl
+  graph_limit: 250
+  search_limit: 20
+  retain_recent_runs: 50
   retain_recent_memories: 200
 
-# ── Storage ─────────────────────────────────────────────────────────────────
-# FIX v4.1-post: config.py reads storage.backend but section was absent.
+# ── Storage ──────────────────────────────────────────────────────────────────
 storage:
-  backend: sqlite+jsonl     # sqlite+jsonl | jsonl-only | memory
+  backend: sqlite+jsonl
 
-# ── MCP defaults ────────────────────────────────────────────────────────────
-# FIX v4.1-post: config.py reads mcp.allowlist but section was absent here
-# (it existed only in mcp-defaults.yaml which is also merged, but this ensures
-# the key is always resolvable without depending on merge order).
+# ── MCP defaults ─────────────────────────────────────────────────────────────
 mcp:
   allowlist:
     - git
@@ -170,3 +150,34 @@ mcp:
     - pip
     - curl
     - wget
+
+# ── Pressure-aware governance ────────────────────────────────────────────────
+governance:
+  pressure:
+    warn_available_mb: 1500
+    critical_available_mb: 800
+    zram_warn_used_pct: 60
+    zram_critical_used_pct: 85
+    check_interval_s: 5.0
+
+  concurrency:
+    normal_max: 2
+    high_max: 1
+    critical_max: 1
+
+  token_ceilings:
+    instruct-phi4-pro-q8-prod:       1024   # Pilot
+    plan-qwen25-pro-q5km-prod:       1024   # Architect-qwen
+    plan-deepseekr1-pro-q5km-prod:   1024   # Architect-deepseek
+    code-qwen25-pro-q5km-prod:       4096   # Forge
+    reason-deepseekr1-pro-q5km-prod: 2048   # Oracle
+    critique-deepseekr1-pro-q5km-prod: 1024 # Auditor
+
+  escalation:
+    strict_tier_enforcement: true
+
+  handoff:
+    max_context_chars: 2000
+    compress_above_chars: 800
+
+  observe_only: false
