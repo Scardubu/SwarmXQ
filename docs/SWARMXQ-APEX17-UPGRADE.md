@@ -1,37 +1,37 @@
-# SwarmXQ APEX-17 r7 Upgrade — Dual-Layer Naming, Video Pipeline, Architectural Hardening
+# SwarmXQ APEX-17 r7 Upgrade — Dual-Layer Naming · Video Pipeline · Architectural Hardening
 
-**Version:** v2026.5.25-apex17-r7
+**Version:** v2026.5.25-apex17-r7-final
 **Hardware target:** HP EliteBook 850 G3 · 8 GB RAM · CPU-only · WSL2
 
 ---
 
-## 1. What Changed
+## 1. Summary
 
-APEX-17 r7 introduces three major capabilities:
+APEX-17 r7 resolves the naming bifurcation that had accumulated across six prior revisions: the TypeScript layer had already migrated to canonical tags in r6, while the Python layer, YAML configs, and Modelfiles still used `-scar` suffixes. r7 completes the migration by establishing a single `MODEL_OPERATOR_MAP` as the authoritative source of truth for both layers, introduces a human-readable Operator identity layer (Relay, Pilot, Architect, Forge, Oracle, Auditor, Lab) and ships a one-shot migration script.
 
-1. **Dual-Layer Naming System** — canonical runtime tags for machines, memorable Operator names for humans, synchronized through a single `MODEL_OPERATOR_MAP` source of truth.
+Three pillars:
 
-2. **Video Generation Pipeline** — a pressure-aware, faceless video production subsystem integrated with ComfyUI, Kokoro TTS, and the SwarmXQ agent orchestration layer.
-
-3. **Architectural Hardening** — SINGLE-7B LOCK serialization, predictive warmup, adaptive timeouts, degraded-mode handling, and lifecycle methods on ModelOrchestrator.
+1. **Dual-Layer Naming System** — canonical runtime tags for machines, Operator names for humans, synchronized through `MODEL_OPERATOR_MAP`.
+2. **Video Generation Pipeline** — pressure-aware faceless video production: ComfyUI + LTX/Wan GGUF + Kokoro TTS, integrated with the agent council orchestration layer.
+3. **Architectural Hardening** — SINGLE-7B LOCK serialization, predictive warmup, adaptive timeouts per Operator, degraded-mode handling, and full lifecycle management on `ModelOrchestrator`.
 
 ---
 
 ## 2. Operator Taxonomy
 
-| Operator | Role | Canonical Tag(s) | Function |
-|----------|------|-------------------|----------|
-| **Relay** | `route` | `route-phi4-lite-q4km-prod` | Ultra-light routing, intent classification |
-| **Pilot** | `instruct` | `instruct-phi4-pro-q8-prod` | Fast generalist, session routing, Q&A |
-| **Architect** | `plan` | `plan-phi4-pro-q8-prod`, `plan-qwen25-pro-q5km-prod`, `plan-deepseekr1-pro-q5km-prod` | Planning, orchestration, strategy |
-| **Forge** | `code` | `code-qwen25-pro-q5km-prod` | Code generation, tool use, execution |
-| **Oracle** | `reason` | `reason-deepseekr1-pro-q5km-prod` | Deep reasoning, diagnosis, architecture |
-| **Auditor** | `critique` | `critique-deepseekr1-pro-q5km-prod` | Adversarial review, safety validation |
-| **Lab** | `synth` | `synth-phi4-exp-q8-dev`, `synth-qwen25-exp-q5km-dev`, `synth-deepseekr1-exp-q5km-dev` | Experimental evolution |
+| Operator | Role | Canonical Tag(s) | Family | Quant | RAM | 7B |
+|----------|------|-------------------|--------|-------|-----|----|
+| **Relay** | `route` | `route-phi4-lite-q4km-prod` | phi4 | Q4_K_M | ~2.5 GB | No |
+| **Pilot** | `instruct` | `instruct-phi4-pro-q8-prod` | phi4 | Q8_0 | ~4.3 GB | No |
+| **Architect** | `plan` | `plan-phi4-pro-q8-prod`, `plan-qwen25-pro-q5km-prod`, `plan-deepseekr1-pro-q5km-prod` | Mixed | Mixed | 4.3–5.4 GB | Mixed |
+| **Forge** | `code` | `code-qwen25-pro-q5km-prod` | qwen25 | Q5_K_M | ~5.4 GB | Yes |
+| **Oracle** | `reason` | `reason-deepseekr1-pro-q5km-prod` | deepseekr1 | Q5_K_M | ~5.4 GB | Yes |
+| **Auditor** | `critique` | `critique-deepseekr1-pro-q5km-prod` | deepseekr1 | Q5_K_M | ~5.4 GB | Yes |
+| **Lab** | `synth` | `synth-phi4-exp-q8-dev`, `synth-qwen25-exp-q5km-dev`, `synth-deepseekr1-exp-q5km-dev` | Mixed | Mixed | 4.4–5.4 GB | Mixed |
 
 ---
 
-## 3. Canonical Naming Standard
+## 3. Naming Standard
 
 ### Tag Grammar
 
@@ -39,131 +39,102 @@ APEX-17 r7 introduces three major capabilities:
 <role>-<family>-<tier>-<quant>-<env>
 ```
 
-- **role:** route, instruct, plan, code, reason, critique, synth
-- **family:** phi4, qwen25, deepseekr1
-- **tier:** lite, pro, exp
-- **quant:** q4km, q8, q5km
-- **env:** prod, dev
+| Field | Values |
+|-------|--------|
+| `role` | `route`, `instruct`, `plan`, `code`, `reason`, `critique`, `synth` |
+| `family` | `phi4`, `qwen25`, `deepseekr1` |
+| `tier` | `lite` (smallest), `pro` (production), `exp` (experimental) |
+| `quant` | `q4km`, `q8`, `q5km` |
+| `env` | `prod`, `dev` |
 
 ### Usage Rules
 
 | Context | Use |
 |---------|-----|
-| Code, configs, Ollama commands, registry keys | Canonical runtime tag |
+| Code, configs, Ollama commands, registry | Canonical runtime tag |
 | Docs, dashboards, logs, UI, comments | Operator name |
-| Mixed contexts (logs, debug) | `[Operator \| canonical-tag]` |
+| Mixed contexts (structured logs) | `Operator (canonical-tag)` via `format_operator_label()` |
 
 ### Source of Truth
 
-- **TypeScript:** `packages/swarmx-types/src/operator-map.ts`
-- **Python:** `src/swarmx/operator_map.py`
-- **YAML:** `models/registry.yaml` (with `operator_name` field)
+| Layer | File |
+|-------|------|
+| TypeScript | `packages/swarmx-types/src/operator-map.ts` |
+| Python | `src/swarmx/operator_map.py` |
+| YAML registry | `models/registry.yaml` (with `operator_name` field) |
 
 ---
 
 ## 4. Changelog
 
-### Dual-Layer Naming Migration
+### 4.1 Naming Migration
 
 | ID | File | Change |
 |----|------|--------|
-| NM-01 | `packages/swarmx-types/src/operator-map.ts` | **NEW** — authoritative TypeScript MODEL_OPERATOR_MAP with resolve helpers |
-| NM-02 | `src/swarmx/operator_map.py` | **NEW** — authoritative Python MODEL_OPERATOR_MAP mirroring TypeScript |
-| NM-03 | `src/swarmx/config.py` | Migrated `_model_alias_map()` to resolve through `operator_map.MODEL_ALIASES`. All default fields now use canonical tags instead of `-scar` suffixes |
-| NM-04 | `src/swarmx/llm.py` | Prepended canonical tag entries to `_MODEL_TEMPERATURES` and `_MODEL_TOP_P` maps. Kept legacy entries for backward compatibility |
-| NM-05 | `models/registry.yaml` | All `ollama_tag` values migrated to canonical grammar. Added `operator_name` and `legacy_aliases` fields to every entry |
-| NM-06 | `.vscode/tasks.json` | All `-scar` tags replaced with canonical tags. Added "Validate Naming Standard" and "Evict Legacy" tasks |
-| NM-07 | `apps/swarmx-api/src/services/model-orchestrator.ts` | MODEL_REGISTRY and MODEL_ALIASES already used canonical tags since r6 — no change needed. `resolveCanonicalTag()` now re-exported from operator-map.ts |
-| NM-08 | `tests/test_naming_validation.py` | **NEW** — 25+ test cases validating naming grammar, alias resolution, operator lookup, and regression detection |
+| NM-01 | `packages/swarmx-types/src/operator-map.ts` | **NEW** — authoritative TypeScript `MODEL_OPERATOR_MAP` with full `OperatorEntry` metadata (estimatedRamMb, defaultCtx, temperature, topP, description), `MODEL_ALIASES` covering 25+ legacy tags, resolution helpers |
+| NM-02 | `src/swarmx/operator_map.py` | **NEW** — Python mirror with identical semantics; `OperatorEntry` TypedDict, same alias map, same helpers (snake_case) |
+| NM-03 | `src/swarmx/config.py` | **FULL REPLACEMENT** — `_model_alias_map()` sources from `operator_map.MODEL_ALIASES`; `_DEFAULT_RELAY/PILOT/FORGE/ORACLE` constants use canonical tags; `runtime_profile()` emits dual-layer `{tag, operator}` per model entry; `_LEGACY_TAGS` validation set includes both pre-scar AND -scar tags |
+| NM-04 | `src/swarmx/llm_patch_r7.py` | **NEW** — surgical `llm.py` patch instructions + Python script for automated `_MODEL_TEMPERATURES` / `_MODEL_TOP_P` prepend |
+| NM-05 | `apps/swarmx-api/src/services/adaptive-timeout-config.ts` | **FULL REPLACEMENT** — `MODEL_BASE_PROFILES` rebuilt with canonical keys; circuit breaker key normalization via `resolveCanonicalTag()`; `AdaptiveCallConfig` adds `operator` field; all log messages use `formatOperatorLabel()` |
+| NM-06 | `models/registry.yaml` | **FULL REPLACEMENT** — all `ollama_tag` values canonical; `operator_name`, `legacy_aliases`, `composer_tier` fields added to every entry; `operator_taxonomy` section documents all 7 Operators |
+| NM-07 | `configs/swarmx.defaults.yaml` | Migrated — all `model_fast/reason/code` defaults → canonical; triadic_dispatch keys → canonical |
+| NM-08 | `configs/routing.yaml` | **FULL REPLACEMENT** — all triadic_model_config keys → canonical; `adversarial_check.critic_model` fixed (was incorrectly set to Relay, now Pilot); `narrative.model` fixed (was Relay, now Pilot); `exclusive_pairs` expanded with all 7B combos; escalation chain updated |
+| NM-09 | `configs/evolution.yaml` | Lab Operator tags (`synth-*`) for observe/critique/mutate |
+| NM-10 | `configs/v6-overlay.yaml` | Lab Operator tags; annotated with Operator name comments |
+| NM-11 | `manifests/swarmx_model_manifest.yaml` | **FULL REPLACEMENT** — canonical model identifiers; `operator`, `legacy_alias` fields per stack entry; `replaces[]` matrix |
+| NM-12 | `tests/test_naming_validation.py` | **NEW** — 30+ tests covering grammar validation, alias resolution, operator lookup, TS/Python mirror consistency, repo-wide audit |
 
-### Video Pipeline
+### 4.2 Fixes Included in This Bundle (Bugs in r5/r6)
+
+| ID | File | Bug Fixed |
+|----|------|-----------|
+| BUG-01 | `configs/routing.yaml` | `adversarial_check.critic_model` was `phi4-router-lite-scar` (Relay). Relay is a deterministic JSON router with a 96-token output ceiling — it cannot produce adversarial critique. Fixed to Pilot (`instruct-phi4-pro-q8-prod`). |
+| BUG-02 | `configs/routing.yaml` | `llm_retry.narrative.model` was `phi4-router-lite-scar` (Relay). Relay is JSON-only; narrative synthesis requires 3–5 natural sentences. Fixed to Pilot. |
+| BUG-03 | `apps/swarmx-api/src/services/adaptive-timeout-config.ts` | `MODEL_BASE_PROFILES` used `-scar` keys — profiles never matched after TypeScript layer migrated to canonical tags in r6. Fixed by rebuilding with canonical keys. |
+| BUG-04 | `apps/swarmx-api/src/services/adaptive-timeout-config.ts` | `getCircuit()` used raw model key without canonicalization — legacy and canonical tags tracked separate circuit breaker state for the same model. Fixed with `resolveCanonicalTag()` at entry. |
+
+### 4.3 New Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/migrate-to-r7.sh` | One-shot migration with `--dry-run`, `--apply`, `--rollback`, `--rename-only`, `--validate-only` modes |
+| `scripts/rebuild-all-modelfiles.sh` | Canonical model rebuild with `--validate`, `--evict-legacy`, `--only` modes |
+| `scripts/swarm-healthcheck-apex17.sh` | Production healthcheck covering Ollama, canonical models, Relay warmth, API, memory, naming |
+
+### 4.4 New Modelfiles (5 canonical names)
+
+| Modelfile | Operator | Was |
+|-----------|----------|-----|
+| `route-phi4-lite-q4km-prod.modelfile` | Relay | `phi4-router-lite-scar.modelfile` |
+| `instruct-phi4-pro-q8-prod.modelfile` | Pilot | `phi4-fast-scar.modelfile` |
+| `code-qwen25-pro-q5km-prod.modelfile` | Forge | `qwen-worker-scar.modelfile` |
+| `reason-deepseekr1-pro-q5km-prod.modelfile` | Oracle | `deepseek-reasoner-scar.modelfile` |
+| `critique-deepseekr1-pro-q5km-prod.modelfile` | Auditor | `deepseek-critic-scar.modelfile` |
+
+Each Modelfile has a substantially improved SYSTEM prompt:
+- Operator-branded identity (name + canonical tag + version)
+- Clear purpose statement and delegation rules
+- Correct model-specific stop tokens
+- Operator-level memory math in header comments
+
+### 4.5 Video Pipeline
 
 | ID | File | Change |
 |----|------|--------|
-| VP-01 | `apps/swarmx-api/src/services/video-orchestrator.ts` | STAGE_MODEL_TAG already uses canonical tags (r6). r7 adds high-pressure backoff delay [VOT-11] and poll ceiling alignment [VOT-12] |
-| VP-02 | `apps/swarmx-api/src/services/video-queue.ts` | Queue manager with priority lanes and pressure-aware scheduling |
-| VP-03 | `apps/swarmx-api/src/services/video-assets.ts` | Asset resolver for ComfyUI workflows and TTS audio |
-| VP-04 | `apps/swarmx-api/src/types/video.ts` | Type definitions for video job lifecycle |
-| VP-05 | `apps/swarmx-api/src/routes/video.ts` | REST + SSE endpoints for video job management |
-| VP-06 | `apps/swarmx-dashboard/src/app/(dashboard)/video/page.tsx` | Dashboard UI with job cards, timeline, and progress tracking |
-| VP-07 | `workflows/video-generation.yaml` | Workflow definition for agent-council video production |
+| VP-01 | `apps/swarmx-api/src/services/video-orchestrator.ts` | VOT-11: high-pressure backoff (3s) before 7B load; VOT-12: poll ceiling alignment |
+| VP-02–06 | Various | Video queue, assets, types, routes, dashboard page — functional in r5; r7 updates operator references in logs |
 
-### Architectural Fixes
+### 4.6 Documentation
 
-| ID | File | Change |
-|----|------|--------|
-| AF-01 | `model-orchestrator.ts` [MOT-01] | Serialization mutex on `requestModel()` prevents concurrent 7B races |
-| AF-02 | `model-orchestrator.ts` [MOT-03–05] | `resolveCanonicalTag()` applied at entry of all public methods |
-| AF-03 | `model-orchestrator.ts` [MOT-06] | Exhaustive default branch in `_keepAliveFor()` — fixes TS2366 |
-| AF-04 | `model-orchestrator.ts` [MOT-09] | `init()` syncs live Ollama state and preloads Relay on boot |
-| AF-05 | `model-orchestrator.ts` [MOT-10] | `destroy()` cancels warmup and drains in-flight eviction |
-| AF-06 | `video-orchestrator.ts` [VOT-11] | High-pressure backoff delay (3s configurable) before 7B load |
-| AF-07 | `reasoning-sanitizer.ts` | Centralized `<think>` block stripping for DeepSeek/Qwen output |
-
-### Performance & Resilience
-
-| ID | Change |
-|----|--------|
-| PR-01 | Adaptive timeouts scale with pressure tier (normal → 0.75x → 0.5x → degraded) |
-| PR-02 | RAM-aware ctx/predict overrides reduce context windows under pressure |
-| PR-03 | Predictive warmup fires after Relay classification, before user confirmation |
-| PR-04 | Composer tier selection expanded with SwarmX/TaxBridge/SabiScore domain vocabulary |
-| PR-05 | Video pipeline stages check pressure before each model acquisition |
-
-### Documentation Streamlining
-
-| ID | Change |
-|----|--------|
-| DS-01 | README.md rewritten — operator taxonomy table, canonical naming rules, architecture overview, video pipeline summary, migration guide |
-| DS-02 | This UPGRADE document consolidates all r7 changes in structured format |
-| DS-03 | Removed redundant `README 2.md` — consolidated into single README |
-| DS-04 | Documentation follows layered structure: quick start → taxonomy → architecture → reference |
+| Document | Change |
+|----------|--------|
+| `README.md` | Rewritten — Operator taxonomy table, canonical naming rules, architecture, video pipeline, migration guide |
+| `docs/SWARMXQ-APEX17-UPGRADE.md` | This document |
+| `docs/SETUP_AND_IMPLEMENTATION.md` | **NEW** — step-by-step installation with prerequisites, manual steps, automated path, rollback, validation, common issues, post-migration checklist |
 
 ---
 
-## 5. Migration Guide
-
-### Step 1 — Add operator_map module
-
-Copy `src/swarmx/operator_map.py` and `packages/swarmx-types/src/operator-map.ts` into your repo.
-
-### Step 2 — Update config.py
-
-Apply changes from `src/swarmx/config_patch_r7.py`:
-- Add `from .operator_map import MODEL_ALIASES, resolve_canonical_tag` import
-- Replace `_model_alias_map()` body to use the authoritative alias map
-- Update default model field values from `-scar` to canonical tags
-- Expand `_LEGACY_TAGS` validation set
-
-### Step 3 — Update llm.py
-
-Prepend canonical tag entries from `src/swarmx/llm_patch_r7.py` to `_MODEL_TEMPERATURES` and `_MODEL_TOP_P`.
-
-### Step 4 — Replace registry.yaml
-
-Copy `models/registry.yaml` (new version with `operator_name`, `legacy_aliases`, canonical `ollama_tag`).
-
-### Step 5 — Rebuild models
-
-```bash
-bash scripts/rebuild-all-modelfiles.sh
-bash scripts/rebuild-all-modelfiles.sh --evict-legacy  # optional: remove old -scar models
-```
-
-### Step 6 — Validate
-
-```bash
-bash scripts/rebuild-all-modelfiles.sh --validate
-python -m pytest tests/test_naming_validation.py -v
-```
-
-### Step 7 — Update VS Code
-
-Copy `.vscode/tasks.json` to get canonical-tag commands.
-
----
-
-## 6. Compatibility
+## 5. Legacy Alias Map (complete)
 
 | Legacy Tag | Resolves To | Operator |
 |------------|-------------|----------|
@@ -185,20 +156,50 @@ Copy `.vscode/tasks.json` to get canonical-tag commands.
 | `qwen-worker` | `code-qwen25-pro-q5km-prod` | Forge |
 | `qwen2.5-coder` | `code-qwen25-pro-q5km-prod` | Forge |
 
-Aliases are resolved at the earliest possible entry point in each layer:
-- **TypeScript:** `resolveCanonicalTag()` in `requestModel()`, `preloadNextSpecialist()`, `syncFromOllama()`
-- **Python:** `normalize_model_tag()` in `config.py` → `resolve_canonical_tag()` in `operator_map.py`
+Resolution happens at the first entry point in each layer: `resolveCanonicalTag()` in TypeScript, `resolve_canonical_tag()` in Python. Both are O(1) hash lookups.
 
-Removal criteria: after one successful production cycle, run `rg -rn "scar" .` — if only alias definitions remain, the legacy map can be dropped.
+**Removal criteria:** after one full production cycle with zero -scar log entries, run `rg -rn "\-scar" . | grep -v "alias\|legacy\|ALIAS\|LEGACY"`. When that returns zero hits, the alias maps can be dropped from both source files.
 
 ---
 
-## 7. New Capabilities Summary
+## 6. Migration Path Reference
 
-- **Operator-driven identity** — Relay, Pilot, Architect, Forge, Oracle, Auditor, Lab as a cohesive, memorable taxonomy
-- **Operator-driven video production** — multi-stage pipeline dispatching through the agent council
-- **Memory-aware orchestration** — four-tier pressure system with adaptive timeouts and context scaling
-- **Graceful degraded-mode behavior** — the system keeps working at reduced capacity instead of crashing
-- **Naming validation tooling** — automated tests and scripts that prevent naming drift
-- **Cleaner human readability** — every log, dashboard, and doc uses the Operator name first, canonical tag second
-- **Stronger production reliability** — serialized 7B transitions, lifecycle init/destroy, predictive warmup
+| From | To | Automated | Notes |
+|------|----|-----------|-------|
+| APEX-17 r6 | APEX-17 r7 | `--apply` | TS layer was already canonical; Python + YAML + Modelfiles need migration |
+| APEX-17 r5 | APEX-17 r7 | `--apply` | Same as r6 path |
+| V5 / pre-scar | APEX-17 r7 | `--apply` | Pre-scar aliases also covered |
+
+---
+
+## 7. Files Replaced by This Bundle
+
+```
+packages/swarmx-types/src/operator-map.ts
+src/swarmx/operator_map.py
+src/swarmx/config.py
+apps/swarmx-api/src/services/adaptive-timeout-config.ts
+configs/swarmx.defaults.yaml
+configs/routing.yaml
+configs/evolution.yaml
+configs/v6-overlay.yaml
+models/registry.yaml
+manifests/swarmx_model_manifest.yaml
+.vscode/tasks.json
+README.md
+docs/SWARMXQ-APEX17-UPGRADE.md
+docs/SETUP_AND_IMPLEMENTATION.md        (new)
+tests/test_naming_validation.py          (new)
+scripts/migrate-to-r7.sh                 (new)
+scripts/rebuild-all-modelfiles.sh
+scripts/swarm-healthcheck-apex17.sh
+models/Modelfiles/primary/route-phi4-lite-q4km-prod.modelfile
+models/Modelfiles/primary/instruct-phi4-pro-q8-prod.modelfile
+models/Modelfiles/primary/code-qwen25-pro-q5km-prod.modelfile
+models/Modelfiles/primary/reason-deepseekr1-pro-q5km-prod.modelfile
+models/Modelfiles/primary/critique-deepseekr1-pro-q5km-prod.modelfile
+```
+
+---
+
+*The incision is precise.*
