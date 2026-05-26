@@ -3,45 +3,40 @@
 # scripts/rebuild-all-modelfiles.sh
 # SwarmXQ APEX-17 r7 — Canonical Model Rebuild & Validation
 #
-# Rebuilds all Ollama models from Modelfile definitions using the official
-# canonical naming standard. Validates zero legacy -scar names remain in
-# the active production namespace after rebuild.
+# Rebuilds all Ollama models from Modelfile definitions using the canonical
+# naming standard. Validates that no legacy -scar names remain in active
+# production paths after rebuild.
 #
 # Usage:
-#   ./scripts/rebuild-all-modelfiles.sh           # rebuild all models
-#   ./scripts/rebuild-all-modelfiles.sh --validate # validate only (no rebuild)
-#   ./scripts/rebuild-all-modelfiles.sh --only route-phi4-lite-q4km-prod
+#   ./scripts/rebuild-all-modelfiles.sh                # rebuild all
+#   ./scripts/rebuild-all-modelfiles.sh --validate     # validate only
+#   ./scripts/rebuild-all-modelfiles.sh --only <tag>   # rebuild specific tag
+#   ./scripts/rebuild-all-modelfiles.sh --evict-legacy # remove -scar models
+#   ./scripts/rebuild-all-modelfiles.sh --dry-run      # show plan
 #
 # Operator taxonomy:
-#   Relay    (route-phi4-lite-q4km-prod)        — ultra-light router
-#   Pilot    (instruct-phi4-pro-q8-prod)       — fast generalist
-#   Architect (plan-*-pro-*-prod)               — planning / orchestration
-#   Forge    (code-qwen25-pro-q5km-prod)       — code generation
-#   Oracle   (reason-deepseekr1-pro-q5km-prod) — deep reasoning
-#   Auditor  (critique-deepseekr1-pro-q5km-prod) — adversarial review
-#   Lab      (synth-*-exp-*-dev)               — experimental / evolve
+#   Relay     (route-phi4-lite-q4km-prod)        — ultra-light router
+#   Pilot     (instruct-phi4-pro-q8-prod)        — fast generalist
+#   Architect (plan-*-pro-*-prod)                — planning
+#   Forge     (code-qwen25-pro-q5km-prod)        — code generation
+#   Oracle    (reason-deepseekr1-pro-q5km-prod)  — deep reasoning
+#   Auditor   (critique-deepseekr1-pro-q5km-prod) — adversarial review
+#   Lab       (synth-*-exp-*-dev)                — experimental / evolve
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 MODELFILE_DIR="$REPO_ROOT/models/Modelfiles/primary"
-LEGACY_BACKUP_DIR="$REPO_ROOT/models/Modelfiles/_legacy_prescar_backup"
+OLLAMA_URL="${SWARMX_OLLAMA_URL:-http://localhost:11434}"
 
-# ── Color output ──────────────────────────────────────────────────────────────
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
 info()  { echo -e "${CYAN}[INFO]${NC}  $*"; }
 ok()    { echo -e "${GREEN}[OK]${NC}    $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 fail()  { echo -e "${RED}[FAIL]${NC}  $*"; }
 
-# ── Canonical model list ──────────────────────────────────────────────────────
-# These are the authoritative production tags (Layer 1)
+# ── Canonical model list ─────────────────────────────────────────────────────
 CANONICAL_MODELS=(
   "route-phi4-lite-q4km-prod"
   "instruct-phi4-pro-q8-prod"
@@ -56,7 +51,6 @@ CANONICAL_MODELS=(
   "synth-deepseekr1-exp-q5km-dev"
 )
 
-# Legacy -scar tags that should be evicted after migration
 LEGACY_SCAR_TAGS=(
   "phi4-router-lite-scar"
   "phi4-fast-scar"
@@ -71,80 +65,94 @@ LEGACY_SCAR_TAGS=(
   "deepseek-evolve-scar"
 )
 
-# ── Argument parsing ──────────────────────────────────────────────────────────
+# ── Operator lookup ──────────────────────────────────────────────────────────
+operator_for() {
+  case "$1" in
+    route-*)    echo "Relay" ;;
+    instruct-*) echo "Pilot" ;;
+    plan-*)     echo "Architect" ;;
+    code-*)     echo "Forge" ;;
+    reason-*)   echo "Oracle" ;;
+    critique-*) echo "Auditor" ;;
+    synth-*)    echo "Lab" ;;
+    *)          echo "Unknown" ;;
+  esac
+}
+
+# ── Argument parsing ─────────────────────────────────────────────────────────
 VALIDATE_ONLY=false
 ONLY_MODEL=""
 EVICT_LEGACY=false
+DRY_RUN=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --validate) VALIDATE_ONLY=true; shift ;;
-    --only)     ONLY_MODEL="$2"; shift 2 ;;
+    --validate)     VALIDATE_ONLY=true; shift ;;
+    --only)         ONLY_MODEL="$2"; shift 2 ;;
     --evict-legacy) EVICT_LEGACY=true; shift ;;
+    --dry-run)      DRY_RUN=true; shift ;;
     --help|-h)
-      echo "Usage: $0 [--validate] [--only <tag>] [--evict-legacy]"
-      echo ""
-      echo "  --validate      Validate naming only (no rebuild)"
-      echo "  --only <tag>    Rebuild only the specified canonical tag"
-      echo "  --evict-legacy  Remove legacy -scar models from Ollama after rebuild"
-      exit 0
-      ;;
+      echo "Usage: $0 [--validate] [--only <tag>] [--evict-legacy] [--dry-run]"
+      exit 0 ;;
     *) fail "Unknown argument: $1"; exit 1 ;;
   esac
 done
 
-# ── Validation mode ───────────────────────────────────────────────────────────
+# ── Validation function ──────────────────────────────────────────────────────
 
 validate_naming() {
   local errors=0
-
   info "Validating canonical naming standard..."
 
-  # Check runtime Python files for -scar default values
-  if grep -rn '"-scar"' "$REPO_ROOT/src/swarmx/config.py" "$REPO_ROOT/src/swarmx/llm.py" 2>/dev/null | \
-     grep -v "alias\|ALIAS\|legacy\|LEGACY\|compat\|comment\|#" | grep -q "default"; then
-    fail "Found -scar tags in runtime default values"
+  if [[ ! -f "$REPO_ROOT/src/swarmx/operator_map.py" ]]; then
+    fail "operator_map.py not found — dual-layer naming system incomplete"
     errors=$((errors + 1))
   else
-    ok "No -scar defaults in runtime Python"
+    ok "operator_map.py found"
   fi
 
-  # Check TypeScript orchestrator
-  if grep -q "phi4-fast-scar\|qwen-worker-scar\|deepseek-reasoner-scar" \
-     "$REPO_ROOT/apps/swarmx-api/src/services/model-orchestrator.ts" 2>/dev/null; then
-    # These should only appear in MODEL_ALIASES, not in MODEL_REGISTRY
-    if grep -A2 "MODEL_REGISTRY" "$REPO_ROOT/apps/swarmx-api/src/services/model-orchestrator.ts" | \
-       grep -q "\-scar"; then
-      fail "Found -scar tags in MODEL_REGISTRY (should be canonical only)"
+  if [[ ! -f "$REPO_ROOT/packages/swarmx-types/src/operator-map.ts" ]]; then
+    fail "operator-map.ts not found"
+    errors=$((errors + 1))
+  else
+    ok "operator-map.ts found"
+  fi
+
+  # Check runtime defaults don't use -scar
+  if [[ -f "$REPO_ROOT/src/swarmx/config.py" ]]; then
+    if grep -E '_DEFAULT_(RELAY|PILOT|FORGE|ORACLE).*=.*-scar' "$REPO_ROOT/src/swarmx/config.py" 2>/dev/null; then
+      fail "config.py defaults contain -scar"
       errors=$((errors + 1))
     else
-      ok "TypeScript MODEL_REGISTRY uses canonical tags only"
+      ok "config.py defaults are canonical"
     fi
   fi
 
-  # Check operator_map.py exists
-  if [[ -f "$REPO_ROOT/src/swarmx/operator_map.py" ]]; then
-    ok "operator_map.py found"
-  else
-    fail "operator_map.py not found — dual-layer naming system incomplete"
-    errors=$((errors + 1))
+  # Check registry.yaml ollama_tag fields
+  if [[ -f "$REPO_ROOT/models/registry.yaml" ]]; then
+    if grep -E '^[[:space:]]*ollama_tag:.*-scar' "$REPO_ROOT/models/registry.yaml" > /dev/null 2>&1; then
+      fail "registry.yaml has -scar in ollama_tag fields"
+      errors=$((errors + 1))
+    else
+      ok "registry.yaml ollama_tag values are canonical"
+    fi
   fi
 
-  # Check registry.yaml uses canonical tags
-  if grep -q "operator_name:" "$REPO_ROOT/models/registry.yaml" 2>/dev/null; then
-    ok "registry.yaml includes operator_name fields"
+  # Check configs/*.yaml model_* assignments
+  local config_violations=0
+  for yaml_file in "$REPO_ROOT"/configs/*.yaml; do
+    [[ -f "$yaml_file" ]] || continue
+    if grep -E '^[[:space:]]*(model_fast|model_reason|model_code|observer_model|critic_model|mutator_model):.*-scar' "$yaml_file" 2>/dev/null | grep -v "alias\|legacy" > /dev/null; then
+      fail "  $(basename "$yaml_file") has -scar in primary model assignment"
+      config_violations=$((config_violations + 1))
+    fi
+  done
+  if [[ $config_violations -eq 0 ]]; then
+    ok "configs/*.yaml primary assignments are canonical"
   else
-    warn "registry.yaml missing operator_name fields"
+    errors=$((errors + config_violations))
   fi
 
-  # Check for -scar in VS Code tasks
-  if grep -q "\-scar" "$REPO_ROOT/.vscode/tasks.json" 2>/dev/null; then
-    warn "VS Code tasks.json still references -scar tags"
-  else
-    ok "VS Code tasks.json clean"
-  fi
-
-  # Summary
   echo ""
   if [[ $errors -eq 0 ]]; then
     ok "Naming validation passed"
@@ -160,31 +168,28 @@ if $VALIDATE_ONLY; then
   exit $?
 fi
 
-# ── Rebuild ───────────────────────────────────────────────────────────────────
+# ── Pre-flight ───────────────────────────────────────────────────────────────
 
 info "SwarmXQ APEX-17 r7 — Canonical Model Rebuild"
-echo ""
 
-# Check Ollama is running
-if ! curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; then
-  fail "Ollama is not running. Start it with: ollama serve"
+if ! curl -sf "$OLLAMA_URL/api/tags" > /dev/null 2>&1; then
+  fail "Ollama is not running at $OLLAMA_URL"
+  fail "  Start: ollama serve"
   exit 1
 fi
-ok "Ollama is running"
+ok "Ollama responsive at $OLLAMA_URL"
 
-# Rebuild loop
+# ── Rebuild loop ─────────────────────────────────────────────────────────────
+
 rebuild_count=0
 skip_count=0
+fail_count=0
 
 for model in "${CANONICAL_MODELS[@]}"; do
-  if [[ -n "$ONLY_MODEL" && "$model" != "$ONLY_MODEL" ]]; then
-    continue
-  fi
+  if [[ -n "$ONLY_MODEL" && "$model" != "$ONLY_MODEL" ]]; then continue; fi
 
   modelfile="$MODELFILE_DIR/${model}.modelfile"
-
   if [[ ! -f "$modelfile" ]]; then
-    # Try the latest-modelfiles directory as fallback
     modelfile="$REPO_ROOT/latest-modelfiles/${model}.modelfile"
   fi
 
@@ -194,44 +199,40 @@ for model in "${CANONICAL_MODELS[@]}"; do
     continue
   fi
 
-  # Determine operator name for display
-  case "$model" in
-    route-*)    operator="Relay" ;;
-    instruct-*) operator="Pilot" ;;
-    plan-*)     operator="Architect" ;;
-    code-*)     operator="Forge" ;;
-    reason-*)   operator="Oracle" ;;
-    critique-*) operator="Auditor" ;;
-    synth-*)    operator="Lab" ;;
-    *)          operator="Unknown" ;;
-  esac
-
+  operator=$(operator_for "$model")
   info "Building $operator ($model)..."
-  if ollama create "$model" -f "$modelfile" 2>/dev/null; then
+
+  if $DRY_RUN; then
+    echo "    [DRY RUN] ollama create $model -f $modelfile"
+    continue
+  fi
+
+  if ollama create "$model" -f "$modelfile" 2>&1 | tail -5; then
     ok "$operator ($model) — built"
     rebuild_count=$((rebuild_count + 1))
   else
     fail "$operator ($model) — build failed"
+    fail_count=$((fail_count + 1))
   fi
 done
 
 echo ""
-info "Built: $rebuild_count  Skipped: $skip_count"
+info "Built: $rebuild_count  Skipped: $skip_count  Failed: $fail_count"
 
-# ── Optional legacy eviction ─────────────────────────────────────────────────
+# ── Optional eviction of legacy -scar models ─────────────────────────────────
 
 if $EVICT_LEGACY; then
   echo ""
   info "Evicting legacy -scar models..."
+  evict_count=0
   for legacy in "${LEGACY_SCAR_TAGS[@]}"; do
     if ollama rm "$legacy" 2>/dev/null; then
-      ok "Evicted $legacy"
-    else
-      info "$legacy — not present (already clean)"
+      ok "  Evicted $legacy"
+      evict_count=$((evict_count + 1))
     fi
   done
+  info "Evicted $evict_count legacy model(s)"
 fi
 
-# ── Post-rebuild validation ──────────────────────────────────────────────────
 echo ""
 validate_naming
