@@ -1,0 +1,236 @@
+# swarmx_model_manifest.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# SwarmX APEX-17 r7-final · Canonical Model Stack Manifest
+# Version    : v2026.5.25-apex17-r7
+# Hardware   : HP EliteBook 850 G3 · 8 GB RAM · CPU-only · 4 cores · WSL2
+# Generated  : 2026-05-25
+#
+# APEX-17 r7 changes from r5:
+#   [MAN-r7-01] All model identifiers migrated to canonical production tags
+#               <role>-<family>-<tier>-<quant>-<env>
+#   [MAN-r7-02] Operator names added alongside canonical tags
+#   [MAN-r7-03] legacy_alias field per model lists the old -scar tag
+#               so installers can detect and rename existing Ollama models
+#   [MAN-r7-04] Modelfile paths use canonical names
+# ─────────────────────────────────────────────────────────────────────────────
+
+meta:
+  version: "v2026.5.25-apex17-r7"
+  generated_at: "2026-05-25T00:00:00Z"
+  hardware:
+    device: "HP EliteBook 850 G3"
+    ram_gb: 8
+    cpu_cores: 4
+    accelerator: "CPU-only"
+    os: "Ubuntu 24 / WSL2"
+  min_available_ram_mb: 1500
+  degraded_ram_mb: 800
+  always_resident_operator: Relay     # Relay (route-phi4-lite-q4km-prod) stays loaded
+
+# ─── Bundle contents ─────────────────────────────────────────────────────────
+bundle_files:
+  source_of_truth:
+    - path: packages/swarmx-types/src/operator-map.ts
+      deploy_to: packages/swarmx-types/src/operator-map.ts
+      bundle_new: true
+      description: "TypeScript MODEL_OPERATOR_MAP — authoritative dual-layer naming"
+
+    - path: src/swarmx/operator_map.py
+      deploy_to: src/swarmx/operator_map.py
+      bundle_new: true
+      description: "Python MODEL_OPERATOR_MAP — mirror of TypeScript SoT"
+
+  service_files:
+    - path: apps/swarmx-api/src/services/adaptive-timeout-config.ts
+      deploy_to: apps/swarmx-api/src/services/adaptive-timeout-config.ts
+      bundle_new: false
+      description: "Canonical-named MODEL_BASE_PROFILES, operator-labelled logs"
+
+  python_files:
+    - path: src/swarmx/config.py
+      deploy_to: src/swarmx/config.py
+      bundle_new: false
+      description: "Canonical-default SwarmConfig with operator-aware runtime_profile()"
+
+  configs:
+    - path: configs/swarmx.defaults.yaml
+      deploy_to: configs/swarmx.defaults.yaml
+      bundle_new: false
+      description: "Canonical triad + dispatch + governance defaults"
+
+    - path: configs/routing.yaml
+      deploy_to: configs/routing.yaml
+      bundle_new: false
+      description: "Full triadic dispatch + escalation chain (canonical)"
+
+    - path: configs/evolution.yaml
+      deploy_to: configs/evolution.yaml
+      bundle_new: false
+      description: "Lab Operator evolve workflow assignments"
+
+    - path: configs/v6-overlay.yaml
+      deploy_to: configs/v6-overlay.yaml
+      bundle_new: false
+      description: "V6 evolution overlay (Lab Operator)"
+
+    - path: models/registry.yaml
+      deploy_to: models/registry.yaml
+      bundle_new: false
+      description: "Dual-layer registry with operator_name + legacy_aliases per entry"
+
+  scripts:
+    - path: scripts/rebuild-all-modelfiles.sh
+      deploy_to: scripts/rebuild-all-modelfiles.sh
+      bundle_new: false
+      description: "Canonical model rebuild with --validate, --evict-legacy modes"
+
+    - path: scripts/swarm-healthcheck-apex17.sh
+      deploy_to: scripts/swarm-healthcheck-apex17.sh
+      bundle_new: false
+      description: "Production healthcheck with dual-layer naming validation"
+
+    - path: scripts/migrate-to-r7.sh
+      deploy_to: scripts/migrate-to-r7.sh
+      bundle_new: true
+      description: "One-shot APEX-17 r7 migration — backup, replace, validate, rebuild"
+
+  tests:
+    - path: tests/test_naming_validation.py
+      deploy_to: tests/test_naming_validation.py
+      bundle_new: true
+      description: "25+ test cases covering naming grammar, alias resolution, regression"
+
+  vscode:
+    - path: .vscode/tasks.json
+      deploy_to: .vscode/tasks.json
+      bundle_new: false
+      description: "Canonical-tag tasks with operator-labelled descriptions"
+
+  docs:
+    - path: README.md
+      deploy_to: README.md
+      bundle_new: false
+      description: "Streamlined README with Operator taxonomy, video pipeline overview"
+
+    - path: docs/SWARMXQ-APEX17-UPGRADE.md
+      deploy_to: docs/SWARMXQ-APEX17-UPGRADE.md
+      bundle_new: false
+      description: "Full r7 upgrade changelog and migration guide"
+
+    - path: docs/SETUP_AND_IMPLEMENTATION.md
+      deploy_to: docs/SETUP_AND_IMPLEMENTATION.md
+      bundle_new: true
+      description: "Step-by-step bundle installation instructions"
+
+# ─── Production model stack — Canonical Names ──────────────────────────────
+stack:
+  # ── Always-resident core ──────────────────────────────────────────────────
+  always_resident:
+    - operator: Relay
+      model: route-phi4-lite-q4km-prod
+      legacy_alias: phi4-router-lite-scar
+      modelfile: models/Modelfiles/primary/route-phi4-lite-q4km-prod.modelfile
+      quant: Q4_K_M
+      ram_mb: 2500    # weights ~2.1 GB + KV@2048 ~96 MB + OH ~300 MB
+      ctx: 2048
+      is_7b: false
+      role: route
+      description: "Ultra-light intent router and safety gate"
+
+  # ── Default load triad (Pilot always available; Oracle/Forge load on demand)
+  default_triad:
+    - operator: Pilot
+      model: instruct-phi4-pro-q8-prod
+      legacy_alias: phi4-fast-scar
+      modelfile: models/Modelfiles/primary/instruct-phi4-pro-q8-prod.modelfile
+      quant: Q8_0
+      ram_mb: 4270    # weights ~4.0 GB + KV@2048 ~192 MB + OH ~300 MB
+      ctx: 2048
+      is_7b: false
+      role: instruct
+      description: "Session router, fast chat, low-complexity Q&A"
+
+    - operator: Oracle
+      model: reason-deepseekr1-pro-q5km-prod
+      legacy_alias: deepseek-reasoner-scar
+      modelfile: models/Modelfiles/primary/reason-deepseekr1-pro-q5km-prod.modelfile
+      quant: Q5_K_M
+      ram_mb: 5370    # weights ~5.0 GB + KV@6144 ~280 MB + OH ~300 MB
+      ctx: 6144
+      is_7b: true
+      role: reason
+      description: "Deep reasoning, architecture, planning, causal analysis"
+
+    - operator: Forge
+      model: code-qwen25-pro-q5km-prod
+      legacy_alias: qwen-worker-scar
+      modelfile: models/Modelfiles/primary/code-qwen25-pro-q5km-prod.modelfile
+      quant: Q5_K_M
+      ram_mb: 5370
+      ctx: 6144
+      is_7b: true
+      role: code
+      description: "Code generation, tool-use, agentic execution"
+
+  # ── Optional overlays ────────────────────────────────────────────────────
+  optional:
+    - operator: Architect
+      model: plan-phi4-pro-q8-prod
+      legacy_alias: phi4-worker-scar
+      ram_mb: 4340
+      is_7b: false
+
+    - operator: Architect
+      model: plan-qwen25-pro-q5km-prod
+      legacy_alias: qwen-supervisor-scar
+      ram_mb: 5370
+      is_7b: true
+
+    - operator: Architect
+      model: plan-deepseekr1-pro-q5km-prod
+      legacy_alias: deepseek-supervisor-scar
+      ram_mb: 5370
+      is_7b: true
+
+    - operator: Auditor
+      model: critique-deepseekr1-pro-q5km-prod
+      legacy_alias: deepseek-critic-scar
+      ram_mb: 5420
+      is_7b: true
+
+  # ── Lab (experimental — requires --enable-evolve) ────────────────────────
+  experimental:
+    - operator: Lab
+      model: synth-phi4-exp-q8-dev
+      legacy_alias: phi4-evolve-scar
+      ram_mb: 4440
+      is_7b: false
+      phase: 1   # observe / fitness
+
+    - operator: Lab
+      model: synth-deepseekr1-exp-q5km-dev
+      legacy_alias: deepseek-evolve-scar
+      ram_mb: 5370
+      is_7b: true
+      phase: [2, 4]   # critique / validate
+
+    - operator: Lab
+      model: synth-qwen25-exp-q5km-dev
+      legacy_alias: qwen-evolve-scar
+      ram_mb: 5370
+      is_7b: true
+      phase: 3   # mutate
+
+# ─── Files this bundle REPLACES (do NOT keep both) ─────────────────────────
+replaces:
+  - models/registry.yaml                   # was r5 with mixed -scar/non-scar
+  - configs/swarmx.defaults.yaml           # was pre-scar canonical
+  - configs/routing.yaml                   # was -scar
+  - configs/evolution.yaml                 # was pre-scar
+  - configs/v6-overlay.yaml                # was pre-scar
+  - src/swarmx/config.py                   # was -scar defaults
+  - apps/swarmx-api/src/services/adaptive-timeout-config.ts  # was -scar profiles
+  - README.md                              # was V6 (fragmented)
+  - docs/SWARMXQ-APEX17-UPGRADE.md         # was r5 (no operator taxonomy)
+  - .vscode/tasks.json                     # was -scar in evict task
+  - manifests/swarmx_model_manifest.yaml   # was r5
