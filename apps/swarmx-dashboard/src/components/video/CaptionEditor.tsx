@@ -108,6 +108,7 @@ export function CaptionEditor({
   const [isPending, startTransition] = useTransition();
   const [rescoreError, setRescoreError] = useState<string | null>(null);
   const toastRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const disallowedOpeners = ["i ", "my ", "this ", "we ", "our "];
 
   // ── Sync hashtag sub-fields back into draft ────────────────────────────────
   const syncHashtags = useCallback(
@@ -212,14 +213,17 @@ export function CaptionEditor({
     draft.hashtags.broad.length +
     draft.hashtags.niche.length +
     draft.hashtags.trending.length;
+  const hasDisallowedOpener = disallowedOpeners.some((opener) =>
+    draft.firstLine.trimStart().toLowerCase().startsWith(opener),
+  );
 
   return (
     <section
       aria-label="Caption editor"
-      className="rounded-xl border border-cyan-900/40 bg-cyan-950/10 p-4"
+      className="rounded border border-border bg-bg-elevated p-4"
     >
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-xs font-semibold text-cyan-300 uppercase tracking-wider">
+        <h3 className="text-xs font-mono text-text-secondary uppercase tracking-wider">
           Caption Draft
         </h3>
         <div className="flex items-center gap-2">
@@ -228,10 +232,8 @@ export function CaptionEditor({
             onClick={handleRescore}
             disabled={isPending}
             className="
-              rounded-lg border border-cyan-700/50 bg-cyan-900/30 px-3 py-1.5
-              text-[10px] font-semibold uppercase tracking-wider text-cyan-200
-              hover:bg-cyan-900/50 disabled:opacity-40 disabled:cursor-not-allowed
-              transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500
+              rounded border border-border px-2 py-1 text-[10px] font-mono text-text-secondary
+              hover:text-sky-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors
             "
           >
             {isPending ? "Scoring…" : "Re-score"}
@@ -240,10 +242,8 @@ export function CaptionEditor({
             type="button"
             onClick={handleCopy}
             className="
-              relative rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5
-              text-[10px] font-semibold uppercase tracking-wider text-zinc-300
-              hover:bg-zinc-700 transition-colors focus:outline-none focus:ring-2
-              focus:ring-zinc-500 overflow-hidden
+              relative rounded border border-border px-2 py-1 text-[10px] font-mono text-text-secondary
+              hover:text-text-primary transition-colors overflow-hidden
             "
           >
             {copyState === "copied" ? (
@@ -251,6 +251,19 @@ export function CaptionEditor({
             ) : (
               "Copy Caption"
             )}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setDraft(initialDraft);
+              setBroadHashtag(initialDraft.hashtags.broad.join(" "));
+              setNicheHashtag(initialDraft.hashtags.niche.join(" "));
+              setTrendingHashtag(initialDraft.hashtags.trending[0] ?? "");
+              setRescoreError(null);
+            }}
+            className="rounded border border-border px-2 py-1 text-[10px] font-mono text-text-muted hover:text-text-primary"
+          >
+            Reset
           </button>
         </div>
       </div>
@@ -261,136 +274,144 @@ export function CaptionEditor({
         </div>
       )}
 
-      {/* First line */}
-      <div className="mb-3">
-        <div className="flex items-center justify-between mb-1">
-          <label className="text-[10px] uppercase tracking-wider text-zinc-500">
-            Hook Line
-          </label>
-          <span
-            className={`text-[10px] font-mono tabular-nums ${
-              firstLineLen > FIRST_LINE_MAX
-                ? "text-red-400"
-                : firstLineLen > FIRST_LINE_MAX * 0.85
-                ? "text-amber-400"
-                : "text-zinc-600"
-            }`}
-          >
-            {firstLineLen}/{FIRST_LINE_MAX}
-          </span>
-        </div>
-        <input
-          type="text"
-          value={draft.firstLine}
-          onChange={(e) => handleFirstLine(e.target.value)}
-          maxLength={120}
-          className={`
-            w-full rounded-lg bg-zinc-900 border px-3 py-2 text-sm text-zinc-100
-            placeholder:text-zinc-600 focus:outline-none focus:ring-1
-            transition-colors font-mono ${firstLineClass(draft.firstLine)}
-          `}
-          placeholder="Primary hook (≤ 40 chars visible on feed)"
-        />
-      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-[55%_45%] gap-4">
+        <div className="space-y-3">
+          {/* First line */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[10px] uppercase tracking-wider text-text-muted font-mono">
+                Hook Line
+              </label>
+              <span
+                className={`text-[10px] font-mono tabular-nums px-1.5 py-0.5 rounded ${
+                  firstLineLen > FIRST_LINE_MAX
+                    ? "bg-red-400/20 text-red-400"
+                    : "bg-emerald-400/20 text-emerald-400"
+                }`}
+              >
+                {firstLineLen}/{FIRST_LINE_MAX}
+              </span>
+            </div>
+            <textarea
+              value={draft.firstLine}
+              onChange={(e) => handleFirstLine(e.target.value)}
+              rows={1}
+              className={`
+                w-full rounded bg-bg-surface border border-border px-3 py-2 text-sm text-text-primary
+                placeholder:text-text-muted focus:outline-none focus:ring-1 transition-colors font-mono ${firstLineClass(draft.firstLine)}
+              `}
+              placeholder="Primary hook (<=40 chars visible on feed)"
+            />
+            {hasDisallowedOpener && (
+              <p className="mt-1 text-amber-400 text-[10px]">firstLine cannot start with I/My/This/We/Our</p>
+            )}
+          </div>
 
-      {/* Body */}
-      <div className="mb-3">
-        <label className="text-[10px] uppercase tracking-wider text-zinc-500 block mb-1">
-          Body
-        </label>
-        <textarea
-          value={draft.body}
-          onChange={(e) => handleBody(e.target.value)}
-          rows={3}
-          className="
-            w-full rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2 text-sm
-            text-zinc-200 placeholder:text-zinc-600 focus:outline-none
-            focus:ring-1 focus:ring-amber-600/60 focus:border-amber-700
-            resize-none transition-colors leading-relaxed
-          "
-          placeholder="2–3 lines: value, story, or relatability…"
-        />
-      </div>
+          {/* Body */}
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-text-muted block mb-1 font-mono">
+              Body
+            </label>
+            <textarea
+              value={draft.body}
+              onChange={(e) => handleBody(e.target.value)}
+              rows={3}
+              className="
+                w-full rounded bg-bg-surface border border-border px-3 py-2 text-sm
+                text-text-secondary placeholder:text-text-muted focus:outline-none
+                focus:ring-1 resize-none transition-colors leading-relaxed
+              "
+              placeholder="2–3 lines: value, story, or relatability..."
+            />
+          </div>
 
-      {/* CTA */}
-      <div className="mb-4">
-        <label className="text-[10px] uppercase tracking-wider text-zinc-500 block mb-1">
-          Call to Action
-        </label>
-        <input
-          type="text"
-          value={draft.cta}
-          onChange={(e) => handleCta(e.target.value)}
-          className="
-            w-full rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2
-            text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none
-            focus:ring-1 focus:ring-amber-600/60 focus:border-amber-700
-            transition-colors
-          "
-          placeholder="Follow for more…"
-        />
-      </div>
+          {/* CTA */}
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-text-muted block mb-1 font-mono">
+              Call to Action
+            </label>
+            <textarea
+              value={draft.cta}
+              onChange={(e) => handleCta(e.target.value)}
+              rows={1}
+              className="
+                w-full rounded bg-bg-surface border border-border px-3 py-2
+                text-sm text-text-primary placeholder:text-text-muted focus:outline-none
+                focus:ring-1 transition-colors
+              "
+              placeholder="Follow for more..."
+            />
+          </div>
 
-      {/* Hashtag inputs */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-        {(
-          [
-            { key: "broad" as const, label: "Broad (1–2)", value: broadHashtag },
-            { key: "niche" as const, label: "Niche (1–2)", value: nicheHashtag },
-            {
-              key: "trending" as const,
-              label: "Trending (1 max)",
-              value: trendingHashtag,
-            },
-          ] as Array<{
-            key: "broad" | "niche" | "trending";
-            label: string;
-            value: string;
-          }>
-        ).map(({ key, label, value }) => (
-          <div key={key}>
-            <label className="text-[10px] uppercase tracking-wider text-zinc-500 block mb-1">
-              {label}
+          {/* Hashtag inputs */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {(
+              [
+                { key: "broad" as const, label: "Broad", value: broadHashtag },
+                { key: "niche" as const, label: "Niche", value: nicheHashtag },
+                {
+                  key: "trending" as const,
+                  label: "Trending",
+                  value: trendingHashtag,
+                },
+              ] as Array<{
+                key: "broad" | "niche" | "trending";
+                label: string;
+                value: string;
+              }>
+            ).map(({ key, label, value }) => (
+              <div key={key}>
+                <label className="text-[10px] uppercase tracking-wider text-text-muted block mb-1 font-mono">
+                  {label}
+                </label>
+                <input
+                  type="text"
+                  value={value}
+                  onChange={(e) => handleHashtagChange(key, e.target.value)}
+                  className="
+                    w-full rounded bg-bg-surface border border-border px-3 py-2
+                    text-xs text-sky-400 font-mono placeholder:text-text-muted
+                    focus:outline-none focus:ring-1 transition-colors
+                  "
+                  placeholder={key === "trending" ? "#trend (max 1)" : "#tag1 #tag2"}
+                />
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between">
+            <p
+              className={`text-[10px] font-mono ${
+                hashtagCount < 3 || hashtagCount > 5 ? "text-amber-400" : "text-text-muted"
+              }`}
+            >
+              {hashtagCount}/5 hashtags
+            </p>
+          </div>
+
+          {/* Sound suggestion */}
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-text-muted block mb-1 font-mono">
+              Sound Suggestion
             </label>
             <input
               type="text"
-              value={value}
-              onChange={(e) => handleHashtagChange(key, e.target.value)}
-              className="
-                w-full rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2
-                text-xs text-cyan-300 font-mono placeholder:text-zinc-700
-                focus:outline-none focus:ring-1 focus:ring-cyan-600/60
-                focus:border-cyan-700 transition-colors
-              "
-              placeholder={key === "trending" ? "#tiktok" : "#tag1 #tag2"}
+              value={draft.soundSuggestion ?? ""}
+              onChange={(e) => setDraft((prev) => ({ ...prev, soundSuggestion: e.target.value }))}
+              className="w-full rounded bg-bg-surface border border-border px-3 py-2 text-xs text-text-secondary placeholder:text-text-muted"
+              placeholder="e.g. upbeat lo-fi with snare drop"
             />
           </div>
-        ))}
+        </div>
+
+        <div className="space-y-3">
+          <PlatformPreview draft={draft} {...(platform ? { platform } : {})} />
+          <div className="rounded border border-border bg-bg-surface px-3 py-2">
+            <p className="text-[10px] text-text-muted">{copyState === "copied" ? "Caption copied ✓" : "Use Re-score to refresh Oracle virality feedback."}</p>
+          </div>
+        </div>
       </div>
 
-      {/* Hashtag count indicator */}
-      <p
-        className={`text-[10px] font-mono mb-4 ${
-          hashtagCount < 3 || hashtagCount > 5 ? "text-amber-400" : "text-zinc-600"
-        }`}
-      >
-        {hashtagCount} total hashtag{hashtagCount !== 1 ? "s" : ""}
-        {hashtagCount < 3 && " — aim for 3–5"}
-        {hashtagCount > 5 && " — reduce to 3–5"}
-      </p>
-
-      {/* Sound suggestion */}
-      {draft.soundSuggestion && (
-        <div className="mb-4 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2">
-          <p className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">
-            Audio Style
-          </p>
-          <p className="text-xs text-zinc-400">{draft.soundSuggestion}</p>
-        </div>
-      )}
-
-      {/* Platform preview */}
-      <PlatformPreview draft={draft} {...(platform ? { platform } : {})} />
     </section>
   );
 }

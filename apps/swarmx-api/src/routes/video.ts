@@ -35,6 +35,7 @@ import {
 import type { PublishResult } from "@swarmx/types/video-types";
 import { recordVideoPerformance } from "../services/video-assets.js";
 import { resolveCanonicalTag } from "@swarmx/types/operator-map";
+import type { CaptionDraft } from "@swarmx/types/video-types";
 
 const PublishRequestSchema = {
   type: "object",
@@ -70,6 +71,23 @@ const CaptionScoreSchema = z.object({
   platform: z.enum(["tiktok", "reels", "shorts", "generic"]),
   tone: z.string().min(1).max(120).optional(),
   durationSec: z.number().int().min(5).max(600).optional(),
+});
+
+const CaptionScoreDraftSchema = z.object({
+  draft: z.object({
+    firstLine: z.string().min(1),
+    body: z.string(),
+    cta: z.string(),
+    hashtags: z.object({
+      broad: z.array(z.string()),
+      niche: z.array(z.string()),
+      trending: z.array(z.string()),
+    }),
+    soundSuggestion: z.string().optional(),
+  }),
+  platform: z.enum(["tiktok", "reels", "shorts", "generic"]),
+  durationSec: z.number().int().min(5).max(600).optional(),
+  jobId: z.string().min(1).optional(),
 });
 
 const ResumeBodySchema = z.object({
@@ -502,6 +520,14 @@ export async function videoRoutes(
         jobId: job.id,
         artifacts: job.outputArtifacts ?? {},
         output: job.output ?? null,
+        frames: [
+          ...(job.output?.storyboardFrames ?? []),
+          ...(job.outputArtifacts?.frameDirectory ? [job.outputArtifacts.frameDirectory] : []),
+          ...(job.outputArtifacts?.interpolatedFrameDirectory
+            ? [job.outputArtifacts.interpolatedFrameDirectory]
+            : []),
+        ],
+        thumbnail: job.outputArtifacts?.thumbnailPath ?? job.outputArtifacts?.firstFramePath ?? null,
       });
     },
   );
@@ -644,12 +670,13 @@ export async function videoRoutes(
       },
     },
     async (request, reply) => {
-      const parsed = CaptionScoreSchema.safeParse(request.body);
-      if (!parsed.success) {
+      const parsedPrompt = CaptionScoreSchema.safeParse(request.body);
+      const parsedDraft = CaptionScoreDraftSchema.safeParse(request.body);
+      if (!parsedPrompt.success && !parsedDraft.success) {
         return reply.status(400).send({
           error: "invalid_request",
           message: "Invalid caption score payload",
-          issues: parsed.error.issues,
+          issues: [...parsedPrompt.error.issues, ...parsedDraft.error.issues],
         });
       }
 
@@ -662,15 +689,44 @@ export async function videoRoutes(
         });
       }
 
-      const captionDraft = await generateCaptionDraft({
-        topic: parsed.data.prompt,
-        platform: parsed.data.platform,
-        tone: parsed.data.tone ?? "engaging",
-      });
+      let captionDraft: CaptionDraft;
+      let topicText: string;
+      let platform: "tiktok" | "reels" | "shorts" | "generic";
+      let durationSec: number;
+
+      if (parsedDraft.success) {
+        const draft = parsedDraft.data.draft;
+        captionDraft = {
+          firstLine: draft.firstLine,
+          body: draft.body,
+          cta: draft.cta,
+          hashtags: draft.hashtags,
+          ...(draft.soundSuggestion ? { soundSuggestion: draft.soundSuggestion } : {}),
+        };
+        topicText = `${captionDraft.firstLine} ${captionDraft.body} ${captionDraft.cta}`.trim();
+        platform = parsedDraft.data.platform;
+        durationSec = parsedDraft.data.durationSec ?? 30;
+      } else if (parsedPrompt.success) {
+        const promptData = parsedPrompt.data;
+        captionDraft = await generateCaptionDraft({
+          topic: promptData.prompt,
+          platform: promptData.platform,
+          tone: promptData.tone ?? "engaging",
+        });
+        topicText = promptData.prompt;
+        platform = promptData.platform;
+        durationSec = promptData.durationSec ?? 30;
+      } else {
+        return reply.status(400).send({
+          error: "invalid_request",
+          message: "Invalid caption score payload",
+        });
+      }
+
       const viralitySignal = await scoreVirality({
-        topic: parsed.data.prompt,
-        platform: parsed.data.platform,
-        durationSec: parsed.data.durationSec ?? 30,
+        topic: topicText,
+        platform,
+        durationSec,
         hook: captionDraft.firstLine,
       });
       if (!viralitySignal) {
@@ -732,19 +788,31 @@ export async function videoRoutes(
       const templates = [
         {
           id: "ltx-t2v",
+          name: "LTX Video T2V",
           mode: "t2v",
+          resolution: shared.resolution,
+          fps: shared.outputFps,
+          description: "Low-RAM text-to-video template using LTX sampler",
           requiresReferenceImage: false,
           workflow: generateLTXWorkflow(shared),
         },
         {
           id: "wan-t2v",
+          name: "Wan T2V",
           mode: "t2v",
+          resolution: shared.resolution,
+          fps: shared.outputFps,
+          description: "Wan text-to-video workflow with balanced quality",
           requiresReferenceImage: false,
           workflow: generateWanT2VWorkflow(shared),
         },
         {
           id: "wan-i2v",
+          name: "Wan I2V",
           mode: "i2v",
+          resolution: shared.resolution,
+          fps: shared.outputFps,
+          description: "Wan image-to-video workflow (single-model lock path)",
           requiresReferenceImage: true,
           workflow: generateWanI2VWorkflow({
             ...shared,
@@ -753,7 +821,13 @@ export async function videoRoutes(
         },
       ].map((template) => ({
         id: template.id,
+        name: template.name,
         mode: template.mode,
+        resolution: template.resolution,
+        fps: template.fps,
+        description: template.description,
+        ramMb: template.workflow.ramBudgetMb,
+        compatible: template.workflow.ramBudgetMb <= Math.max(0, availableMb - 800),
         requiresReferenceImage: template.requiresReferenceImage,
         modelTag: template.workflow.modelTag,
         ramBudgetMb: template.workflow.ramBudgetMb,

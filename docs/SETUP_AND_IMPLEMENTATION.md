@@ -127,6 +127,9 @@ bash $SWARMXQ_BUNDLE_ROOT/scripts/migrate-to-r7.sh --dry-run
 bash $SWARMXQ_BUNDLE_ROOT/scripts/migrate-to-r7.sh --apply
 
 # 5. Verify
+pnpm --filter @swarmx/types typecheck
+pnpm --filter @swarmx/api typecheck
+pnpm --filter @swarmx/dashboard typecheck
 bash scripts/swarm-healthcheck-apex17.sh
 ```
 
@@ -342,6 +345,7 @@ bash scripts/swarm-healthcheck-apex17.sh
 ```
 
 Expected: PASS for Ollama, canonical models registered, Relay warmth check, API health, memory tier, naming compliance.
+On 8 GB hardware, if free RAM drops below 800 MB or Ollama model probes stall, the script can legitimately return `HEALTH: DEGRADED` even when the API is otherwise serving traffic. Treat that as an operational pressure signal and recover memory before re-running.
 
 ### 6.4 — Live Smoke Test
 
@@ -461,6 +465,9 @@ After a successful migration, verify the following are true:
 
 - [ ] `python3 -c "from swarmx.operator_map import MODEL_OPERATOR_MAP; assert len(MODEL_OPERATOR_MAP) == 11"`
 - [ ] `python -m pytest tests/test_naming_validation.py -v` — all pass
+- [ ] `pnpm --filter @swarmx/types typecheck` — exit 0
+- [ ] `pnpm --filter @swarmx/api typecheck` — exit 0
+- [ ] `pnpm --filter @swarmx/dashboard typecheck` — exit 0
 - [ ] `bash scripts/rebuild-all-modelfiles.sh --validate` — exit 0
 - [ ] `bash scripts/swarm-healthcheck-apex17.sh` — HEALTH: OK
 - [ ] `ollama list | grep -c "scar"` — returns 0 (no -scar models remain in Ollama, optional)

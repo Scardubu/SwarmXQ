@@ -28,9 +28,12 @@ import { subscribeToEvents } from "../plugins/sse.js";
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 const MAX_QUEUE_SIZE = parseInt(process.env.VIDEO_QUEUE_MAX_SIZE ?? "20", 10);
-const MAX_CONCURRENT_JOBS = parseInt(
+// SINGLE-VIDEO LOCK: 8 GB RAM cannot support parallel generation
+const MAX_CONCURRENT_JOBS = 1;
+const concurrency = MAX_CONCURRENT_JOBS;
+const CONFIGURED_CONCURRENCY = parseInt(
   process.env.VIDEO_MAX_CONCURRENT_JOBS ?? "1",
-  10
+  10,
 );
 const MAX_RETRIES = parseInt(process.env.VIDEO_MAX_RETRIES ?? "1", 10);
 const JOB_TTL_MS = parseInt(
@@ -174,8 +177,14 @@ export function startJob(id: string): VideoJob | null {
     (j) => j.status === "running"
   ).length;
 
+  if (CONFIGURED_CONCURRENCY > 1) {
+    console.warn(
+      `[video-queue] ignoring VIDEO_MAX_CONCURRENT_JOBS=${CONFIGURED_CONCURRENCY}; SINGLE-VIDEO LOCK enforced`,
+    );
+  }
+
   // SINGLE-VIDEO LOCK: 8 GB RAM cannot support parallel generation
-  if (running >= MAX_CONCURRENT_JOBS) return null;
+  if (running >= concurrency) return null;
 
   job.status = "running";
   job.startedAt = now();
@@ -313,7 +322,7 @@ export function dequeueNext(): VideoJob | undefined {
   const running = [...registry.values()].filter(
     (j) => j.status === "running"
   ).length;
-  if (running >= MAX_CONCURRENT_JOBS) return undefined;
+  if (running >= concurrency) return undefined;
 
   return [...registry.values()]
     .filter((j) => j.status === "queued")

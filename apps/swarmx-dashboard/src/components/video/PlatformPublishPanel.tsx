@@ -12,12 +12,14 @@
 
 import { useState, useCallback } from "react";
 import type { PublishResult, VideoExportPlatform } from "@swarmx/types/video-types";
+import type { VideoJob } from "../../../../swarmx-api/src/types/video";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface PlatformPublishPanelProps {
-  jobId: string;
+  job: VideoJob;
   publishHistory: PublishResult[];
+  publishResult?: PublishResult;
   onPublish: (platform: VideoExportPlatform, scheduledAt?: string) => Promise<PublishResult | null>;
   disabled?: boolean;
 }
@@ -129,8 +131,9 @@ function HistoryRow({ entry }: { entry: PublishResult }) {
 const PLATFORMS: VideoExportPlatform[] = ["tiktok", "reels", "shorts", "generic"];
 
 export function PlatformPublishPanel({
-  jobId: _jobId,
+  job,
   publishHistory,
+  publishResult,
   onPublish,
   disabled = false,
 }: PlatformPublishPanelProps) {
@@ -142,6 +145,11 @@ export function PlatformPublishPanel({
   const meta = PLATFORM_META[platform];
 
   const handlePublish = useCallback(async () => {
+    if (!job) {
+      setStatusMsg("Select a video job before publishing");
+      return;
+    }
+
     setIsPublishing(true);
     setStatusMsg(null);
     const result = await onPublish(
@@ -159,7 +167,7 @@ export function PlatformPublishPanel({
     } else {
       setStatusMsg("Publish request failed — check logs");
     }
-  }, [platform, scheduledAt, meta.label, onPublish]);
+  }, [job, platform, scheduledAt, meta.label, onPublish]);
 
   return (
     <section
@@ -246,12 +254,19 @@ export function PlatformPublishPanel({
         <p className="mt-3 text-xs text-zinc-400">{statusMsg}</p>
       )}
 
+      {publishResult && (
+        <div className="mt-3 rounded border border-border bg-bg-surface px-3 py-2">
+          <p className="text-[10px] text-text-muted font-mono">
+            Latest: {publishResult.status} {publishResult.platformUrl ? `· ${publishResult.platformUrl}` : ""}
+          </p>
+        </div>
+      )}
+
       {/* Approval notice */}
       {meta.requiresApproval && (
         <div className="mt-3 rounded-lg bg-amber-950/30 border border-amber-900/40 px-3 py-2">
           <p className="text-[10px] text-amber-400">
-            {meta.label} requires partner approval. Your video will be queued for review.
-            Use the platform setup guide in the repo docs before enabling live publishing.
+            Requires partner approval. See docs/TIKTOK_SETUP.md.
           </p>
         </div>
       )}

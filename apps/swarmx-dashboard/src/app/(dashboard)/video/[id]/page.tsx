@@ -156,7 +156,7 @@ export default function VideoJobDetailPage() {
           {job.status === "completed" && (
             <div className="rounded-xl border border-border bg-bg-elevated p-4">
               <PlatformPublishPanel
-                jobId={job.id}
+                job={job}
                 publishHistory={publishHistory}
                 onPublish={async (platform, scheduledAt) => {
                   const result = await publishJob(job.id, {

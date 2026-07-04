@@ -20,12 +20,12 @@ import type { VideoPerformanceMetrics } from "@swarmx/types/video-types";
 
 const OUTPUT_DIR = resolve(
   process.env.VIDEO_OUTPUT_DIR ??
-    join(process.env.HOME ?? "/tmp", "swarmx_outputs", "video")
+    join(process.cwd(), ".swarmx", "video", "output")
 );
 
 const ARTIFACT_DIR = resolve(
   process.env.SWARMX_VIDEO_ARTIFACT_DIR ??
-    join(process.env.HOME ?? "/tmp", "swarmx_outputs", "video", "artifacts"),
+    join(process.cwd(), ".swarmx", "video", "artifacts"),
 );
 
 const PUBLIC_URL_BASE = process.env.VIDEO_PUBLIC_URL_BASE ?? "/api/video/files";

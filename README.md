@@ -117,10 +117,17 @@ bash scripts/migrate-to-r7.sh --apply
 Validate after migration:
 
 ```bash
+pnpm --filter @swarmx/types typecheck
+pnpm --filter @swarmx/api typecheck
+pnpm --filter @swarmx/dashboard typecheck
 bash scripts/rebuild-all-modelfiles.sh --validate
 python -m pytest tests/test_naming_validation.py -v
 bash scripts/swarm-healthcheck-apex17.sh
 ```
+
+Operational note: on 8 GB hosts, `scripts/swarm-healthcheck-apex17.sh` may report `HEALTH: DEGRADED`
+when free RAM falls below 800 MB or Ollama probe latency pushes Relay/model checks past their timeout.
+That result indicates runtime pressure, not necessarily a build or type-safety regression.
 
 ---
 

@@ -171,6 +171,14 @@ curl http://localhost:3001/health
 curl http://localhost:3001/api/video/jobs
 ```
 
+Validate package gates before exercising the video UI:
+
+```bash
+pnpm --filter @swarmx/types typecheck
+pnpm --filter @swarmx/api typecheck
+pnpm --filter @swarmx/dashboard typecheck
+```
+
 ### Write-route auth
 
 The following routes require write auth:
@@ -694,6 +702,22 @@ If ComfyUI is not running, the render stage can fail with `COMFY_UNAVAILABLE` an
 ---
 
 ## Troubleshooting
+
+### `/api/system/health` reports `degraded`
+
+**Cause:** On 8 GB hosts this usually means memory pressure, model probe timeouts, or both.
+If `availableRamMb < 800`, SwarmX intentionally downgrades to `rule_engine` topology and the
+health surface can remain degraded even while the API `/health` endpoint is OK.
+
+**Fix:** Evict resident 7B models, warm Relay again, then rerun:
+
+```bash
+bash scripts/swarm-healthcheck-apex17.sh
+```
+
+This is an operational pressure signal, not automatically a regression in the video code path.
+
+---
 
 ### `/api/video/jobs` returns `404`
 

@@ -316,9 +316,9 @@ export const useVideoStore = create<VideoStore>()(
             {
               method: "POST",
               body: JSON.stringify({
-                prompt: `${draft.firstLine} ${draft.body} ${draft.cta}`.trim(),
+                draft,
                 platform,
-                hook: draft.firstLine,
+                durationSec: 30,
               }),
             },
           );

@@ -1,10 +1,10 @@
 import type { VideoExportPlatform } from "@swarmx/types/video-types";
-import type { ApiVideoPublisher } from "./base-publisher.js";
+import type { PlatformPublisher } from "./base-publisher.js";
 import { GenericVideoPublisher } from "./generic.js";
 import { InstagramVideoPublisher } from "./instagram.js";
 import { TikTokVideoPublisher } from "./tiktok.js";
 
-const publisherRegistry: Record<VideoExportPlatform, ApiVideoPublisher> = {
+const publisherRegistry: Record<VideoExportPlatform, PlatformPublisher> = {
   tiktok: new TikTokVideoPublisher(),
   reels: new InstagramVideoPublisher(),
   shorts: new GenericVideoPublisher(),
@@ -22,7 +22,7 @@ export function listSupportedPublishPlatforms(): VideoExportPlatform[] {
   return Object.keys(publisherRegistry) as VideoExportPlatform[];
 }
 
-export function getVideoPublisher(platform: VideoExportPlatform): ApiVideoPublisher {
+export function getVideoPublisher(platform: VideoExportPlatform): PlatformPublisher {
   return publisherRegistry[platform];
 }
 

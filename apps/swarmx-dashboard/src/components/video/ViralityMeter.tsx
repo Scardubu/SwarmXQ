@@ -20,6 +20,7 @@ import type { ViralitySignal } from "@swarmx/types/video-types";
 
 interface ViralityMeterProps {
   signal: ViralitySignal;
+  isScoring?: boolean;
   /** When true renders a single-row compact variant for use inside cards. */
   compact?: boolean;
   /** Called when the user clicks the "Improve" button. */
@@ -43,9 +44,9 @@ function scoreColour(norm: number): string {
 
 /** Resolve the bar fill class for a normalised 0–1 score. */
 function barColour(norm: number): string {
-  if (norm < 0.4) return "bg-red-500";
-  if (norm <= 0.7) return "bg-amber-500";
-  return "bg-emerald-500";
+  if (norm < 0.4) return "bg-red-400/30 border border-red-400/40";
+  if (norm <= 0.7) return "bg-amber-400/30 border border-amber-400/40";
+  return "bg-emerald-400/30 border border-emerald-400/40";
 }
 
 // ─── Recommendation excerpts per dimension ────────────────────────────────────
@@ -80,10 +81,10 @@ interface DimensionBarProps {
   label: string;
   value: number;
   reasoning: string;
-  compact: boolean;
+  compact?: boolean;
 }
 
-function DimensionBar({ label, value, reasoning, compact }: DimensionBarProps) {
+function DimensionBar({ label, value, reasoning, compact = false }: DimensionBarProps) {
   const norm = normalise(value);
   const pct = Math.round(norm * 100);
   const colour = scoreColour(norm);
@@ -99,16 +100,16 @@ function DimensionBar({ label, value, reasoning, compact }: DimensionBarProps) {
             aria-label={`${label}: ${pct}/100 — ${reasoning}`}
           >
             <div className="flex items-center justify-between gap-1">
-              <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
+              <span className="text-[10px] uppercase tracking-wider text-text-muted font-mono">
                 {label}
               </span>
-              <span className={`text-[10px] font-semibold tabular-nums font-mono ${colour}`}>
+              <span className={`text-[10px] font-mono tabular-nums ${colour}`}>
                 {pct}
               </span>
             </div>
-            <div className="h-1 rounded-full bg-zinc-800 overflow-hidden">
+            <div className="h-2 rounded bg-bg-surface overflow-hidden border border-border">
               <div
-                className={`h-full rounded-full transition-all duration-700 ease-out ${fill}`}
+                className={`h-full rounded transition-all duration-700 ease-out ${fill}`}
                 style={{ width: `${pct}%` }}
                 role="progressbar"
                 aria-valuenow={pct}
@@ -122,13 +123,13 @@ function DimensionBar({ label, value, reasoning, compact }: DimensionBarProps) {
           <Tooltip.Content
             sideOffset={6}
             className="
-              z-50 max-w-xs rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2
-              text-xs text-zinc-300 shadow-xl leading-relaxed
+              z-50 max-w-xs rounded border border-border bg-bg-surface px-2 py-1.5
+              text-xs text-text-secondary shadow-xl leading-relaxed
             "
           >
-            <p className="font-semibold text-zinc-100 mb-1">{label}</p>
+            <p className="font-mono text-text-primary mb-1 text-[10px]">{label}</p>
             <p>{reasoning}</p>
-            <Tooltip.Arrow className="fill-zinc-900" />
+            <Tooltip.Arrow className="fill-bg-surface" />
           </Tooltip.Content>
         </Tooltip.Portal>
       </Tooltip.Root>
@@ -146,23 +147,34 @@ const DIMENSIONS: Array<{ key: keyof ViralitySignal; label: string }> = [
   { key: "overall", label: "Overall" },
 ];
 
-export function ViralityMeter({ signal, compact = false, onImprove }: ViralityMeterProps) {
+export function ViralityMeter({ signal, isScoring = false, compact = false, onImprove }: ViralityMeterProps) {
   const overallNorm = normalise(signal.overall);
   const overallPct = Math.round(overallNorm * 100);
   const overallColour = scoreColour(overallNorm);
 
-  if (compact) {
+  if (isScoring) {
     return (
-      <div className="flex items-center gap-3 flex-wrap">
-        {DIMENSIONS.map(({ key, label }) => (
-          <DimensionBar
-            key={key}
-            label={label}
-            value={signal[key] as number}
-            reasoning={dimensionReasoning(signal, label)}
-            compact
+      <section aria-label="Virality score loading" className="rounded border border-border bg-bg-elevated p-3">
+        <div className="space-y-2">
+          {Array.from({ length: 5 }).map((_, index) => (
+            <div key={index} className="h-2 animate-pulse bg-bg-elevated rounded" />
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  if (compact) {
+    const fill = barColour(overallNorm);
+    return (
+      <div className="flex items-center gap-2 w-full">
+        <div className="h-1.5 rounded bg-bg-surface border border-border overflow-hidden flex-1">
+          <div
+            className={`h-full rounded transition-all duration-700 ease-out ${fill}`}
+            style={{ width: `${overallPct}%` }}
           />
-        ))}
+        </div>
+        <span className={`text-[10px] font-mono ${overallColour}`}>{overallPct}</span>
       </div>
     );
   }
@@ -170,15 +182,15 @@ export function ViralityMeter({ signal, compact = false, onImprove }: ViralityMe
   return (
     <section
       aria-label="Virality score"
-      className="rounded-xl border border-amber-900/40 bg-gradient-to-br from-amber-950/30 to-zinc-900/60 p-4"
+      className="rounded border border-border bg-bg-elevated p-3"
     >
       {/* Header */}
       <div className="flex items-center justify-between gap-3 mb-4">
         <div>
-          <h3 className="text-xs font-semibold text-amber-300 uppercase tracking-wider">
+          <h3 className="text-xs font-mono text-text-secondary uppercase tracking-wider">
             Virality Signal
           </h3>
-          <p className="text-[10px] text-zinc-500 mt-0.5">
+          <p className="text-[10px] text-text-muted mt-0.5 font-mono">
             Scored by {signal.scoredBy}
           </p>
         </div>
@@ -188,15 +200,13 @@ export function ViralityMeter({ signal, compact = false, onImprove }: ViralityMe
             aria-label={`Overall virality score: ${overallPct} out of 100`}
           >
             {overallPct}
-            <span className="text-xs text-zinc-600 font-normal">/100</span>
+            <span className="text-xs text-text-muted font-normal">/100</span>
           </div>
           {onImprove && (
             <button
               onClick={onImprove}
               className="
-                rounded-lg border border-amber-700/50 bg-amber-900/30 px-3 py-1.5
-                text-xs font-semibold text-amber-200 hover:bg-amber-900/50
-                transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500
+                text-[10px] font-mono text-text-muted hover:text-accent border border-border px-2 py-0.5 rounded
               "
             >
               Improve
@@ -220,14 +230,14 @@ export function ViralityMeter({ signal, compact = false, onImprove }: ViralityMe
 
       {/* Recommendations */}
       {signal.recommendations && signal.recommendations.length > 0 && (
-        <div className="mt-4 rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-          <p className="text-[10px] uppercase tracking-wider text-zinc-500 mb-2">
+        <div className="mt-4 rounded border border-border bg-bg-surface p-3">
+          <p className="text-[10px] uppercase tracking-wider text-text-muted mb-2 font-mono">
             Oracle Recommendations
           </p>
           <ul className="space-y-1.5">
             {signal.recommendations.map((rec, idx) => (
-              <li key={idx} className="flex gap-2 text-xs text-zinc-300">
-                <span className="mt-0.5 shrink-0 text-amber-500">•</span>
+              <li key={idx} className="flex gap-2 text-xs text-text-secondary">
+                <span className="mt-0.5 shrink-0 text-amber-400">•</span>
                 <span>{rec}</span>
               </li>
             ))}

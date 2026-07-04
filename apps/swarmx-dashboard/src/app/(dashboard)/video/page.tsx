@@ -259,7 +259,7 @@ function VideoJobDetailPanel() {
       {/* Publish panel */}
       {isDone && (
         <PlatformPublishPanel
-          jobId={selectedJob.id}
+          job={selectedJob}
           publishHistory={publishHistory}
           onPublish={handlePublish}
         />

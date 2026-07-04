@@ -44,8 +44,8 @@ SEO_SCORE (0-1): Evaluate caption draft only:
 OVERALL: hookStrength×0.35 + completionProxy×0.25 + shareability×0.25 + seoScore×0.15
 
 Respond ONLY in this JSON schema, no think blocks, no prose:
-{ "hookStrength": 0.0, "completionProxy": 0.0, "shareability": 0.0,
-  "seoScore": 0.0, "overall": 0.0, "recommendations": ["..."],
+{ "hookStrength": number, "completionProxy": number, "shareability": number,
+  "seoScore": number, "overall": number, "recommendations": ["..."],
   "captionDraft": { "firstLine": "", "body": "", "cta": "",
     "hashtags": { "broad": [], "niche": [], "trending": [] },
     "soundSuggestion": "" } }

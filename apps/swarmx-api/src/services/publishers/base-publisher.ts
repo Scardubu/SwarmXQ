@@ -17,14 +17,14 @@ export interface PublisherProfile {
   requiresApproval: boolean;
 }
 
-export interface ApiVideoPublisher {
+export interface PlatformPublisher {
   platform: VideoExportPlatform;
   publish(job: VideoJob, artifacts: VideoArtifacts): Promise<PublishResult>;
   schedule(job: VideoJob, artifacts: VideoArtifacts, scheduledAt: string): Promise<PublishResult>;
   getStatus(publishId: string): Promise<PublishStatus>;
 }
 
-export abstract class BaseVideoPublisher implements ApiVideoPublisher {
+export abstract class BaseVideoPublisher implements PlatformPublisher {
   abstract readonly platform: VideoExportPlatform;
   protected abstract readonly profile: PublisherProfile;
 

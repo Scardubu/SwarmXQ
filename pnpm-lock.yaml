@@ -218,7 +218,11 @@ importers:
         specifier: ^2.1.9
         version: 2.1.9(@types/node@22.20.0)(lightningcss@1.32.0)
 
-  packages/swarmx-types: {}
+  packages/swarmx-types:
+    devDependencies:
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
 
 packages:
 
