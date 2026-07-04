@@ -104,8 +104,6 @@ interface EventsActions {
 }
 
 type EventsPatch = Partial<EventsState> & Pick<EventsState, "lastEventAt" | "isStale">;
-type ScsEventData = Extract<SwarmXEvent, { type: "system:scs" }>["data"];
-type LogEventData = Extract<SwarmXEvent, { type: "log:entry" }>["data"];
 
 // ─── Pull out real data types without TS union access ─────────────────────────
 // Using concrete interface references avoids brittle conditional type access
@@ -592,11 +590,11 @@ export const useEventsStore = create<EventsState & EventsActions>()(
     // [V6.1-FIX-17] Allow explicit agent snapshot hydration for polling/manual refresh
     // paths so the dashboard can recover when SSE is stale or briefly disconnected.
     replaceAgents: (agents) => {
-      set((state) => replaceAgentsSnapshot(state, agents));
+      set((current) => replaceAgentsSnapshot(current, agents));
     },
 
     setConnectionStatus: (status) =>
-      set((state) => ({
+      set(() => ({
         connectionStatus: status,
         ...(status === "connected"
           ? { sseReconnectAttempt: 0, sseNextRetryMs: null }

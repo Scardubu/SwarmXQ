@@ -30,6 +30,7 @@ import type {
   VideoStageProgress,
   VideoJobError,
 } from "./video.js";
+import type { VideoExportPlatform, VideoPerformanceMetrics } from "@swarmx/types/video-types";
 
 export type {
   AgentState,
@@ -140,6 +141,28 @@ export interface VideoJobSnapshotEvent {
   };
 }
 
+export interface VideoStreamEvent {
+  type: "video:stream";
+  timestamp: string;
+  data: {
+    jobId: string;
+    stage: string;
+    pct: number;
+    operatorTag: string;
+    message?: string;
+  };
+}
+
+export interface VideoPerformanceEvent {
+  type: "video:performance";
+  timestamp: string;
+  data: {
+    jobId: string;
+    platform: VideoExportPlatform;
+    metrics: VideoPerformanceMetrics;
+  };
+}
+
 export type VideoEvent =
   | VideoJobCreatedEvent
   | VideoJobQueuedEvent
@@ -149,7 +172,9 @@ export type VideoEvent =
   | VideoJobCompletedEvent
   | VideoJobFailedEvent
   | VideoJobCancelledEvent
-  | VideoJobSnapshotEvent;
+  | VideoJobSnapshotEvent
+  | VideoStreamEvent
+  | VideoPerformanceEvent;
 
 export type SwarmXEvent = SharedSwarmXEvent | VideoEvent;
 

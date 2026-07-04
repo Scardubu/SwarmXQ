@@ -4,6 +4,7 @@
  */
 
 import type { ComfyNode, ComfyWorkflow, FrameMath, VideoMode, VideoResolution } from "@swarmx/types/video-types";
+import { ModelOrchestrator } from "./model-orchestrator.js";
 
 export interface WorkflowParams {
   seed: number;
@@ -25,6 +26,7 @@ const MAX_BATCH_FOR_RESOLUTION: Record<VideoResolution, number> = {
 };
 
 const MIN_BATCH_SIZE = 2;
+const MAX_BATCH_SIZE = parseInt(process.env["SWARMX_VIDEO_MAX_BATCH_SIZE"] ?? "8", 10);
 
 function parseResolution(resolution: VideoResolution): { width: number; height: number } {
   const [widthRaw, heightRaw] = resolution.split("x").map((v) => parseInt(v, 10));
@@ -38,20 +40,28 @@ function parseResolution(resolution: VideoResolution): { width: number; height: 
 function computeBatchSize(resolution: VideoResolution, availableMb: number): number {
   const ceiling = MAX_BATCH_FOR_RESOLUTION[resolution];
   if (availableMb < 2000) return Math.max(MIN_BATCH_SIZE, Math.floor(ceiling / 2));
-  return ceiling;
+  return Math.max(MIN_BATCH_SIZE, Math.min(ceiling, MAX_BATCH_SIZE));
 }
 
 function buildFrameMath(params: WorkflowParams): FrameMath {
+  const boundedOutputFps = Math.max(1, params.outputFps);
+  const maxFramesByDuration = boundedOutputFps * Math.max(1, Math.ceil(params.totalFrames / boundedOutputFps));
+  const boundedTotalFrames = Math.max(8, Math.min(params.totalFrames, maxFramesByDuration));
+
   return {
-    totalFrames: Math.max(8, params.totalFrames),
+    totalFrames: boundedTotalFrames,
     batchSize: computeBatchSize(params.resolution, params.availableMb),
     interpolationFactor: params.interpolationFactor ?? 1,
-    outputFps: params.outputFps,
+    outputFps: boundedOutputFps,
   };
 }
 
 function teaCacheEnabled(availableMb: number): boolean {
   return process.env["SWARMX_COMFYUI_TEACACHE"] === "1" && availableMb > 6000;
+}
+
+function deterministicSeed(seed: number): number {
+  return Number.isFinite(seed) ? Math.abs(Math.floor(seed)) : 42;
 }
 
 function baseNodes(params: WorkflowParams, mode: VideoMode): Record<string, ComfyNode> {
@@ -74,7 +84,7 @@ function baseNodes(params: WorkflowParams, mode: VideoMode): Record<string, Comf
     "3": {
       class_type: "KSampler",
       inputs: {
-        seed: params.seed,
+        seed: deterministicSeed(params.seed),
         steps: 20,
         cfg: 4.0,
         sampler_name: "dpmpp_2m",
@@ -132,7 +142,9 @@ function baseNodes(params: WorkflowParams, mode: VideoMode): Record<string, Comf
     },
     "10": {
       class_type: "FreeMemory",
-      inputs: {},
+      inputs: {
+        anything: ["3", 0],
+      },
     },
   };
 }
@@ -150,6 +162,12 @@ function workflow(version: string, modelTag: string, nodes: Record<string, Comfy
 export function generateLTXWorkflow(params: WorkflowParams): ComfyWorkflow {
   const frameMath = buildFrameMath(params);
   const nodes = baseNodes(params, "t2v");
+  nodes["13"] = {
+    class_type: "FreeMemory",
+    inputs: {
+      anything: ["7", 0],
+    },
+  };
   return workflow("video-alpha-ltx-v1", "instruct-phi4-pro-q8-prod", nodes, frameMath);
 }
 
@@ -163,10 +181,19 @@ export function generateWanT2VWorkflow(params: WorkflowParams): ComfyWorkflow {
       weight_dtype: "fp8_e4m3fn",
     },
   };
+  nodes["13"] = {
+    class_type: "FreeMemory",
+    inputs: {
+      anything: ["7", 0],
+    },
+  };
   return workflow("video-alpha-wan-t2v-v1", "code-qwen25-pro-q5km-prod", nodes, frameMath);
 }
 
 export function generateWanI2VWorkflow(params: WorkflowParams): ComfyWorkflow {
+  void ModelOrchestrator.getInstance().evictIncompatible("synth-wan-i2v-14b").catch(() => undefined);
+  console.info("video_single_14b_lock_enforced");
+
   const frameMath = buildFrameMath(params);
   const nodes = baseNodes(params, "i2v");
   nodes["2"] = {
@@ -193,7 +220,7 @@ export function generateWanI2VWorkflow(params: WorkflowParams): ComfyWorkflow {
   nodes["3"] = {
     class_type: "KSampler",
     inputs: {
-      seed: params.seed,
+      seed: deterministicSeed(params.seed),
       steps: 20,
       cfg: 4.5,
       sampler_name: "dpmpp_2m",
@@ -203,6 +230,12 @@ export function generateWanI2VWorkflow(params: WorkflowParams): ComfyWorkflow {
       positive: ["12", 0],
       negative: ["4", 0],
       latent_image: ["5", 0],
+    },
+  };
+  nodes["13"] = {
+    class_type: "FreeMemory",
+    inputs: {
+      anything: ["12", 0],
     },
   };
   return workflow("video-alpha-wan-i2v-v1", "reason-deepseekr1-pro-q5km-prod", nodes, frameMath);

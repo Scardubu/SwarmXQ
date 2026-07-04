@@ -12,6 +12,7 @@
  */
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
+import { sanitizeReasoningOutput } from "./reasoning-sanitizer.js";
 
 const execAsync = promisify(exec);
 
@@ -276,6 +277,51 @@ export async function getOllamaConfig(): Promise<OllamaServiceConfig> {
 export async function getOllamaBaseUrl(): Promise<string> {
   const config = await getOllamaConfig();
   return config.baseUrl;
+}
+
+export interface OllamaGenerateRequest {
+  model: string;
+  prompt: string;
+  maxTokens?: number;
+  overrides?: {
+    num_predict?: number;
+    num_ctx?: number;
+    temperature?: number;
+  };
+  signal?: AbortSignal;
+}
+
+export async function generateOllamaText(request: OllamaGenerateRequest): Promise<string> {
+  const baseUrl = await getOllamaBaseUrl();
+  const maxTokens = request.maxTokens ?? 1024;
+  const overrides = request.overrides ?? {};
+
+  const res = await fetch(`${baseUrl}/api/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    ...(request.signal ? { signal: request.signal } : {}),
+    body: JSON.stringify({
+      model: request.model,
+      prompt: request.prompt,
+      stream: false,
+      options: {
+        num_predict: overrides.num_predict ?? maxTokens,
+        ...(overrides.num_ctx !== undefined ? { num_ctx: overrides.num_ctx } : {}),
+        temperature: overrides.temperature ?? 0.3,
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    throw Object.assign(
+      new Error(`Ollama ${request.model} responded ${res.status}: ${await res.text()}`),
+      { code: "OLLAMA_UNAVAILABLE" },
+    );
+  }
+
+  const data = (await res.json()) as { response?: string };
+  const { text } = sanitizeReasoningOutput(data.response ?? "");
+  return text.trim();
 }
 
 export async function getAvailableModels(): Promise<string[]> {

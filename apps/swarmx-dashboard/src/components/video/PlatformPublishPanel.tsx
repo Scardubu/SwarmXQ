@@ -101,9 +101,14 @@ function HistoryRow({ entry }: { entry: PublishResult }) {
       </div>
 
       {entry.platformUrl && (
-        <p className="truncate text-[10px] font-mono text-zinc-400">
+        <a
+          href={entry.platformUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="truncate text-[10px] font-mono text-cyan-300 hover:text-cyan-200 underline-offset-2 hover:underline"
+        >
           {entry.platformUrl}
-        </p>
+        </a>
       )}
 
       {entry.requiresApproval && (
@@ -246,7 +251,7 @@ export function PlatformPublishPanel({
         <div className="mt-3 rounded-lg bg-amber-950/30 border border-amber-900/40 px-3 py-2">
           <p className="text-[10px] text-amber-400">
             {meta.label} requires partner approval. Your video will be queued for review.
-            See <span className="font-mono">docs/TIKTOK_SETUP.md</span> for setup.
+            Use the platform setup guide in the repo docs before enabling live publishing.
           </p>
         </div>
       )}

@@ -1,6 +1,61 @@
 # SwarmX Changelog
 
+<!-- markdownlint-disable MD024 MD032 -->
+
 ---
+
+## V6.2.2 — VIDEO-ALPHA Integration Finish (2026-07-04)
+
+Final integration pass for the VIDEO-ALPHA upgrade, focused on live-update wiring, route validation, dashboard correctness, and documentation hygiene.
+
+### Highlights
+
+- `apps/swarmx-api/src/services/ollama.ts`
+  - Added centralized `generateOllamaText()` helper so video orchestration uses the shared Ollama transport path instead of embedding a direct `/api/generate` call in the orchestrator.
+
+- `apps/swarmx-api/src/services/video-orchestrator.ts`
+  - Switched stage text generation to the shared Ollama helper.
+  - Preserved RAM-aware overrides and stage abort signaling while removing inline model transport logic.
+
+- `apps/swarmx-api/src/routes/video.ts`
+  - Added Zod validation for `POST /api/video/jobs/:id/resume`, `POST /api/video/jobs/reprioritize`, and `POST /api/video/caption/score`.
+  - Added caption-score rate limiting at 10 requests/minute per connection, configurable via `SWARMX_VIDEO_CAPTION_SCORE_LIMIT_PER_MIN`.
+
+- `apps/swarmx-dashboard/src/stores/video.ts`
+  - Added store actions for job-specific SSE subscription, retry-from-stage, queue reprioritization, and caption rescoring.
+  - Job SSE subscription now returns a teardown callback so route-level consumers can unsubscribe cleanly.
+
+- `apps/swarmx-dashboard/src/app/(dashboard)/video/[id]/page.tsx`
+  - Added job-scoped SSE subscription on mount for direct detail-route live updates.
+  - Fixed publish callback behavior so successful publishes surface correct UI feedback instead of always appearing to fail.
+
+- `apps/swarmx-dashboard/src/app/(dashboard)/video/page.tsx`
+  - Added queue drag-reorder wiring for queued jobs.
+  - Added retry affordance for failed jobs.
+
+- `apps/swarmx-dashboard/src/components/video/CaptionEditor.tsx`
+  - Rescoring now routes through the shared video store API instead of duplicating direct fetch logic in the component.
+
+- `apps/swarmx-dashboard/src/components/video/PlatformPublishPanel.tsx`
+  - Made returned platform URLs clickable and improved publish guidance copy.
+
+- `apps/swarmx-dashboard/src/stores/events.ts`
+  - Removed unused type aliases and cleaned a small unused-parameter warning.
+
+- `docs/VIDEO-GENERATION.md`
+  - Synchronized route coverage and examples with the implemented surface.
+  - Fixed markdown structure, tables, fenced code block languages, and TOC/lint issues.
+  - Documented resume/reprioritize routes, RAM admission error, caption-score endpoint, and rate-limiting behavior.
+
+- `env.example`
+  - Added `SWARMX_VIDEO_CAPTION_SCORE_LIMIT_PER_MIN` and documented the current RAM gate behavior.
+
+### Validation status
+
+- `pnpm --filter @swarmx/api typecheck` — verified clean.
+- `pnpm --filter @swarmx/dashboard typecheck` — verified clean.
+- `./scripts/rebuild-all-modelfiles.sh --validate` — verified clean.
+- Grep verification for direct `/api/generate` and `/api/chat` usage in the video orchestrator path — verified clean.
 
 ## V6.2.1 — API Contract + Docs Sync (2026-07-04)
 

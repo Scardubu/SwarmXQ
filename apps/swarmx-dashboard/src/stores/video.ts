@@ -20,6 +20,7 @@ import type {
   PublishResult,
   ViralitySignal,
   VideoArtifacts,
+  VideoExportPlatform,
 } from "@swarmx/types/video-types";
 import type {
   SwarmXEvent,
@@ -50,6 +51,10 @@ export interface VideoActions {
   submitJob: (request: VideoJobRequest) => Promise<string | null>;
   cancelJob: (jobId: string) => Promise<void>;
   publishJob: (jobId: string, input: { platform: "tiktok" | "reels" | "shorts" | "generic"; scheduledAt?: string }) => Promise<PublishResult | null>;
+  recordJobSseStream: (jobId: string) => (() => void) | void;
+  retryFromStage: (jobId: string, stage: string) => Promise<void>;
+  reorderQueue: (orderedIds: string[]) => Promise<void>;
+  scoreCaption: (draft: CaptionDraft, platform: VideoExportPlatform) => Promise<ViralitySignal | null>;
 
   // ── SSE ingestion ───────────────────────────────────────────────────────────
   /** Called by the top-level SSE hook to route events into the store. */
@@ -257,6 +262,69 @@ export const useVideoStore = create<VideoStore>()(
           return data.result;
         } catch (err) {
           console.error("[VideoStore] publishJob failed:", err);
+          return null;
+        }
+      },
+
+      recordJobSseStream: (jobId) => {
+        if (typeof window === "undefined") return;
+        const eventSource = new EventSource(`${API_BASE}/api/video/jobs/${jobId}/sse`);
+        eventSource.onmessage = (event) => {
+          try {
+            const payload = JSON.parse(event.data) as SwarmXEvent;
+            get().ingestEvent(payload);
+          } catch {
+            // Ignore malformed SSE chunks.
+          }
+        };
+        eventSource.onerror = () => {
+          eventSource.close();
+        };
+        return () => {
+          eventSource.close();
+        };
+      },
+
+      retryFromStage: async (jobId, stage) => {
+        try {
+          await apiFetch(`/api/video/jobs/${jobId}/resume`, {
+            method: "POST",
+            body: JSON.stringify({ fromStage: stage }),
+          });
+          await get().fetchJobDetail(jobId);
+        } catch (err) {
+          console.error("[VideoStore] retryFromStage failed:", err);
+        }
+      },
+
+      reorderQueue: async (orderedIds) => {
+        try {
+          await apiFetch("/api/video/jobs/reprioritize", {
+            method: "POST",
+            body: JSON.stringify({ orderedIds }),
+          });
+          await get().fetchJobs();
+        } catch (err) {
+          console.error("[VideoStore] reorderQueue failed:", err);
+        }
+      },
+
+      scoreCaption: async (draft, platform) => {
+        try {
+          const response = await apiFetch<{ viralitySignal?: ViralitySignal }>(
+            "/api/video/caption/score",
+            {
+              method: "POST",
+              body: JSON.stringify({
+                prompt: `${draft.firstLine} ${draft.body} ${draft.cta}`.trim(),
+                platform,
+                hook: draft.firstLine,
+              }),
+            },
+          );
+          return response.viralitySignal ?? null;
+        } catch (err) {
+          console.error("[VideoStore] scoreCaption failed:", err);
           return null;
         }
       },

@@ -9,9 +9,47 @@ import type {
   ViralitySignal,
 } from "@swarmx/types/video-types";
 import { ModelOrchestrator } from "./model-orchestrator.js";
+import { circuitState } from "./adaptive-timeout-config.js";
 import { extractJson, sanitizeReasoningOutput } from "./reasoning-sanitizer.js";
 
 const OLLAMA_BASE = process.env["SWARMX_OLLAMA_URL"] ?? process.env["OLLAMA_HOST"] ?? "http://127.0.0.1:11434";
+const ORACLE_TAG = resolveCanonicalTag(
+  process.env["SWARMX_MODEL_REASON"] ??
+    process.env["SWARMX_MODEL_REASONING"] ??
+    process.env["SWARM_MODEL_REASON"] ??
+    "reason-deepseekr1-pro-q5km-prod",
+);
+
+export const VIRALITY_SCORE_RUBRIC = `
+HOOK_STRENGTH (0-1): Pattern interruption in first 3 seconds. Criteria:
+unexpected contrast, unresolved tension, direct challenge to viewer assumption,
+or bold claim requiring proof. 0 = generic opening. 1 = scroll-stop.
+
+COMPLETION_PROXY (0-1): Incentive to watch to the end. Criteria: information
+pacing (payoff revealed late), narrative arc, escalating stakes, promised reward.
+0 = front-loaded, nothing left to see. 1 = strong end reward.
+
+SHAREABILITY (0-1): Would someone forward this to a specific person? Criteria:
+strong "this is so [person]" relatability, emotional trigger (laughter, surprise,
+inspiration, validation), unique POV, or practical utility. 0 = generic.
+1 = immediately forward-able.
+
+SEO_SCORE (0-1): Evaluate caption draft only:
++0.30 if primary keyword appears in chars 0-40 of firstLine
++0.20 if hashtag count is 3-5 (not more, not fewer)
++0.20 if at least one niche hashtag is present (not #fyp, not #viral)
++0.20 if a CTA appears in the final line
++0.10 if total emoji count in full caption is 3 or fewer
+
+OVERALL: hookStrength×0.35 + completionProxy×0.25 + shareability×0.25 + seoScore×0.15
+
+Respond ONLY in this JSON schema, no think blocks, no prose:
+{ "hookStrength": 0.0, "completionProxy": 0.0, "shareability": 0.0,
+  "seoScore": 0.0, "overall": 0.0, "recommendations": ["..."],
+  "captionDraft": { "firstLine": "", "body": "", "cta": "",
+    "hashtags": { "broad": [], "niche": [], "trending": [] },
+    "soundSuggestion": "" } }
+` as const;
 
 export interface ViralityInput {
   topic: string;
@@ -20,85 +58,75 @@ export interface ViralityInput {
   hook?: string;
 }
 
-export interface RecordedVideoPerformanceInput {
-  jobId: string;
-  platform: VideoExportPlatform;
-  views: number;
-  likes: number;
-  shares: number;
-  watchTimeSec: number;
-  postedAtIso: string;
-}
-
-function clampScore(value: number): number {
+function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0;
-  return Math.max(0, Math.min(100, Math.round(value)));
+  return Math.max(0, Math.min(1, value));
 }
 
-function safeRecommendations(value: unknown): string[] {
+function toStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value
-    .filter((item): item is string => typeof item === "string")
-    .slice(0, 5);
+  return value.filter((item): item is string => typeof item === "string").slice(0, 8);
 }
 
-function normalizeVirality(score: Partial<ViralitySignal>): ViralitySignal {
-  const recommendations = safeRecommendations(score.recommendations);
+function normalizeVirality(value: unknown): ViralitySignal | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const parsed = value as Partial<ViralitySignal>;
+
+  const recommendations = toStringArray(parsed.recommendations);
+  const scoredBy = typeof parsed.scoredBy === "string" && parsed.scoredBy.trim().length > 0
+    ? resolveCanonicalTag(parsed.scoredBy)
+    : ORACLE_TAG;
+
+  const captionDraft = parsed.captionDraft;
+  if (!captionDraft || typeof captionDraft !== "object") return undefined;
 
   return {
-    hookStrength: clampScore(score.hookStrength ?? 0),
-    completionProxy: clampScore(score.completionProxy ?? 0),
-    shareability: clampScore(score.shareability ?? 0),
-    seoScore: clampScore(score.seoScore ?? 0),
-    overall: clampScore(score.overall ?? 0),
-    scoredBy: typeof score.scoredBy === "string" && score.scoredBy.length > 0
-      ? score.scoredBy
-      : "oracle",
+    hookStrength: clamp01(Number(parsed.hookStrength ?? 0)),
+    completionProxy: clamp01(Number(parsed.completionProxy ?? 0)),
+    shareability: clamp01(Number(parsed.shareability ?? 0)),
+    seoScore: clamp01(Number(parsed.seoScore ?? 0)),
+    overall: clamp01(Number(parsed.overall ?? 0)),
     recommendations,
+    scoredBy,
     captionDraft: {
-      firstLine: "",
-      body: "",
-      cta: "",
-      hashtags: { broad: [], niche: [], trending: [] },
+      firstLine: typeof (captionDraft as { firstLine?: unknown }).firstLine === "string"
+        ? (captionDraft as { firstLine: string }).firstLine
+        : "",
+      body: typeof (captionDraft as { body?: unknown }).body === "string"
+        ? (captionDraft as { body: string }).body
+        : "",
+      cta: typeof (captionDraft as { cta?: unknown }).cta === "string"
+        ? (captionDraft as { cta: string }).cta
+        : "",
+      hashtags: {
+        broad: toStringArray((captionDraft as { hashtags?: { broad?: unknown } }).hashtags?.broad),
+        niche: toStringArray((captionDraft as { hashtags?: { niche?: unknown } }).hashtags?.niche),
+        trending: toStringArray((captionDraft as { hashtags?: { trending?: unknown } }).hashtags?.trending).slice(0, 1),
+      },
+      ...(typeof (captionDraft as { soundSuggestion?: unknown }).soundSuggestion === "string"
+        ? { soundSuggestion: (captionDraft as { soundSuggestion: string }).soundSuggestion }
+        : {}),
     },
   };
 }
 
-function scoreFromHeuristics(input: ViralityInput): ViralitySignal {
-  const durationPenalty = input.durationSec <= 15 ? 0 : Math.min(20, (input.durationSec - 15) * 1.5);
-  const hookBoost = input.hook && input.hook.length >= 8 ? 8 : 0;
-  const baseHook = clampScore(62 + hookBoost - durationPenalty);
-  const completion = clampScore(58 + hookBoost - Math.floor(durationPenalty * 0.8));
-  const shareability = clampScore(input.platform === "tiktok" || input.platform === "reels" ? 74 : 68);
-  const seoScore = clampScore(66);
-  const overall = clampScore((baseHook * 0.3) + (completion * 0.3) + (shareability * 0.2) + (seoScore * 0.2));
-
-  return {
-    hookStrength: baseHook,
-    completionProxy: completion,
-    shareability,
-    seoScore,
-    overall,
-    scoredBy: "heuristic-fallback",
-    recommendations: durationPenalty > 10
-      ? ["Tighten runtime to improve completion rate", "Strengthen first 2 seconds with a stronger hook"]
-      : ["Keep visual transitions every 1-2 seconds", "Use concise CTA in final beat"],
-    captionDraft: {
-      firstLine: "",
-      body: "",
-      cta: "",
-      hashtags: { broad: [], niche: [], trending: [] },
-    },
-  };
+function buildPrompt(input: ViralityInput, strictJsonSuffix?: string): string {
+  return [
+    `Platform: ${input.platform}`,
+    `Topic: ${input.topic}`,
+    `Duration seconds: ${input.durationSec}`,
+    `Hook: ${input.hook ?? "N/A"}`,
+    VIRALITY_SCORE_RUBRIC,
+    strictJsonSuffix ?? "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 async function callOracle(prompt: string): Promise<string> {
   const orchestrator = ModelOrchestrator.getInstance();
-  const requestedTag = resolveCanonicalTag(
-    process.env["SWARMX_MODEL_REASONING"] ?? process.env["SWARM_MODEL_REASONING"] ?? "reason-deepseekr1-pro-q5km-prod",
-  );
+  const modelRequest = await orchestrator.requestModel(ORACLE_TAG);
 
-  const modelRequest = await orchestrator.requestModel(requestedTag);
   try {
     const response = await fetch(`${OLLAMA_BASE}/api/chat`, {
       method: "POST",
@@ -112,13 +140,12 @@ async function callOracle(prompt: string): Promise<string> {
           ...(modelRequest.overrides.num_ctx !== undefined
             ? { num_ctx: modelRequest.overrides.num_ctx }
             : {}),
-          temperature: 0.1,
+          temperature: 0.0,
         },
         messages: [
           {
             role: "system",
-            content:
-              "Return strict JSON only for virality analysis with fields: hookStrength, completionProxy, shareability, seoScore, overall, scoredBy, recommendations.",
+            content: "Respond with valid JSON only. Do not include markdown, prose, or reasoning blocks.",
           },
           {
             role: "user",
@@ -133,42 +160,44 @@ async function callOracle(prompt: string): Promise<string> {
     }
 
     const payload = (await response.json()) as { message?: { content?: string } };
-    const raw = payload.message?.content ?? "";
-    const { text } = sanitizeReasoningOutput(raw);
-    return text;
+    return payload.message?.content ?? "";
   } finally {
     orchestrator.onModelCallComplete(modelRequest.modelTag);
   }
 }
 
-function buildPrompt(input: ViralityInput): string {
-  return [
-    `Platform: ${input.platform}`,
-    `Topic: ${input.topic}`,
-    `Duration seconds: ${input.durationSec}`,
-    `Hook: ${input.hook ?? "N/A"}`,
-    "Score each dimension 0-100.",
-    "Include up to 5 concise recommendations.",
-  ].join("\n");
+async function parseOracleOutput(rawText: string): Promise<ViralitySignal | undefined> {
+  const sanitized = sanitizeReasoningOutput(rawText);
+  const extracted = extractJson<unknown>(sanitized.text);
+  if (!extracted.ok) {
+    return undefined;
+  }
+  return normalizeVirality(extracted.data);
 }
 
-export async function scoreVirality(input: ViralityInput): Promise<ViralitySignal> {
-  const fallback = scoreFromHeuristics(input);
+export async function scoreVirality(input: ViralityInput): Promise<ViralitySignal | undefined> {
+  if (circuitState(ORACLE_TAG) === "open") {
+    console.warn("virality_oracle_circuit_open", { modelTag: ORACLE_TAG });
+    return undefined;
+  }
 
   try {
-    const response = await callOracle(buildPrompt(input));
-    const extracted = extractJson<Partial<ViralitySignal>>(response);
-    if (!extracted.ok || !extracted.data) {
-      return fallback;
+    const firstRaw = await callOracle(buildPrompt(input));
+    const firstParsed = await parseOracleOutput(firstRaw);
+    if (firstParsed) {
+      return { ...firstParsed, scoredBy: ORACLE_TAG };
     }
 
-    return normalizeVirality(extracted.data);
-  } catch {
-    return fallback;
-  }
-}
+    const secondRaw = await callOracle(
+      buildPrompt(input, "Output ONLY valid JSON. No other text."),
+    );
+    const secondParsed = await parseOracleOutput(secondRaw);
+    if (secondParsed) {
+      return { ...secondParsed, scoredBy: ORACLE_TAG };
+    }
 
-export async function recordVideoPerformance(_input: RecordedVideoPerformanceInput): Promise<void> {
-  // Persistence wiring is intentionally decoupled; orchestration can call this now
-  // without requiring schema migration in this phase.
+    return undefined;
+  } catch {
+    return undefined;
+  }
 }

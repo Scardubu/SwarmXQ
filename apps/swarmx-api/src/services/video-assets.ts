@@ -10,16 +10,22 @@
  */
 
 import { createHash } from "node:crypto";
-import { stat, unlink, readFile } from "node:fs/promises";
+import { stat, unlink, readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { existsSync } from "node:fs";
 import type { VideoOutputMetadata, VideoJobRequest, VideoJobStage } from "../types/video.js";
+import type { VideoPerformanceMetrics } from "@swarmx/types/video-types";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 const OUTPUT_DIR = resolve(
   process.env.VIDEO_OUTPUT_DIR ??
     join(process.env.HOME ?? "/tmp", "swarmx_outputs", "video")
+);
+
+const ARTIFACT_DIR = resolve(
+  process.env.SWARMX_VIDEO_ARTIFACT_DIR ??
+    join(process.env.HOME ?? "/tmp", "swarmx_outputs", "video", "artifacts"),
 );
 
 const PUBLIC_URL_BASE = process.env.VIDEO_PUBLIC_URL_BASE ?? "/api/video/files";
@@ -212,4 +218,18 @@ export async function listArtifacts(): Promise<ArtifactManifestEntry[]> {
   } catch {
     return [];
   }
+}
+
+/**
+ * r2 evolution handoff stub.
+ * Persists publish-time metrics without coupling to Lab in VIDEO-ALPHA r1.
+ */
+export async function recordVideoPerformance(
+  jobId: string,
+  metrics: VideoPerformanceMetrics,
+): Promise<string> {
+  await mkdir(ARTIFACT_DIR, { recursive: true });
+  const outputPath = resolve(ARTIFACT_DIR, `${jobId}.performance.json`);
+  await writeFile(outputPath, `${JSON.stringify(metrics, null, 2)}\n`, "utf8");
+  return outputPath;
 }

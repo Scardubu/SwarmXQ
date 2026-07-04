@@ -81,12 +81,29 @@ export interface ViralitySignal {
 }
 
 export interface OperatorTraceEntry {
-  stage: VideoPipelineStage | string;
+  stage: VideoJobStatus | VideoPipelineStage | string;
+  operatorTag?: string;
   operator: string;
-  modelTag: string;
-  latencyMs: number;
-  tokenCount: number;
-  timestamp: string;
+  startedAt?: string;
+  completedAt?: string;
+  latencyMs?: number;
+  tokenCount?: number;
+  success?: boolean;
+  errorMsg?: string;
+  // Compatibility bridge fields for existing API/dashboard consumers.
+  modelTag?: string;
+  timestamp?: string;
+}
+
+export interface VideoPerformanceMetrics {
+  jobId: string;
+  platform: VideoExportPlatform;
+  publishedAt: string;
+  viewCount?: number;
+  completionRate?: number;
+  shareCount?: number;
+  likeCount?: number;
+  viralityAtPublish: ViralitySignal;
 }
 
 export interface VideoError {
@@ -126,6 +143,7 @@ export interface VideoJob {
   createdAt: string;
   updatedAt: string;
   operatorTrace: OperatorTraceEntry[];
+  resumeFromStage?: VideoJobStatus;
   viralitySignal?: ViralitySignal;
   outputArtifacts?: VideoArtifacts;
   errorLog?: VideoError[];

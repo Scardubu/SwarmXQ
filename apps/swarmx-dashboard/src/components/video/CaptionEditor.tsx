@@ -11,10 +11,7 @@
 
 import { useState, useCallback, useRef, useTransition } from "react";
 import type { CaptionDraft, ViralitySignal, VideoExportPlatform } from "@swarmx/types/video-types";
-
-const API_BASE = typeof window !== "undefined"
-  ? (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:7380")
-  : "http://localhost:7380";
+import { useVideoStore } from "../../stores/video";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -96,6 +93,7 @@ export function CaptionEditor({
   platform,
   onSignalUpdate,
 }: CaptionEditorProps) {
+  const scoreCaption = useVideoStore((s) => s.scoreCaption);
   const [draft, setDraft] = useState<CaptionDraft>(initialDraft);
   const [broadHashtag, setBroadHashtag] = useState(
     initialDraft.hashtags.broad.join(" "),
@@ -197,37 +195,17 @@ export function CaptionEditor({
     startTransition(async () => {
       setRescoreError(null);
       try {
-        const token = process.env["NEXT_PUBLIC_VIDEO_API_TOKEN"] ?? "";
-        const res = await fetch(`${API_BASE}/api/video/caption/score`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({
-            prompt: draft.firstLine + " " + draft.body,
-            platform: platform ?? "generic",
-          }),
-        });
-
-        if (!res.ok) {
-          setRescoreError("Rescore failed — API error");
+        const signal = await scoreCaption(draft, platform ?? "generic");
+        if (signal) {
+          onSignalUpdate?.(signal);
           return;
         }
-
-        const data = (await res.json()) as {
-          captionDraft?: CaptionDraft;
-          viralitySignal?: ViralitySignal;
-        };
-
-        if (data.viralitySignal) {
-          onSignalUpdate?.(data.viralitySignal);
-        }
+        setRescoreError("Rescore unavailable");
       } catch {
         setRescoreError("Rescore failed — network error");
       }
     });
-  }, [draft, platform, onSignalUpdate]);
+  }, [draft, platform, onSignalUpdate, scoreCaption]);
 
   const firstLineLen = countChars(draft.firstLine);
   const hashtagCount =

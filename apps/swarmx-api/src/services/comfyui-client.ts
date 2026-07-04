@@ -12,6 +12,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { ComfyWorkflow } from "@swarmx/types/video-types";
+import { ModelOrchestrator } from "./model-orchestrator.js";
 
 const DEFAULT_COMFY_BASE_URL = process.env["SWARMX_COMFYUI_URL"] ?? "http://127.0.0.1:8188";
 const DEFAULT_MAX_FRAME_BUDGET_MB = parseInt(
@@ -61,6 +62,17 @@ function assertFrameBudget(workflow: ComfyWorkflow, maxFrameBudgetMb: number): v
         `ComfyUI workflow exceeds frame RAM budget (${workflow.ramBudgetMb}MB > ${maxFrameBudgetMb}MB)`,
       ),
       { code: "FRAME_BUDGET_EXCEEDED" },
+    );
+  }
+}
+
+function assertRamHeadroom(workflow: ComfyWorkflow): void {
+  const snapshot = ModelOrchestrator.getInstance().getRamSnapshot();
+  const headroom = Math.max(0, snapshot.availableMb - 800);
+  if (workflow.ramBudgetMb > headroom) {
+    throw Object.assign(
+      new Error(`comfyui_ram_budget_exceeded: ${workflow.ramBudgetMb}MB > headroom ${headroom}MB`),
+      { code: "comfyui_ram_budget_exceeded" },
     );
   }
 }
@@ -132,6 +144,7 @@ export class ComfyUIClient {
 
   async submitWorkflow(workflow: ComfyWorkflow, signal?: AbortSignal): Promise<string> {
     assertFrameBudget(workflow, this.maxFrameBudgetMb);
+    assertRamHeadroom(workflow);
 
     const response = await fetch(`${this.baseUrl}/prompt`, {
       method: "POST",
@@ -198,6 +211,7 @@ export class ComfyUIClient {
     workflow: ComfyWorkflow,
     options: RunWorkflowOptions = {},
   ): Promise<RunWorkflowResult> {
+    assertRamHeadroom(workflow);
     const promptId = await this.submitWorkflow(workflow, options.signal);
     const outputFilename = await this.waitForCompletion(promptId, options);
     return { promptId, outputFilename };

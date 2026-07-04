@@ -86,6 +86,7 @@ import type {
   VideoOutputMetadata,
   VideoJobRequest,
 } from "../types/video.js";
+import type { OperatorTraceEntry } from "@swarmx/types/video-types";
 // [VOT-01] Removed: VIDEO_JOB_STAGE_ORDER, stageIndex, computeOverallProgress
 // were imported but never used — caused TypeScript "no exported member" errors.
 import type { SwarmXEvent } from "../types/events.js";
@@ -101,15 +102,14 @@ import {
   type ModelOverrides,
 } from "./model-orchestrator.js";
 import { resolveCanonicalTag } from "@swarmx/types/operator-map";
-import { sanitizeReasoningOutput } from "./reasoning-sanitizer.js";
 import { getComfyUIClient } from "./comfyui-client.js";
 import { generateLTXWorkflow } from "./video-workflows.js";
 import { scoreVirality } from "./virality-scorer.js";
 import { generateCaptionDraft } from "./caption-generator.js";
+import { generateOllamaText } from "./ollama.js";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const OLLAMA_BASE = process.env.OLLAMA_HOST ?? "http://localhost:11434";
 const COMFY_BASE  = process.env.COMFY_HOST  ?? "http://localhost:8188";
 
 /**
@@ -181,6 +181,28 @@ interface OrchestratorContext {
   scriptText?: string;
   storyboardFrames?: string[];
   viralitySummary?: string;
+}
+
+function toPublicStatus(stage: VideoJobStage): string {
+  const map: Record<VideoJobStage, string> = {
+    intent_classification: "classifying",
+    planning: "staging",
+    scripting: "scripting",
+    storyboard_generation: "staging",
+    render_assembly: "generating",
+    finalizing: "reviewing",
+  };
+  return map[stage];
+}
+
+function pushOperatorTrace(
+  job: VideoJob,
+  entry: OperatorTraceEntry,
+): void {
+  if (!job.operatorTrace) {
+    job.operatorTrace = [];
+  }
+  job.operatorTrace.push(entry);
 }
 
 // ─── Pressure Guard ───────────────────────────────────────────────────────────
@@ -260,33 +282,13 @@ async function ollamaGenerate(
   maxTokens = 1024,
   overrides: ModelOverrides = {}   // [VOT-03] new param
 ): Promise<string> {
-  const res = await fetch(`${OLLAMA_BASE}/api/generate`, {
-    method:  "POST",
-    headers: { "Content-Type": "application/json" },
+  return generateOllamaText({
+    model,
+    prompt,
     signal,
-    body: JSON.stringify({
-      model,
-      prompt,
-      stream: false,
-      options: {
-        // [VOT-03] Apply RAM-aware overrides from ModelOrchestrator
-        num_predict: overrides.num_predict ?? maxTokens,
-        ...(overrides.num_ctx !== undefined && { num_ctx: overrides.num_ctx }),
-        temperature: overrides.temperature ?? 0.3,
-      },
-    }),
+    maxTokens,
+    overrides,
   });
-
-  if (!res.ok) {
-    throw Object.assign(
-      new Error(`Ollama ${model} responded ${res.status}: ${await res.text()}`),
-      { code: "OLLAMA_UNAVAILABLE" }
-    );
-  }
-
-  const data = (await res.json()) as { response: string };
-  const { text } = sanitizeReasoningOutput(data.response ?? "");
-  return text.trim();
 }
 
 /**
@@ -352,6 +354,7 @@ async function stageIntentClassification(
 ): Promise<{ intent: string; complexity: number }> {
   // [VOT-04] Destructure modelTag + overrides from acquireModel
   const { modelTag: model, overrides } = await acquireModel("intent_classification", ctx.job.request);
+  const startedAt = new Date().toISOString();
   // [VOT-10] Record actual resolved tag immediately — not re-derived later
   ctx.modelsUsed["intent_classification"] = model;
   const controller = stageController(ctx, "intent_classification");
@@ -366,8 +369,33 @@ async function stageIntentClassification(
       overrides
     );
     try {
-      return JSON.parse(raw) as { intent: string; complexity: number };
+      const parsed = JSON.parse(raw) as { intent: string; complexity: number };
+      pushOperatorTrace(ctx.job, {
+        stage: toPublicStatus("intent_classification"),
+        operatorTag: model,
+        modelTag: model,
+        operator: "Pilot",
+        startedAt,
+        completedAt: new Date().toISOString(),
+        latencyMs: 0,
+        tokenCount: 0,
+        success: true,
+        timestamp: startedAt,
+      });
+      return parsed;
     } catch {
+      pushOperatorTrace(ctx.job, {
+        stage: toPublicStatus("intent_classification"),
+        operatorTag: model,
+        modelTag: model,
+        operator: "Pilot",
+        startedAt,
+        completedAt: new Date().toISOString(),
+        latencyMs: 0,
+        tokenCount: 0,
+        success: true,
+        timestamp: startedAt,
+      });
       return { intent: raw.slice(0, 200), complexity: 0.5 };
     }
   } finally {
@@ -381,6 +409,7 @@ async function stagePlanning(
   intent: string
 ): Promise<{ plan: string[] }> {
   const { modelTag: model, overrides } = await acquireModel("planning", ctx.job.request);
+  const startedAt = new Date().toISOString();
   // [VOT-10] Record actual resolved tag immediately — not re-derived later
   ctx.modelsUsed["planning"] = model;
   const controller = stageController(ctx, "planning");
@@ -397,11 +426,24 @@ async function stagePlanning(
       .split("\n")
       .map((l) => l.replace(/^\s*[\d.-]+[\s.)]*/, "").trim())
       .filter(Boolean);
-    return {
+    const result = {
       plan: lines.length > 0
         ? lines
         : ["Generate visuals", "Add narration", "Assemble final video"],
     };
+    pushOperatorTrace(ctx.job, {
+      stage: toPublicStatus("planning"),
+      operatorTag: model,
+      modelTag: model,
+      operator: "Architect",
+      startedAt,
+      completedAt: new Date().toISOString(),
+      latencyMs: 0,
+      tokenCount: 0,
+      success: true,
+      timestamp: startedAt,
+    });
+    return result;
   } finally {
     controller.abort();
     ModelOrchestrator.getInstance().onModelCallComplete(model);
@@ -413,6 +455,7 @@ async function stageScripting(
   plan: string[]
 ): Promise<{ scriptText: string }> {
   const { modelTag: model, overrides } = await acquireModel("scripting", ctx.job.request);
+  const startedAt = new Date().toISOString();
   // [VOT-10] Record actual resolved tag immediately — not re-derived later
   ctx.modelsUsed["scripting"] = model;
   const controller = stageController(ctx, "scripting");
@@ -425,6 +468,18 @@ async function stageScripting(
       1024,
       overrides
     );
+    pushOperatorTrace(ctx.job, {
+      stage: toPublicStatus("scripting"),
+      operatorTag: model,
+      modelTag: model,
+      operator: "Forge",
+      startedAt,
+      completedAt: new Date().toISOString(),
+      latencyMs: 0,
+      tokenCount: 0,
+      success: true,
+      timestamp: startedAt,
+    });
     return { scriptText };
   } finally {
     controller.abort();
@@ -437,6 +492,7 @@ async function stageStoryboardGeneration(
   scriptText: string
 ): Promise<{ frames: string[] }> {
   const { modelTag: model, overrides } = await acquireModel("storyboard_generation", ctx.job.request);
+  const startedAt = new Date().toISOString();
   // [VOT-10] Record actual resolved tag immediately — not re-derived later
   ctx.modelsUsed["storyboard_generation"] = model;
   const controller = stageController(ctx, "storyboard_generation");
@@ -454,11 +510,24 @@ async function stageStoryboardGeneration(
       .filter((l) => l.trim().startsWith("-") || /^\d+\./.test(l.trim()))
       .map((l)    => l.replace(/^[-\d.]+\s*/, "").trim())
       .filter(Boolean);
-    return {
+    const result = {
       frames: frames.length > 0
         ? frames
         : ["Abstract cinematic opener", "Key message frame", "CTA closing frame"],
     };
+    pushOperatorTrace(ctx.job, {
+      stage: toPublicStatus("storyboard_generation"),
+      operatorTag: model,
+      modelTag: model,
+      operator: "Forge",
+      startedAt,
+      completedAt: new Date().toISOString(),
+      latencyMs: 0,
+      tokenCount: 0,
+      success: true,
+      timestamp: startedAt,
+    });
+    return result;
   } finally {
     controller.abort();
     ModelOrchestrator.getInstance().onModelCallComplete(model);
@@ -474,6 +543,7 @@ async function stageRenderAssembly(
   // and comfyRunWorkflow(), neither of which is an Ollama inference call.
   // The SINGLE-7B LOCK and onModelCallComplete() still require modelTag.
   const { modelTag: model, overrides: _overrides } = await acquireModel("render_assembly", ctx.job.request);
+  const startedAt = new Date().toISOString();
   // [VOT-10] Record actual resolved tag immediately — not re-derived later
   ctx.modelsUsed["render_assembly"] = model;
   const controller = stageController(ctx, "render_assembly");
@@ -511,11 +581,47 @@ async function stageRenderAssembly(
             stageProgress.overallProgress,
             progress.message,
           ));
+          ctx.broadcast({
+            type: "video:stream",
+            timestamp: new Date().toISOString(),
+            data: {
+              jobId: ctx.job.id,
+              stage: "generating",
+              pct: Math.max(0, Math.min(100, progress.pct)),
+              operatorTag: "forge",
+              message: progress.message,
+            },
+          });
         },
+      });
+
+      pushOperatorTrace(ctx.job, {
+        stage: toPublicStatus("render_assembly"),
+        operatorTag: "system",
+        modelTag: model,
+        operator: "System",
+        startedAt,
+        completedAt: new Date().toISOString(),
+        latencyMs: 0,
+        tokenCount: 0,
+        success: true,
+        timestamp: startedAt,
       });
 
       return { outputFilename: run.outputFilename };
     }
+    pushOperatorTrace(ctx.job, {
+      stage: toPublicStatus("render_assembly"),
+      operatorTag: "system",
+      modelTag: model,
+      operator: "System",
+      startedAt,
+      completedAt: new Date().toISOString(),
+      latencyMs: 0,
+      tokenCount: 0,
+      success: true,
+      timestamp: startedAt,
+    });
     return { outputFilename: `stub_${ctx.job.id}.mp4` };
   } finally {
     controller.abort();
@@ -530,6 +636,19 @@ async function stageFinalizing(
   outputFilename: string
 ): Promise<VideoOutputMetadata> {
   // stageFinalizing calls no model — no modelsUsed entry, no acquireModel().
+  const startedAt = new Date().toISOString();
+  pushOperatorTrace(ctx.job, {
+    stage: toPublicStatus("finalizing"),
+    operatorTag: "system",
+    modelTag: "system",
+    operator: "System",
+    startedAt,
+    completedAt: new Date().toISOString(),
+    latencyMs: 0,
+    tokenCount: 0,
+    success: true,
+    timestamp: startedAt,
+  });
   return assets.buildOutputMetadata({
     jobId:            ctx.job.id,
     outputFilename,
@@ -555,18 +674,24 @@ async function stageViralityAndCaption(ctx: OrchestratorContext): Promise<void> 
       : {}),
   });
 
+  const viralitySummary = virality?.recommendations.join("; ") ?? "No virality recommendations available";
+
   const captionDraft = await generateCaptionDraft({
     topic: ctx.job.request.prompt,
     tone: ctx.job.request.niche ?? "engaging",
     platform: targetPlatform,
-    viralitySummary: virality.recommendations.join("; "),
+    viralitySummary,
   });
 
-  ctx.job.viralitySignal = {
-    ...virality,
-    captionDraft,
-  };
-  ctx.viralitySummary = virality.recommendations.join("; ");
+  if (virality) {
+    ctx.job.viralitySignal = {
+      ...virality,
+      captionDraft,
+    };
+    ctx.viralitySummary = virality.recommendations.join("; ");
+  } else {
+    ctx.viralitySummary = viralitySummary;
+  }
 
   if (!ctx.job.outputArtifacts) {
     ctx.job.outputArtifacts = {};

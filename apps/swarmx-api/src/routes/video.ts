@@ -13,6 +13,7 @@
 import type { FastifyInstance, FastifyPluginOptions, FastifyReply, FastifyRequest } from "fastify";
 import { createReadStream, existsSync } from "node:fs";
 import { join } from "node:path";
+import { z } from "zod";
 import type { VideoJobRequest, VideoJobListQuery } from "../types/video.js";
 import * as queue from "../services/video-queue.js";
 import * as assets from "../services/video-assets.js";
@@ -32,7 +33,8 @@ import {
   listSupportedPublishPlatforms,
 } from "../services/video-publishers.js";
 import type { PublishResult } from "@swarmx/types/video-types";
-import { subscribeToEvents } from "../plugins/sse.js";
+import { recordVideoPerformance } from "../services/video-assets.js";
+import { resolveCanonicalTag } from "@swarmx/types/operator-map";
 
 const PublishRequestSchema = {
   type: "object",
@@ -42,6 +44,68 @@ const PublishRequestSchema = {
     scheduledAt: { type: "string" },
   },
 } as const;
+
+const ResumeRequestSchema = {
+  type: "object",
+  required: ["fromStage"],
+  properties: {
+    fromStage: { type: "string" },
+  },
+} as const;
+
+const ReprioritizeSchema = {
+  type: "object",
+  required: ["orderedIds"],
+  properties: {
+    orderedIds: {
+      type: "array",
+      items: { type: "string" },
+      minItems: 1,
+    },
+  },
+} as const;
+
+const CaptionScoreSchema = z.object({
+  prompt: z.string().min(1).max(2000),
+  platform: z.enum(["tiktok", "reels", "shorts", "generic"]),
+  tone: z.string().min(1).max(120).optional(),
+  durationSec: z.number().int().min(5).max(600).optional(),
+});
+
+const ResumeBodySchema = z.object({
+  fromStage: z.string().min(1).max(64),
+});
+
+const ReprioritizeBodySchema = z.object({
+  orderedIds: z.array(z.string().min(1)).min(1),
+});
+
+const captionScoreRateWindowMs = 60_000;
+const captionScoreRateLimit = Number.parseInt(
+  process.env["SWARMX_VIDEO_CAPTION_SCORE_LIMIT_PER_MIN"] ?? "10",
+  10,
+) || 10;
+const captionScoreBuckets = new Map<string, number[]>();
+
+function getConnectionKey(request: FastifyRequest): string {
+  const forwarded = request.headers["x-forwarded-for"];
+  if (typeof forwarded === "string" && forwarded.trim().length > 0) {
+    return forwarded.split(",")[0]?.trim() ?? request.ip;
+  }
+  return request.ip;
+}
+
+function exceedsCaptionScoreLimit(connectionKey: string, nowMs: number): boolean {
+  const events = captionScoreBuckets.get(connectionKey) ?? [];
+  const inWindow = events.filter((ts) => nowMs - ts <= captionScoreRateWindowMs);
+  if (inWindow.length >= captionScoreRateLimit) {
+    captionScoreBuckets.set(connectionKey, inWindow);
+    return true;
+  }
+  inWindow.push(nowMs);
+  captionScoreBuckets.set(connectionKey, inWindow);
+  return false;
+}
 
 function mergePublishHistory(
   history: PublishResult[] | undefined,
@@ -64,27 +128,6 @@ function initSseReply(reply: FastifyReply): void {
   reply.raw.setHeader("X-Accel-Buffering", "no");
   reply.raw.flushHeaders();
   reply.raw.write(": connected\n\n");
-}
-
-function eventMatchesJob(event: { type: string; data?: unknown }, jobId: string): boolean {
-  if (!event.type.startsWith("video:")) {
-    return false;
-  }
-
-  const data = event.data;
-  if (!data || typeof data !== "object") {
-    return false;
-  }
-
-  if ("jobId" in data && data.jobId === jobId) {
-    return true;
-  }
-
-  if ("job" in data && data.job && typeof data.job === "object" && "id" in data.job) {
-    return data.job.id === jobId;
-  }
-
-  return false;
 }
 
 async function cancelVideoJob(
@@ -222,7 +265,8 @@ export async function videoRoutes(
       const availableMb = getAvailableRamMb();
       if (availableMb < 1000) {
         return reply.status(503).send({
-          error: "insufficient_ram",
+          error: "insufficient_ram_for_video",
+          message: "Insufficient RAM for video generation",
           availableMb,
           minimumRequired: 1000,
         });
@@ -318,31 +362,34 @@ export async function videoRoutes(
         data: { job },
       });
 
-      const unsubscribe = subscribeToEvents((event) => {
-        if (!eventMatchesJob(event, request.params.id)) {
-          return;
+      let closed = false;
+
+      const sseForwarder = (async () => {
+        for await (const event of queue.subscribeToJob(request.params.id)) {
+          if (closed) break;
+          try {
+            writeSseEvent(reply, event);
+          } catch {
+            break;
+          }
         }
-        try {
-          writeSseEvent(reply, event);
-        } catch {
-          unsubscribe();
-        }
-      });
+      })();
 
       const heartbeat = setInterval(() => {
         try {
           reply.raw.write(`: heartbeat ${Date.now()}\n\n`);
         } catch {
           clearInterval(heartbeat);
-          unsubscribe();
+          closed = true;
         }
       }, 15_000);
 
       request.raw.on("close", () => {
+        closed = true;
         clearInterval(heartbeat);
-        unsubscribe();
       });
 
+      void sseForwarder;
       await new Promise<void>((resolve) => {
         request.raw.on("close", resolve);
       });
@@ -366,6 +413,75 @@ export async function videoRoutes(
       schema: { params: JobIdParamSchema },
     },
     async (request, reply) => cancelVideoJob(request, reply, broadcast),
+  );
+
+  fastify.post<{ Params: { id: string }; Body: { fromStage: string } }>(
+    "/api/video/jobs/:id/resume",
+    {
+      preHandler: requireVideoWriteAuth,
+      schema: {
+        params: JobIdParamSchema,
+        body: ResumeRequestSchema,
+      },
+    },
+    async (request, reply) => {
+      const parsed = ResumeBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({
+          error: "invalid_request",
+          message: "Invalid resume payload",
+          issues: parsed.error.issues,
+        });
+      }
+
+      try {
+        const resumed = await queue.resumeJob(request.params.id, parsed.data.fromStage as never);
+        return reply.send({
+          jobId: resumed.id,
+          status: resumed.status,
+          resumeFromStage: resumed.resumeFromStage,
+          retryCount: resumed.retryCount,
+        });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "resume_failed";
+        if (message === "no_partial_artifacts") {
+          return reply.status(409).send({
+            error: "no_partial_artifacts",
+            message,
+          });
+        }
+        return reply.status(400).send({
+          error: "resume_failed",
+          message,
+        });
+      }
+    },
+  );
+
+  fastify.post<{ Body: { orderedIds: string[] } }>(
+    "/api/video/jobs/reprioritize",
+    {
+      preHandler: requireVideoWriteAuth,
+      schema: {
+        body: ReprioritizeSchema,
+      },
+    },
+    async (request, reply) => {
+      const parsed = ReprioritizeBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({
+          error: "invalid_request",
+          message: "Invalid reprioritize payload",
+          issues: parsed.error.issues,
+        });
+      }
+
+      await queue.reprioritizeQueue(parsed.data.orderedIds);
+      return reply.send({
+        reprioritized: true,
+        orderedIds: parsed.data.orderedIds,
+      });
+    },
   );
 
   fastify.get<{ Params: { id: string } }>(
@@ -460,6 +576,28 @@ export async function videoRoutes(
       };
       job.updatedAt = new Date().toISOString();
 
+      if (job.viralitySignal) {
+        const metrics = {
+          jobId: job.id,
+          platform: request.body.platform,
+          publishedAt: job.updatedAt,
+          viralityAtPublish: {
+            ...job.viralitySignal,
+            scoredBy: resolveCanonicalTag(job.viralitySignal.scoredBy),
+          },
+        };
+        await recordVideoPerformance(job.id, metrics);
+        broadcast({
+          type: "video:performance",
+          timestamp: job.updatedAt,
+          data: {
+            jobId: job.id,
+            platform: request.body.platform,
+            metrics,
+          },
+        });
+      }
+
       broadcast({
         type: "video:snapshot",
         timestamp: job.updatedAt,
@@ -498,19 +636,51 @@ export async function videoRoutes(
     "/api/video/caption/score",
     {
       preHandler: requireVideoWriteAuth,
+      schema: {
+        response: {
+          200: { type: "object" },
+          503: { type: "object" },
+        },
+      },
     },
     async (request, reply) => {
+      const parsed = CaptionScoreSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({
+          error: "invalid_request",
+          message: "Invalid caption score payload",
+          issues: parsed.error.issues,
+        });
+      }
+
+      const nowMs = Date.now();
+      const connectionKey = getConnectionKey(request);
+      if (exceedsCaptionScoreLimit(connectionKey, nowMs)) {
+        return reply.status(429).send({
+          error: "rate_limited",
+          message: "Caption scoring limited to 10 requests per minute per connection",
+        });
+      }
+
       const captionDraft = await generateCaptionDraft({
-        topic: request.body.prompt,
-        platform: request.body.platform,
-        tone: request.body.tone ?? "engaging",
+        topic: parsed.data.prompt,
+        platform: parsed.data.platform,
+        tone: parsed.data.tone ?? "engaging",
       });
       const viralitySignal = await scoreVirality({
-        topic: request.body.prompt,
-        platform: request.body.platform,
-        durationSec: request.body.durationSec ?? 30,
+        topic: parsed.data.prompt,
+        platform: parsed.data.platform,
+        durationSec: parsed.data.durationSec ?? 30,
         hook: captionDraft.firstLine,
       });
+      if (!viralitySignal) {
+        return reply.status(503).send({
+          error: "virality_unavailable",
+          valid: false,
+          message: "Virality scorer unavailable",
+          captionDraft,
+        });
+      }
       return reply.send({ captionDraft, viralitySignal });
     },
   );
@@ -521,6 +691,12 @@ export async function videoRoutes(
     "/api/video/virality-score",
     {
       preHandler: requireVideoWriteAuth,
+      schema: {
+        response: {
+          200: { type: "object" },
+          503: { type: "object" },
+        },
+      },
     },
     async (request, reply) => {
       const viralitySignal = await scoreVirality({
@@ -529,6 +705,13 @@ export async function videoRoutes(
         durationSec: request.body.durationSec ?? 30,
         ...(request.body.hook ? { hook: request.body.hook } : {}),
       });
+      if (!viralitySignal) {
+        return reply.status(503).send({
+          error: "virality_unavailable",
+          valid: false,
+          message: "Virality scorer unavailable",
+        });
+      }
       return reply.send({ viralitySignal });
     },
   );

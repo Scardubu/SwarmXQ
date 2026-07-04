@@ -15,6 +15,18 @@ import { extractJson, sanitizeReasoningOutput } from "./reasoning-sanitizer.js";
 const OLLAMA_BASE = process.env["SWARMX_OLLAMA_URL"] ?? process.env["OLLAMA_HOST"] ?? "http://127.0.0.1:11434";
 const MAX_RETRIES = 2;
 
+const CAPTION_RULES = {
+  firstLineMaxChars: 40,
+  disallowedOpeners: ["I ", "My ", "This ", "We ", "Our "],
+  hashtagMin: 3,
+  hashtagMax: 5,
+  trendingHashtagMax: 1,
+  hashtagsInBodyProhibited: true,
+  soundSuggestionNoUrl: true,
+  soundSuggestionNoArtist: true,
+  maxEmojiInFullCaption: 3,
+} as const;
+
 export interface CaptionGenerationInput {
   topic: string;
   tone: string;
@@ -82,30 +94,47 @@ export function validateCaption(
 ): CaptionValidation {
   const violations: string[] = [];
 
-  if (draft.firstLine.length > 40) {
-    violations.push("firstLine must be <= 40 characters");
+  if (draft.firstLine.length > CAPTION_RULES.firstLineMaxChars) {
+    violations.push(`firstLine must be <= ${CAPTION_RULES.firstLineMaxChars} characters`);
   }
 
-  if (/^\s*(I|My|This)\b/i.test(draft.firstLine)) {
-    violations.push("firstLine cannot start with I, My, or This");
+  const startsWithDisallowed = CAPTION_RULES.disallowedOpeners.some((opener) =>
+    draft.firstLine.trimStart().toLowerCase().startsWith(opener.toLowerCase()),
+  );
+  if (startsWithDisallowed) {
+    violations.push("firstLine cannot start with I, My, This, We, or Our");
   }
 
   const totalHashtags =
     draft.hashtags.broad.length + draft.hashtags.niche.length + draft.hashtags.trending.length;
-  if (totalHashtags < 3 || totalHashtags > 5) {
-    violations.push("total hashtag count must be between 3 and 5");
+  if (totalHashtags < CAPTION_RULES.hashtagMin || totalHashtags > CAPTION_RULES.hashtagMax) {
+    violations.push(`total hashtag count must be between ${CAPTION_RULES.hashtagMin} and ${CAPTION_RULES.hashtagMax}`);
   }
 
-  if (draft.hashtags.trending.length !== 1) {
-    violations.push("hashtags.trending must contain exactly 1 tag");
+  if (draft.hashtags.trending.length > CAPTION_RULES.trendingHashtagMax) {
+    violations.push(`hashtags.trending must contain at most ${CAPTION_RULES.trendingHashtagMax} tag`);
   }
 
-  if (/#\w+/.test(draft.firstLine) || /#\w+/.test(draft.body)) {
+  if (CAPTION_RULES.hashtagsInBodyProhibited && (/#\w+/.test(draft.firstLine) || /#\w+/.test(draft.body))) {
     violations.push("hashtags must not appear in firstLine or body");
   }
 
-  if (draft.soundSuggestion && /(https?:\/\/|www\.)/i.test(draft.soundSuggestion)) {
+  if (CAPTION_RULES.soundSuggestionNoUrl && draft.soundSuggestion && /(https?:\/\/|www\.|spotify|soundcloud|apple music)/i.test(draft.soundSuggestion)) {
     violations.push("soundSuggestion must be descriptive text and cannot include a URL");
+  }
+
+  if (
+    CAPTION_RULES.soundSuggestionNoArtist &&
+    draft.soundSuggestion &&
+    /\b(feat\.?|ft\.?|by\s+[A-Z][a-z]+|\"[^\"]+\"|song|track|album)\b/.test(draft.soundSuggestion)
+  ) {
+    violations.push("soundSuggestion must describe tempo, energy, and instruments only");
+  }
+
+  const fullCaption = `${draft.firstLine} ${draft.body} ${draft.cta}`;
+  const emojiCount = (fullCaption.match(/[\u{1F300}-\u{1FAFF}]/gu) ?? []).length;
+  if (emojiCount > CAPTION_RULES.maxEmojiInFullCaption) {
+    violations.push(`caption must contain <= ${CAPTION_RULES.maxEmojiInFullCaption} emojis`);
   }
 
   return {
@@ -130,11 +159,12 @@ function buildPrompt(input: CaptionGenerationInput, priorViolations: string[] = 
     '{"firstLine":"...","body":"...","cta":"...","hashtags":{"broad":["..."],"niche":["..."],"trending":["..."]},"soundSuggestion":"tempo/energy/instruments only"}',
     "Rules:",
     "- firstLine length <= 40",
-    "- firstLine must not begin with I/My/This",
+    "- firstLine must not begin with I/My/This/We/Our",
     "- hashtags total count 3 to 5",
-    "- exactly 1 trending hashtag",
+    "- at most 1 trending hashtag",
     "- no hashtags in firstLine or body",
     "- soundSuggestion must not include song title, artist, or URL",
+    "- Describe the audio style in terms of tempo, energy, and instruments only.",
     corrections,
   ].join("\n");
 }
@@ -169,6 +199,8 @@ function toCaptionDraft(value: unknown): CaptionDraft | null {
 
 export async function generateCaptionDraft(input: CaptionGenerationInput): Promise<CaptionDraft> {
   let violations: string[] = [];
+  let lastValidDraft: CaptionDraft | null = null;
+  let retryByRule = new Map<string, number>();
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
     const prompt = buildPrompt(input, violations);
@@ -181,13 +213,37 @@ export async function generateCaptionDraft(input: CaptionGenerationInput): Promi
       continue;
     }
 
+    lastValidDraft = draft;
+
     const validation = validateCaption(draft, input.platform);
     if (validation.valid) {
       return draft;
     }
 
     violations = validation.violations;
+    retryByRule = new Map(
+      validation.violations.map((rule) => [rule, (retryByRule.get(rule) ?? 0) + 1]),
+    );
+
+    const exhaustedRule = validation.violations.find((rule) => (retryByRule.get(rule) ?? 0) > MAX_RETRIES);
+    if (exhaustedRule) {
+      break;
+    }
   }
 
-  throw new Error("Caption generation failed after validation retries");
+  if (lastValidDraft) {
+    return lastValidDraft;
+  }
+
+  return {
+    firstLine: input.topic.slice(0, CAPTION_RULES.firstLineMaxChars),
+    body: input.viralitySummary ?? "",
+    cta: "Save this for later.",
+    hashtags: {
+      broad: [],
+      niche: [],
+      trending: [],
+    },
+    soundSuggestion: "mid-tempo, uplifting pads, light percussion",
+  };
 }

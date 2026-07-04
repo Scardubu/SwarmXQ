@@ -278,8 +278,8 @@ function VideoJobDetailPanel() {
                   {String(entry.stage).replace(/_/g, " ")}
                 </span>
                 <span className="text-zinc-600 font-mono truncate max-w-[10rem]">{entry.operator}</span>
-                <span className="text-zinc-600 font-mono shrink-0">{(entry.latencyMs / 1000).toFixed(1)}s</span>
-                <span className="text-zinc-700 font-mono shrink-0">{entry.tokenCount}t</span>
+                <span className="text-zinc-600 font-mono shrink-0">{((entry.latencyMs ?? 0) / 1000).toFixed(1)}s</span>
+                <span className="text-zinc-700 font-mono shrink-0">{entry.tokenCount ?? 0}t</span>
               </div>
             ))}
           </div>
@@ -321,8 +321,9 @@ function VideoJobDetailPanel() {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function VideoPage() {
-  const { fetchJobs, listJobs, isLoading, listError, selectJob, selectedJobId } =
+  const { fetchJobs, listJobs, isLoading, listError, selectJob, selectedJobId, reorderQueue, retryFromStage } =
     useVideoStore();
+  const [draggedJobId, setDraggedJobId] = useState<string | null>(null);
 
   useEffect(() => {
     void fetchJobs();
@@ -335,6 +336,42 @@ export default function VideoPage() {
 
   const jobs = listJobs();
   const hasJobs = jobs.length > 0;
+  const queuedJobs = jobs.filter((job) => job.status === "queued");
+
+  const handleRetry = useCallback(
+    async (jobId: string) => {
+      await retryFromStage(jobId, "failed");
+    },
+    [retryFromStage],
+  );
+
+  const handleDropOn = useCallback(
+    async (targetJobId: string) => {
+      if (!draggedJobId || draggedJobId === targetJobId) {
+        setDraggedJobId(null);
+        return;
+      }
+
+      const ordered = [...queuedJobs];
+      const fromIndex = ordered.findIndex((job) => job.id === draggedJobId);
+      const toIndex = ordered.findIndex((job) => job.id === targetJobId);
+      if (fromIndex < 0 || toIndex < 0) {
+        setDraggedJobId(null);
+        return;
+      }
+
+      const [moved] = ordered.splice(fromIndex, 1);
+      if (!moved) {
+        setDraggedJobId(null);
+        return;
+      }
+
+      ordered.splice(toIndex, 0, moved);
+      await reorderQueue(ordered.map((job) => job.id));
+      setDraggedJobId(null);
+    },
+    [draggedJobId, queuedJobs, reorderQueue],
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-0">
@@ -379,12 +416,41 @@ export default function VideoPage() {
             {!isLoading && !hasJobs && <EmptyJobList />}
 
             {jobs.map((job) => (
-              <VideoJobCard
+              <div
                 key={job.id}
-                job={job}
-                onSelect={selectJob}
-                isSelected={selectedJobId === job.id}
-              />
+                draggable={job.status === "queued"}
+                onDragStart={() => setDraggedJobId(job.id)}
+                onDragOver={(event) => {
+                  if (job.status === "queued") {
+                    event.preventDefault();
+                  }
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  if (job.status === "queued") {
+                    void handleDropOn(job.id);
+                  }
+                }}
+                className={job.status === "queued" ? "cursor-grab" : ""}
+              >
+                <VideoJobCard
+                  job={job}
+                  onSelect={selectJob}
+                  isSelected={selectedJobId === job.id}
+                />
+                {job.status === "failed" && (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void handleRetry(job.id);
+                    }}
+                    className="mt-2 w-full rounded-lg border border-amber-900/50 bg-amber-950/20 py-2 text-[10px] font-semibold uppercase tracking-wider text-amber-300 hover:bg-amber-950/30"
+                  >
+                    Retry from Failed Stage
+                  </button>
+                )}
+              </div>
             ))}
           </div>
         </div>

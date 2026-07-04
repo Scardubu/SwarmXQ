@@ -11,6 +11,8 @@
 
 import { randomUUID } from "node:crypto";
 import { Queue } from "bullmq";
+import { readdir } from "node:fs/promises";
+import { resolve } from "node:path";
 import type {
   VideoJob,
   VideoJobRequest,
@@ -20,6 +22,8 @@ import type {
   VideoJobError,
 } from "../types/video.js";
 import { isTerminalStatus, VIDEO_JOB_STAGE_ORDER } from "../types/video.js";
+import type { SwarmXEvent } from "../types/events.js";
+import { subscribeToEvents } from "../plugins/sse.js";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -36,6 +40,10 @@ const JOB_TTL_MS = parseInt(
 const VIDEO_QUEUE_NAME = process.env.SWARMX_VIDEO_QUEUE_NAME ?? "swarmx:video";
 const BULLMQ_ENABLED = process.env.SWARMX_VIDEO_USE_BULLMQ === "1";
 const REDIS_URL = process.env.REDIS_URL ?? "redis://127.0.0.1:6379";
+const ARTIFACT_DIR = resolve(
+  process.env.SWARMX_VIDEO_ARTIFACT_DIR ??
+    `${process.cwd()}/.swarmx/video/artifacts`,
+);
 
 // ─── Internal ─────────────────────────────────────────────────────────────────
 
@@ -166,7 +174,7 @@ export function startJob(id: string): VideoJob | null {
     (j) => j.status === "running"
   ).length;
 
-  // SINGLE-VIDEO LOCK: 8GB RAM cannot support parallel generation
+  // SINGLE-VIDEO LOCK: 8 GB RAM cannot support parallel generation
   if (running >= MAX_CONCURRENT_JOBS) return null;
 
   job.status = "running";
@@ -328,6 +336,140 @@ export function queuedCount(): number {
 
 export function isBullMQEnabled(): boolean {
   return BULLMQ_ENABLED;
+}
+
+export async function reprioritizeQueue(orderedIds: string[]): Promise<void> {
+  const queuedJobs = [...registry.values()].filter((job) => job.status === "queued");
+  const indexed = new Map(orderedIds.map((id, idx) => [id, idx]));
+
+  const sorted = queuedJobs.sort((left, right) => {
+    const leftIdx = indexed.get(left.id);
+    const rightIdx = indexed.get(right.id);
+    if (leftIdx === undefined && rightIdx === undefined) {
+      return Date.parse(left.createdAt) - Date.parse(right.createdAt);
+    }
+    if (leftIdx === undefined) return 1;
+    if (rightIdx === undefined) return -1;
+    return leftIdx - rightIdx;
+  });
+
+  for (const job of sorted) {
+    registry.delete(job.id);
+    registry.set(job.id, job);
+  }
+
+  if (BULLMQ_ENABLED) {
+    const q = getBullQueue();
+    for (let i = 0; i < sorted.length; i += 1) {
+      const jobAtIndex = sorted[i];
+      if (!jobAtIndex) continue;
+      const priority = Math.max(1, sorted.length - i);
+      const bullJob = await q.getJob(jobAtIndex.id);
+      if (bullJob) {
+        await bullJob.changePriority({ priority });
+      }
+    }
+  }
+}
+
+export async function resumeJob(id: string, fromStage: VideoJobStatus): Promise<VideoJob> {
+  const job = registry.get(id);
+  if (!job) {
+    throw new Error(`VideoQueue: job ${id} not found`);
+  }
+  if (job.status !== "failed" && job.status !== "cancelled" && job.status !== "completed") {
+    throw new Error(`VideoQueue: job ${id} is not terminal and cannot be resumed`);
+  }
+
+  const artifactEntries = await readdir(ARTIFACT_DIR).catch(() => [] as string[]);
+  const hasPartialArtifacts = artifactEntries.some((entry) => entry.startsWith(job.id));
+  if (!hasPartialArtifacts) {
+    throw new Error("no_partial_artifacts");
+  }
+
+  job.status = "queued";
+  job.resumeFromStage = fromStage;
+  job.retryCount += 1;
+  job.updatedAt = now();
+  delete job.error;
+  delete job.completedAt;
+  return job;
+}
+
+export function subscribeToJob(jobId: string): AsyncIterable<SwarmXEvent> {
+  return {
+    [Symbol.asyncIterator](): AsyncIterator<SwarmXEvent> {
+      const queueItems: SwarmXEvent[] = [];
+      let pendingPromise: Promise<IteratorResult<SwarmXEvent>> | null = null;
+      let pendingResolver: ((value: IteratorResult<SwarmXEvent>) => void) | null = null;
+      let closed = false;
+
+      const createPending = (): Promise<IteratorResult<SwarmXEvent>> => {
+        pendingPromise = new Promise<IteratorResult<SwarmXEvent>>((resolveNext) => {
+          pendingResolver = resolveNext;
+        });
+        return pendingPromise;
+      };
+
+      const resolvePending = (value: IteratorResult<SwarmXEvent>): void => {
+        const resolver = pendingResolver;
+        pendingResolver = null;
+        pendingPromise = null;
+        if (resolver) {
+          resolver(value);
+        }
+      };
+
+      const unsubscribe = subscribeToEvents((event) => {
+        if (!event.type.startsWith("video:")) return;
+        const data = (event as { data?: unknown }).data;
+        const matches = Boolean(
+          data && typeof data === "object" && (
+            ("jobId" in data && (data as { jobId?: string }).jobId === jobId) ||
+            ("job" in data &&
+              typeof (data as { job?: unknown }).job === "object" &&
+              (data as { job: { id?: string } }).job.id === jobId)
+          ),
+        );
+        if (!matches || closed) return;
+
+        if (pendingResolver) {
+          resolvePending({ value: event, done: false });
+        } else {
+          queueItems.push(event);
+        }
+
+        if (["video:completed", "video:failed", "video:cancelled"].includes(event.type)) {
+          closed = true;
+          unsubscribe();
+          if (pendingResolver) {
+            resolvePending({ value: undefined, done: true });
+          }
+        }
+      });
+
+      return {
+        next(): Promise<IteratorResult<SwarmXEvent>> {
+          if (queueItems.length > 0) {
+            const nextItem = queueItems.shift();
+            if (nextItem) return Promise.resolve({ value: nextItem, done: false });
+          }
+          if (closed) {
+            return Promise.resolve({ value: undefined, done: true });
+          }
+          return pendingPromise ?? createPending();
+        },
+        return(): Promise<IteratorResult<SwarmXEvent>> {
+          closed = true;
+          unsubscribe();
+          if (pendingResolver) {
+            resolvePending({ value: undefined, done: true });
+          }
+          return Promise.resolve({ value: undefined, done: true });
+        },
+      };
+    },
+  };
 }
 
 export function queueName(): string {

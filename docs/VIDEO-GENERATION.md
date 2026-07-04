@@ -12,18 +12,9 @@
 3. [Environment setup](#environment-setup)
 4. [Installation & startup](#installation--startup)
 5. [API reference](#api-reference)
-   - [POST /api/video/jobs](#post-apivideojobs)
-   - [GET /api/video/jobs](#get-apivideojobs)
-   - [GET /api/video/jobs/:id](#get-apivideojobsid)
-   - [POST /api/video/jobs/:id/cancel](#post-apivideojobsidcancel)
-  - [GET /api/video/jobs/:id/artifacts](#get-apivideojobsidartifacts)
-  - [GET /api/video/jobs/:id/analysis](#get-apivideojobsidanalysis)
-  - [POST /api/video/jobs/:id/publish](#post-apivideojobsidpublish)
-  - [POST /api/video/caption-draft](#post-apivideocaption-draft)
-  - [POST /api/video/virality-score](#post-apivideovirality-score)
 6. [SSE event lifecycle](#sse-event-lifecycle)
 7. [Job lifecycle & state machine](#job-lifecycle--state-machine)
-8. [Degradation modes](#degradation-modes)
+8. [Degradation behavior](#degradation-behavior)
 9. [Model assignment](#model-assignment)
 10. [Dashboard integration](#dashboard-integration)
 11. [ComfyUI render setup](#comfyui-render-setup)
@@ -34,7 +25,7 @@
 
 ## Architecture overview
 
-```
+```text
 Browser / API client
         │
         ▼ POST /api/video/jobs
@@ -83,27 +74,27 @@ boundary.
 ## File map
 
 | Path | Role |
-|------|------|
-| `apps/swarmx-api/src/types/video.ts` | All video domain types — job, intent, script, storyboard, render, API contracts |
-| `apps/swarmx-api/src/types/events.ts` | SSE event union — includes API video lifecycle variants (`video:created|queued|stage_started|progress|completed|failed|cancelled|snapshot`) |
-| `apps/swarmx-api/src/services/video-queue.ts` | In-memory job registry, FIFO processor, SSE emission |
-| `apps/swarmx-api/src/services/video-orchestrator.ts` | Pressure-aware pipeline execution, Ollama calls, ComfyUI dispatch |
-| `apps/swarmx-api/src/services/video-assets.ts` | File-system helpers for artifact storage / cleanup |
-| `apps/swarmx-api/src/routes/video.ts` | Fastify route plugin — all `/api/video/*` endpoints |
-| `apps/swarmx-api/src/server.ts` | Registers `videoRoutes` under `/api/video` |
-| `apps/swarmx-dashboard/src/stores/video.ts` | Zustand store — job map, SSE upsert, status helpers |
-| `apps/swarmx-dashboard/src/stores/events.ts` | Routes shared compact `video:progress` projection events into `useVideoStore.applyProgressEvent()` |
-| `apps/swarmx-dashboard/src/app/(dashboard)/video/page.tsx` | Video workspace page — form + job list |
-| `apps/swarmx-dashboard/src/app/(dashboard)/video/loading.tsx` | Suspense skeleton |
-| `apps/swarmx-dashboard/src/app/(dashboard)/video/error.tsx` | Error boundary |
-| `apps/swarmx-dashboard/src/components/video/VideoJobForm.tsx` | Job creation form |
-| `apps/swarmx-dashboard/src/components/video/VideoJobCard.tsx` | Job card with progress, stage log, output preview |
-| `apps/swarmx-dashboard/src/components/video/VideoJobTimeline.tsx` | Compact and full stage timeline components |
-| `apps/swarmx-dashboard/src/components/layout/NavRail.tsx` | Sidebar nav — Video item at `⌘7` |
-| `apps/swarmx-dashboard/src/app/(dashboard)/layout.tsx` | Breadcrumb mapping includes `/video` |
-| `workflows/video-generation.yaml` | Workflow definition — stages, owners, models |
-| `agents/catalog.yaml` | Agent catalog — includes `video-planner` entry |
-| `agents/video-planner.md` | Video planner agent persona and stage output specs |
+| --- | --- |
+| `apps/swarmx-api/src/types/video.ts` | All video domain types: job, intent, script, storyboard, render, and API contracts. |
+| `apps/swarmx-api/src/types/events.ts` | SSE event union, including video lifecycle variants. |
+| `apps/swarmx-api/src/services/video-queue.ts` | In-memory job registry, FIFO processor, and SSE emission. |
+| `apps/swarmx-api/src/services/video-orchestrator.ts` | Pressure-aware pipeline execution, Ollama calls, and ComfyUI dispatch. |
+| `apps/swarmx-api/src/services/video-assets.ts` | File-system helpers for artifact storage and cleanup. |
+| `apps/swarmx-api/src/routes/video.ts` | Fastify route plugin for all `/api/video/*` endpoints. |
+| `apps/swarmx-api/src/server.ts` | Registers `videoRoutes` under `/api/video`. |
+| `apps/swarmx-dashboard/src/stores/video.ts` | Zustand store for job map, SSE upsert, and status helpers. |
+| `apps/swarmx-dashboard/src/stores/events.ts` | Routes shared compact video progress events into the video store. |
+| `apps/swarmx-dashboard/src/app/(dashboard)/video/page.tsx` | Main video workspace page with form and queue list. |
+| `apps/swarmx-dashboard/src/app/(dashboard)/video/loading.tsx` | Suspense skeleton. |
+| `apps/swarmx-dashboard/src/app/(dashboard)/video/error.tsx` | Error boundary. |
+| `apps/swarmx-dashboard/src/components/video/VideoJobForm.tsx` | Job creation form. |
+| `apps/swarmx-dashboard/src/components/video/VideoJobCard.tsx` | Job card with progress, stage log, and output preview. |
+| `apps/swarmx-dashboard/src/components/video/VideoJobTimeline.tsx` | Compact and full stage timeline components. |
+| `apps/swarmx-dashboard/src/components/layout/NavRail.tsx` | Sidebar nav with the video entry. |
+| `apps/swarmx-dashboard/src/app/(dashboard)/layout.tsx` | Breadcrumb mapping including `/video`. |
+| `workflows/video-generation.yaml` | Workflow definition with stages, owners, and models. |
+| `agents/catalog.yaml` | Agent catalog including `video-planner`. |
+| `agents/video-planner.md` | Video planner agent persona and stage output specs. |
 
 ---
 
@@ -186,8 +177,12 @@ The following routes require write auth:
 
 - `POST /api/video/jobs`
 - `POST /api/video/jobs/:id/cancel`
+- `DELETE /api/video/jobs/:id`
+- `POST /api/video/jobs/:id/resume`
+- `POST /api/video/jobs/reprioritize`
 - `POST /api/video/jobs/:id/publish`
 - `POST /api/video/caption-draft`
+- `POST /api/video/caption/score`
 - `POST /api/video/virality-score`
 
 Provide the token as either:
@@ -254,6 +249,19 @@ curl -X POST http://localhost:3001/api/video/jobs \
 }
 ```
 
+**Response `503` (RAM gate):**
+
+When available RAM is below 1000 MB, admission is blocked:
+
+```json
+{
+  "error": "insufficient_ram_for_video",
+  "message": "Insufficient RAM for video generation",
+  "availableMb": 742,
+  "minimumRequired": 1000
+}
+```
+
 ---
 
 ### GET /api/video/jobs
@@ -263,7 +271,7 @@ List video jobs, most-recent first.
 **Query params:**
 
 | Param | Type | Default | Max |
-|-------|------|---------|-----|
+| --- | --- | --- | --- |
 | `status` | enum | unset | — |
 | `limit` | integer | `20` | `100` |
 | `offset` | integer | `0` | — |
@@ -348,6 +356,37 @@ Cancel a job. Returns `409` when the job is already terminal.
 ```bash
 curl -X POST http://localhost:3001/api/video/jobs/550e8400-e29b-41d4-a716-446655440000/cancel \
   -H "Authorization: Bearer $SWARMX_VIDEO_API_TOKEN"
+```
+
+### DELETE /api/video/jobs/:id
+
+REST alias for cancellation, identical behavior to POST cancel.
+
+```bash
+curl -X DELETE http://localhost:3001/api/video/jobs/550e8400-e29b-41d4-a716-446655440000 \
+  -H "Authorization: Bearer $SWARMX_VIDEO_API_TOKEN"
+```
+
+### POST /api/video/jobs/:id/resume
+
+Resume a terminal job from a prior stage marker if partial artifacts exist.
+
+```bash
+curl -X POST http://localhost:3001/api/video/jobs/550e8400-e29b-41d4-a716-446655440000/resume \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $SWARMX_VIDEO_API_TOKEN" \
+  -d '{"fromStage":"failed"}'
+```
+
+### POST /api/video/jobs/reprioritize
+
+Reorder queued jobs. Accepts queue order as an array of job IDs.
+
+```bash
+curl -X POST http://localhost:3001/api/video/jobs/reprioritize \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $SWARMX_VIDEO_API_TOKEN" \
+  -d '{"orderedIds":["job-a","job-b","job-c"]}'
 ```
 
 ---
@@ -444,6 +483,22 @@ curl -X POST http://localhost:3001/api/video/virality-score \
   -d '{"prompt":"How compound interest changes your life","platform":"tiktok","durationSec":30}'
 ```
 
+### POST /api/video/caption/score
+
+Generate a caption draft and virality score in one call.
+
+Rate limit: 10 requests/minute per connection by default
+(`SWARMX_VIDEO_CAPTION_SCORE_LIMIT_PER_MIN`).
+
+```bash
+curl -X POST http://localhost:3001/api/video/caption/score \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $SWARMX_VIDEO_API_TOKEN" \
+  -d '{"prompt":"How compound interest changes your life","platform":"tiktok"}'
+```
+
+Returns `429` when the per-connection rate limit is exceeded.
+
 ---
 
 ### Publish state in job detail
@@ -471,32 +526,6 @@ After a publish request succeeds, the API broadcasts:
 ```
 
 This avoids a second polling path for publish state and keeps the dashboard job list/detail view in sync with the route mutation.
-
----
-
-## SSE event lifecycle
-curl -X POST http://localhost:3001/api/video/jobs/550e8400-e29b-41d4-a716-446655440000/cancel
-```
-
-**Response `200`:**
-
-```json
-{
-  "jobId": "550e8400-e29b-41d4-a716-446655440000",
-  "cancelled": true,
-  "previousStatus": "running",
-  "message": "Job cancelled"
-}
-```
-
-**Response `409`:**
-
-```json
-{
-  "error": "already_terminal",
-  "message": "Job is already in terminal state 'completed'"
-}
-```
 
 ---
 
@@ -547,7 +576,7 @@ The richer API lifecycle events are consumed by `useVideoStore.ingestEvent()`.
 
 ### Typical stage sequence for a successful job
 
-```
+```text
 video:created
 video:stage_started(stage=intent_classification)
 video:progress(stage=intent_classification)
@@ -600,7 +629,7 @@ Current implementation degrades via retryable/terminal failures and pressure-awa
 ## Model assignment
 
 | Stage | Model env var | Default | Typical latency (8 GB) |
-|-------|--------------|---------|------------------------|
+| --- | --- | --- | --- |
 | Intent classification | `SWARMX_MODEL_FAST` | `instruct-phi4-pro-q8-prod` | 3–8 s |
 | Planning | `SWARMX_MODEL_REASON` | `reason-deepseekr1-pro-q5km-prod` | 45–90 s |
 | Scripting | `SWARMX_MODEL_CODE` | `code-qwen25-pro-q5km-prod` | 60–120 s |
@@ -610,7 +639,7 @@ Current implementation degrades via retryable/terminal failures and pressure-awa
 Context windows are scaled down under pressure (`adaptive-timeout-config.ts`):
 
 | Pressure | num_ctx scale | num_predict scale |
-|----------|--------------|-------------------|
+| --- | --- | --- |
 | `normal` | 100% | 100% |
 | `high` | 75% | 65% |
 | `critical` | 50% | 50% |
@@ -671,6 +700,7 @@ If ComfyUI is not running, the render stage can fail with `COMFY_UNAVAILABLE` an
 **Cause:** `videoRoutes` not registered in `server.ts`.
 
 **Fix:** Confirm `server.ts` contains:
+
 ```ts
 import { videoRoutes } from "./routes/video.js";
 // ...
@@ -704,6 +734,7 @@ field as `governorState`.
 ### Job created but SSE events don't arrive in the dashboard
 
 **Checklist:**
+
 1. Confirm `broadcastEvent` in `video-queue.ts` is not throwing. The catch block silently
    swallows errors to avoid crashing the queue — check API logs for repeated SSE exceptions.
 2. Confirm `useSwarmXEvents` is mounted. It lives in `DashboardShell` in `layout.tsx`. If you
@@ -717,6 +748,7 @@ field as `governorState`.
 ### Ollama connection refused
 
 **Checklist:**
+
 1. Is Ollama running? `ollama serve` or check `systemctl status ollama`.
 2. Is it listening on the expected interface? By default Ollama binds `127.0.0.1:11434`.
 3. Verify: `curl http://localhost:11434/api/tags`
@@ -727,6 +759,7 @@ field as `governorState`.
 ### Script generation returns `Script generation returned incomplete data`
 
 **Cause:** The model returned partial or malformed JSON. This happens when:
+
 - `num_predict` is too low to complete the JSON object (common under `critical` pressure)
 - The model is being swapped mid-generation (OOM kill)
 
@@ -740,6 +773,7 @@ not reliably complete for `medium` or `long` jobs.
 ### ComfyUI `POST /prompt` returns `500`
 
 **Checklist:**
+
 1. Confirm the LTX-Video model is present: check ComfyUI's `models/checkpoints/` or
    `models/diffusion_models/` directory for `ltx-video-2b-v0.9.1_fp8_e4m3fn.safetensors`.
 2. Start ComfyUI with `--lowvram --force-fp16` to stay within 8 GB.
@@ -752,11 +786,11 @@ not reliably complete for `medium` or `long` jobs.
 ## Known bugs fixed in this release
 
 | ID | File | Description |
-|----|------|-------------|
+| --- | --- | --- |
 | `VIDEO-ROUTE-01` | `routes/video.ts` | File contained the `VideoPageLoading` React component instead of Fastify route definitions. All `/api/video/*` endpoints returned `404`. Replaced with correct Fastify plugin. |
 | `VIDEO-SERVER-01` | `server.ts` | `videoRoutes` was never imported or registered. All `/api/video/*` routes were unreachable. Import and `server.register(videoRoutes, ...)` call added. |
 | `VIDEO-FORM-01` | `VideoJobForm.tsx` | `s.governorSnapshot` referenced a non-existent key; the correct field is `s.governorState`. The pressure warning was never shown. Fixed selector. |
-| `VIDEO-FIX-01` | `types/events.ts` | API video lifecycle events are now explicitly represented in the local `SwarmXEvent` union (`video:created|queued|stage_started|progress|completed|failed|cancelled|snapshot`). |
+| `VIDEO-FIX-01` | `types/events.ts` | API video lifecycle events are now explicitly represented in the local `SwarmXEvent` union (`video:created` / `video:queued` / `video:stage_started` / `video:progress` / `video:completed` / `video:failed` / `video:cancelled` / `video:snapshot`). |
 | `VIDEO-FIX-03` | `stores/events.ts` | `video:progress` events were not routed to the video store from the events reducer. Fixed in the current bundle (already present). |
 
 ---
@@ -766,16 +800,18 @@ not reliably complete for `medium` or `long` jobs.
 ### New API endpoints
 
 | Endpoint | Method | Description |
-|----------|--------|-------------|
+| --- | --- | --- |
 | `/api/video/jobs/:id/sse` | GET | Job-specific SSE stream — filtered video:* events for one job |
 | `/api/video/jobs/:id` | DELETE | Cancel alias (same as POST cancel, for REST semantics) |
+| `/api/video/jobs/:id/resume` | POST | Resume a terminal job from a stage marker when partial artifacts exist |
+| `/api/video/jobs/reprioritize` | POST | Reorder queued jobs by explicit ordered job IDs |
 | `/api/video/templates` | GET | List available ComfyUI workflow templates with RAM requirements |
 | `/api/video/caption/score` | POST | Score a caption draft and return both captionDraft + viralitySignal |
 
 ### New dashboard components
 
 | Component | Path | Purpose |
-|-----------|------|---------|
+| --- | --- | --- |
 | `ViralityMeter` | `components/video/ViralityMeter.tsx` | 5-bar virality signal display with Oracle reasoning tooltips |
 | `CaptionEditor` | `components/video/CaptionEditor.tsx` | Editable caption draft with live char count, hashtag pills, re-score, copy |
 | `PlatformPublishPanel` | `components/video/PlatformPublishPanel.tsx` | Publishing panel with scheduling, approval notices, publish history |
@@ -784,7 +820,7 @@ not reliably complete for `medium` or `long` jobs.
 
 The publisher layer is now split into:
 
-```
+```text
 apps/swarmx-api/src/services/publishers/
 ├── index.ts          — getVideoPublisher() factory (existing import surface preserved)
 ├── base-publisher.ts — abstract base with retry, logging, schedule sidecar helpers
@@ -799,7 +835,7 @@ logging a clear message pointing to `docs/TIKTOK_SETUP.md`. See that file for OA
 ### New environment variables
 
 | Variable | Default | Purpose |
-|----------|---------|---------|
+| --- | --- | --- |
 | `SWARMX_TIKTOK_ACCESS_TOKEN` | (empty) | TikTok OAuth access token |
 | `SWARMX_TIKTOK_CLIENT_KEY` | (empty) | TikTok app client key |
 | `SWARMX_TIKTOK_CLIENT_SECRET` | (empty) | TikTok app client secret |
