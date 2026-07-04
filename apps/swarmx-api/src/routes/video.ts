@@ -141,7 +141,11 @@ export async function videoRoutes(
     },
     async (request, reply) => {
       const { status, limit = 20, offset = 0 } = request.query;
-      const result = queue.listJobs({ status, limit, offset });
+      const result = queue.listJobs({
+        limit,
+        offset,
+        ...(status !== undefined ? { status } : {}),
+      });
       return reply.send({
         jobs: result.jobs,
         total: result.total,
@@ -199,11 +203,11 @@ export async function videoRoutes(
       broadcast({
         type: "video:cancelled",
         timestamp: new Date().toISOString(),
-        payload: {
+        data: {
           jobId: job.id,
           cancelledAt: new Date().toISOString(),
           requestedBy: "user",
-          stage: job.currentStage,
+          ...(job.currentStage !== undefined ? { stage: job.currentStage } : {}),
         },
       });
 

@@ -106,8 +106,8 @@ export async function buildOutputMetadata(
     format,
     checksum,
     generatedAt: new Date().toISOString(),
-    scriptText: input.scriptText,
-    storyboardFrames: input.storyboardFrames,
+    ...(input.scriptText !== undefined ? { scriptText: input.scriptText } : {}),
+    ...(input.storyboardFrames !== undefined ? { storyboardFrames: input.storyboardFrames } : {}),
     modelsUsed: input.modelsUsed,
   };
 }

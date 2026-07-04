@@ -20,7 +20,7 @@ function getCanonicalModelTriad() {
         process.env["SWARMX_COMPOSER_MODEL"] ??
         process.env["SWARMX_MODEL_FAST"] ??
         process.env["SWARM_MODEL_FAST"] ??
-        "phi4-fast-scar",
+        "instruct-phi4-pro-q8-prod",
       gguf: "microsoft_Phi-4-mini-instruct-Q8_0.gguf",
     },
     {
@@ -29,7 +29,7 @@ function getCanonicalModelTriad() {
         process.env["SWARMX_MODEL_REASON"] ??
         process.env["SWARMX_MODEL_REASONER"] ??
         process.env["SWARM_MODEL_REASON"] ??
-        "deepseek-reasoner-scar",
+        "reason-deepseekr1-pro-q5km-prod",
       gguf: "DeepSeek-R1-Distill-Qwen-7B-Q5_K_M.gguf",
     },
     {
@@ -37,7 +37,7 @@ function getCanonicalModelTriad() {
       tag:
         process.env["SWARMX_MODEL_CODE"] ??
         process.env["SWARM_MODEL_CODE"] ??
-        "qwen-worker-scar",
+        "code-qwen25-pro-q5km-prod",
       gguf: "Qwen2.5-7B-Instruct-Q5_K_M.gguf",
     },
   ] as const;

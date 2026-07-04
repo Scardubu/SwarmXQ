@@ -68,6 +68,7 @@ export function startSystemInfoPoller(server: FastifyInstance): void {
           load5m: load.avgLoad ?? 0,
           load15m: load.avgLoad ?? 0,
           coreCount: perCore.length,
+          perCore,
           perCorePercent: perCore,
         },
         memory: {

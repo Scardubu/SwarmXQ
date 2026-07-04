@@ -32,6 +32,8 @@ import {
   sanitizeReasoningOutput,
   extractJson,
 } from "../services/reasoning-sanitizer.js";
+import { getModelOrchestrator } from "../services/model-orchestrator.js";
+import { resolveCanonicalTag } from "@swarmx/types/operator-map";
 
 type ComposerAgent = {
   id: string;
@@ -681,7 +683,7 @@ function fallbackForSimplePrompt(message: string): string | null {
       "```",
       "",
       "Start Ollama and pull a model for a richer, task-specific response:",
-      "  ollama pull phi4-fast",
+      "  ollama pull instruct-phi4-pro-q8-prod",
     ].join("\n");
   }
 
@@ -721,7 +723,7 @@ function fallbackForSimplePrompt(message: string): string | null {
       "```",
       "",
       "Start Ollama and pull a model for a task-specific response:",
-      "  ollama pull phi4-fast",
+      "  ollama pull instruct-phi4-pro-q8-prod",
     ].join("\n");
   }
 
@@ -750,7 +752,7 @@ function fallbackForSimplePrompt(message: string): string | null {
       "```",
       "",
       "Start Ollama and pull a model for a task-specific script:",
-      "  ollama pull phi4-fast",
+      "  ollama pull instruct-phi4-pro-q8-prod",
     ].join("\n");
   }
 
@@ -817,23 +819,36 @@ function preferredModelCandidates(
   runtimePressure: ReturnType<typeof currentPressureLevel>,
   selectedModel: string,
 ): string[] {
+  // [APEX17-r8] All three fallback defaults below were still the legacy
+  // pre-scar tags ("phi4-fast", "deepseek-reasoner", "qwen-worker") — none of
+  // which exist as Ollama tags after the r7 canonical migration. Updated to
+  // the canonical Pilot / Oracle / Forge tags (routing.yaml: model_fast /
+  // model_reason / model_code). resolveCanonicalTag() inside
+  // normalizeModelTag() (if wired) or here directly still protects against
+  // an operator-set env var carrying a legacy/-scar value.
   const fastModel = normalizeModelTag(
-    process.env["SWARMX_COMPOSER_FAST_MODEL"] ??
-    process.env["SWARMX_MODEL_FAST"] ??
-    process.env["SWARM_MODEL_FAST"] ??
-    selectedModel ??
-    "phi4-fast",
+    resolveCanonicalTag(
+      process.env["SWARMX_COMPOSER_FAST_MODEL"] ??
+      process.env["SWARMX_MODEL_FAST"] ??
+      process.env["SWARM_MODEL_FAST"] ??
+      selectedModel ??
+      "instruct-phi4-pro-q8-prod",
+    ),
   );
   const reasonModel = normalizeModelTag(
-    process.env["SWARMX_MODEL_REASON"] ??
-    process.env["SWARMX_MODEL_REASONER"] ??
-    process.env["SWARM_MODEL_REASON"] ??
-    "deepseek-reasoner",
+    resolveCanonicalTag(
+      process.env["SWARMX_MODEL_REASON"] ??
+      process.env["SWARMX_MODEL_REASONER"] ??
+      process.env["SWARM_MODEL_REASON"] ??
+      "reason-deepseekr1-pro-q5km-prod",
+    ),
   );
   const codeModel = normalizeModelTag(
-    process.env["SWARMX_MODEL_CODE"] ??
-    process.env["SWARM_MODEL_CODE"] ??
-    "qwen-worker",
+    resolveCanonicalTag(
+      process.env["SWARMX_MODEL_CODE"] ??
+      process.env["SWARM_MODEL_CODE"] ??
+      "code-qwen25-pro-q5km-prod",
+    ),
   );
 
   if (runtimePressure === "critical") {
@@ -1094,13 +1109,22 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       ].filter((l) => l !== "").join("\n");
 
       // [SEED-FIX-01] Resolve model and normalize name — Ollama requires the tag
-      // suffix (e.g. "phi4-fast:latest") when a model was pulled with an explicit
-      // tag. If the configured name has no colon, append ":latest" automatically.
-      const rawModel: string =
+      // suffix (e.g. "instruct-phi4-pro-q8-prod:latest") when a model was pulled
+      // with an explicit tag. If the configured name has no colon, append
+      // ":latest" automatically.
+      // [APEX17-r8] Default fallback updated from the legacy "phi4-fast" tag
+      // (which no longer exists as an Ollama tag after the r7 canonical
+      // migration — requesting it would 404) to the canonical Pilot tag.
+      // resolveCanonicalTag() additionally normalizes any -scar or other
+      // legacy alias an operator might still have set in SWARM_MODEL_FAST /
+      // SWARMX_MODEL_FAST, per Hard Constraint #1 (no -scar tags in
+      // production code paths).
+      const rawModel: string = resolveCanonicalTag(
         process.env["SWARMX_COMPOSER_MODEL"] ??
         process.env["SWARMX_MODEL_FAST"] ??
         process.env["SWARM_MODEL_FAST"] ??
-        "phi4-fast";
+        "instruct-phi4-pro-q8-prod",
+      );
       const model = rawModel.includes(":") ? rawModel : `${rawModel}:latest`;
       let selectedModel = model;
       // [SEED-FIX-02] Increase default composer timeout to 60s. The original 8s
@@ -1121,7 +1145,16 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       const composerNumPredict = Number.isFinite(configuredNumPredict) && configuredNumPredict > 0
         ? configuredNumPredict
         : 256;
-      const composerKeepAlive = process.env["SWARMX_COMPOSER_KEEP_ALIVE"]?.trim() || "10m";
+      // [APEX17-r8] This used to be a single static "10m" default applied to
+      // EVERY model regardless of identity — which meant 7B specialists that
+      // configs/routing.yaml explicitly wants unloaded after each call
+      // (keep_alive: 0) were instead being told to stay resident for ten
+      // minutes, defeating the SINGLE-7B LOCK / 8 GB RAM discipline entirely.
+      // Per-model keep-alive now comes from ModelOrchestrator.requestModel()
+      // inside the dispatch loop below (see "composer_orchestrator_request").
+      // This var is kept ONLY as an explicit operator override escape hatch —
+      // empty string means "defer to the orchestrator".
+      const composerKeepAliveOverride = process.env["SWARMX_COMPOSER_KEEP_ALIVE"]?.trim() || "";
       // [V6.1-FIX-18] Allow a dedicated cap for short prompts. The prior fixed
       // 30s cap caused avoidable fallbacks during cold loads on constrained hosts.
       const configuredShortPromptTimeout = Number.parseInt(
@@ -1163,7 +1196,7 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           model,
           timeoutMs: effectiveTimeoutMs,
           numPredict: composerNumPredict,
-          keepAlive: composerKeepAlive,
+          keepAliveOverride: composerKeepAliveOverride || "(orchestrator-managed)",
           runtimePressure,
           availableRamMb,
           runningCount,
@@ -1247,6 +1280,11 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         checkOllamaHealth(),
       ]);
 
+      // [APEX17-r8] Singleton ModelOrchestrator — enforces SINGLE-7B LOCK via
+      // evictIncompatible() and supplies per-model keep-alive policy. See
+      // apps/swarmx-api/src/services/model-orchestrator.ts.
+      const orchestrator = getModelOrchestrator(ollamaBase);
+
       // [V6.2-FIX-18] When Ollama /api/tags confirms zero installed models, skip
       // the model-call loop entirely — every candidate will 404, wasting time and
       // inflating circuit-breaker failures for a configuration problem, not a
@@ -1312,7 +1350,7 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           const warmingUpMsg = [
             `SwarmX model is warming up (responding to: "${message}")`,
             "",
-            "The AI Composer model (phi4-fast, 4.1 GB) is currently loading.",
+            "The AI Composer model (instruct-phi4-pro-q8-prod, 4.3 GB) is currently loading.",
             "Estimated time: 60–120 seconds on this system.",
             "",
             "The dashboard will auto-retry in approximately 90 seconds.",
@@ -1322,7 +1360,7 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
             `  curl http://127.0.0.1:11434/api/ps | jq '.models | map(.name)'`,
             "",
             "To manually pre-warm the model before next restart:",
-            `  curl -X POST http://127.0.0.1:11434/api/generate -d '{"model":"phi4-fast:latest","prompt":"x","stream":false}' --max-time 120`,
+            `  curl -X POST http://127.0.0.1:11434/api/generate -d '{"model":"instruct-phi4-pro-q8-prod:latest","prompt":"x","stream":false}' --max-time 120`,
           ]
             .filter((l) => l !== "")
             .join("\n");
@@ -1403,8 +1441,8 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
           rawModel,
           process.env["SWARMX_MODEL_FAST"] ?? "",
           process.env["SWARM_MODEL_FAST"] ?? "",
-          "phi4-fast:latest",
-          "phi4-fast",
+          "instruct-phi4-pro-q8-prod:latest",
+          "instruct-phi4-pro-q8-prod",
         ]) ?? model;
         server.log.warn(
           { configuredModel: model, selectedModel, discoveredModelCount: preflightModels.length },
@@ -1441,8 +1479,9 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
             `SwarmX model is warming up (responding to: "${message.slice(0, 80)}")`,
             "",
             "Ollama is reachable but no model is currently loaded in memory.",
-            `phi4-fast (4.1 GB) takes 60-120 s to load on this host. A background`,
-            `preload has been started — please retry your message in about 90 seconds.`,
+            `Pilot (instruct-phi4-pro-q8-prod, ~4.3 GB) takes 60-120 s to load on`,
+            `this host. A background preload has been started — please retry`,
+            `your message in about 90 seconds.`,
             "",
             `Target model: ${model}`,
             `Ollama endpoint: ${ollamaBase}`,
@@ -1522,6 +1561,30 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
                 throw new Error(`Adaptive timeout circuit open for ${selectedModel}`);
               }
 
+              // [APEX17-r8] Normalize through the canonical tag and request
+              // readiness from the orchestrator BEFORE dispatch. This
+              // enforces Hard Constraint #2 (SINGLE-7B LOCK) via
+              // evictIncompatible() internally, and supplies the correct
+              // per-model, per-pressure-mode keep-alive (e.g. "0s" for every
+              // is7B specialist per configs/routing.yaml, vs the previous
+              // static "10m" applied to everything). An explicit
+              // SWARMX_COMPOSER_KEEP_ALIVE env override, if set, still wins.
+              const canonicalSelectedModel = resolveCanonicalTag(selectedModel);
+              const orchestratorResult = await orchestrator.requestModel(canonicalSelectedModel);
+              const effectiveKeepAlive = composerKeepAliveOverride || orchestratorResult.keepAlive;
+
+              if (orchestratorResult.evictedModels.length > 0) {
+                server.log.info(
+                  {
+                    selectedModel: canonicalSelectedModel,
+                    evictedModels: orchestratorResult.evictedModels,
+                    orchestratorMode: orchestratorResult.mode,
+                    ramAvailableMb: orchestratorResult.ramAvailableMb,
+                  },
+                  "composer_orchestrator_evicted",
+                );
+              }
+
               setActiveModel(selectedModel);
 
               const t0 = Date.now();
@@ -1530,10 +1593,10 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
                 const result = await withTimeout(
                   callOllama(
                     ollamaBase,
-                    selectedModel,
+                    canonicalSelectedModel,
                     systemPrompt,
                     message,
-                    composerKeepAlive,
+                    effectiveKeepAlive,
                     composerNumPredict,
                     overrides,
                   ),
@@ -1543,6 +1606,7 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
 
                 recordSuccess(selectedModel);
                 circuitRecordSuccess();
+                orchestrator.onModelCallComplete(canonicalSelectedModel);
 
                 const latencyMs = Date.now() - t0;
 
@@ -1560,18 +1624,56 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
                     pressure,
                     opKey,
                     adaptiveTimeoutMs,
+                    keepAlive: effectiveKeepAlive,
                     attempt,
                   },
                   "composer_adaptive_call_ok",
                 );
 
-                const cleanText = selectedModel.includes("deepseek")
-                  ? sanitizeReasoningOutput(result.text)
-                  : result.text;
+                // [APEX17-r8] sanitizeReasoningOutput() / extractJson() now
+                // return structured result objects (SanitizeResult /
+                // ExtractJsonResult<T>) rather than a bare string/value — see
+                // apps/swarmx-api/src/services/reasoning-sanitizer.ts. This
+                // also extends sanitization to EVERY DeepSeek-R1 family
+                // model (Oracle, Auditor, Architect-deepseek, Lab-deepseek),
+                // not just the literal substring "deepseek", which is the
+                // same set in practice since all of those canonical tags
+                // contain "deepseekr1" — kept as an explicit .includes()
+                // check (rather than an is7B-style lookup) so this still
+                // catches a model dispatched by a not-yet-canonicalized
+                // legacy alias.
+                const isDeepSeekFamily = canonicalSelectedModel.includes("deepseek");
+                let cleanText = result.text;
+                if (isDeepSeekFamily) {
+                  const sanitized = sanitizeReasoningOutput(result.text);
+                  cleanText = sanitized.text;
+                  if (sanitized.hadThinkBlock || sanitized.hadHallucinatedXml || sanitized.wasTruncated) {
+                    server.log.debug(
+                      {
+                        selectedModel: canonicalSelectedModel,
+                        hadThinkBlock: sanitized.hadThinkBlock,
+                        hadHallucinatedXml: sanitized.hadHallucinatedXml,
+                        wasTruncated: sanitized.wasTruncated,
+                        hadDuplicates: sanitized.hadDuplicates,
+                        rawLength: sanitized.rawLength,
+                        cleanLength: sanitized.cleanLength,
+                      },
+                      "composer_reasoning_sanitized",
+                    );
+                  }
+                }
 
                 responseText = cleanText;
 
-                void extractJson(cleanText);
+                if (isDeepSeekFamily) {
+                  const jsonResult = extractJson(cleanText);
+                  if (!jsonResult.ok) {
+                    server.log.debug(
+                      { selectedModel: canonicalSelectedModel, error: jsonResult.error },
+                      "composer_extract_json_miss",
+                    );
+                  }
+                }
 
                 break outer;
               } catch (adaptiveErr) {
@@ -1742,7 +1844,7 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
             : "Available local models: (unavailable - could not query /api/tags)",
           configuredModels.length > 0 ? `Configured model candidates: ${configuredModels.join(", ")}` : "",
           modelMismatch
-            ? `⚠ Model "${model}" not found — try: SWARMX_COMPOSER_MODEL=${availableModels[0] ?? "phi4-fast:latest"}`
+            ? `⚠ Model "${model}" not found — try: SWARMX_COMPOSER_MODEL=${availableModels[0] ?? "instruct-phi4-pro-q8-prod:latest"}`
             : noInstalledModels
             ? "Install at least one model on this Ollama endpoint, then set SWARMX_COMPOSER_MODEL to that exact tag."
             : isTimeout

@@ -83,14 +83,14 @@ SwarmXQ includes a pressure-aware, faceless video generation subsystem for TikTo
 
 ### Pipeline Stages
 
-1. **Intent Classification** (Pilot) — parse user request into structured video intent
-2. **Planning** (Architect/Forge) — generate shot list, timing, and asset requirements
-3. **Scripting** (Architect/Forge) — produce narration script and visual directions
-4. **Storyboard Generation** (Architect/Forge) — frame-by-frame visual specification
-5. **Render Assembly** (Pilot) — ComfyUI workflow dispatch + asset composition
-6. **Finalizing** (Pilot) — metadata, thumbnail generation, export
+1. **Intent Classification** (Pilot by default) — parse user request into structured intent
+2. **Planning** (Architect by default) — generate stage plan and narrative direction
+3. **Scripting** (Architect by default) — produce narration and visual cues
+4. **Storyboard Generation** (Architect by default) — derive visual scene frames
+5. **Render Assembly** (ComfyUI optional) — dispatch render workflow when renderer is reachable
+6. **Finalizing** (API assets layer) — write metadata and output manifest
 
-Integrations: ComfyUI (LTX/Wan GGUF), Kokoro TTS, memory-pressure gating per stage, graceful degradation. Dashboard: `/video` route with job cards, timeline view, and SSE progress.
+Integrations: ComfyUI (optional), pressure-aware stage gating, and graceful degradation paths. Dashboard: `/video` route with job list and detail timeline. For the exact route and payload contract, see [docs/VIDEO-GENERATION.md](docs/VIDEO-GENERATION.md).
 
 ---
 

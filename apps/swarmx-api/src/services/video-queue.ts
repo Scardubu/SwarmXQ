@@ -88,7 +88,9 @@ export function enqueue(request: VideoJobRequest): VideoJob {
     retryCount: 0,
     createdAt: now(),
     updatedAt: now(),
-    clientRequestId: request.clientRequestId,
+    ...(request.clientRequestId !== undefined
+      ? { clientRequestId: request.clientRequestId }
+      : {}),
   };
 
   registry.set(job.id, job);
@@ -190,9 +192,9 @@ export function completeStage(
     stageProgress: 100,
     overallProgress,
     completedAt: now(),
-    durationMs: existing.startedAt
-      ? Date.now() - Date.parse(existing.startedAt)
-      : undefined,
+    ...(existing.startedAt
+      ? { durationMs: Date.now() - Date.parse(existing.startedAt) }
+      : {}),
   };
   job.overallProgress = overallProgress;
   job.updatedAt = now();
@@ -211,11 +213,13 @@ export function completeJob(
   assertMutable(job, "completeJob");
 
   job.status = "completed";
-  job.output = output;
+  if (output !== undefined) {
+    job.output = output;
+  }
   job.overallProgress = 100;
   job.completedAt = now();
   job.updatedAt = now();
-  job.currentStage = undefined;
+  delete job.currentStage;
   return job;
 }
 
@@ -233,8 +237,8 @@ export function failJob(id: string, error: VideoJobError): VideoJob {
     job.status = "queued";
     job.retryCount += 1;
     job.error = error;
-    job.currentStage = undefined;
-    job.startedAt = undefined;
+    delete job.currentStage;
+    delete job.startedAt;
     job.stages = {};
     job.overallProgress = 0;
     job.updatedAt = now();
@@ -245,7 +249,7 @@ export function failJob(id: string, error: VideoJobError): VideoJob {
   job.error = error;
   job.completedAt = now();
   job.updatedAt = now();
-  job.currentStage = undefined;
+  delete job.currentStage;
   return job;
 }
 
@@ -260,7 +264,7 @@ export function cancelJob(id: string): boolean {
   job.status = "cancelled";
   job.completedAt = now();
   job.updatedAt = now();
-  job.currentStage = undefined;
+  delete job.currentStage;
   return true;
 }
 

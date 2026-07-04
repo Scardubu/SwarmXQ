@@ -10,7 +10,27 @@
 //                  Without this the dashboard's useSwarmXEvents hook silently
 //                  drops all video SSE events — they arrive as unknown types
 //                  and fall through the switch without reaching the video store.
+//   [APEX17-r8]    Barrel-exported ./operator-map and ./operation-types so
+//                  `import {...} from "@swarmx/types"` (root) exposes
+//                  MODEL_OPERATOR_MAP / resolveCanonicalTag / OperationKey /
+//                  TimeoutPressureLevel etc. Previously operator-map.ts was
+//                  fully built but not re-exported from anywhere reachable
+//                  by apps/swarmx-api — every consumer there had to reach in
+//                  via a relative path or a subpath import that the package's
+//                  own exports map did not declare. Both are now reachable
+//                  either via this barrel or via the explicit subpaths
+//                  "@swarmx/types/operator-map" and
+//                  "@swarmx/types/operation-types" (see package.json). No
+//                  name collisions: this file's own `PressureLevel` (3-value,
+//                  system:governor) is untouched; the 4-value timeout-domain
+//                  type is deliberately named `TimeoutPressureLevel` in
+//                  operation-types.ts to avoid colliding with it — see that
+//                  file's header for the full rationale.
 // ============================================================================
+
+export * from "./operator-map";
+export * from "./operation-types";
+
 
 // ── Agent ────────────────────────────────────────────────────────────────────
 

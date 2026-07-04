@@ -75,13 +75,15 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
     e.preventDefault();
     clearErrors();
 
-    const jobId = await submitJob({
+    const jobRequest: VideoJobRequest = {
       prompt: prompt.trim(),
-      platform,
-      niche,
       targetDurationSeconds: targetDuration,
       modelTier,
-    });
+      ...(platform !== undefined ? { platform } : {}),
+      ...(niche !== undefined ? { niche } : {}),
+    };
+
+    const jobId = await submitJob(jobRequest);
 
     if (jobId) {
       setPrompt("");

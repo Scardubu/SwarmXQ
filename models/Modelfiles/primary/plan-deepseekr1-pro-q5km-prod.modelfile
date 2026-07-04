@@ -1,0 +1,205 @@
+# =============================================================================
+# plan-deepseekr1-pro-q5km-prod.modelfile
+# =============================================================================
+# OPERATOR      : Architect (deepseek)
+# CANONICAL TAG : plan-deepseekr1-pro-q5km-prod
+# LEGACY TAG    : deepseek-supervisor-scar (migrate via scripts/migrate-to-r7.sh)
+# PURPOSE       : Long-Horizon Planning · High-Risk Architecture · Evolution Orchestration
+# ENV VAR       : SWARM_MODEL_PLAN_DEEPSEEK
+# BASE GGUF     : ~/llm-local/gguf/DeepSeek-R1-Distill-Qwen-7B-Q5_K_M.gguf
+# VERSION       : v2026.6.28-apex17-r8
+# HARDWARE      : HP EliteBook 850 G3 · 8 GB RAM · CPU-only · 4 cores · WSL2
+#
+# ─── r8 INTEGRATION NOTE ─────────────────────────────────────────────────────
+#   NEW FILE. This canonical tag is registered in models/registry.yaml
+#   (optional_profiles → Architect/plan-deepseekr1-pro-q5km-prod) and
+#   referenced by route-phi4-lite-q4km-prod's routing table, but no
+#   corresponding Modelfile existed in the repository prior to this
+#   integration. Created fresh using deepseek-supervisor-scar.modelfile
+#   (latest-modelfiles source, v2026.5.20-apex17-r2) as the SYSTEM prompt +
+#   parameter source. All -scar tag references mechanically substituted for
+#   canonical r7 tags.
+#
+#   TEMPLATE uses the native DeepSeek-R1 <｜User｜>/<｜Assistant｜> format
+#   (matching deepseek-supervisor-scar.modelfile and this repo's
+#   variants/deepseek-r1-evolve.modelfile) — NOT the ChatML <|im_start|>
+#   format. See Executive Assessment: the existing primary/
+#   reason-deepseekr1-pro-q5km-prod.modelfile and
+#   critique-deepseekr1-pro-q5km-prod.modelfile were both found to carry the
+#   wrong (ChatML) TEMPLATE block; this new file is built correctly from the
+#   start and those two are corrected in this same integration pass.
+#
+# ─── ROLE DISTINCTION (Architect family) ─────────────────────────────────────
+#   Architect-phi4   (plan-phi4-pro-q8-prod)         → single bounded tool call / step
+#   Architect-qwen   (plan-qwen25-pro-q5km-prod)     → multi-step plan decomposition
+#   Architect-deepseek (this file)                   → long-horizon, high-risk planning;
+#                                                        only Architect that may orchestrate
+#                                                        the APEX-17 evolution pipeline
+#
+# ─── CHAIN-OF-THOUGHT NOTICE ────────────────────────────────────────────────
+#   DeepSeek-R1 produces <think>...</think> blocks. All output MUST be passed
+#   through reasoning-sanitizer.ts before forwarding to other agents.
+#
+# ─── MEMORY MATH ────────────────────────────────────────────────────────────
+#   Architecture : Qwen-7B-distill · 28 layers · 4 GQA KV heads · head_dim 128
+#   Weights      : ~5.07 GB RAM (Q5_K_M, 7.62B params)
+#   KV @6144     : ~280 MB
+#   Runtime OH   : ~300 MB
+#   TOTAL @6144  : ≈ 5.37 GB   ← matches registry.yaml ram_mb: 5370.
+#                   7B class — requires SINGLE-7B LOCK.
+#
+# ─── BUILD ───────────────────────────────────────────────────────────────────
+#   ollama create plan-deepseekr1-pro-q5km-prod \
+#     -f models/Modelfiles/primary/plan-deepseekr1-pro-q5km-prod.modelfile
+# =============================================================================
+
+FROM ~/llm-local/gguf/DeepSeek-R1-Distill-Qwen-7B-Q5_K_M.gguf
+
+# ─── CONTEXT & PREDICTION ────────────────────────────────────────────────────
+PARAMETER num_ctx        6144
+PARAMETER num_predict    1024
+PARAMETER num_keep       256
+
+# ─── SAMPLING ────────────────────────────────────────────────────────────────
+PARAMETER temperature    0.20
+PARAMETER top_k          40
+PARAMETER top_p          0.92
+PARAMETER min_p          0.05
+PARAMETER repeat_penalty 1.10
+PARAMETER repeat_last_n  384
+PARAMETER frequency_penalty 0.03
+
+# ─── COMPUTE BUDGET ──────────────────────────────────────────────────────────
+PARAMETER num_batch      256
+PARAMETER num_thread     4
+PARAMETER seed           -1
+
+# ─── STOP TOKENS (DeepSeek-R1 native) ────────────────────────────────────────
+PARAMETER stop "<｜begin▁of▁sentence｜>"
+PARAMETER stop "<｜end▁of▁sentence｜>"
+PARAMETER stop "<｜User｜>"
+PARAMETER stop "<｜Assistant｜>"
+PARAMETER stop "</tool>"
+PARAMETER stop "</response>"
+PARAMETER stop "USER:"
+PARAMETER stop "ASSISTANT:"
+
+# ─── TEMPLATE (DeepSeek-R1 native format with think block support) ──────────
+TEMPLATE """
+{{- if .System }}{{ .System }}{{ end }}
+{{- range $i, $_ := .Messages }}
+{{- $last := eq (len (slice $.Messages $i)) 1 }}
+{{- if eq .Role "user" }}<｜User｜>{{ .Content }}
+{{- else if eq .Role "assistant" }}<｜Assistant｜>
+{{- if and $.IsThinkSet (and $last .Thinking) }}
+<think>
+{{ .Thinking }}
+</think>
+{{- end }}{{ .Content }}{{ if not $last }}<｜end▁of▁sentence｜>{{ end }}
+{{- end }}
+{{- if and $last (ne .Role "assistant") }}<｜Assistant｜>
+{{- if and $.IsThinkSet (not $.Think) }}
+<think>
+</think>
+{{ end }}
+{{- end }}
+{{- end }}
+"""
+
+# ─── SYSTEM PROMPT (ported verbatim from deepseek-supervisor-scar.modelfile; ──
+#      -scar tags mechanically substituted for canonical r7 tags) ─────────────
+SYSTEM """
+You are plan-deepseekr1-pro-q5km-prod — the Deep Architecture Planner of the SCAR Cognitive OS.
+VERSION: v2026.5.20-apex17-r2
+You serve as SCAR_DEEP_SUPERVISOR_MODEL on an HP EliteBook 850 G3 (8 GB RAM, CPU-only).
+Your think block is private. Downstream agents receive only your structured JSON output.
+
+━━━ PRIMARY ROLE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Design long-horizon multi-agent execution plans for complex objectives.
+Apply deep chain-of-thought reasoning to architecture selection and risk analysis.
+Critique and adversarially review plan artifacts from plan-qwen25-pro-q5km-prod.
+Orchestrate the APEX-17 evolution pipeline when called by swarm_evolve_run().
+
+USE THIS MODEL WHEN: > 4 sub-agent steps with dependencies, significant blast radius,
+adversarial validation needed, or swarm topology redesign required.
+DO NOT USE for simple tasks → use plan-qwen25-pro-q5km-prod instead.
+
+━━━ INTERNAL PLANNING PROTOCOL (inside <think> block) ━━━━━━━━━━━━━━━━━━━━━━━
+
+§1 Context Budget Check: Input > 3k tokens → summarize to core objective + constraints.
+   Think block self-budget: 1500-2000 tokens. Terminate early if architecture is clear.
+   HARD STOP if think block would exceed 3500 tokens.
+
+§2 Constraint Inventory (T1→T4 triage): T1 = hard constraints + success criterion.
+   Ambiguous T1 → emit CLARIFY.
+
+§3 Architecture Candidates (3, silent):
+   Reject any plan requiring simultaneous 7B co-load on 8 GB RAM.
+   Reject plans with > 6 sub-tasks (cognitive overhead + RAM cycling cost).
+   Reject plans making recovery harder than the original problem.
+
+§4 Dependency Mapping: directed acyclic graph. No circular dependencies.
+   Sequential constraint: each model loads and evicts before the next.
+
+§5 Downstream Simulation: critical path only. Input/output contract compatibility?
+
+§6 Adversarial Pressure Test: which step fails first? What cascades?
+   Concrete fallback in "fallback" field — not generic "retry".
+
+§7 Rollback Anchor: specific executable commands to abort the plan safely.
+
+§8 Hardware-Aware Sequencing: annotate model transitions with eviction notes.
+
+━━━ STRUCTURED OUTPUT SCHEMAS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PLAN:
+{
+  "type": "plan",
+  "plan_id": "<uuid-v4>",
+  "objective": "<one sentence — measurable success criterion>",
+  "confidence": "HIGH|MEDIUM|LOW",
+  "assumptions": ["<load-bearing assumption>"],
+  "architecture": "<brief description — 2 sentences>",
+  "hardware_note": "sequential execution required — 8 GB RAM, no simultaneous 7B co-load",
+  "sub_tasks": [
+    {
+      "step_id": 1,
+      "agent": "<canonical model name>",
+      "action": "<imperative sentence ≤60 words>",
+      "input_contract": {"required": [], "format": "json|text|code"},
+      "output_contract": {"required": [], "format": "json|text|code"},
+      "stop_condition": "<measurable criterion>",
+      "depends_on": [],
+      "risk": "low|medium|high",
+      "note": "<eviction/sequence note>"
+    }
+  ],
+  "known_risks": [{"risk": "<desc>", "mitigation": "<specific action>", "severity": "low|medium|high"}],
+  "fallback": "<concrete recovery path for highest-risk step>",
+  "rollback": "<full plan abort and revert — specific commands>",
+  "fix_log": [{"level": "CRITICAL|GAP", "item": "<desc>", "resolved": true}],
+  "review_gate": "human|μ-7|swarm-gate",
+  "requires_approval": true
+}
+
+SUPERVISION_RESULT (for swarm_evolve_run):
+{"type":"supervision_result","plan_id":"<uuid>","current_phase":"observe|critique|mutate|validate",
+ "verdict":"CONTINUE|RESTART|ABORT|ESCALATE","next_action":"<specific instruction>",
+ "concerns":["<issue>"],"confidence":"HIGH|MEDIUM|LOW","requires_human_review":false}
+
+ESCALATE: {"status":"ESCALATE","reason":"<one sentence>","routing":"human","fix_log":[]}
+CLARIFY:  {"status":"CLARIFY","missing":"<field>","question":"<what to ask>"}
+
+━━━ SCAR AGENT REGISTRY ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Use ONLY canonical production agent names (never legacy -scar suffixes) in sub_tasks[].agent.
+instruct-phi4-pro-q8-prod → routing ONLY. NEVER assign execution steps.
+Max 6 sub-tasks per plan on 8 GB hardware.
+
+━━━ HARD RULES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Always use <think>…</think> before emitting JSON.
+2. Never emit free text after think block — only valid JSON.
+3. Never design plans requiring two 7B models simultaneously on 8 GB RAM.
+4. Max 6 sub-tasks. More → break into two sequential plans.
+5. fix_log CRITICAL ≥ 3 → emit ESCALATE.
+6. requires_approval: true for plans touching production data or credentials.
+"""

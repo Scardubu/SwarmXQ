@@ -1,8 +1,8 @@
 /**
  * apps/swarmx-api/src/services/adaptive-timeout-config.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * SwarmX Adaptive Timeout Matrix — APEX-17 r7-final
- * Version : v2026.5.25-apex17-r7
+ * SwarmX Adaptive Timeout Matrix — APEX-17 r8
+ * Version : v2026.6.28-apex17-r8
  * Hardware : HP EliteBook 850 G3 · 8 GB RAM · CPU-only · 4 cores · WSL2
  *
  * Adaptive timeouts, circuit breakers, jittered retries, and memory-aware
@@ -18,11 +18,28 @@
  *   Lab       → evolver_observe, evolver_critique, evolver_mutate, evolver_validate
  *
  * APEX-17 r7 changes from r5:
- *   [ATC-r7-01] OperationKey comments updated from -scar tags to Operator names
+ *   [ATC-r7-01] OperationKey comments updated from legacy tag names to Operator names
  *   [ATC-r7-02] MODEL_BASE_PROFILES rebuilt with canonical keys + legacy aliases
  *               so model lookups work with EITHER name during migration
  *   [ATC-r7-03] getModelOverrides() resolves through operator-map first
  *   [ATC-r7-04] adaptiveCallConfig() includes operator label for log readability
+ *
+ * APEX-17 r8 changes from r7:
+ *   [ATC-r8-01] `OperationKey` and the local `PressureLevel` type are no
+ *               longer defined here. Both are now imported from
+ *               packages/swarmx-types/src/operation-types.ts (the timeout-
+ *               domain pressure scale is exported there as
+ *               `TimeoutPressureLevel`; this file aliases it back to the
+ *               local name `PressureLevel` on import so nothing else in this
+ *               file needs to change). model-orchestrator.ts imports the
+ *               exact same two types — see that file's ORCH-r8-02 note.
+ *   [ATC-r8-02] operator-map import switched from a four-level relative path
+ *               into another package's src/ to the proper `@swarmx/types/
+ *               operator-map` workspace alias (now that
+ *               packages/swarmx-types/package.json exposes that subpath and
+ *               apps/swarmx-api depends on @swarmx/types — see this
+ *               integration's Phase 3 package.json / tsconfig.json patches).
+ *               No behavioural change.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -30,26 +47,13 @@ import { readFileSync } from "node:fs";
 import {
   resolveCanonicalTag,
   resolveOperatorName,
-} from "../../../../packages/swarmx-types/src/operator-map.js";
+} from "@swarmx/types/operator-map";
+import type {
+  OperationKey,
+  TimeoutPressureLevel as PressureLevel,
+} from "@swarmx/types/operation-types";
 
-// ─── Memory pressure levels ────────────────────────────────────────────────────
-
-export type PressureLevel = "low" | "normal" | "high" | "critical";
-
-export type OperationKey =
-  | "intent_classify"       // Relay (route-phi4-lite-q4km-prod): routing decision only
-  | "routing"               // Relay (route-phi4-lite-q4km-prod): classify + route
-  | "fast_chat"             // Pilot (instruct-phi4-pro-q8-prod): short conversational
-  | "tool_execution"        // Forge or Architect (phi4): single tool call
-  | "supervisor_planning"   // Architect (plan-qwen25-pro-q5km-prod): multi-step plan
-  | "code_generation"       // Forge (code-qwen25-pro-q5km-prod): implementation
-  | "deep_reasoning"        // Oracle (reason-deepseekr1-pro-q5km-prod): analysis
-  | "critic_audit"          // Auditor (critique-deepseekr1-pro-q5km-prod): review
-  | "evolver_observe"       // Lab (synth-phi4-exp-q8-dev): Phase 1 fitness snapshot
-  | "evolver_critique"      // Lab (synth-deepseekr1-exp-q5km-dev): Phase 2 critique
-  | "evolver_mutate"        // Lab (synth-qwen25-exp-q5km-dev): Phase 3 mutation
-  | "evolver_validate"      // Lab (synth-deepseekr1-exp-q5km-dev): Phase 4 validate
-  | "health_probe";         // /api/version or /api/tags probe
+export type { OperationKey, PressureLevel };
 
 // ─── Adaptive timeout matrix (ms) ────────────────────────────────────────────
 

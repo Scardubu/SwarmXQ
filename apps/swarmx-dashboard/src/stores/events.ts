@@ -104,8 +104,8 @@ interface EventsActions {
 }
 
 type EventsPatch = Partial<EventsState> & Pick<EventsState, "lastEventAt" | "isStale">;
-type ScsEventData = Extract<SwarmXEvent, { type: "system:scs" }>[" data"];
-type LogEventData = Extract<SwarmXEvent, { type: "log:entry" }>[" data"];
+type ScsEventData = Extract<SwarmXEvent, { type: "system:scs" }>["data"];
+type LogEventData = Extract<SwarmXEvent, { type: "log:entry" }>["data"];
 
 // ─── Pull out real data types without TS union access ─────────────────────────
 // Using concrete interface references avoids brittle conditional type access
@@ -482,8 +482,8 @@ function applyVideoProgress(state: EventsState, data: VideoJobEventData): Events
       status: data.status,
       degradeMode: data.degradeMode,
       progress: data.progress,
-      error: data.error,
       timestamp: data.timestamp,
+      ...(data.error !== undefined ? { error: data.error } : {}),
     });
   } catch {
     // Non-fatal — video store may not be mounted yet

@@ -101,7 +101,7 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <StatusBadge status={job.status} />
-            <PlatformTag platform={job.request.platform} />
+            <PlatformTag {...(job.request.platform !== undefined ? { platform: job.request.platform } : {})} />
             {job.request.niche && (
               <span className="text-[10px] text-zinc-600 font-medium">
                 #{job.request.niche}

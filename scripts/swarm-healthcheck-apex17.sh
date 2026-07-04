@@ -38,8 +38,8 @@ warn_check() {
 OLLAMA_URL="${SWARMX_OLLAMA_URL:-http://127.0.0.1:11434}"
 API_URL="${SWARMX_API_URL:-http://127.0.0.1:3001}"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 
 echo -e "${CYAN}SwarmXQ APEX-17 r7 Healthcheck${NC}"
 echo ""

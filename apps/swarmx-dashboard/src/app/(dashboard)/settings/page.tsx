@@ -6,6 +6,223 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Save, ExternalLink, AlertCircle } from "lucide-react";
+import { useEventsStore } from "@/stores/events";
+import type { PressureLevel } from "@swarmx/types";
+
+// ─── [APEX17-r8] Model Topology types ────────────────────────────────────────
+
+interface ModelTopologyEntry {
+  operator:      string;
+  tag:           string;
+  ggufBase:      string;
+  ramMb:         number;
+  composerTier:  number;
+  keepAlive:     string;
+  is7B:          boolean;
+  role:          string;
+}
+
+interface ResidentModel {
+  tag:           string;
+  operator:      string;
+  is7B:          boolean;
+  estimatedRamMb: number;
+}
+
+interface ModelStatusResponse {
+  residentModels: ResidentModel[];
+  active7B:       string | null;
+  ramAvailableMb: number;
+  mode:           string;
+}
+
+// ─── Static topology table (sourced from models/registry.yaml + operator-map) ─
+// This is intentionally static for performance and offline resilience.
+// Live resident status comes from the /api/models/status polling query.
+// Tier labels: 0=local, 1=Relay, 2=Pilot, 3=Architect/Forge, 4=Oracle/Auditor
+const MODEL_TOPOLOGY: ModelTopologyEntry[] = [
+  { operator: "Relay",               tag: "route-phi4-lite-q4km-prod",         ggufBase: "Phi-4-mini Q4_K_M",          ramMb: 2500, composerTier: 1, keepAlive: "10m", is7B: false, role: "route"    },
+  { operator: "Pilot",               tag: "instruct-phi4-pro-q8-prod",          ggufBase: "Phi-4-mini Q8_0",             ramMb: 4270, composerTier: 2, keepAlive: "5m",  is7B: false, role: "instruct" },
+  { operator: "Architect (phi4)",    tag: "plan-phi4-pro-q8-prod",              ggufBase: "Phi-4-mini Q8_0",             ramMb: 4340, composerTier: 3, keepAlive: "0s",  is7B: false, role: "plan"     },
+  { operator: "Architect (qwen25)",  tag: "plan-qwen25-pro-q5km-prod",          ggufBase: "Qwen2.5-7B Q5_K_M",          ramMb: 5370, composerTier: 3, keepAlive: "0s",  is7B: true,  role: "plan"     },
+  { operator: "Architect (deepseek)",tag: "plan-deepseekr1-pro-q5km-prod",      ggufBase: "DeepSeek-R1-Distill Q5_K_M", ramMb: 5370, composerTier: 4, keepAlive: "0s",  is7B: true,  role: "plan"     },
+  { operator: "Forge",               tag: "code-qwen25-pro-q5km-prod",          ggufBase: "Qwen2.5-7B Q5_K_M",          ramMb: 5370, composerTier: 3, keepAlive: "0s",  is7B: true,  role: "code"     },
+  { operator: "Oracle",              tag: "reason-deepseekr1-pro-q5km-prod",    ggufBase: "DeepSeek-R1-Distill Q5_K_M", ramMb: 5370, composerTier: 4, keepAlive: "0s",  is7B: true,  role: "reason"   },
+  { operator: "Auditor",             tag: "critique-deepseekr1-pro-q5km-prod",  ggufBase: "DeepSeek-R1-Distill Q5_K_M", ramMb: 5420, composerTier: 4, keepAlive: "0s",  is7B: true,  role: "critique" },
+  { operator: "Lab (observe)",       tag: "synth-phi4-exp-q8-dev",              ggufBase: "Phi-4-mini Q8_0",             ramMb: 4440, composerTier: 2, keepAlive: "3m†", is7B: false, role: "synth"    },
+  { operator: "Lab (mutate)",        tag: "synth-qwen25-exp-q5km-dev",          ggufBase: "Qwen2.5-7B Q5_K_M",          ramMb: 5370, composerTier: 3, keepAlive: "2m†", is7B: true,  role: "synth"    },
+  { operator: "Lab (critique/val)",  tag: "synth-deepseekr1-exp-q5km-dev",      ggufBase: "DeepSeek-R1-Distill Q5_K_M", ramMb: 5370, composerTier: 4, keepAlive: "2m†", is7B: true,  role: "synth"    },
+];
+
+// ─── Pressure badge ───────────────────────────────────────────────────────────
+
+function PressureBadge({ level }: { readonly level: PressureLevel | string | undefined }) {
+  if (!level) return <span className="text-[10px] font-mono text-text-muted">—</span>;
+  const map: Record<string, { label: string; cls: string }> = {
+    normal:   { label: "NORMAL",   cls: "text-emerald-400 border-emerald-500/40 bg-emerald-500/10" },
+    high:     { label: "HIGH",     cls: "text-amber-400  border-amber-500/40  bg-amber-500/10"  },
+    critical: { label: "CRITICAL", cls: "text-red-400    border-red-500/40    bg-red-500/10"    },
+    degraded: { label: "DEGRADED", cls: "text-red-300    border-red-400/40    bg-red-400/10"    },
+    low:      { label: "LOW",      cls: "text-sky-400    border-sky-500/40    bg-sky-500/10"    },
+  };
+  const badge = map[level] ?? { label: level.toUpperCase(), cls: "text-text-muted border-border bg-transparent" };
+  return (
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[9px] font-mono tracking-widest ${badge.cls}`}>
+      {badge.label}
+    </span>
+  );
+}
+
+// ─── Resident status dot ──────────────────────────────────────────────────────
+
+function ResidentDot({ isResident, is7B }: { readonly isResident: boolean; readonly is7B: boolean }) {
+  if (!isResident) {
+    return (
+      <span className="inline-block w-1.5 h-1.5 rounded-full bg-border" title="Not loaded" />
+    );
+  }
+  return (
+    <span
+      className={`inline-block w-1.5 h-1.5 rounded-full animate-pulse ${is7B ? "bg-amber-400" : "bg-emerald-400"}`}
+      title={is7B ? "Resident (7B — occupying SINGLE-7B slot)" : "Resident"}
+    />
+  );
+}
+
+// ─── Model Topology Section ───────────────────────────────────────────────────
+
+function ModelTopologySection() {
+  const governorState = useEventsStore((s) => s.governorState);
+
+  const { data: modelStatus, isLoading: isStatusLoading } = useQuery<ModelStatusResponse>({
+    queryKey: ["model-status"],
+    queryFn: async () => {
+      const res = await fetch("/api/models/status");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json() as Promise<ModelStatusResponse>;
+    },
+    refetchInterval: 8_000,
+    staleTime: 4_000,
+  });
+
+  const residentTags = new Set(modelStatus?.residentModels.map((m) => m.tag) ?? []);
+
+  return (
+    <section>
+      {/* Section header */}
+      <div className="flex items-center justify-between px-4 pb-2">
+        <h2 className="text-[10px] font-mono text-text-muted uppercase tracking-widest">
+          Model Topology
+        </h2>
+        <div className="flex items-center gap-3">
+          {governorState && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9px] font-mono text-text-muted">pressure</span>
+              <PressureBadge level={governorState.pressureLevel} />
+            </div>
+          )}
+          {modelStatus && (
+            <span className="text-[9px] font-mono text-text-muted">
+              {governorState?.availableMb ?? modelStatus.ramAvailableMb} MB free
+            </span>
+          )}
+          {isStatusLoading && (
+            <span className="text-[9px] font-mono text-text-muted animate-pulse">polling…</span>
+          )}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="border-t border-b border-border overflow-x-auto">
+        {/* Column headers */}
+        <div
+          className="grid px-4 py-1.5 border-b border-border/50 bg-bg-elevated/30"
+          style={{ gridTemplateColumns: "1fr 2.2fr 1.4fr 3.5rem 3.5rem 3rem 2.5rem 2rem" }}
+        >
+          {["Operator", "Canonical Tag", "GGUF Base", "RAM MB", "Tier", "Keep-alive", "7B", "Live"].map((h) => (
+            <span key={h} className="text-[9px] font-mono text-text-muted uppercase tracking-wider">
+              {h}
+            </span>
+          ))}
+        </div>
+
+        {/* Rows */}
+        {MODEL_TOPOLOGY.map((entry) => {
+          const isResident = residentTags.has(entry.tag);
+          const isLabRow = entry.role === "synth";
+          return (
+            <div
+              key={entry.tag}
+              className={`grid px-4 py-2 border-b border-border/30 last:border-0 hover:bg-bg-elevated/20 transition-colors ${isLabRow ? "opacity-60 italic" : ""}`}
+              style={{ gridTemplateColumns: "1fr 2.2fr 1.4fr 3.5rem 3.5rem 3rem 2.5rem 2rem" }}
+            >
+              {/* Operator */}
+              <span className="text-[10px] font-mono text-text-primary truncate">{entry.operator}</span>
+              {/* Canonical Tag */}
+              <span className="text-[10px] font-mono text-text-muted truncate" title={entry.tag}>
+                {entry.tag}
+              </span>
+              {/* GGUF Base */}
+              <span className="text-[10px] font-mono text-text-muted truncate">{entry.ggufBase}</span>
+              {/* RAM MB */}
+              <span className="text-[10px] font-mono text-text-muted tabular-nums">
+                {entry.ramMb.toLocaleString()}
+              </span>
+              {/* Composer Tier */}
+              <span className="text-[10px] font-mono text-text-muted tabular-nums">
+                {entry.composerTier}
+              </span>
+              {/* Keep-alive */}
+              <span className="text-[10px] font-mono text-text-muted">
+                {entry.keepAlive}
+              </span>
+              {/* 7B marker */}
+              <span className={`text-[10px] font-mono ${entry.is7B ? "text-amber-400" : "text-text-muted"}`}>
+                {entry.is7B ? "7B" : "—"}
+              </span>
+              {/* Resident status dot */}
+              <div className="flex items-center">
+                <ResidentDot isResident={isResident} is7B={entry.is7B} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Legend */}
+      <div className="flex items-center gap-4 px-4 pt-2 pb-1">
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400" />
+          <span className="text-[9px] font-mono text-text-muted">Resident (non-7B)</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400" />
+          <span className="text-[9px] font-mono text-text-muted">Resident (7B — SINGLE lock)</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-border" />
+          <span className="text-[9px] font-mono text-text-muted">Not loaded</span>
+        </div>
+        <span className="text-[9px] font-mono text-text-muted ml-auto">
+          †keep-alive in evolver mode only
+        </span>
+      </div>
+
+      {/* SINGLE-7B status strip */}
+      {modelStatus?.active7B && (
+        <div className="mx-4 mb-2 px-3 py-1.5 rounded border border-amber-500/30 bg-amber-500/5 flex items-center gap-2">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
+          <span className="text-[10px] font-mono text-amber-300">
+            7B slot occupied: {modelStatus.active7B}
+          </span>
+          <span className="text-[9px] font-mono text-text-muted ml-auto">
+            orchestrator mode: {modelStatus.mode}
+          </span>
+        </div>
+      )}
+    </section>
+  );
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -149,6 +366,10 @@ export default function SettingsPage() {
 
       <ScrollArea className="flex-1">
         <div className="px-4 py-6 space-y-6 max-w-2xl">
+
+          {/* ── [APEX17-r8] Model Topology ─────────────────────────────────── */}
+          <ModelTopologySection />
+
           {/* Backend settings */}
           <SettingsSection title="API Backend">
             <SettingsRow
@@ -327,12 +548,7 @@ export default function SettingsPage() {
                   <span className="text-xs font-mono text-text-secondary">{label}</span>
                   <div className="flex items-center gap-1">
                     {keys.map((k) => (
-                      <kbd
-                        key={k}
-                        className="kbd-pill"
-                      >
-                        {k}
-                      </kbd>
+                      <kbd key={k} className="kbd-pill">{k}</kbd>
                     ))}
                   </div>
                 </div>

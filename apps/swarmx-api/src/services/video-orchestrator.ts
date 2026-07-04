@@ -99,8 +99,8 @@ import * as assets from "./video-assets.js";
 import {
   ModelOrchestrator,
   type ModelOverrides,
-  resolveCanonicalTag,        // [VOT-07] imported for resolveModelTag alias resolution
 } from "./model-orchestrator.js";
+import { resolveCanonicalTag } from "@swarmx/types/operator-map";
 import { sanitizeReasoningOutput } from "./reasoning-sanitizer.js";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -263,9 +263,9 @@ async function ollamaGenerate(
       stream: false,
       options: {
         // [VOT-03] Apply RAM-aware overrides from ModelOrchestrator
-        num_predict: overrides.numPredict ?? maxTokens,
-        ...(overrides.numCtx !== undefined && { num_ctx: overrides.numCtx }),
-        temperature: 0.3,
+        num_predict: overrides.num_predict ?? maxTokens,
+        ...(overrides.num_ctx !== undefined && { num_ctx: overrides.num_ctx }),
+        temperature: overrides.temperature ?? 0.3,
       },
     }),
   });
@@ -694,9 +694,11 @@ async function runStage(
     stage,
     stageProgress:   100,
     overallProgress: progressEnd,
-    startedAt:       startProgress.startedAt,
     completedAt:     new Date().toISOString(),
     durationMs:      Date.now() - stageStart,
+    ...(startProgress.startedAt !== undefined
+      ? { startedAt: startProgress.startedAt }
+      : {}),
   };
   queue.recordStageProgress(ctx.job.id, stage, completedProgress);
   ctx.broadcast(makeVideoProgressEvent(ctx.job.id, stage, completedProgress, progressEnd));
@@ -780,7 +782,12 @@ function makeError(
   retryable: boolean,
   stage?:    VideoJobStage
 ): VideoJobError {
-  return { code, message, retryable, stage };
+  return {
+    code,
+    message,
+    retryable,
+    ...(stage !== undefined ? { stage } : {}),
+  };
 }
 
 function toVideoError(err: unknown): VideoJobError {

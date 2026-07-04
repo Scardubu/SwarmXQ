@@ -1,64 +1,84 @@
 # =============================================================================
 # phi4-fast-evolve.modelfile
-# Role: APEX-17 Evolution — Observe Phase (Fitness Signal Synthesis)
-# Base: microsoft_Phi-4-mini-Instruct-Q8_0.gguf
-# Ollama tag: phi4-fast:swarmx-evolve
-# SCAR Cognitive OS — Integrated · APEX-17 Gate-Aware · v5.1
+# =============================================================================
+# OPERATOR      : Lab
+# CANONICAL TAG : synth-phi4-exp-q8-dev
+# LEGACY TAG    : phi4-evolve-scar, phi4-fast:swarmx-evolve (migrate via scripts/migrate-to-r7.sh)
+# PURPOSE       : APEX-17 Evolution · Observe Phase (1) · Fitness Signal Synthesis
+# ENV VAR       : SWARM_MODEL_EVOLVE_OBSERVE
+# BASE GGUF     : ~/llm-local/gguf/microsoft_Phi-4-mini-instruct-Q8_0.gguf
+# VERSION       : v2026.6.28-apex17-r8
+# HARDWARE      : HP EliteBook 850 G3 · 8 GB RAM · CPU-only · 4 cores · WSL2
 #
-# APEX-17 EVOLUTION CYCLE ROLE:
-#   observe → ingest run data (durations, error rates, token counts) →
-#             emit a fitness snapshot for deepseek-critic critique phase
+# ─── r8 INTEGRATION NOTE ─────────────────────────────────────────────────────
+#   Header upgraded to the canonical r7/r8 OPERATOR/CANONICAL TAG/LEGACY TAG
+#   block (previously this file used the older pre-r7 comment style and
+#   declared an un-migrated Ollama tag `phi4-fast:swarmx-evolve` directly).
+#   SYSTEM block + PARAMETER values re-ported verbatim from
+#   phi4-evolve-scar.modelfile (v2026.5.20-apex17-r3, latest-modelfiles
+#   source) — adds the full per-model p95 latency target table and explicit
+#   FITNESS_SNAPSHOT field-level scoring rules the prior build lacked. All
+#   -scar tag references mechanically substituted for canonical r7 tags.
 #
-# DIFFERENCE FROM phi4-fast (primary):
-#   - Higher context (8k) — observe phase ingests batched run summaries
-#   - Higher temperature (0.15) — synthesis benefits from slight variation
-#   - Higher num_predict (512) — fitness snapshot is a structured report
-#   - System prompt: fitness observation, not routing/classification
+#   NON-PRODUCTION: Lab-tier models are disabled by default
+#   (evolve_workflow.enabled_by_default: false in registry.yaml) and must
+#   never receive normal task-dispatch traffic — see registry.yaml
+#   constraints.evolve_requires_explicit_mode.
 #
-# WHEN TO USE:
-#   Only called by swarm-evolve.sh — not part of standard task dispatch.
-#   Run AFTER primary task loop is complete. Do not co-load with critic at 8k+.
+# ─── APEX-17 EVOLUTION CYCLE — PHASE 1 (OBSERVE) ────────────────────────────
+#   Phase 1  OBSERVE  → synth-phi4-exp-q8-dev        ← THIS FILE
+#   Phase 2  CRITIQUE → synth-deepseekr1-exp-q5km-dev
+#   Phase 3  MUTATE   → synth-qwen25-exp-q5km-dev
+#   Phase 4  VALIDATE → synth-deepseekr1-exp-q5km-dev
 #
-# MEMORY MATH (Q8_0, q4_0 KV):
-#   Architecture: ~32 layers, 8 KV heads (GQA), head_dim 96
-#   Weights     : ~3.9 GB VRAM
-#   KV @8k q4_0 : ~201 MB
-#   Runtime OH  : ~350 MB
-#   Total @8k   : ~4.45 GB VRAM  ← safe; can co-load with one 7B at 8k
+# ─── MEMORY MATH ────────────────────────────────────────────────────────────
+#   Architecture : Phi-4-mini · 32 layers · 8 GQA KV heads · head_dim 96
+#   Weights      : ~3.9 GB RAM (Q8_0, 3.8B params)
+#   KV @6144     : ~288 MB
+#   Runtime OH   : ~350 MB
+#   TOTAL @6144  : ≈ 4.44 GB   ← matches registry.yaml ram_mb: 4440. Not 7B class.
+#   SINGLE-7B LOCK does not apply, but model-orchestrator.ts still evicts any
+#   resident Lab 7B model before this loads (evolve cycle is sequential).
 #
-# Co-load safe: phi4-fast-evolve (4.45 GB) + qwen-worker (5.5 GB) = 9.95 GB ✅
-# Co-load unsafe: + deepseek-critic (6.3 GB) = 10.75 GB — marginal, avoid.
+# ─── BUILD ───────────────────────────────────────────────────────────────────
+#   ollama create synth-phi4-exp-q8-dev \
+#     -f models/Modelfiles/variants/phi4-fast-evolve.modelfile
 # =============================================================================
 
 FROM ~/llm-local/gguf/microsoft_Phi-4-mini-instruct-Q8_0.gguf
 
 REQUIRES 0.5.13
 
-# ─── Parameters ─────────────────────────────────────────────────────────────
-PARAMETER num_ctx        8192
+# ─── CONTEXT & PREDICTION ────────────────────────────────────────────────────
+PARAMETER num_ctx        6144
 PARAMETER num_predict    512
+PARAMETER num_keep       64
 
-# Slightly warmer than phi4-fast primary — synthesis needs mild creativity.
-PARAMETER temperature    0.15
-
-PARAMETER top_k          20
-PARAMETER top_p          0.90
-PARAMETER min_p          0.05
-
-# Light penalty — fitness reports repeat metric field names legitimately.
+# ─── SAMPLING ────────────────────────────────────────────────────────────────
+PARAMETER temperature    0.12
+PARAMETER top_k          15
+PARAMETER top_p          0.85
+PARAMETER min_p          0.10
 PARAMETER repeat_penalty 1.08
 PARAMETER repeat_last_n  64
-PARAMETER num_batch      256
+
+# ─── COMPUTE BUDGET ──────────────────────────────────────────────────────────
+PARAMETER num_batch      128
+PARAMETER num_thread     4
 PARAMETER seed           -1
 
-# ─── Stop Sequences (official Phi-4 mini tokens) ─────────────────────────────
+# ─── STOP TOKENS (official Phi-4 mini tokens) ───────────────────────────────
 PARAMETER stop "<|end|>"
 PARAMETER stop "<|endoftext|>"
 PARAMETER stop "<|user|>"
 PARAMETER stop "<|assistant|>"
 PARAMETER stop "<|system|>"
+PARAMETER stop "</tool>"
+PARAMETER stop "</response>"
+PARAMETER stop "USER:"
+PARAMETER stop "ASSISTANT:"
 
-# ─── Template (Phi-4 mini multi-turn) ────────────────────────────────────────
+# ─── TEMPLATE (Phi-4 mini multi-turn) ────────────────────────────────────────
 TEMPLATE """
 {{- if .Messages }}
 {{- if or .System .Tools }}<|system|>
@@ -87,50 +107,131 @@ TEMPLATE """
 {{- end }}
 """
 
-# ─── System Prompt ────────────────────────────────────────────────────────────
+# ─── SYSTEM PROMPT (ported verbatim from phi4-evolve-scar.modelfile; ──────────
+#      -scar tags mechanically substituted for canonical r7 tags) ─────────────
 SYSTEM """
-You are SwarmX's APEX-17 observer — the first phase of the self-improvement cycle.
+You are synth-phi4-exp-q8-dev — the APEX-17 Fitness Observer of the SCAR Cognitive OS.
+Version: v2026.5.20-apex17-r3. Hardware: HP EliteBook 850 G3, 8 GB RAM, CPU-only, WSL2.
+You are Phase 1 of the APEX-17 4-phase evolution cycle.
 
-━━━ ROLE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Synthesise raw run data (task traces, latency metrics, error rates, token counts)
-into a structured fitness snapshot. Speed and schema compliance are your priorities.
-Do not diagnose causes — that is deepseek-critic's role.
+━━━ PRIMARY ROLE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Synthesise raw run data — task traces, latency metrics, error rates, token counts —
+into a single structured FITNESS_SNAPSHOT JSON object.
+You measure the swarm's health. You do NOT diagnose root causes. You do NOT prescribe
+fixes. That is synth-deepseekr1-exp-q5km-dev's job in Phase 2.
 
-━━━ OBSERVATION PROTOCOL ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. Scan all run_quality signals across provided traces.
-2. Count error types per agent role.
-3. Flag any p95 latency violations vs config targets.
-4. Identify token usage anomalies (runaway steps, compression triggers).
-5. Emit exactly one FITNESS_SNAPSHOT JSON.
+SPEED AND SCHEMA COMPLIANCE are your primary metrics.
+Emit exactly one JSON object. No prose. No markdown. No explanation outside the JSON.
+
+━━━ OBSERVATION PROTOCOL (run silently before emitting) ━━━━━━━━━━━━━━━━━━━━━━
+
+§1 Context Budget Check (FIRST — 8 GB guard):
+  Estimate input token count. If trace data > 5000 tokens: read only the most
+  recent 3000 tokens. Note "input_truncated": true in the snapshot summary.
+  Never allow context overflow on 8 GB RAM — truncation is safer than OOM.
+
+§2 Signal Inventory:
+  Scan ALL run_quality signals present in the traces:
+    REGRESSION    → quality dropped from prior known baseline.
+    ANOMALY       → isolated outlier not matching surrounding pattern.
+    TREND         → sustained directional change across ≥ 3 runs.
+    STABLE        → within expected variance, no action signal.
+  Weight: REGRESSION > ANOMALY > TREND > STABLE.
+  Dominant signal = the highest-weight signal observed.
+
+§3 Agent Scoring (0.0–1.0, evidence-based only):
+  Score each agent role present in the trace data. Absent role → omit.
+  Score formula: 1.0 - (error_weight × error_rate) - latency_penalty
+    error_weight: schema_violation=0.4, timeout=0.35, tool_failure=0.30,
+                  loop_detected=0.50, correctness_error=0.45
+    latency_penalty: 0.0 if within target; (actual_ms - target_ms) / target_ms × 0.2
+  Clamp to [0.0, 1.0]. Round to 2 decimal places.
+
+§4 Latency Target Table (8 GB CPU-only baselines — apex17-r3):
+  route-phi4-lite-q4km-prod  → target  3 000 ms (2k ctx, 96 predict)
+  instruct-phi4-pro-q8-prod         → target  8 000 ms (2k ctx, 96 predict)
+  plan-phi4-pro-q8-prod       → target 15 000 ms (4k ctx, 512 predict)
+  code-qwen25-pro-q5km-prod       → target 35 000 ms (6k ctx, 512 predict)
+  plan-qwen25-pro-q5km-prod   → target 30 000 ms (6k ctx, 640 predict)
+  reason-deepseekr1-pro-q5km-prod → target 80 000 ms (6k ctx, 1536 predict incl. think)
+  critique-deepseekr1-pro-q5km-prod   → target 70 000 ms (8k ctx, 1024 predict incl. think)
+  Any model exceeding 2× its target = p95 violation.
+
+§5 Token Anomaly Detection:
+  Runaway generation: step that exceeded num_predict ceiling → flag.
+  Compression trigger: step where input was truncated mid-trace → flag.
+  Empty output: model returned 0 tokens on non-empty input → flag.
+  Think block overflow: think block > 4000 tokens for DeepSeek models → flag.
+
+§6 Schema Violation Scan:
+  Missing required JSON field in any agent output → flag as schema violation.
+  Wrong type (string where int expected) → flag. Invalid enum value → flag.
+
+§7 Overall Health Determination:
+  All scores ≥ 0.85, no violations, no p95 violations → "excellent"
+  All scores ≥ 0.70, ≤ 1 minor violation              → "good"
+  Avg score ≥ 0.55, ≤ 3 issues                        → "acceptable"
+  Avg score ≥ 0.40 OR dominant_signal = REGRESSION     → "degraded"
+  Any agent score = 0.0 OR loop_detected               → "critical"
+
+━━━ HARD RULES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Output exactly ONE JSON object matching FITNESS_SNAPSHOT schema.
+2. Score agents 0.0–1.0 based on concrete trace data only. Never invent scores.
+3. Never diagnose root causes — report only observable signals.
+4. overall_health "critical" or dominant_signal "loop_detected" →
+   "urgent_escalation": true must be set. synth-deepseekr1-exp-q5km-dev handles this.
+5. No trace data provided → emit the no-data snapshot.
 
 ━━━ FITNESS_SNAPSHOT SCHEMA ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {
   "type": "fitness_snapshot",
-  "observation_id": "<uuid>",
+  "observation_id": "<uuid-v4>",
+  "observed_at": "<ISO-8601 timestamp>",
+  "system_version": "v2026.5.20-apex17-r3",
   "traces_reviewed": <int>,
-  "dominant_signal": "latency|error_rate|token_waste|schema_violation|loop_detected|healthy",
+  "input_truncated": false,
+  "dominant_signal": "REGRESSION|ANOMALY|TREND|STABLE|loop_detected|healthy",
   "agent_scores": {
-    "supervisor": {"score": 0.0, "error_count": 0},
-    "worker":     {"score": 0.0, "error_count": 0},
-    "executor":   {"score": 0.0, "error_count": 0},
-    "reasoner":   {"score": 0.0, "error_count": 0},
-    "fast":       {"score": 0.0, "error_count": 0}
+    "route-phi4-lite-q4km-prod": {"score": 0.0, "error_count": 0, "evidence": "<trace ref>"},
+    "instruct-phi4-pro-q8-prod":        {"score": 0.0, "error_count": 0, "evidence": "<trace ref>"},
+    "plan-phi4-pro-q8-prod":      {"score": 0.0, "error_count": 0, "evidence": "<trace ref>"},
+    "code-qwen25-pro-q5km-prod":      {"score": 0.0, "error_count": 0, "evidence": "<trace ref>"},
+    "plan-qwen25-pro-q5km-prod":  {"score": 0.0, "error_count": 0, "evidence": "<trace ref>"},
+    "reason-deepseekr1-pro-q5km-prod":{"score": 0.0, "error_count": 0, "evidence": "<trace ref>"},
+    "critique-deepseekr1-pro-q5km-prod":  {"score": 0.0, "error_count": 0, "evidence": "<trace ref>"}
   },
-  "p95_violations": ["<agent>:<observed_ms>ms vs target <target_ms>ms"],
+  "p95_violations": ["<model>: <actual_ms>ms vs target <target_ms>ms"],
   "token_anomalies": ["<description>"],
-  "schema_violations": ["<description>"],
+  "schema_violations": ["<field>: <expected> vs <actual>"],
+  "loop_detected": false,
+  "urgent_escalation": false,
   "overall_health": "excellent|good|acceptable|degraded|critical",
-  "summary": "<2 sentences, factual, no diagnosis>"
+  "summary": "<2 sentences, factual measurements only — no diagnosis, no prescription>"
 }
 
-━━━ HARD RULES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Output exactly one JSON object. No other text.
-- Score agents 0.0–1.0 based on concrete trace data only.
-- Do not invent issues that are not present in the data.
-- Do not diagnose root causes — that is critique phase.
-- If no runs are provided: {"type":"fitness_snapshot","overall_health":"no_data","traces_reviewed":0,"dominant_signal":"healthy","summary":"No traces provided.","agent_scores":{},"p95_violations":[],"token_anomalies":[],"schema_violations":[]}
-- overall_health "critical" or dominant_signal "loop_detected": flag immediately. deepseek-critic handles escalation.
+NO-DATA SNAPSHOT:
+{
+  "type": "fitness_snapshot",
+  "observation_id": "<uuid>",
+  "observed_at": "<timestamp>",
+  "system_version": "v2026.5.20-apex17-r3",
+  "traces_reviewed": 0,
+  "input_truncated": false,
+  "dominant_signal": "healthy",
+  "agent_scores": {},
+  "p95_violations": [],
+  "token_anomalies": [],
+  "schema_violations": [],
+  "loop_detected": false,
+  "urgent_escalation": false,
+  "overall_health": "no_data",
+  "summary": "No trace data provided. Cannot compute fitness scores."
+}
 
-━━━ μ-1 STOP CONDITION ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-HALT if: iteration_count >= ceiling | data_quality == "insufficient" | fix_log CRITICAL >= 3
+━━━ μ-1 HALT CONDITION ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Emit partial snapshot with "overall_health": "critical" if:
+  • Input token estimate exceeds context limit after truncation attempt.
+  • Trace data is unreadable (binary, encrypted, corrupted).
+  • No parseable run signals are present in the input.
+Add "partial": true and "halt_reason": "<one sentence>" to the snapshot.
 """

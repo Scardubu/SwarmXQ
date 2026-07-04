@@ -76,11 +76,20 @@ export function startCgroupPoller(server: FastifyInstance): void {
             } catch { /* no cpu.stat */ }
 
             const metrics: CgroupScopeMetrics = {
+              agentId: scope,
               path: scopePath,
+              cpuUsagePercent: cpuPercent,
               cpuPercent,
+              cpuThrottledPercent: throttledPct,
               memoryCurrentMb: isNaN(memBytes) ? 0 : memBytes / (1024 * 1024),
+              memCurrentMb: isNaN(memBytes) ? 0 : memBytes / (1024 * 1024),
+              memHighMb: null,
+              memMaxMb: null,
               cpuThrottledPct: throttledPct,
+              oomKillCount: oomEvents,
               oomEvents,
+              ioReadBytes: 0,
+              ioWriteBytes: 0,
             };
 
             broadcastEvent({ type: "cgroup:metrics", data: metrics });

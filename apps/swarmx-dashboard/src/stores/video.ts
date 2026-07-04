@@ -15,7 +15,10 @@ import type {
   VideoJobStage,
   VideoStageProgress,
 } from "../../../swarmx-api/src/types/video";
-import type { SwarmXEvent } from "../../../swarmx-api/src/types/events";
+import type {
+  SwarmXEvent,
+  VideoEvent,
+} from "../../../swarmx-api/src/types/events";
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -43,6 +46,16 @@ export interface VideoActions {
   // ── SSE ingestion ───────────────────────────────────────────────────────────
   /** Called by the top-level SSE hook to route events into the store. */
   ingestEvent: (event: SwarmXEvent) => void;
+  /** Apply compact progress-style updates emitted on shared dashboard stream. */
+  applyProgressEvent: (data: {
+    jobId: string;
+    correlationId: string;
+    status: string;
+    degradeMode: string;
+    progress: number;
+    timestamp: string;
+    error?: string;
+  }) => void;
 
   // ── Selection ───────────────────────────────────────────────────────────────
   selectJob: (jobId: string | null) => void;
@@ -57,6 +70,10 @@ export interface VideoActions {
 }
 
 type VideoStore = VideoState & VideoActions;
+
+function isApiVideoLifecycleEvent(event: SwarmXEvent): event is VideoEvent {
+  return event.type.startsWith("video:") && "timestamp" in event;
+}
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
@@ -191,7 +208,7 @@ export const useVideoStore = create<VideoStore>()(
        * Subscribe to this store's derived state instead.
        */
       ingestEvent: (event) => {
-        if (!event.type.startsWith("video:")) return;
+        if (!isApiVideoLifecycleEvent(event)) return;
 
         set(
           (state) => {
@@ -201,11 +218,11 @@ export const useVideoStore = create<VideoStore>()(
               case "video:created": {
                 // If we don't have this job yet (e.g. submitted from another tab),
                 // seed a minimal record.
-                if (!jobs.has(event.payload.jobId)) {
+                if (!jobs.has(event.data.jobId)) {
                   const seed: VideoJob = {
-                    id: event.payload.jobId,
+                    id: event.data.jobId,
                     status: "queued",
-                    request: { prompt: event.payload.prompt },
+                    request: { prompt: event.data.prompt },
                     stages: {},
                     overallProgress: 0,
                     retryCount: 0,
@@ -218,7 +235,7 @@ export const useVideoStore = create<VideoStore>()(
               }
 
               case "video:queued": {
-                const job = jobs.get(event.payload.jobId);
+                const job = jobs.get(event.data.jobId);
                 if (job) {
                   jobs.set(job.id, {
                     ...job,
@@ -230,9 +247,9 @@ export const useVideoStore = create<VideoStore>()(
               }
 
               case "video:stage_started": {
-                const job = jobs.get(event.payload.jobId);
+                const job = jobs.get(event.data.jobId);
                 if (job) {
-                  const stage = event.payload.stage as VideoJobStage;
+                  const stage = event.data.stage;
                   const stageProgress: VideoStageProgress = {
                     stage,
                     stageProgress: 0,
@@ -252,9 +269,9 @@ export const useVideoStore = create<VideoStore>()(
               }
 
               case "video:progress": {
-                const job = jobs.get(event.payload.jobId);
+                const job = jobs.get(event.data.jobId);
                 if (job) {
-                  const { stage, stageProgress, overallProgress } = event.payload;
+                  const { stage, stageProgress, overallProgress } = event.data;
                   jobs.set(job.id, {
                     ...job,
                     status: "running",
@@ -271,65 +288,68 @@ export const useVideoStore = create<VideoStore>()(
               }
 
               case "video:completed": {
-                const job = jobs.get(event.payload.jobId);
+                const job = jobs.get(event.data.jobId);
                 if (job) {
-                  jobs.set(job.id, {
+                  const next: VideoJob = {
                     ...job,
                     status: "completed",
                     overallProgress: 100,
-                    currentStage: undefined,
                     completedAt: event.timestamp,
                     updatedAt: event.timestamp,
                     output: job.output ?? {
                       relativePath: "",
                       absolutePath: "",
-                      publicUrl: event.payload.outputPublicUrl,
-                      fileSizeBytes: event.payload.fileSizeBytes,
-                      durationSeconds: event.payload.durationSeconds,
+                      publicUrl: event.data.outputPublicUrl,
+                      fileSizeBytes: event.data.fileSizeBytes,
+                      durationSeconds: event.data.durationSeconds,
                       widthPx: 720,
                       heightPx: 1280,
                       fps: 24,
                       format: "mp4",
                       checksum: "",
                       generatedAt: event.timestamp,
-                      modelsUsed: event.payload.modelsUsed,
+                      modelsUsed: event.data.modelsUsed,
                     },
-                  });
+                  };
+                  delete next.currentStage;
+                  jobs.set(job.id, next);
                 }
                 break;
               }
 
               case "video:failed": {
-                const job = jobs.get(event.payload.jobId);
+                const job = jobs.get(event.data.jobId);
                 if (job) {
-                  jobs.set(job.id, {
+                  const next: VideoJob = {
                     ...job,
-                    status: job.retryCount < event.payload.retryCount ? "queued" : "failed",
-                    retryCount: event.payload.retryCount,
-                    error: event.payload.error,
-                    currentStage: undefined,
+                    status: job.retryCount < event.data.retryCount ? "queued" : "failed",
+                    retryCount: event.data.retryCount,
+                    error: event.data.error,
                     updatedAt: event.timestamp,
-                  });
+                  };
+                  delete next.currentStage;
+                  jobs.set(job.id, next);
                 }
                 break;
               }
 
               case "video:cancelled": {
-                const job = jobs.get(event.payload.jobId);
+                const job = jobs.get(event.data.jobId);
                 if (job) {
-                  jobs.set(job.id, {
+                  const next: VideoJob = {
                     ...job,
                     status: "cancelled",
-                    currentStage: undefined,
                     completedAt: event.timestamp,
                     updatedAt: event.timestamp,
-                  });
+                  };
+                  delete next.currentStage;
+                  jobs.set(job.id, next);
                 }
                 break;
               }
 
               case "video:snapshot": {
-                jobs.set(event.payload.job.id, event.payload.job);
+                jobs.set(event.data.job.id, event.data.job);
                 break;
               }
             }
@@ -338,6 +358,41 @@ export const useVideoStore = create<VideoStore>()(
           },
           false,
           `video/sse/${event.type}`
+        );
+      },
+
+      applyProgressEvent: (data) => {
+        set(
+          (state) => {
+            const jobs = new Map(state.jobs);
+            const job = jobs.get(data.jobId);
+            if (!job) {
+              return { jobs };
+            }
+
+            const nextStatus =
+              data.status === "completed" || data.status === "failed" || data.status === "cancelled"
+                ? (data.status as VideoJob["status"])
+                : data.status === "queued"
+                  ? "queued"
+                  : "running";
+
+            const next: VideoJob = {
+              ...job,
+              status: nextStatus,
+              overallProgress: Math.max(0, Math.min(100, data.progress)),
+              updatedAt: data.timestamp,
+              ...(data.error !== undefined ? { error: { code: "UNKNOWN", message: data.error, retryable: false } } : {}),
+              ...(nextStatus === "completed" || nextStatus === "failed" || nextStatus === "cancelled"
+                ? { completedAt: data.timestamp }
+                : {}),
+            };
+
+            jobs.set(job.id, next);
+            return { jobs };
+          },
+          false,
+          "video/progressEvent"
         );
       },
 

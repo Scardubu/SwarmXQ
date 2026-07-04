@@ -8,11 +8,19 @@
 #   [DEF-r7-02] triadic_dispatch keys use canonical Operator tags
 #   [DEF-r7-03] Operator name annotations added in comments
 #
-# Operator → canonical tag map:
-#   Pilot     → instruct-phi4-pro-q8-prod         (router/orchestrator)
-#   Oracle    → reason-deepseekr1-pro-q5km-prod   (reasoning/planning)
-#   Forge     → code-qwen25-pro-q5km-prod         (execution/code)
-#   Relay     → route-phi4-lite-q4km-prod         (ultra-light first-pass)
+# CHANGELOG v2026.6.28-apex17-r8:
+#   [DEF-r8-01] Added model_route (Relay), model_plan_phi4 / model_plan_qwen /
+#               model_plan_deepseek (Architect family), and model_audit
+#               (Auditor). These 5 canonical tags were already registered in
+#               models/registry.yaml's optional_profiles and used throughout
+#               configs/routing.yaml's exclusive_pairs / token_ceilings, but
+#               had no corresponding model_* key here — meaning any caller
+#               that resolved a model purely from this defaults file (rather
+#               than going to registry.yaml directly) had no way to address
+#               Relay, any Architect variant, or Auditor at all.
+#   [DEF-r8-02] governance.token_ceilings extended to cover all 11 canonical
+#               tags (previously only 6 of 11 were represented — Relay,
+#               Architect-phi4, and all 3 Lab models were missing).
 # ─────────────────────────────────────────────────────────────────────────────
 
 runtime:
@@ -29,7 +37,7 @@ runtime:
   worker_interval: 2.0
   control_mode: hybrid
 
-# ── MODEL TRIAD — Canonical Operator Tags ─────────────────────────────────────
+# ── MODEL TRIAD + FULL OPERATOR STACK — Canonical Tags ───────────────────────
 routing:
   provider: ollama
   base_url: http://localhost:11434
@@ -38,6 +46,17 @@ routing:
   model_fast:   instruct-phi4-pro-q8-prod         # Pilot — always-on orchestrator
   model_reason: reason-deepseekr1-pro-q5km-prod   # Oracle — reasoning/planning
   model_code:   code-qwen25-pro-q5km-prod         # Forge — execution/code
+
+  # [DEF-r8-01] Optional-overlay operator assignments (canonical tags).
+  # These resolve models that configs/routing.yaml's exclusive_pairs,
+  # token_ceilings, and APEX-17 dispatch rules refer to — but that
+  # previously had no model_* key in this file, making them unreachable to
+  # any caller that configures itself from swarmx.defaults.yaml alone.
+  model_route:          route-phi4-lite-q4km-prod         # Relay — ultra-light router
+  model_plan_phi4:      plan-phi4-pro-q8-prod             # Architect (phi4) — single step
+  model_plan_qwen:      plan-qwen25-pro-q5km-prod         # Architect (qwen25) — multi-step
+  model_plan_deepseek:  plan-deepseekr1-pro-q5km-prod     # Architect (deepseek) — long-horizon
+  model_audit:          critique-deepseekr1-pro-q5km-prod # Auditor — adversarial review
 
   # Triadic dispatch rules — Operator → agent roles
   triadic_dispatch:
@@ -166,12 +185,21 @@ governance:
     critical_max: 1
 
   token_ceilings:
-    instruct-phi4-pro-q8-prod:       1024   # Pilot
-    plan-qwen25-pro-q5km-prod:       1024   # Architect-qwen
-    plan-deepseekr1-pro-q5km-prod:   1024   # Architect-deepseek
-    code-qwen25-pro-q5km-prod:       4096   # Forge
-    reason-deepseekr1-pro-q5km-prod: 2048   # Oracle
-    critique-deepseekr1-pro-q5km-prod: 1024 # Auditor
+    # [DEF-r8-02] Extended to cover all 11 canonical tags. The r7 build had
+    # only 6 of 11: Relay (route-phi4-lite-q4km-prod), Architect (phi4)
+    # (plan-phi4-pro-q8-prod), and all 3 Lab models were absent, leaving
+    # them with uncapped token generation under governance pressure.
+    route-phi4-lite-q4km-prod:          96     # Relay — output cap matches modelfile
+    instruct-phi4-pro-q8-prod:        1024     # Pilot
+    plan-phi4-pro-q8-prod:             512     # Architect (phi4)
+    plan-qwen25-pro-q5km-prod:        1024     # Architect (qwen25)
+    plan-deepseekr1-pro-q5km-prod:    1024     # Architect (deepseek)
+    code-qwen25-pro-q5km-prod:        4096     # Forge
+    reason-deepseekr1-pro-q5km-prod:  2048     # Oracle
+    critique-deepseekr1-pro-q5km-prod: 1024    # Auditor
+    synth-phi4-exp-q8-dev:             512     # Lab — observe phase
+    synth-qwen25-exp-q5km-dev:        1024     # Lab — mutate phase
+    synth-deepseekr1-exp-q5km-dev:    1024     # Lab — critique/validate phases
 
   escalation:
     strict_tier_enforcement: true

@@ -2,6 +2,41 @@
 
 ---
 
+## V6.2.1 — API Contract + Docs Sync (2026-07-04)
+
+Documentation and contract-alignment pass after strict TypeScript cleanup and naming migration hardening.
+
+### Highlights
+
+- `apps/swarmx-api/src/types/events.ts`
+  - Canonicalized API-local video lifecycle events on `{ type, timestamp, data }`.
+  - Confirmed emitted variants: `video:created`, `video:queued`, `video:stage_started`, `video:progress`, `video:completed`, `video:failed`, `video:cancelled`, `video:snapshot`.
+
+- `apps/swarmx-api/src/routes/video.ts`
+  - Confirmed implemented route surface:
+    - `POST /api/video/jobs`
+    - `GET /api/video/jobs`
+    - `GET /api/video/jobs/:id`
+    - `POST /api/video/jobs/:id/cancel`
+    - `GET /api/video/files/:filename`
+  - Removed stale docs references to non-implemented `DELETE /api/video/jobs/:id`, `POST /api/video/jobs/:id/retry`, and `GET /api/video/health`.
+
+- `docs/VIDEO-GENERATION.md`
+  - Rewrote API examples and schemas to match current request/query/response contracts.
+  - Updated SSE section to distinguish API lifecycle events from compact dashboard progress projections.
+  - Corrected model/env examples to canonical tags and active dashboard env key (`NEXT_PUBLIC_API_URL`).
+  - Updated architecture and troubleshooting references (`videoRoutes` registration, stage names).
+
+- `README.md`
+  - Updated video pipeline stage narrative to match the current orchestrator implementation and linked to authoritative API/video docs.
+
+### Validation status
+
+- `pnpm --filter @swarmx/api typecheck` — verified clean.
+- `bash scripts/rebuild-all-modelfiles.sh --validate` — verified clean for canonical naming checks.
+
+---
+
 ## V5.8 — Surgical Refinement: Gap Closure + Async Hardening (2026-05-04)
 
 Production refinement pass closing all critical import failures, naming

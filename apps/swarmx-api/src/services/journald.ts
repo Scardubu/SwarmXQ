@@ -8,7 +8,7 @@ import type { FastifyInstance } from "fastify";
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import { broadcastEvent } from "../plugins/sse.js";
-import type { LogEntry, LogLevel } from "../types/events.js";
+import type { LogLevel, SwarmXEvent } from "../types/events.js";
 
 // journald priority → LogLevel
 const PRIORITY_MAP: Record<string, LogLevel> = {
@@ -32,7 +32,11 @@ interface JournaldEntry {
   SWARMX_TRACE_ID?: string;
 }
 
-function parseJournaldEntry(line: string): LogEntry | null {
+type LogEntryData = Extract<SwarmXEvent, { type: "log:entry" }>[
+  "data"
+];
+
+function parseJournaldEntry(line: string): LogEntryData | null {
   try {
     const raw = JSON.parse(line) as JournaldEntry;
     const tsUs = Number.parseInt(raw.__REALTIME_TIMESTAMP ?? "0", 10);

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
 # scripts/rebuild-all-modelfiles.sh
-# SwarmXQ APEX-17 r7 — Canonical Model Rebuild & Validation
+# SwarmXQ APEX-17 r8 — Canonical Model Rebuild & Validation
 #
 # Rebuilds all Ollama models from Modelfile definitions using the canonical
 # naming standard. Validates that no legacy -scar names remain in active
@@ -22,12 +22,27 @@
 #   Oracle    (reason-deepseekr1-pro-q5km-prod)  — deep reasoning
 #   Auditor   (critique-deepseekr1-pro-q5km-prod) — adversarial review
 #   Lab       (synth-*-exp-*-dev)                — experimental / evolve
+#
+# ─── r8 FIX ───────────────────────────────────────────────────────────────────
+#   The r7 version of this script resolved each canonical tag's Modelfile by
+#   guessing the path "$MODELFILE_DIR/${model}.modelfile" (MODELFILE_DIR =
+#   models/Modelfiles/primary), with a fallback to a "$REPO_ROOT/
+#   latest-modelfiles/${model}.modelfile" path that does not exist anywhere
+#   in this repository. That guess is correct for the 8 primary/ models
+#   (their filename IS their canonical tag) but is WRONG for all 3 Lab
+#   models, whose files live in models/Modelfiles/variants/ under their
+#   pre-r7 filenames (phi4-fast-evolve.modelfile, qwen2.5-evolve.modelfile,
+#   deepseek-r1-evolve.modelfile — see Group A of the integration spec for
+#   why those filenames were kept). Running the r7 script today would print
+#   "Skipping <Lab tag> — no Modelfile found" for all three Lab models, every
+#   time. MODELFILE_PATH_FOR below is an explicit, exhaustive tag → path map
+#   so every one of the 11 canonical tags resolves correctly regardless of
+#   which subdirectory or filename convention its Modelfile uses.
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-MODELFILE_DIR="$REPO_ROOT/models/Modelfiles/primary"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 OLLAMA_URL="${SWARMX_OLLAMA_URL:-http://localhost:11434}"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
@@ -49,6 +64,23 @@ CANONICAL_MODELS=(
   "synth-phi4-exp-q8-dev"
   "synth-qwen25-exp-q5km-dev"
   "synth-deepseekr1-exp-q5km-dev"
+)
+
+# ── [r8 FIX] Explicit tag → Modelfile path map (relative to repo root) ───────
+# Every primary/ entry's filename matches its canonical tag exactly. The 3
+# Lab (variants/) entries keep their pre-r7 filenames — see header note above.
+declare -A MODELFILE_PATH_FOR=(
+  ["route-phi4-lite-q4km-prod"]="models/Modelfiles/primary/route-phi4-lite-q4km-prod.modelfile"
+  ["instruct-phi4-pro-q8-prod"]="models/Modelfiles/primary/instruct-phi4-pro-q8-prod.modelfile"
+  ["plan-phi4-pro-q8-prod"]="models/Modelfiles/primary/plan-phi4-pro-q8-prod.modelfile"
+  ["plan-qwen25-pro-q5km-prod"]="models/Modelfiles/primary/plan-qwen25-pro-q5km-prod.modelfile"
+  ["plan-deepseekr1-pro-q5km-prod"]="models/Modelfiles/primary/plan-deepseekr1-pro-q5km-prod.modelfile"
+  ["code-qwen25-pro-q5km-prod"]="models/Modelfiles/primary/code-qwen25-pro-q5km-prod.modelfile"
+  ["reason-deepseekr1-pro-q5km-prod"]="models/Modelfiles/primary/reason-deepseekr1-pro-q5km-prod.modelfile"
+  ["critique-deepseekr1-pro-q5km-prod"]="models/Modelfiles/primary/critique-deepseekr1-pro-q5km-prod.modelfile"
+  ["synth-phi4-exp-q8-dev"]="models/Modelfiles/variants/phi4-fast-evolve.modelfile"
+  ["synth-qwen25-exp-q5km-dev"]="models/Modelfiles/variants/qwen2.5-evolve.modelfile"
+  ["synth-deepseekr1-exp-q5km-dev"]="models/Modelfiles/variants/deepseek-r1-evolve.modelfile"
 )
 
 LEGACY_SCAR_TAGS=(
@@ -118,6 +150,22 @@ validate_naming() {
     ok "operator-map.ts found"
   fi
 
+  # [r8] Confirm every canonical tag's Modelfile actually resolves on disk —
+  # this is the exact check that would have caught the r7 Lab-model path bug.
+  local missing_modelfiles=0
+  for model in "${CANONICAL_MODELS[@]}"; do
+    local path="${MODELFILE_PATH_FOR[$model]:-}"
+    if [[ -z "$path" || ! -f "$REPO_ROOT/$path" ]]; then
+      fail "No Modelfile resolves for canonical tag: $model"
+      missing_modelfiles=$((missing_modelfiles + 1))
+    fi
+  done
+  if [[ $missing_modelfiles -eq 0 ]]; then
+    ok "All ${#CANONICAL_MODELS[@]} canonical Modelfiles resolve on disk"
+  else
+    errors=$((errors + missing_modelfiles))
+  fi
+
   # Check runtime defaults don't use -scar
   if [[ -f "$REPO_ROOT/src/swarmx/config.py" ]]; then
     if grep -E '_DEFAULT_(RELAY|PILOT|FORGE|ORACLE).*=.*-scar' "$REPO_ROOT/src/swarmx/config.py" 2>/dev/null; then
@@ -142,7 +190,7 @@ validate_naming() {
   local config_violations=0
   for yaml_file in "$REPO_ROOT"/configs/*.yaml; do
     [[ -f "$yaml_file" ]] || continue
-    if grep -E '^[[:space:]]*(model_fast|model_reason|model_code|observer_model|critic_model|mutator_model):.*-scar' "$yaml_file" 2>/dev/null | grep -v "alias\|legacy" > /dev/null; then
+    if grep -E '^[[:space:]]*(model_fast|model_reason|model_code|model_route|model_plan_phi4|model_plan_qwen|model_plan_deepseek|model_audit|observer_model|critic_model|mutator_model):.*-scar' "$yaml_file" 2>/dev/null | grep -v "alias\|legacy" > /dev/null; then
       fail "  $(basename "$yaml_file") has -scar in primary model assignment"
       config_violations=$((config_violations + 1))
     fi
@@ -151,6 +199,22 @@ validate_naming() {
     ok "configs/*.yaml primary assignments are canonical"
   else
     errors=$((errors + config_violations))
+  fi
+
+  # [r8] Also check apps/swarmx-api/src for -scar outside the permitted
+  # legacy_aliases / comment / MODEL_ALIASES locations.
+  if [[ -d "$REPO_ROOT/apps/swarmx-api/src" ]]; then
+    local code_hits
+    code_hits=$(grep -rn '\-scar' "$REPO_ROOT/apps/swarmx-api/src" \
+      --include="*.ts" 2>/dev/null \
+      | grep -v "MODEL_ALIASES\|//.*-scar\|legacy" || true)
+    if [[ -n "$code_hits" ]]; then
+      fail "apps/swarmx-api/src has -scar outside MODEL_ALIASES/comments:"
+      echo "$code_hits"
+      errors=$((errors + 1))
+    else
+      ok "apps/swarmx-api/src is free of stray -scar references"
+    fi
   fi
 
   echo ""
@@ -170,7 +234,7 @@ fi
 
 # ── Pre-flight ───────────────────────────────────────────────────────────────
 
-info "SwarmXQ APEX-17 r7 — Canonical Model Rebuild"
+info "SwarmXQ APEX-17 r8 — Canonical Model Rebuild"
 
 if ! curl -sf "$OLLAMA_URL/api/tags" > /dev/null 2>&1; then
   fail "Ollama is not running at $OLLAMA_URL"
@@ -188,13 +252,11 @@ fail_count=0
 for model in "${CANONICAL_MODELS[@]}"; do
   if [[ -n "$ONLY_MODEL" && "$model" != "$ONLY_MODEL" ]]; then continue; fi
 
-  modelfile="$MODELFILE_DIR/${model}.modelfile"
-  if [[ ! -f "$modelfile" ]]; then
-    modelfile="$REPO_ROOT/latest-modelfiles/${model}.modelfile"
-  fi
+  rel_path="${MODELFILE_PATH_FOR[$model]:-}"
+  modelfile="$REPO_ROOT/$rel_path"
 
-  if [[ ! -f "$modelfile" ]]; then
-    warn "Skipping $model — no Modelfile found"
+  if [[ -z "$rel_path" || ! -f "$modelfile" ]]; then
+    warn "Skipping $model — no Modelfile found (expected: ${rel_path:-<unmapped>})"
     skip_count=$((skip_count + 1))
     continue
   fi

@@ -1,0 +1,150 @@
+# =============================================================================
+# plan-phi4-pro-q8-prod.modelfile
+# =============================================================================
+# OPERATOR      : Architect (phi4)
+# CANONICAL TAG : plan-phi4-pro-q8-prod
+# LEGACY TAG    : phi4-worker-scar (migrate via scripts/migrate-to-r7.sh)
+# PURPOSE       : Fast Single-Step Execution · Tool Calling · Bounded Delegation
+# ENV VAR       : SWARM_MODEL_PLAN_PHI4
+# BASE GGUF     : ~/llm-local/gguf/microsoft_Phi-4-mini-instruct-Q8_0.gguf
+# VERSION       : v2026.6.28-apex17-r8
+# HARDWARE      : HP EliteBook 850 G3 · 8 GB RAM · CPU-only · 4 cores · WSL2
+#
+# ─── r8 INTEGRATION NOTE ─────────────────────────────────────────────────────
+#   NEW FILE. This canonical tag is registered in models/registry.yaml
+#   (optional_profiles → Architect/plan-phi4-pro-q8-prod) and referenced by
+#   route-phi4-lite-q4km-prod's routing table, but no corresponding Modelfile
+#   existed in the repository prior to this integration. Created fresh using
+#   phi4-worker-scar.modelfile (latest-modelfiles source, v2026.5.20-apex17-r2)
+#   as the SYSTEM prompt + parameter source, header/structure aligned to the
+#   established primary/ convention. All -scar tag references mechanically
+#   substituted for canonical r7 tags.
+#
+# ─── ROLE DISTINCTION (Architect family) ─────────────────────────────────────
+#   Architect-phi4   (this file)              → single bounded tool call / step
+#   Architect-qwen   (plan-qwen25-pro-q5km-prod) → multi-step plan decomposition
+#   Architect-deepseek (plan-deepseekr1-pro-q5km-prod) → long-horizon, high-risk planning
+#
+# ─── MEMORY MATH ────────────────────────────────────────────────────────────
+#   Architecture : Phi-4-mini · 32 layers · 8 GQA KV heads · head_dim 96
+#   Weights      : ~3.78 GB RAM (Q8_0, 3.8B params)
+#   KV @4096     : ~384 MB
+#   Runtime OH   : ~300 MB
+#   TOTAL @4096  : ≈ 4.34 GB   ← matches registry.yaml ram_mb: 4340. Not 7B class.
+#
+# ─── BUILD ───────────────────────────────────────────────────────────────────
+#   ollama create plan-phi4-pro-q8-prod \
+#     -f models/Modelfiles/primary/plan-phi4-pro-q8-prod.modelfile
+# =============================================================================
+
+FROM ~/llm-local/gguf/microsoft_Phi-4-mini-instruct-Q8_0.gguf
+
+# ─── CONTEXT & PREDICTION ────────────────────────────────────────────────────
+PARAMETER num_ctx        4096
+PARAMETER num_predict    512
+PARAMETER num_keep       64
+
+# ─── SAMPLING ────────────────────────────────────────────────────────────────
+PARAMETER temperature    0.10
+PARAMETER top_k          10
+PARAMETER top_p          0.85
+PARAMETER min_p          0.10
+PARAMETER repeat_penalty 1.10
+PARAMETER repeat_last_n  64
+
+# ─── COMPUTE BUDGET ──────────────────────────────────────────────────────────
+PARAMETER num_batch      128
+PARAMETER num_thread     4
+PARAMETER seed           -1
+
+# ─── STOP TOKENS ─────────────────────────────────────────────────────────────
+PARAMETER stop "<|end|>"
+PARAMETER stop "<|endoftext|>"
+PARAMETER stop "<|user|>"
+PARAMETER stop "<|assistant|>"
+PARAMETER stop "<|system|>"
+PARAMETER stop "</tool>"
+PARAMETER stop "</response>"
+PARAMETER stop "USER:"
+PARAMETER stop "ASSISTANT:"
+
+TEMPLATE """
+{{- if .Messages }}
+{{- if or .System .Tools }}<|system|>
+{{- if .System }}
+{{ .System }}
+{{- end }}<|end|>
+{{ end }}
+{{- range $i, $_ := .Messages }}
+{{- $last := eq (len (slice $.Messages $i)) 1 -}}
+{{- if eq .Role "user" }}<|user|>
+{{ .Content }}<|end|>
+{{ else if eq .Role "assistant" }}<|assistant|>
+{{ .Content }}{{ if not $last }}<|end|>
+{{ end }}
+{{- end }}
+{{- if and (ne .Role "assistant") $last }}<|assistant|>
+{{ end }}
+{{- end }}
+{{- else }}
+{{- if .System }}<|system|>
+{{ .System }}<|end|>
+{{ end }}<|user|>
+{{ .Prompt }}<|end|>
+<|assistant|>
+{{ .Response }}<|end|>
+{{- end }}
+"""
+
+# ─── SYSTEM PROMPT (ported verbatim from phi4-worker-scar.modelfile; ──────────
+#      -scar tags mechanically substituted for canonical r7 tags) ─────────────
+SYSTEM """
+You are plan-phi4-pro-q8-prod — the fast execution agent of the SCAR Cognitive OS.
+VERSION: v2026.5.20-apex17-r2
+You serve as SCAR_TOOL_MODEL on an HP EliteBook 850 G3 (8 GB RAM, CPU-only).
+
+━━━ PRIMARY ROLE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Execute exactly the single step delegated to you.
+Call one tool, process the result, return a valid JSON object.
+Speed and schema compliance are your primary metrics.
+You do not plan, delegate, or reason beyond your assigned step.
+
+━━━ INTERNAL PROCESSING (silent) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+§1 Signal Triage: T1 Critical → act. T4 Noise → discard. Ambiguous T1 → step_error.
+§2 Approach Check: 2 candidates max. Score: correctness × reversibility × simplicity.
+§3 Self-Check: What assumption breaks this? Critical flaw → fix before emitting.
+§4 Output Contract: Every required field present and typed? Missing → BLOCK.
+
+━━━ TOOL CALLING PROTOCOL ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ONE tool call per turn. Retry once on malformed result.
+After 3 failures → ESCALATE to code-qwen25-pro-q5km-prod.
+
+━━━ JSON OUTPUT CONTRACT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+TOOL_CALL:
+{"type":"tool_call","task_id":"<uuid>","step_id":<int>,"tool":"<name>","args":{<params>},"reason":"<≤10 words>"}
+
+TOOL_RESULT:
+{"type":"tool_result","task_id":"<uuid>","step_id":<int>,"tool":"<name>","status":"success|error|partial","result":<any>,"error_detail":null}
+
+STEP_COMPLETE:
+{"type":"step_complete","task_id":"<uuid>","step_id":<int>,"output":<any>,"confidence":"high|medium|low","warnings":[]}
+
+STEP_ERROR:
+{"type":"step_error","task_id":"<uuid>","step_id":<int>,"error_code":"tool_failure|timeout|ambiguous_input|schema_violation|max_retries_exceeded","error_detail":"<≤30 words>","recoverable":true,"suggested_retry_agent":"code-qwen25-pro-q5km-prod|null"}
+
+ESCALATE:
+{"status":"ESCALATE","reason":"<one sentence>","routing":"code-qwen25-pro-q5km-prod","fix_log":[]}
+
+BLOCK:
+{"status":"BLOCK","reason":"<one sentence>","requires_approval":true}
+
+━━━ HARD RULES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. All output is JSON. No prose. No markdown.
+2. Execute exactly one step per invocation.
+3. Never fabricate data, tool results, or file contents.
+4. Result > 300 tokens → summarize + "result_truncated":true in warnings.
+5. All destructive operations → BLOCK immediately.
+6. Max self-recovery: 3 attempts. Then ESCALATE.
+"""
