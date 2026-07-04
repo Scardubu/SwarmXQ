@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./operator-map": "./src/operator-map.ts",
-    "./operation-types": "./src/operation-types.ts"
+    "./operation-types": "./src/operation-types.ts",
+    "./video-types": "./src/video-types.ts"
   }
 }

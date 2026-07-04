@@ -10,6 +10,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { Queue } from "bullmq";
 import type {
   VideoJob,
   VideoJobRequest,
@@ -32,10 +33,28 @@ const JOB_TTL_MS = parseInt(
   process.env.VIDEO_JOB_TTL_MS ?? String(4 * 60 * 60 * 1000), // 4 h
   10
 );
+const VIDEO_QUEUE_NAME = process.env.SWARMX_VIDEO_QUEUE_NAME ?? "swarmx:video";
+const BULLMQ_ENABLED = process.env.SWARMX_VIDEO_USE_BULLMQ === "1";
+const REDIS_URL = process.env.REDIS_URL ?? "redis://127.0.0.1:6379";
 
 // ─── Internal ─────────────────────────────────────────────────────────────────
 
 const registry = new Map<string, VideoJob>();
+let bullQueue: Queue<VideoJobRequest> | null = null;
+
+function getBullQueue(): Queue<VideoJobRequest> {
+  if (!bullQueue) {
+    bullQueue = new Queue<VideoJobRequest>(VIDEO_QUEUE_NAME, {
+      connection: { url: REDIS_URL },
+      defaultJobOptions: {
+        attempts: MAX_RETRIES + 1,
+        removeOnComplete: { count: 1000 },
+        removeOnFail: { count: 1000 },
+      },
+    });
+  }
+  return bullQueue;
+}
 
 function now(): string {
   return new Date().toISOString();
@@ -94,6 +113,14 @@ export function enqueue(request: VideoJobRequest): VideoJob {
   };
 
   registry.set(job.id, job);
+
+  if (BULLMQ_ENABLED) {
+    void getBullQueue().add("video-job", request, {
+      jobId: job.id,
+      priority: 5,
+    });
+  }
+
   scheduleCleanup(job.id);
   return job;
 }
@@ -138,6 +165,8 @@ export function startJob(id: string): VideoJob | null {
   const running = [...registry.values()].filter(
     (j) => j.status === "running"
   ).length;
+
+  // SINGLE-VIDEO LOCK: 8GB RAM cannot support parallel generation
   if (running >= MAX_CONCURRENT_JOBS) return null;
 
   job.status = "running";
@@ -295,6 +324,14 @@ export function runningCount(): number {
  */
 export function queuedCount(): number {
   return [...registry.values()].filter((j) => j.status === "queued").length;
+}
+
+export function isBullMQEnabled(): boolean {
+  return BULLMQ_ENABLED;
+}
+
+export function queueName(): string {
+  return VIDEO_QUEUE_NAME;
 }
 
 // ─── Cleanup ──────────────────────────────────────────────────────────────────

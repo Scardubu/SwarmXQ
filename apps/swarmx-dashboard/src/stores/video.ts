@@ -16,6 +16,12 @@ import type {
   VideoStageProgress,
 } from "../../../swarmx-api/src/types/video";
 import type {
+  CaptionDraft,
+  PublishResult,
+  ViralitySignal,
+  VideoArtifacts,
+} from "@swarmx/types/video-types";
+import type {
   SwarmXEvent,
   VideoEvent,
 } from "../../../swarmx-api/src/types/events";
@@ -40,8 +46,10 @@ export interface VideoState {
 export interface VideoActions {
   // ── Remote ──────────────────────────────────────────────────────────────────
   fetchJobs: () => Promise<void>;
+  fetchJobDetail: (jobId: string) => Promise<void>;
   submitJob: (request: VideoJobRequest) => Promise<string | null>;
   cancelJob: (jobId: string) => Promise<void>;
+  publishJob: (jobId: string, input: { platform: "tiktok" | "reels" | "shorts" | "generic"; scheduledAt?: string }) => Promise<PublishResult | null>;
 
   // ── SSE ingestion ───────────────────────────────────────────────────────────
   /** Called by the top-level SSE hook to route events into the store. */
@@ -129,6 +137,33 @@ export const useVideoStore = create<VideoStore>()(
         }
       },
 
+      fetchJobDetail: async (jobId) => {
+        try {
+          const [job, artifacts, analysis] = await Promise.all([
+            apiFetch<VideoJob>(`/api/video/jobs/${jobId}`),
+            apiFetch<{ artifacts: VideoArtifacts; output: VideoJob["output"] | null }>(`/api/video/jobs/${jobId}/artifacts`),
+            apiFetch<{ viralitySignal: ViralitySignal | null; captionDraft: CaptionDraft | null }>(`/api/video/jobs/${jobId}/analysis`),
+          ]);
+
+          set(
+            (state) => {
+              const jobs = new Map(state.jobs);
+              jobs.set(jobId, {
+                ...job,
+                ...(artifacts.artifacts ? { outputArtifacts: artifacts.artifacts } : {}),
+                ...(job.publishHistory ? { publishHistory: job.publishHistory } : {}),
+                ...(analysis.viralitySignal ? { viralitySignal: analysis.viralitySignal } : {}),
+              });
+              return { jobs };
+            },
+            false,
+            "video/fetchJobDetail",
+          );
+        } catch (err) {
+          console.error("[VideoStore] fetchJobDetail failed:", err);
+        }
+      },
+
       // ── submitJob ────────────────────────────────────────────────────────────
       submitJob: async (request) => {
         set({ isSubmitting: true, submitError: null }, false, "video/submit/start");
@@ -195,6 +230,34 @@ export const useVideoStore = create<VideoStore>()(
           );
         } catch (err) {
           console.error("[VideoStore] cancelJob failed:", err);
+        }
+      },
+
+      publishJob: async (jobId, input) => {
+        try {
+          const data = await apiFetch<{ result: PublishResult; job: VideoJob }>(
+            `/api/video/jobs/${jobId}/publish`,
+            {
+              method: "POST",
+              body: JSON.stringify(input),
+            },
+          );
+
+          set(
+            (state) => {
+              const jobs = new Map(state.jobs);
+              jobs.set(jobId, data.job);
+
+              return { jobs };
+            },
+            false,
+            "video/publish",
+          );
+
+          return data.result;
+        } catch (err) {
+          console.error("[VideoStore] publishJob failed:", err);
+          return null;
         }
       },
 

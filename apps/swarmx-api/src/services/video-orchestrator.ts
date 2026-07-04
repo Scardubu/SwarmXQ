@@ -102,6 +102,10 @@ import {
 } from "./model-orchestrator.js";
 import { resolveCanonicalTag } from "@swarmx/types/operator-map";
 import { sanitizeReasoningOutput } from "./reasoning-sanitizer.js";
+import { getComfyUIClient } from "./comfyui-client.js";
+import { generateLTXWorkflow } from "./video-workflows.js";
+import { scoreVirality } from "./virality-scorer.js";
+import { generateCaptionDraft } from "./caption-generator.js";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -174,6 +178,9 @@ interface OrchestratorContext {
   jobAbortSignal: AbortSignal;
   startedAt: number;
   modelsUsed: Partial<Record<VideoJobStage, string>>;
+  scriptText?: string;
+  storyboardFrames?: string[];
+  viralitySummary?: string;
 }
 
 // ─── Pressure Guard ───────────────────────────────────────────────────────────
@@ -472,11 +479,42 @@ async function stageRenderAssembly(
   const controller = stageController(ctx, "render_assembly");
 
   try {
-    const comfyAvailable = await isComfyAvailable(controller.signal);
+    const comfyClient = getComfyUIClient();
+    const comfyAvailable = await comfyClient.isAvailable(controller.signal);
     if (comfyAvailable) {
-      const workflow = buildComfyWorkflow(ctx.job.request, frames);
-      const filename = await comfyRunWorkflow(workflow, controller.signal);
-      return { outputFilename: filename };
+      const ram = ModelOrchestrator.getInstance().getRamSnapshot();
+      const workflow = generateLTXWorkflow({
+        seed: Math.floor(Math.random() * 1_000_000_000),
+        prompt: frames[0] ?? ctx.job.request.prompt,
+        negativePrompt: "low quality, blurry, watermark, artifact",
+        resolution: "512x896",
+        totalFrames: Math.max(16, Math.min(96, frames.length * 8)),
+        outputFps: 24,
+        availableMb: ram.availableMb,
+      });
+
+      const run = await comfyClient.runWorkflow(workflow, {
+        signal: controller.signal,
+        onProgress: (progress) => {
+          const stageProgress: VideoStageProgress = {
+            stage: "render_assembly",
+            stageProgress: progress.pct,
+            overallProgress: Math.round(75 + (progress.pct * 0.2)),
+            message: progress.message,
+            startedAt: new Date().toISOString(),
+          };
+          queue.recordStageProgress(ctx.job.id, "render_assembly", stageProgress);
+          ctx.broadcast(makeVideoProgressEvent(
+            ctx.job.id,
+            "render_assembly",
+            stageProgress,
+            stageProgress.overallProgress,
+            progress.message,
+          ));
+        },
+      });
+
+      return { outputFilename: run.outputFilename };
     }
     return { outputFilename: `stub_${ctx.job.id}.mp4` };
   } finally {
@@ -500,6 +538,41 @@ async function stageFinalizing(
     modelsUsed:       ctx.modelsUsed as Record<string, string>,
     request:          ctx.job.request,
   });
+}
+
+async function stageViralityAndCaption(ctx: OrchestratorContext): Promise<void> {
+  const targetPlatform =
+    ctx.job.request.platform === "youtube_shorts"
+      ? "shorts"
+      : (ctx.job.request.platform ?? "generic");
+
+  const virality = await scoreVirality({
+    topic: ctx.job.request.prompt,
+    platform: targetPlatform,
+    durationSec: ctx.job.request.targetDurationSeconds ?? 30,
+    ...(ctx.scriptText?.split("\n")[0]
+      ? { hook: ctx.scriptText.split("\n")[0] }
+      : {}),
+  });
+
+  const captionDraft = await generateCaptionDraft({
+    topic: ctx.job.request.prompt,
+    tone: ctx.job.request.niche ?? "engaging",
+    platform: targetPlatform,
+    viralitySummary: virality.recommendations.join("; "),
+  });
+
+  ctx.job.viralitySignal = {
+    ...virality,
+    captionDraft,
+  };
+  ctx.viralitySummary = virality.recommendations.join("; ");
+
+  if (!ctx.job.outputArtifacts) {
+    ctx.job.outputArtifacts = {};
+  }
+  ctx.job.outputArtifacts.captionPath = "inline:caption-draft";
+  ctx.job.updatedAt = new Date().toISOString();
 }
 
 // ─── Pipeline ─────────────────────────────────────────────────────────────────
@@ -594,12 +667,14 @@ export async function runOrchestration(
     await runStage(ctx, "scripting", 30, 50, async () => {
       const result = await stageScripting(ctx, plan);
       scriptText = result.scriptText;
+      ctx.scriptText = scriptText;
     });
 
     let frames: string[] = [];
     await runStage(ctx, "storyboard_generation", 50, 75, async () => {
       const result = await stageStoryboardGeneration(ctx, scriptText);
       frames = result.frames;
+      ctx.storyboardFrames = frames;
     });
 
     let outputFilename = "";
@@ -613,13 +688,25 @@ export async function runOrchestration(
       output = await stageFinalizing(ctx, scriptText, frames, outputFilename);
     });
 
+    await stageViralityAndCaption(ctx);
+
+    if (!output) {
+      throw makeError("UNKNOWN", "finalizing stage did not produce output", false, "finalizing");
+    }
+
+    if (!ctx.job.outputArtifacts) {
+      ctx.job.outputArtifacts = {};
+    }
+    ctx.job.outputArtifacts.outputPath = output.absolutePath;
+    ctx.job.outputArtifacts.outputPublicUrl = output.publicUrl;
+
     const completedJob = queue.completeJob(jobId, output);
     broadcast(makeVideoCompletedEvent(jobId, {
-      outputPublicUrl: output!.publicUrl,
-      durationSeconds: output!.durationSeconds,
-      fileSizeBytes:   output!.fileSizeBytes,
+      outputPublicUrl: output.publicUrl,
+      durationSeconds: output.durationSeconds,
+      fileSizeBytes:   output.fileSizeBytes,
       totalDurationMs: Date.now() - ctx.startedAt,
-      modelsUsed:      output!.modelsUsed as Record<string, string>,
+      modelsUsed:      output.modelsUsed as Record<string, string>,
     }));
     void completedJob;
 

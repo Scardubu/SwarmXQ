@@ -14,7 +14,7 @@
 
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useMemo, useState } from "react";
 import { useVideoStore } from "../../../stores/video";
 import { VideoJobForm } from "../../../components/video/VideoJobForm";
 import { VideoJobCard } from "../../../components/video/VideoJobCard";
@@ -24,10 +24,46 @@ import { VideoJobTimeline } from "../../../components/video/VideoJobTimeline";
 // FIX: Defined at module scope — not nested inside VideoPage
 
 function VideoJobDetailPanel() {
-  const { selectedJob, selectJob } = useVideoStore((s) => ({
+  const { selectedJob, selectJob, fetchJobDetail, publishJob } = useVideoStore((s) => ({
     selectedJob: s.selectedJob(),
     selectJob: s.selectJob,
+    fetchJobDetail: s.fetchJobDetail,
+    publishJob: s.publishJob,
   }));
+  const [publishPlatform, setPublishPlatform] = useState<"tiktok" | "reels" | "shorts" | "generic">("tiktok");
+  const [publishState, setPublishState] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!selectedJob) return;
+    void fetchJobDetail(selectedJob.id);
+  }, [fetchJobDetail, selectedJob]);
+
+  const viralityMetrics = useMemo(() => {
+    if (!selectedJob?.viralitySignal) return [];
+    return [
+      { label: "Hook", value: selectedJob.viralitySignal.hookStrength },
+      { label: "Completion", value: selectedJob.viralitySignal.completionProxy },
+      { label: "Shareability", value: selectedJob.viralitySignal.shareability },
+      { label: "SEO", value: selectedJob.viralitySignal.seoScore },
+      { label: "Overall", value: selectedJob.viralitySignal.overall },
+    ];
+  }, [selectedJob]);
+
+  const handlePublish = useCallback(async () => {
+    if (!selectedJob) return;
+    setPublishState("Publishing request sent…");
+    const result = await publishJob(selectedJob.id, { platform: publishPlatform });
+    setPublishState(
+      result
+        ? `${result.platform} → ${result.status.replace(/_/g, " ")}`
+        : "Publish request failed",
+    );
+  }, [publishJob, publishPlatform, selectedJob]);
+
+  const publishHistory = useMemo(
+    () => selectedJob?.publishHistory ?? selectedJob?.outputArtifacts?.publishHistory ?? [],
+    [selectedJob],
+  );
 
   if (!selectedJob) {
     return (
@@ -119,6 +155,155 @@ function VideoJobDetailPanel() {
             Download
           </a>
         </div>
+      )}
+
+      {selectedJob.viralitySignal && (
+        <section className="rounded-xl border border-amber-900/40 bg-gradient-to-br from-amber-950/35 to-zinc-900/60 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-xs font-semibold text-amber-300 uppercase tracking-wider">Virality Signal</h3>
+              <p className="mt-1 text-xs text-zinc-500">Scored by {selectedJob.viralitySignal.scoredBy}</p>
+            </div>
+            <div className="rounded-full border border-amber-700/50 bg-amber-900/40 px-3 py-1 text-sm font-semibold text-amber-200">
+              {selectedJob.viralitySignal.overall}/100
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+            {viralityMetrics.map((metric) => (
+              <div key={metric.label} className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
+                <p className="text-[10px] uppercase tracking-wider text-zinc-500">{metric.label}</p>
+                <p className="mt-1 text-lg font-semibold text-zinc-100">{metric.value}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+            <p className="text-[10px] uppercase tracking-wider text-zinc-500">Recommendations</p>
+            <ul className="mt-2 space-y-2 text-sm text-zinc-300">
+              {selectedJob.viralitySignal.recommendations.map((item) => (
+                <li key={item} className="flex gap-2">
+                  <span aria-hidden="true" className="text-amber-400">•</span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      )}
+
+      {selectedJob.viralitySignal?.captionDraft && (
+        <section className="rounded-xl border border-cyan-900/40 bg-cyan-950/20 p-4">
+          <h3 className="text-xs font-semibold text-cyan-300 uppercase tracking-wider">Caption Draft</h3>
+          <div className="mt-3 space-y-3 text-sm text-zinc-200">
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500">Hook Line</p>
+              <p className="mt-1 font-medium">{selectedJob.viralitySignal.captionDraft.firstLine}</p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500">Body</p>
+              <p className="mt-1 whitespace-pre-wrap text-zinc-300">{selectedJob.viralitySignal.captionDraft.body}</p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500">CTA</p>
+              <p className="mt-1 text-zinc-300">{selectedJob.viralitySignal.captionDraft.cta}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {[
+                ...selectedJob.viralitySignal.captionDraft.hashtags.broad,
+                ...selectedJob.viralitySignal.captionDraft.hashtags.niche,
+                ...selectedJob.viralitySignal.captionDraft.hashtags.trending,
+              ].map((tag) => (
+                <span key={tag} className="rounded-full border border-cyan-800/50 bg-cyan-950/40 px-2.5 py-1 text-xs text-cyan-200">
+                  #{tag.replace(/^#/, "")}
+                </span>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {selectedJob.status === "completed" && (
+        <section className="rounded-xl border border-fuchsia-900/40 bg-fuchsia-950/20 p-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h3 className="text-xs font-semibold text-fuchsia-300 uppercase tracking-wider">Publish</h3>
+              <p className="mt-1 text-xs text-zinc-500">Platform adapters persist approval-aware publish attempts onto the job record.</p>
+            </div>
+            <div className="flex flex-col gap-2 sm:min-w-[220px]">
+              <label htmlFor="publish-platform" className="text-[10px] uppercase tracking-wider text-zinc-500">
+                Target Platform
+              </label>
+              <select
+                id="publish-platform"
+                value={publishPlatform}
+                onChange={(event) => setPublishPlatform(event.target.value as typeof publishPlatform)}
+                className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-fuchsia-600/60"
+              >
+                <option value="tiktok">TikTok</option>
+                <option value="reels">Reels</option>
+                <option value="shorts">Shorts</option>
+                <option value="generic">Generic</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <button
+              type="button"
+              onClick={() => void handlePublish()}
+              className="inline-flex min-h-11 items-center justify-center rounded-lg border border-fuchsia-700/50 bg-fuchsia-800/40 px-4 py-2 text-sm font-semibold text-fuchsia-100 transition-colors hover:bg-fuchsia-800/60 focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
+            >
+              Publish to {publishPlatform}
+            </button>
+            {publishState && <p className="text-xs text-zinc-400">{publishState}</p>}
+          </div>
+
+          {selectedJob.outputArtifacts?.exportPathByPlatform && Object.keys(selectedJob.outputArtifacts.exportPathByPlatform).length > 0 && (
+            <div className="mt-4 rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500">Published Targets</p>
+              <dl className="mt-2 space-y-2 text-xs text-zinc-300">
+                {Object.entries(selectedJob.outputArtifacts.exportPathByPlatform).map(([platform, value]) => (
+                  <div key={platform} className="flex items-center justify-between gap-4">
+                    <dt className="uppercase tracking-wider text-zinc-500">{platform}</dt>
+                    <dd className="truncate text-right font-mono text-zinc-300">{String(value)}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          )}
+
+          {publishHistory.length > 0 && (
+            <div className="mt-4 rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500">Publish History</p>
+              <div className="mt-3 space-y-3">
+                {publishHistory.map((entry) => (
+                  <div key={entry.publishId} className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-xs font-semibold text-zinc-200 uppercase tracking-wider">{entry.platform}</p>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          {entry.accountLabel ?? "Publisher"} · {entry.deliveryMode?.replace(/_/g, " ") ?? "manual handoff"}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs font-medium text-fuchsia-200">{entry.status.replace(/_/g, " ")}</p>
+                        <p className="mt-1 text-[10px] uppercase tracking-wider text-zinc-500">Approval: {entry.approvalState.replace(/_/g, " ")}</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 gap-2 text-[11px] text-zinc-400 sm:grid-cols-2">
+                      <p>Requested: {new Date(entry.requestedAt).toLocaleString()}</p>
+                      <p>Updated: {new Date(entry.updatedAt).toLocaleString()}</p>
+                      {entry.scheduledAt && <p>Scheduled: {new Date(entry.scheduledAt).toLocaleString()}</p>}
+                      {entry.platformUrl && <p className="truncate">Target: {entry.platformUrl}</p>}
+                      {entry.failureReason && <p className="text-red-400">Failure: {entry.failureReason}</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
       )}
 
       {/* Script */}

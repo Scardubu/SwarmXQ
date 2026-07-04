@@ -30,6 +30,9 @@
 
 export * from "./operator-map";
 export * from "./operation-types";
+export * from "./video-types";
+
+import type { VideoHealthEventData, VideoJobEventData } from "./video-types";
 
 
 // ── Agent ────────────────────────────────────────────────────────────────────
@@ -371,54 +374,7 @@ export interface StartupSummary {
 }
 
 // ── Video Generation Types ────────────────────────────────────────────────────
-// [VIDEO-FIX-02] Added here so that the dashboard's useSwarmXEvents hook can
-// type-narrow video:progress events from the SSE stream. Without these types
-// in the shared package, all video events are silently ignored by the
-// dashboard's handleEvent → reduceEvent switch statement.
-
-export type VideoJobStatus =
-  | 'queued'
-  | 'preflight'
-  | 'planning'
-  | 'scripting'
-  | 'storyboard'
-  | 'rendering'
-  | 'assembling'
-  | 'exporting'
-  | 'completed'
-  | 'failed'
-  | 'cancelled'
-  | 'degraded'
-
-export type VideoDegradeMode =
-  | 'none'           // full pipeline ran
-  | 'script_only'    // script produced, no storyboard/render
-  | 'storyboard_only'// script + storyboard, no render
-  | 'render_deferred'// full content ready, render queued for later
-  | 'intent_only'    // just parsed the intent, models unavailable
-
-/** Emitted on every status/progress transition by video-queue.ts */
-export interface VideoJobEventData {
-  jobId: string
-  correlationId: string
-  status: VideoJobStatus
-  degradeMode: VideoDegradeMode
-  progress: number          // 0–100
-  timestamp: string         // ISO-8601
-  stage?: string
-  message?: string
-  error?: string
-  outputPath?: string
-}
-
-/** Emitted by GET /api/video/health polling; not on every request. */
-export interface VideoHealthEventData {
-  timestamp: string
-  ollamaReachable: boolean
-  comfyuiReachable: boolean
-  pressureLevel: string
-  renderCapable: boolean
-}
+// Canonical VIDEO-ALPHA contracts are exported from ./video-types.
 
 // ── Discriminated union ───────────────────────────────────────────────────────
 

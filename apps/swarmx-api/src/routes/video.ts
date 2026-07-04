@@ -18,6 +18,34 @@ import * as queue from "../services/video-queue.js";
 import * as assets from "../services/video-assets.js";
 import { runOrchestration } from "../services/video-orchestrator.js";
 import type { BroadcastFn } from "../services/video-orchestrator.js";
+import { getAvailableRamMb } from "../services/adaptive-timeout-config.js";
+import { requireVideoWriteAuth } from "../services/video-auth.js";
+import { generateCaptionDraft } from "../services/caption-generator.js";
+import { scoreVirality } from "../services/virality-scorer.js";
+import {
+  getVideoPublisher,
+  listSupportedPublishPlatforms,
+} from "../services/video-publishers.js";
+import type { PublishResult } from "@swarmx/types/video-types";
+
+const PublishRequestSchema = {
+  type: "object",
+  required: ["platform"],
+  properties: {
+    platform: { type: "string", enum: ["tiktok", "reels", "shorts", "generic"] },
+    scheduledAt: { type: "string" },
+  },
+} as const;
+
+function mergePublishHistory(
+  history: PublishResult[] | undefined,
+  nextResult: PublishResult,
+): PublishResult[] {
+  const remaining = (history ?? []).filter((entry) => entry.publishId !== nextResult.publishId);
+  return [nextResult, ...remaining].sort(
+    (left, right) => Date.parse(right.requestedAt) - Date.parse(left.requestedAt),
+  );
+}
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -76,6 +104,7 @@ export async function videoRoutes(
   fastify.post<{ Body: VideoJobRequest }>(
     "/api/video/jobs",
     {
+      preHandler: requireVideoWriteAuth,
       schema: {
         body: VideoJobRequestSchema,
         response: {
@@ -100,12 +129,23 @@ export async function videoRoutes(
             properties: {
               error: { type: "string" },
               message: { type: "string" },
+              availableMb: { type: "number" },
+              minimumRequired: { type: "number" },
             },
           },
         },
       },
     },
     async (request, reply) => {
+      const availableMb = getAvailableRamMb();
+      if (availableMb < 1000) {
+        return reply.status(503).send({
+          error: "insufficient_ram",
+          availableMb,
+          minimumRequired: 1000,
+        });
+      }
+
       let job;
       try {
         job = queue.enqueue(request.body);
@@ -179,6 +219,7 @@ export async function videoRoutes(
   fastify.post<{ Params: { id: string } }>(
     "/api/video/jobs/:id/cancel",
     {
+      preHandler: requireVideoWriteAuth,
       schema: { params: JobIdParamSchema },
     },
     async (request, reply) => {
@@ -218,6 +259,148 @@ export async function videoRoutes(
         message: "Job cancelled",
       });
     }
+  );
+
+  fastify.get<{ Params: { id: string } }>(
+    "/api/video/jobs/:id/artifacts",
+    {
+      schema: { params: JobIdParamSchema },
+    },
+    async (request, reply) => {
+      const job = queue.getJob(request.params.id);
+      if (!job) {
+        return reply.status(404).send({
+          error: "not_found",
+          message: `Video job ${request.params.id} not found`,
+        });
+      }
+
+      return reply.send({
+        jobId: job.id,
+        artifacts: job.outputArtifacts ?? {},
+        output: job.output ?? null,
+      });
+    },
+  );
+
+  fastify.get<{ Params: { id: string } }>(
+    "/api/video/jobs/:id/analysis",
+    {
+      schema: { params: JobIdParamSchema },
+    },
+    async (request, reply) => {
+      const job = queue.getJob(request.params.id);
+      if (!job) {
+        return reply.status(404).send({
+          error: "not_found",
+          message: `Video job ${request.params.id} not found`,
+        });
+      }
+
+      return reply.send({
+        jobId: job.id,
+        viralitySignal: job.viralitySignal ?? null,
+        captionDraft: job.viralitySignal?.captionDraft ?? null,
+      });
+    },
+  );
+
+  fastify.post<{
+    Params: { id: string };
+    Body: { platform: "tiktok" | "reels" | "shorts" | "generic"; scheduledAt?: string };
+  }>(
+    "/api/video/jobs/:id/publish",
+    {
+      preHandler: requireVideoWriteAuth,
+      schema: {
+        params: JobIdParamSchema,
+        body: PublishRequestSchema,
+      },
+    },
+    async (request, reply) => {
+      const job = queue.getJob(request.params.id);
+      if (!job) {
+        return reply.status(404).send({
+          error: "not_found",
+          message: `Video job ${request.params.id} not found`,
+        });
+      }
+
+      if (job.status !== "completed" || !job.output) {
+        return reply.status(409).send({
+          error: "job_not_ready",
+          message: "Video job must be completed before publishing",
+        });
+      }
+
+      const publisher = getVideoPublisher(request.body.platform);
+      const artifacts = job.outputArtifacts ?? {
+        outputPath: job.output.absolutePath,
+        outputPublicUrl: job.output.publicUrl,
+      };
+      const publishResult = request.body.scheduledAt
+        ? await publisher.schedule(job, artifacts, request.body.scheduledAt)
+        : await publisher.publish(job, artifacts);
+
+      if (!job.outputArtifacts) {
+        job.outputArtifacts = {};
+      }
+      job.publishHistory = mergePublishHistory(job.publishHistory, publishResult);
+      job.outputArtifacts.publishHistory = job.publishHistory;
+      job.outputArtifacts.exportPathByPlatform = {
+        ...(job.outputArtifacts.exportPathByPlatform ?? {}),
+        [request.body.platform]: publishResult.platformUrl ?? job.output.publicUrl,
+      };
+      job.updatedAt = new Date().toISOString();
+
+      broadcast({
+        type: "video:snapshot",
+        timestamp: job.updatedAt,
+        data: { job },
+      });
+
+      return reply.send({
+        jobId: job.id,
+        job,
+        result: publishResult,
+        supportedPlatforms: listSupportedPublishPlatforms(),
+      });
+    },
+  );
+
+  fastify.post<{
+    Body: { prompt: string; platform: "tiktok" | "reels" | "shorts" | "generic"; tone?: string; durationSec?: number };
+  }>(
+    "/api/video/caption-draft",
+    {
+      preHandler: requireVideoWriteAuth,
+    },
+    async (request, reply) => {
+      const captionDraft = await generateCaptionDraft({
+        topic: request.body.prompt,
+        platform: request.body.platform,
+        tone: request.body.tone ?? "engaging",
+      });
+      return reply.send({ captionDraft });
+    },
+  );
+
+  fastify.post<{
+    Body: { prompt: string; platform: "tiktok" | "reels" | "shorts" | "generic"; durationSec?: number; hook?: string };
+  }>(
+    "/api/video/virality-score",
+    {
+      preHandler: requireVideoWriteAuth,
+    },
+    async (request, reply) => {
+      const viralitySignal = await scoreVirality({
+        topic: request.body.prompt,
+        platform: request.body.platform,
+        durationSec: request.body.durationSec ?? 30,
+        ...(request.body.hook ? { hook: request.body.hook } : {}),
+      });
+      return reply.send({ viralitySignal });
+    },
   );
 
   // ── GET /api/video/files/:filename ─────────────────────────────────────────

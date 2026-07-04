@@ -23,6 +23,8 @@ import type {
   WorkflowEventData,
 } from "@swarmx/types";
 import type {
+  VideoJobEventData,
+  VideoHealthEventData,
   VideoJob,
   VideoJobStage,
   VideoStageProgress,
@@ -81,13 +83,17 @@ export interface VideoStageStartedEvent {
 export interface VideoProgressEvent {
   type: "video:progress";
   timestamp: string;
-  data: {
-    jobId: string;
+  data: VideoJobEventData & {
     stage: VideoJobStage;
     stageProgress: VideoStageProgress;
     overallProgress: number;
-    message?: string;
   };
+}
+
+export interface VideoHealthEvent {
+  type: "video:health";
+  timestamp: string;
+  data: VideoHealthEventData;
 }
 
 export interface VideoJobCompletedEvent {
@@ -139,6 +145,7 @@ export type VideoEvent =
   | VideoJobQueuedEvent
   | VideoStageStartedEvent
   | VideoProgressEvent
+  | VideoHealthEvent
   | VideoJobCompletedEvent
   | VideoJobFailedEvent
   | VideoJobCancelledEvent
@@ -187,6 +194,11 @@ export function makeVideoProgressEvent(
     timestamp: new Date().toISOString(),
     data: {
       jobId,
+      correlationId: jobId,
+      status: "running",
+      degradeMode: "none",
+      progress: overallProgress,
+      timestamp: new Date().toISOString(),
       stage,
       stageProgress,
       overallProgress,

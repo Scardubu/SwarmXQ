@@ -1,0 +1,46 @@
+# SwarmX VIDEO-ALPHA defaults
+# Authority for video runtime limits and storage paths.
+
+video:
+  queue:
+    name: swarmx:video
+    concurrency: 1
+    feature_flag_bullmq: false
+
+  paths:
+    artifact_dir: ${SWARMX_VIDEO_ARTIFACT_DIR:-.swarmx/video/artifacts}
+    export_dir: ${SWARMX_VIDEO_EXPORT_DIR:-.swarmx/video/exports}
+    temp_dir: ${SWARMX_VIDEO_TEMP_DIR:-.swarmx/video/tmp}
+
+  comfyui:
+    base_url: ${SWARMX_COMFYUI_URL:-http://127.0.0.1:8188}
+    max_frame_budget_mb: 7600
+    teacache_enabled: ${SWARMX_COMFYUI_TEACACHE:-0}
+    teacache_requires_available_mb: 6000
+
+  ram_gates:
+    minimum_required_mb: 1000
+    downgrade_threshold_mb: 2000
+    enforce_single_14b_lock: ${SWARMX_VIDEO_SINGLE_14B_LOCK:-1}
+
+  frame_math:
+    allowed_fps: [8, 16, 24]
+    default_batch_size: 6
+    min_batch_size: 2
+    max_batch_size: 8
+    interpolation_default: 1
+
+  resolution:
+    allowed:
+      - 512x512
+      - 512x896
+      - 768x512
+      - 768x1344
+    downgrade_map:
+      768x1344: 512x896
+      768x512: 512x512
+      512x896: 512x512
+
+  retries:
+    max_retries: 1
+    preserve_partial_artifacts: true

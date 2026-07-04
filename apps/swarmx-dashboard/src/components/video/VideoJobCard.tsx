@@ -25,9 +25,45 @@ interface VideoJobCardProps {
 function StatusBadge({ status }: { status: VideoJob["status"] }) {
   const map: Record<VideoJob["status"], { label: string; class: string }> = {
     queued: { label: "Queued", class: "bg-zinc-800 text-zinc-400 border-zinc-700" },
+    classifying: {
+      label: "Classifying",
+      class: "bg-blue-950/60 text-blue-400 border-blue-800/50 animate-pulse",
+    },
+    scripting: {
+      label: "Scripting",
+      class: "bg-indigo-950/60 text-indigo-400 border-indigo-800/50 animate-pulse",
+    },
+    staging: {
+      label: "Staging",
+      class: "bg-cyan-950/60 text-cyan-400 border-cyan-800/50 animate-pulse",
+    },
+    generating: {
+      label: "Generating",
+      class: "bg-amber-950/60 text-amber-400 border-amber-800/50 animate-pulse",
+    },
+    interpolating: {
+      label: "Interpolating",
+      class: "bg-orange-950/60 text-orange-400 border-orange-800/50 animate-pulse",
+    },
+    encoding: {
+      label: "Encoding",
+      class: "bg-teal-950/60 text-teal-400 border-teal-800/50 animate-pulse",
+    },
+    reviewing: {
+      label: "Reviewing",
+      class: "bg-violet-950/60 text-violet-400 border-violet-800/50 animate-pulse",
+    },
+    publishing: {
+      label: "Publishing",
+      class: "bg-fuchsia-950/60 text-fuchsia-400 border-fuchsia-800/50 animate-pulse",
+    },
     running: {
       label: "Running",
       class: "bg-amber-950/60 text-amber-400 border-amber-800/50 animate-pulse",
+    },
+    done: {
+      label: "Done",
+      class: "bg-emerald-950/60 text-emerald-400 border-emerald-800/50",
     },
     completed: {
       label: "Done",
@@ -63,6 +99,34 @@ function PlatformTag({ platform }: { platform?: string }) {
     <span className="text-[10px] text-zinc-500 font-medium uppercase tracking-wider">
       {labels[platform] ?? platform}
     </span>
+  );
+}
+
+function PublishSummary({ job }: { job: VideoJob }) {
+  const history = job.publishHistory ?? job.outputArtifacts?.publishHistory ?? [];
+  if (history.length === 0) return null;
+
+  const latest = history[0];
+  if (!latest) return null;
+
+  const labelMap: Record<string, string> = {
+    pending_review: "Pending review",
+    scheduled: "Scheduled",
+    published: "Published",
+    failed: "Publish failed",
+  };
+
+  return (
+    <div className="rounded-lg border border-fuchsia-900/40 bg-fuchsia-950/20 px-2.5 py-2">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[10px] uppercase tracking-wider text-fuchsia-300">Publish</span>
+        <span className="text-[10px] font-medium text-zinc-400">{history.length} event{history.length === 1 ? "" : "s"}</span>
+      </div>
+      <div className="mt-1 flex items-center justify-between gap-3 text-xs">
+        <span className="font-medium text-zinc-200">{labelMap[latest.status] ?? latest.status}</span>
+        <span className="uppercase tracking-wider text-zinc-500">{latest.platform}</span>
+      </div>
+    </div>
   );
 }
 
@@ -155,6 +219,8 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
       {/* Timeline — uses VideoJobTimeline (compact mode) */}
       {/* FIX: No more duplicated inline stage rendering logic here */}
       <VideoJobTimeline job={job} compact />
+
+      <PublishSummary job={job} />
 
       {/* Footer metadata */}
       <div className="flex items-center gap-3 text-[10px] text-zinc-600 font-mono">

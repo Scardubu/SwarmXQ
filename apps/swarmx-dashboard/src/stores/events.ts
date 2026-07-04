@@ -222,11 +222,11 @@ function lifecycleLogData(event: SwarmXEvent): LogData | null {
     // [VIDEO-FIX-03] Log video lifecycle transitions into the unified log stream
     case "video:progress": {
       const d = event.data;
-      const isTerminal = ["completed", "failed", "cancelled", "degraded"].includes(d.status);
+      const isTerminal = ["completed", "failed", "cancelled", "done"].includes(d.status);
       if (!isTerminal && d.status === "queued") return null; // don't spam logs for every progress tick
       return {
         timestamp: d.timestamp,
-        level: d.status === "failed" ? "error" : d.status === "degraded" ? "warn" : "info",
+        level: d.status === "failed" ? "error" : "info",
         unit: "swarmx-video",
         message: `video job ${d.status} · ${d.jobId.slice(0, 8)}${d.error ? ` · ${d.error}` : ""}`,
       };
@@ -490,11 +490,11 @@ function applyVideoProgress(state: EventsState, data: VideoJobEventData): Events
   }
 
   // Also emit a lifecycle log entry for terminal transitions
-  const isTerminal = ["completed", "failed", "cancelled", "degraded"].includes(data.status);
+  const isTerminal = ["completed", "failed", "cancelled", "done"].includes(data.status);
   if (isTerminal) {
     const logData: LogData = {
       timestamp: data.timestamp,
-      level: data.status === "failed" ? "error" : data.status === "degraded" ? "warn" : "notice",
+      level: data.status === "failed" ? "error" : "notice",
       unit: "swarmx-video",
       message: `video job ${data.status} · ${data.jobId.slice(0, 8)}${data.error ? ` · ${data.error}` : ""}`,
     };

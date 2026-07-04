@@ -16,6 +16,11 @@
    - [GET /api/video/jobs](#get-apivideojobs)
    - [GET /api/video/jobs/:id](#get-apivideojobsid)
    - [POST /api/video/jobs/:id/cancel](#post-apivideojobsidcancel)
+  - [GET /api/video/jobs/:id/artifacts](#get-apivideojobsidartifacts)
+  - [GET /api/video/jobs/:id/analysis](#get-apivideojobsidanalysis)
+  - [POST /api/video/jobs/:id/publish](#post-apivideojobsidpublish)
+  - [POST /api/video/caption-draft](#post-apivideocaption-draft)
+  - [POST /api/video/virality-score](#post-apivideovirality-score)
 6. [SSE event lifecycle](#sse-event-lifecycle)
 7. [Job lifecycle & state machine](#job-lifecycle--state-machine)
 8. [Degradation modes](#degradation-modes)
@@ -120,6 +125,7 @@ SWARMX_MODEL_CODE=code-qwen25-pro-q5km-prod             # script + storyboard ge
 # ── Render target (optional — jobs degrade gracefully without it) ────────────
 SWARMX_COMFYUI_URL=http://127.0.0.1:8188
 SWARMX_VIDEO_OUTPUT_DIR=./.swarmx/video-output
+SWARMX_VIDEO_API_TOKEN=replace-me-for-write-routes
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
 SWARMX_DASHBOARD_ORIGIN=http://localhost:3000
@@ -172,6 +178,28 @@ Verify API availability and video routes:
 ```bash
 curl http://localhost:3001/health
 curl http://localhost:3001/api/video/jobs
+```
+
+### Write-route auth
+
+The following routes require write auth:
+
+- `POST /api/video/jobs`
+- `POST /api/video/jobs/:id/cancel`
+- `POST /api/video/jobs/:id/publish`
+- `POST /api/video/caption-draft`
+- `POST /api/video/virality-score`
+
+Provide the token as either:
+
+```bash
+-H "Authorization: Bearer $SWARMX_VIDEO_API_TOKEN"
+```
+
+or:
+
+```bash
+-H "x-video-api-key: $SWARMX_VIDEO_API_TOKEN"
 ```
 
 ---
@@ -318,6 +346,135 @@ curl http://localhost:3001/api/video/jobs/550e8400-e29b-41d4-a716-446655440000
 Cancel a job. Returns `409` when the job is already terminal.
 
 ```bash
+curl -X POST http://localhost:3001/api/video/jobs/550e8400-e29b-41d4-a716-446655440000/cancel \
+  -H "Authorization: Bearer $SWARMX_VIDEO_API_TOKEN"
+```
+
+---
+
+### GET /api/video/jobs/:id/artifacts
+
+Fetch resolved artifact pointers for a job, including published target URLs and persisted publish history.
+
+```bash
+curl http://localhost:3001/api/video/jobs/550e8400-e29b-41d4-a716-446655440000/artifacts
+```
+
+---
+
+### GET /api/video/jobs/:id/analysis
+
+Fetch virality analysis and caption draft state for a completed job.
+
+```bash
+curl http://localhost:3001/api/video/jobs/550e8400-e29b-41d4-a716-446655440000/analysis
+```
+
+---
+
+### POST /api/video/jobs/:id/publish
+
+Create a platform-specific publish handoff record. The API persists the publish attempt on the job, updates `outputArtifacts.exportPathByPlatform`, and emits a `video:snapshot` event so the dashboard refreshes immediately.
+
+```bash
+curl -X POST http://localhost:3001/api/video/jobs/550e8400-e29b-41d4-a716-446655440000/publish \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $SWARMX_VIDEO_API_TOKEN" \
+  -d '{"platform":"tiktok"}'
+```
+
+**Response shape:**
+
+```json
+{
+  "jobId": "550e8400-e29b-41d4-a716-446655440000",
+  "job": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "publishHistory": [
+      {
+        "publishId": "2d24...",
+        "platform": "tiktok",
+        "status": "pending_review",
+        "approvalState": "pending_review",
+        "deliveryMode": "studio_export",
+        "accountLabel": "TikTok Studio",
+        "requestedAt": "2026-06-01T09:00:00.000Z",
+        "updatedAt": "2026-06-01T09:00:00.000Z",
+        "requiresApproval": true,
+        "platformUrl": "https://studio.tiktok.com/upload?..."
+      }
+    ]
+  },
+  "result": {
+    "publishId": "2d24...",
+    "platform": "tiktok",
+    "status": "pending_review"
+  }
+}
+```
+
+Current adapter behavior:
+
+- `generic`: direct export, no approval required, immediately marked `published`
+- `tiktok`, `reels`, `shorts`: studio handoff URLs with persisted `pending_review` approval state
+
+---
+
+### POST /api/video/caption-draft
+
+Generate a standalone caption draft without creating a full video job.
+
+```bash
+curl -X POST http://localhost:3001/api/video/caption-draft \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $SWARMX_VIDEO_API_TOKEN" \
+  -d '{"prompt":"How compound interest changes your life","platform":"tiktok"}'
+```
+
+---
+
+### POST /api/video/virality-score
+
+Generate a standalone virality score preview.
+
+```bash
+curl -X POST http://localhost:3001/api/video/virality-score \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $SWARMX_VIDEO_API_TOKEN" \
+  -d '{"prompt":"How compound interest changes your life","platform":"tiktok","durationSec":30}'
+```
+
+---
+
+### Publish state in job detail
+
+Publish records are persisted in two places on the job payload:
+
+- `job.publishHistory`
+- `job.outputArtifacts.publishHistory`
+
+The dashboard list uses the latest record for compact status, while the detail panel renders the full history with approval state and target URL.
+
+---
+
+### Snapshot refresh behavior
+
+After a publish request succeeds, the API broadcasts:
+
+```json
+{
+  "type": "video:snapshot",
+  "data": {
+    "job": { "...": "updated job with publishHistory" }
+  }
+}
+```
+
+This avoids a second polling path for publish state and keeps the dashboard job list/detail view in sync with the route mutation.
+
+---
+
+## SSE event lifecycle
 curl -X POST http://localhost:3001/api/video/jobs/550e8400-e29b-41d4-a716-446655440000/cancel
 ```
 

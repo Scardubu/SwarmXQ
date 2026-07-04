@@ -4,14 +4,22 @@
  * Phase 1: Canonical contracts for queue, routes, orchestrator, and dashboard.
  */
 
+import type {
+  VideoHealthEventData,
+  VideoJobEventData,
+  VideoJob as CanonicalVideoJob,
+  VideoExportPlatform,
+  VideoJobStatus as CanonicalVideoJobStatus,
+  VideoArtifacts,
+  OperatorTraceEntry,
+  ViralitySignal,
+  VideoError,
+  PublishResult,
+} from "@swarmx/types/video-types";
+
 // ─── Job Lifecycle ────────────────────────────────────────────────────────────
 
-export type VideoJobStatus =
-  | "queued"
-  | "running"
-  | "completed"
-  | "failed"
-  | "cancelled";
+export type VideoJobStatus = CanonicalVideoJobStatus | "running" | "completed";
 
 export type VideoJobStage =
   | "intent_classification"
@@ -45,7 +53,7 @@ export interface VideoJobRequest {
   /** Plain-language description of the video to generate. */
   prompt: string;
   /** Target platform influencing style, aspect ratio, and length. */
-  platform?: "tiktok" | "youtube_shorts" | "reels" | "generic";
+  platform?: VideoExportPlatform | "youtube_shorts";
   /** Niche category — informs scripting model routing. */
   niche?: "motivational" | "finance" | "facts" | "true_crime" | "tech" | "other";
   /** Preferred output duration in seconds. Clamped to 15–180 by orchestrator. */
@@ -125,6 +133,13 @@ export interface VideoJob {
   /** Pressure tier at job start. */
   pressureTierAtStart?: "normal" | "high" | "critical";
   clientRequestId?: string;
+
+  // VIDEO-ALPHA compatibility bridge fields (gradually becoming canonical).
+  operatorTrace?: OperatorTraceEntry[];
+  viralitySignal?: ViralitySignal;
+  outputArtifacts?: VideoArtifacts;
+  publishHistory?: PublishResult[];
+  errorLog?: VideoError[];
 }
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
@@ -173,6 +188,10 @@ export interface VideoJobCancelResponse {
   previousStatus: VideoJobStatus;
   message: string;
 }
+
+// Canonical export alias for bridge migration.
+export type VideoJobCanonical = CanonicalVideoJob;
+export type { VideoJobEventData, VideoHealthEventData };
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
 
