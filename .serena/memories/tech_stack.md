@@ -1,0 +1,6 @@
+- Python 3.11 package via `pyproject.toml`; setuptools build backend.
+- Python deps include structlog, httpx, typer, textual, PyYAML; dev uses pytest, pytest-asyncio, ruff, mypy.
+- PNPM workspace with `apps/*` and `packages/*`.
+- `apps/swarmx-api`: Fastify 5, BullMQ optional, Zod, ESM TS, Node >=22.
+- `apps/swarmx-dashboard`: Next 16 / React 19, Zustand, Radix UI, Recharts, Motion, Vitest.
+- `packages/swarmx-types`: workspace-shared TS source-of-truth contracts.

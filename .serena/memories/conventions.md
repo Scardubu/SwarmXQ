@@ -1,0 +1,5 @@
+- Python: type hints on public functions, async-first I/O, Pathlib preferred, structlog logging, avoid hardcoded config constants.
+- TS/Node: ESM imports with `.js` in API, Zod/typed schemas for inputs, explicit env fallbacks, avoid `any`.
+- Shared contracts live in `packages/swarmx-types`; API may use compatibility bridge types rather than reusing shared shapes directly.
+- Repo commonly uses strict TypeScript with `exactOptionalPropertyTypes`; use conditional spreads instead of assigning `undefined`.
+- Safety and routing invariants come from YAML/env overlays and existing guards; do not bypass runtime gates.

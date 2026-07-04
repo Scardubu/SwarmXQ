@@ -1,0 +1,5 @@
+- Monorepo root for SwarmX-1.5 autonomous swarm platform.
+- Major surfaces: Python runtime in `src/swarmx`, orchestration in `brain`, `agents`, `core`, CLI in `cli`, Fastify API in `apps/swarmx-api`, Next dashboard in `apps/swarmx-dashboard`, shared TS contracts in `packages/swarmx-types`.
+- Repo uses hybrid Python + TypeScript stacks; many features bridge API-local types to shared contracts.
+- Runtime constraints and swarm invariants are documented in `.github/copilot-instructions.md`; video pipeline work also depends on `mem:video-alpha` if present.
+- Read `mem:tech_stack` for toolchains, `mem:conventions` for coding rules, `mem:task_completion` for required validation, and `mem:suggested_commands` for common commands.

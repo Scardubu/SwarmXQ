@@ -11,6 +11,7 @@ import type { SwarmXEvent } from "../types/events.js";
 // ── Subscriber registry ───────────────────────────────────────────────────────
 
 const subscribers = new Set<FastifyReply>();
+const eventSubscribers = new Set<(event: SwarmXEvent) => void>();
 const STICKY_EVENT_TYPES: SwarmXEvent["type"][] = [
   "system:startup",
   "system:governor",
@@ -43,6 +44,13 @@ function replayStickyEvents(reply: FastifyReply): void {
  */
 export function broadcastEvent(event: SwarmXEvent): void {
   rememberStickyEvent(event);
+  for (const subscriber of eventSubscribers) {
+    try {
+      subscriber(event);
+    } catch {
+      eventSubscribers.delete(subscriber);
+    }
+  }
   for (const reply of subscribers) {
     try {
       writeEvent(reply, event);
@@ -50,6 +58,15 @@ export function broadcastEvent(event: SwarmXEvent): void {
       subscribers.delete(reply);
     }
   }
+}
+
+export function subscribeToEvents(
+  subscriber: (event: SwarmXEvent) => void,
+): () => void {
+  eventSubscribers.add(subscriber);
+  return () => {
+    eventSubscribers.delete(subscriber);
+  };
 }
 
 // ── Plugin ────────────────────────────────────────────────────────────────────

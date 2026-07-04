@@ -1,0 +1,5 @@
+- For Python changes: run the narrowest relevant `make` targets, at minimum `make lint`, `make typecheck-py`, and targeted pytest when feasible.
+- For TypeScript changes: run package-scoped `pnpm --filter ... run typecheck`; widen to `make typecheck-ts` if multiple packages change.
+- Validate touched runtime flows when possible, especially `/health`, `/api/events`, and feature-specific API endpoints.
+- Check for repo-specific startup/health regressions with `make health-quick` or the appropriate workspace task when the change affects runtime behavior.
+- After edits, run `serena memories check` if project memories were changed.

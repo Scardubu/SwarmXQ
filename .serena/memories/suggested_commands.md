@@ -1,0 +1,8 @@
+- Python setup: `source .venv/bin/activate && make install`
+- Full TS typecheck: `make typecheck-ts` or `pnpm run typecheck`
+- API-only typecheck: `pnpm --filter @swarmx/api run typecheck`
+- Dashboard-only typecheck: `pnpm --filter @swarmx/dashboard run typecheck`
+- Python quality: `make lint && make typecheck-py && make test`
+- Quick health: `make health-quick`
+- App status: `python -m cli status`
+- Run stack locally: `python -m cli up --dashboard --host 127.0.0.1 --port 3001` or task `SwarmX: Launch Full Stack`.

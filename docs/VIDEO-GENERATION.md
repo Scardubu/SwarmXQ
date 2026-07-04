@@ -758,3 +758,52 @@ not reliably complete for `medium` or `long` jobs.
 | `VIDEO-FORM-01` | `VideoJobForm.tsx` | `s.governorSnapshot` referenced a non-existent key; the correct field is `s.governorState`. The pressure warning was never shown. Fixed selector. |
 | `VIDEO-FIX-01` | `types/events.ts` | API video lifecycle events are now explicitly represented in the local `SwarmXEvent` union (`video:created|queued|stage_started|progress|completed|failed|cancelled|snapshot`). |
 | `VIDEO-FIX-03` | `stores/events.ts` | `video:progress` events were not routed to the video store from the events reducer. Fixed in the current bundle (already present). |
+
+---
+
+## VIDEO-ALPHA r1 additions
+
+### New API endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/video/jobs/:id/sse` | GET | Job-specific SSE stream — filtered video:* events for one job |
+| `/api/video/jobs/:id` | DELETE | Cancel alias (same as POST cancel, for REST semantics) |
+| `/api/video/templates` | GET | List available ComfyUI workflow templates with RAM requirements |
+| `/api/video/caption/score` | POST | Score a caption draft and return both captionDraft + viralitySignal |
+
+### New dashboard components
+
+| Component | Path | Purpose |
+|-----------|------|---------|
+| `ViralityMeter` | `components/video/ViralityMeter.tsx` | 5-bar virality signal display with Oracle reasoning tooltips |
+| `CaptionEditor` | `components/video/CaptionEditor.tsx` | Editable caption draft with live char count, hashtag pills, re-score, copy |
+| `PlatformPublishPanel` | `components/video/PlatformPublishPanel.tsx` | Publishing panel with scheduling, approval notices, publish history |
+
+### Publisher modularization
+
+The publisher layer is now split into:
+
+```
+apps/swarmx-api/src/services/publishers/
+├── index.ts          — getVideoPublisher() factory (existing import surface preserved)
+├── base-publisher.ts — abstract base with retry, logging, schedule sidecar helpers
+├── generic.ts        — local filesystem export (always available, no approval needed)
+├── tiktok.ts         — TikTok Content API (requires SWARMX_TIKTOK_API_APPROVED=1)
+└── instagram.ts      — Instagram Graph API (requires SWARMX_INSTAGRAM_ACCESS_TOKEN)
+```
+
+TikTok and Instagram publishers fall back to generic export when environment tokens are not set,
+logging a clear message pointing to `docs/TIKTOK_SETUP.md`. See that file for OAuth setup.
+
+### New environment variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `SWARMX_TIKTOK_ACCESS_TOKEN` | (empty) | TikTok OAuth access token |
+| `SWARMX_TIKTOK_CLIENT_KEY` | (empty) | TikTok app client key |
+| `SWARMX_TIKTOK_CLIENT_SECRET` | (empty) | TikTok app client secret |
+| `SWARMX_TIKTOK_API_APPROVED=1` | `0` | Explicit opt-in for real TikTok uploads |
+| `SWARMX_INSTAGRAM_ACCESS_TOKEN` | (empty) | Instagram page access token |
+| `SWARMX_INSTAGRAM_USER_ID` | (empty) | Instagram user ID |
+| `SWARMX_VIDEO_USE_BULLMQ` | `0` | Enable Redis-backed video queue (optional) |
