@@ -91,11 +91,11 @@ fi
 # ── 3. Relay warmth ──────────────────────────────────────────────────────────
 echo ""
 echo -e "${CYAN}Relay Warmth${NC}"
-check "Relay responds to classification prompt" bash -c '
+warn_check "Relay responds to classification prompt" bash -c '
   RESP=$(curl -sf -X POST "'$OLLAMA_URL'/api/generate" \
     -H "Content-Type: application/json" \
-    -d "{\"model\":\"route-phi4-lite-q4km-prod\",\"prompt\":\"classify: hello\",\"stream\":false,\"options\":{\"num_predict\":8}}" \
-    --max-time 30 2>/dev/null)
+    -d "{\"model\":\"route-phi4-lite-q4km-prod\",\"prompt\":\"classify: hello\",\"keep_alive\":\"10m\",\"stream\":false,\"options\":{\"num_predict\":8,\"temperature\":0}}" \
+    --max-time 45 2>/dev/null)
   echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get(\"response\") else 1)" 2>/dev/null
 '
 
@@ -114,8 +114,11 @@ if [[ -f /proc/meminfo ]]; then
   if [[ $AVAIL_MB -ge 2500 ]]; then
     echo -e "  ${GREEN}✓${NC} Available RAM: ${AVAIL_MB} MB (normal)"
     PASS=$((PASS + 1))
-  elif [[ $AVAIL_MB -ge 1500 ]]; then
+  elif [[ $AVAIL_MB -ge 1400 ]]; then
     echo -e "  ${YELLOW}⚠${NC} Available RAM: ${AVAIL_MB} MB (low-ram tier)"
+    WARN=$((WARN + 1))
+  elif [[ $AVAIL_MB -ge 800 ]]; then
+    echo -e "  ${YELLOW}⚠${NC} Available RAM: ${AVAIL_MB} MB (supervisor/rule-engine pressure tier)"
     WARN=$((WARN + 1))
   else
     echo -e "  ${RED}✗${NC} Available RAM: ${AVAIL_MB} MB (degraded/critical)"

@@ -41,7 +41,7 @@ def _repo_root() -> Path:
 
 def _api_dist() -> Path:
     """Absolute path to the compiled Fastify API entry point."""
-    return _repo_root() / "apps" / "swarmx-api" / "dist" / "server.js"
+    return _repo_root() / "apps" / "swarmx-api" / "dist" / "apps" / "swarmx-api" / "src" / "server.js"
 
 
 def _api_src_root() -> Path:

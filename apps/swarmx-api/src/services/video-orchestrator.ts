@@ -105,7 +105,7 @@ import { resolveCanonicalTag } from "@swarmx/types/operator-map";
 import { getComfyUIClient } from "./comfyui-client.js";
 import { generateLTXWorkflow } from "./video-workflows.js";
 import { scoreVirality } from "./virality-scorer.js";
-import { generateCaptionDraft } from "./caption-generator.js";
+import { generateCaptionDraftWithValidation } from "./caption-generator.js";
 import { generateOllamaText } from "./ollama.js";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -676,27 +676,49 @@ async function stageViralityAndCaption(ctx: OrchestratorContext): Promise<void> 
 
   const viralitySummary = virality?.recommendations.join("; ") ?? "No virality recommendations available";
 
-  const captionDraft = await generateCaptionDraft({
-    topic: ctx.job.request.prompt,
-    tone: ctx.job.request.niche ?? "engaging",
-    platform: targetPlatform,
-    viralitySummary,
-  });
+  let captionDraft = virality?.captionDraft;
 
-  if (virality) {
+  try {
+    const captionResult = await generateCaptionDraftWithValidation({
+      topic: ctx.job.request.prompt,
+      tone: ctx.job.request.niche ?? "engaging",
+      platform: targetPlatform,
+      viralitySummary,
+    });
+    captionDraft = captionResult.draft;
+  } catch (error) {
+    ctx.broadcast({
+      type: "video:stream",
+      timestamp: new Date().toISOString(),
+      data: {
+        jobId: ctx.job.id,
+        stage: "caption_generation",
+        pct: 1,
+        operatorTag: "system",
+        message: error instanceof Error ? error.message : "caption_generation_failed",
+      },
+    });
+  }
+
+  if (virality && captionDraft) {
     ctx.job.viralitySignal = {
       ...virality,
       captionDraft,
     };
     ctx.viralitySummary = virality.recommendations.join("; ");
+  } else if (virality) {
+    ctx.job.viralitySignal = virality;
+    ctx.viralitySummary = virality.recommendations.join("; ");
   } else {
     ctx.viralitySummary = viralitySummary;
   }
 
-  if (!ctx.job.outputArtifacts) {
+  if (captionDraft && !ctx.job.outputArtifacts) {
     ctx.job.outputArtifacts = {};
   }
-  ctx.job.outputArtifacts.captionPath = "inline:caption-draft";
+  if (captionDraft && ctx.job.outputArtifacts) {
+    ctx.job.outputArtifacts.captionPath = "inline:caption-draft";
+  }
   ctx.job.updatedAt = new Date().toISOString();
 }
 

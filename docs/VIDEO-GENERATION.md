@@ -59,7 +59,7 @@ code-qwen25-pro-q5km-prod
     ▼
 ┌───────────────────────┐
 │   video-assets.ts     │  Per-job artifact storage under
-│                       │  SWARMX_VIDEO_OUTPUT_DIR/<jobId>/
+│                       │  SWARMX_VIDEO_ARTIFACT_DIR/<jobId>/
 │                       │    manifest.json
 │                       │    render-ready.json  (deferred path)
 └───────────────────────┘
@@ -82,6 +82,7 @@ boundary.
 | `apps/swarmx-api/src/services/video-assets.ts` | File-system helpers for artifact storage and cleanup. |
 | `apps/swarmx-api/src/routes/video.ts` | Fastify route plugin for all `/api/video/*` endpoints. |
 | `apps/swarmx-api/src/server.ts` | Registers `videoRoutes` under `/api/video`. |
+| `apps/swarmx-dashboard/src/lib/video-dashboard.ts` | Dashboard-facing adapter layer that normalizes API payloads into UI-safe video job shapes. |
 | `apps/swarmx-dashboard/src/stores/video.ts` | Zustand store for job map, SSE upsert, and status helpers. |
 | `apps/swarmx-dashboard/src/stores/events.ts` | Routes shared compact video progress events into the video store. |
 | `apps/swarmx-dashboard/src/app/(dashboard)/video/page.tsx` | Main video workspace page with form and queue list. |
@@ -115,7 +116,9 @@ SWARMX_MODEL_CODE=code-qwen25-pro-q5km-prod             # script + storyboard ge
 
 # ── Render target (optional — jobs degrade gracefully without it) ────────────
 SWARMX_COMFYUI_URL=http://127.0.0.1:8188
-SWARMX_VIDEO_OUTPUT_DIR=./.swarmx/video-output
+SWARMX_VIDEO_ARTIFACT_DIR=./.swarmx/video-output
+SWARMX_VIDEO_EXPORT_DIR=./.swarmx/video-export
+SWARMX_VIDEO_TEMP_DIR=./.swarmx/video-temp
 SWARMX_VIDEO_API_TOKEN=replace-me-for-write-routes
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
@@ -125,8 +128,12 @@ SWARMX_DASHBOARD_ORIGIN=http://localhost:3000
 Create or extend your `apps/swarmx-dashboard/.env.local`:
 
 ```bash
+NEXT_PUBLIC_SWARMX_API_URL=http://localhost:3001
 NEXT_PUBLIC_API_URL=http://localhost:3001
+NEXT_PUBLIC_SWARMX_VIDEO_API_TOKEN=replace-me-if-write-routes-are-protected
 ```
+
+The dashboard store prefers `NEXT_PUBLIC_SWARMX_API_URL`, falls back to `NEXT_PUBLIC_API_URL`, and normalizes all video route payloads through `src/lib/video-dashboard.ts` before state is written.
 
 ### Ollama model requirements
 
@@ -155,7 +162,7 @@ From the monorepo root:
 pnpm install
 
 # 2. (Optional) Ensure video output dir exists
-mkdir -p .swarmx/video-output
+mkdir -p .swarmx/video-output .swarmx/video-export .swarmx/video-temp
 
 # 3. Start the API
 pnpm --filter @swarmx/api dev
@@ -168,6 +175,7 @@ Verify API availability and video routes:
 
 ```bash
 curl http://localhost:3001/health
+curl http://localhost:3001/api/video/templates
 curl http://localhost:3001/api/video/jobs
 ```
 
@@ -205,6 +213,8 @@ or:
 -H "x-video-api-key: $SWARMX_VIDEO_API_TOKEN"
 ```
 
+If `SWARMX_VIDEO_API_TOKEN` is unset, the write routes remain open for local development.
+
 ---
 
 ## API reference
@@ -237,6 +247,8 @@ curl -X POST http://localhost:3001/api/video/jobs \
   -H "Content-Type: application/json" \
   -d '{"prompt": "A 30-second motivational video about starting your first business"}'
 ```
+
+Observed smoke result on the current local stack: the route returns `201 Created` immediately with a job id, even when downstream orchestration later fails under timeout or memory pressure.
 
 **Full request:**
 
@@ -318,6 +330,8 @@ curl "http://localhost:3001/api/video/jobs?limit=10"
 ### GET /api/video/jobs/:id
 
 Full job detail including intent, script, storyboard, render manifest, stage log, and warnings.
+
+Observed smoke result on the current local stack: the job detail route returns queued and failed states correctly, including timeout payloads such as `Stage intent_classification timed out after 4000ms`.
 
 ```bash
 curl http://localhost:3001/api/video/jobs/550e8400-e29b-41d4-a716-446655440000
@@ -463,7 +477,9 @@ curl -X POST http://localhost:3001/api/video/jobs/550e8400-e29b-41d4-a716-446655
 Current adapter behavior:
 
 - `generic`: direct export, no approval required, immediately marked `published`
-- `tiktok`, `reels`, `shorts`: studio handoff URLs with persisted `pending_review` approval state
+- `tiktok`: if `SWARMX_TIKTOK_ACCESS_TOKEN` is set and `SWARMX_TIKTOK_API_APPROVED=1`, the adapter uploads via the TikTok Content API and returns `scheduled`, `published`, `failed`, or `pending_review` based on the API result; otherwise it falls back to generic export with persisted `pending_review` approval state
+- `reels`: if `SWARMX_INSTAGRAM_ACCESS_TOKEN`, `SWARMX_INSTAGRAM_USER_ID`, and a publicly reachable output URL are available, the adapter uses the Instagram Graph API and returns `scheduled` or `published`; otherwise it falls back to generic export with persisted `pending_review` approval state
+- `shorts`: local export/studio handoff path, no direct platform API adapter yet
 
 ---
 
@@ -477,6 +493,8 @@ curl -X POST http://localhost:3001/api/video/caption-draft \
   -H "Authorization: Bearer $SWARMX_VIDEO_API_TOKEN" \
   -d '{"prompt":"How compound interest changes your life","platform":"tiktok"}'
 ```
+
+Observed smoke result on the current local stack: the route reaches handler logic and returns `503 caption_generation_unavailable` when the caption generator cannot complete within the available runtime conditions.
 
 ---
 
@@ -539,8 +557,10 @@ This avoids a second polling path for publish state and keeps the dashboard job 
 
 ## SSE event lifecycle
 
-All video events are emitted on the existing `/api/events` SSE stream. No new SSE endpoint
-is needed.
+Video updates are available through two SSE surfaces:
+
+- `/api/events` for the shared dashboard-wide event stream
+- `/api/video/jobs/:id/sse` for a job-scoped stream that immediately emits a `video:snapshot` payload and then continues with incremental updates and heartbeats
 
 API video lifecycle events (from `apps/swarmx-api/src/types/events.ts`) use canonical
 `{ type, timestamp, data }` shape:
@@ -853,8 +873,9 @@ apps/swarmx-api/src/services/publishers/
 └── instagram.ts      — Instagram Graph API (requires SWARMX_INSTAGRAM_ACCESS_TOKEN)
 ```
 
-TikTok and Instagram publishers fall back to generic export when environment tokens are not set,
-logging a clear message pointing to `docs/TIKTOK_SETUP.md`. See that file for OAuth setup.
+TikTok and Instagram publishers fall back to generic export when required credentials are missing,
+when TikTok approval is not enabled, or when Instagram lacks a publicly reachable output URL.
+TikTok fallback logs a clear message pointing to `docs/TIKTOK_SETUP.md`.
 
 ### New environment variables
 

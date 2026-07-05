@@ -21,7 +21,7 @@ import { runOrchestration } from "../services/video-orchestrator.js";
 import type { BroadcastFn } from "../services/video-orchestrator.js";
 import { getAvailableRamMb } from "../services/adaptive-timeout-config.js";
 import { requireVideoWriteAuth } from "../services/video-auth.js";
-import { generateCaptionDraft } from "../services/caption-generator.js";
+import { generateCaptionDraftWithValidation } from "../services/caption-generator.js";
 import { scoreVirality } from "../services/virality-scorer.js";
 import {
   generateLTXWorkflow,
@@ -243,9 +243,9 @@ export async function videoRoutes(
     opts.broadcast ??
     ((event) => fastify.log.debug({ event }, "video:event (no broadcaster)"));
 
-  // ── POST /api/video/jobs ───────────────────────────────────────────────────
+  // ── POST /jobs ─────────────────────────────────────────────────────────────
   fastify.post<{ Body: VideoJobRequest }>(
-    "/api/video/jobs",
+    "/jobs",
     {
       preHandler: requireVideoWriteAuth,
       schema: {
@@ -312,14 +312,14 @@ export async function videoRoutes(
         jobId: job.id,
         status: job.status,
         createdAt: job.createdAt,
-        message: `Video job created. Track progress via SSE or GET /api/video/jobs/${job.id}`,
+          message: `Video job created. Track progress via SSE or GET /api/video/jobs/${job.id}`,
       });
     }
   );
 
-  // ── GET /api/video/jobs ────────────────────────────────────────────────────
+  // ── GET /jobs ──────────────────────────────────────────────────────────────
   fastify.get<{ Querystring: VideoJobListQuery }>(
-    "/api/video/jobs",
+    "/jobs",
     {
       schema: { querystring: ListQuerySchema },
     },
@@ -341,9 +341,9 @@ export async function videoRoutes(
     }
   );
 
-  // ── GET /api/video/jobs/:id ────────────────────────────────────────────────
+  // ── GET /jobs/:id ──────────────────────────────────────────────────────────
   fastify.get<{ Params: { id: string } }>(
-    "/api/video/jobs/:id",
+    "/jobs/:id",
     {
       schema: { params: JobIdParamSchema },
     },
@@ -360,7 +360,7 @@ export async function videoRoutes(
   );
 
   fastify.get<{ Params: { id: string } }>(
-    "/api/video/jobs/:id/sse",
+    "/jobs/:id/sse",
     {
       schema: { params: JobIdParamSchema },
     },
@@ -414,9 +414,9 @@ export async function videoRoutes(
     },
   );
 
-  // ── POST /api/video/jobs/:id/cancel ───────────────────────────────────────
+  // ── POST /jobs/:id/cancel ─────────────────────────────────────────────────
   fastify.post<{ Params: { id: string } }>(
-    "/api/video/jobs/:id/cancel",
+    "/jobs/:id/cancel",
     {
       preHandler: requireVideoWriteAuth,
       schema: { params: JobIdParamSchema },
@@ -425,7 +425,7 @@ export async function videoRoutes(
   );
 
   fastify.delete<{ Params: { id: string } }>(
-    "/api/video/jobs/:id",
+    "/jobs/:id",
     {
       preHandler: requireVideoWriteAuth,
       schema: { params: JobIdParamSchema },
@@ -434,7 +434,7 @@ export async function videoRoutes(
   );
 
   fastify.post<{ Params: { id: string }; Body: { fromStage: string } }>(
-    "/api/video/jobs/:id/resume",
+    "/jobs/:id/resume",
     {
       preHandler: requireVideoWriteAuth,
       schema: {
@@ -477,7 +477,7 @@ export async function videoRoutes(
   );
 
   fastify.post<{ Body: { orderedIds: string[] } }>(
-    "/api/video/jobs/reprioritize",
+    "/jobs/reprioritize",
     {
       preHandler: requireVideoWriteAuth,
       schema: {
@@ -503,7 +503,7 @@ export async function videoRoutes(
   );
 
   fastify.get<{ Params: { id: string } }>(
-    "/api/video/jobs/:id/artifacts",
+    "/jobs/:id/artifacts",
     {
       schema: { params: JobIdParamSchema },
     },
@@ -533,7 +533,7 @@ export async function videoRoutes(
   );
 
   fastify.get<{ Params: { id: string } }>(
-    "/api/video/jobs/:id/analysis",
+    "/jobs/:id/analysis",
     {
       schema: { params: JobIdParamSchema },
     },
@@ -558,7 +558,7 @@ export async function videoRoutes(
     Params: { id: string };
     Body: { platform: "tiktok" | "reels" | "shorts" | "generic"; scheduledAt?: string };
   }>(
-    "/api/video/jobs/:id/publish",
+    "/jobs/:id/publish",
     {
       preHandler: requireVideoWriteAuth,
       schema: {
@@ -642,24 +642,36 @@ export async function videoRoutes(
   fastify.post<{
     Body: { prompt: string; platform: "tiktok" | "reels" | "shorts" | "generic"; tone?: string; durationSec?: number };
   }>(
-    "/api/video/caption-draft",
+    "/caption-draft",
     {
       preHandler: requireVideoWriteAuth,
     },
     async (request, reply) => {
-      const captionDraft = await generateCaptionDraft({
-        topic: request.body.prompt,
-        platform: request.body.platform,
-        tone: request.body.tone ?? "engaging",
-      });
-      return reply.send({ captionDraft });
+      try {
+        const result = await generateCaptionDraftWithValidation({
+          topic: request.body.prompt,
+          platform: request.body.platform,
+          tone: request.body.tone ?? "engaging",
+        });
+        return reply.send({
+          captionDraft: result.draft,
+          valid: result.validation.valid,
+          violations: result.validation.violations,
+        });
+      } catch {
+        return reply.status(503).send({
+          error: "caption_generation_unavailable",
+          valid: false,
+          message: "Caption generator unavailable",
+        });
+      }
     },
   );
 
   fastify.post<{
     Body: { prompt: string; platform: "tiktok" | "reels" | "shorts" | "generic"; tone?: string; durationSec?: number };
   }>(
-    "/api/video/caption/score",
+    "/caption/score",
     {
       preHandler: requireVideoWriteAuth,
       schema: {
@@ -708,11 +720,20 @@ export async function videoRoutes(
         durationSec = parsedDraft.data.durationSec ?? 30;
       } else if (parsedPrompt.success) {
         const promptData = parsedPrompt.data;
-        captionDraft = await generateCaptionDraft({
-          topic: promptData.prompt,
-          platform: promptData.platform,
-          tone: promptData.tone ?? "engaging",
-        });
+        try {
+          const result = await generateCaptionDraftWithValidation({
+            topic: promptData.prompt,
+            platform: promptData.platform,
+            tone: promptData.tone ?? "engaging",
+          });
+          captionDraft = result.draft;
+        } catch {
+          return reply.status(503).send({
+            error: "caption_generation_unavailable",
+            valid: false,
+            message: "Caption generator unavailable",
+          });
+        }
         topicText = promptData.prompt;
         platform = promptData.platform;
         durationSec = promptData.durationSec ?? 30;
@@ -744,7 +765,7 @@ export async function videoRoutes(
   fastify.post<{
     Body: { prompt: string; platform: "tiktok" | "reels" | "shorts" | "generic"; durationSec?: number; hook?: string };
   }>(
-    "/api/video/virality-score",
+    "/virality-score",
     {
       preHandler: requireVideoWriteAuth,
       schema: {
@@ -773,7 +794,7 @@ export async function videoRoutes(
   );
 
   fastify.get(
-    "/api/video/templates",
+    "/templates",
     async (_request, reply) => {
       const availableMb = getAvailableRamMb();
       const shared = {

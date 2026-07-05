@@ -355,10 +355,10 @@ export function invalidateOllamaCache(): void {
 }
 
 // [V6.2-FIX-22] Probe timeout is now env-overridable. On constrained hosts the
-// default 2000ms can be too tight during cold startup; set
-// SWARMX_OLLAMA_PROBE_TIMEOUT_MS=3500 in .env.local to widen it.
+// default 2000ms proved too tight during cold startup and high memory pressure;
+// default to 5000ms and override with SWARMX_OLLAMA_PROBE_TIMEOUT_MS if needed.
 const FAST_PROBE_TIMEOUT_MS =
-  Number.parseInt(process.env["SWARMX_OLLAMA_PROBE_TIMEOUT_MS"] ?? "2000", 10) || 2_000;
+  Number.parseInt(process.env["SWARMX_OLLAMA_PROBE_TIMEOUT_MS"] ?? "5000", 10) || 5_000;
 
 export async function fastHealthProbe(): Promise<{
   reachable: boolean;

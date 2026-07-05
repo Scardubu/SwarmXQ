@@ -45,7 +45,7 @@ const BULLMQ_ENABLED = process.env.SWARMX_VIDEO_USE_BULLMQ === "1";
 const REDIS_URL = process.env.REDIS_URL ?? "redis://127.0.0.1:6379";
 const ARTIFACT_DIR = resolve(
   process.env.SWARMX_VIDEO_ARTIFACT_DIR ??
-    `${process.cwd()}/.swarmx/video/artifacts`,
+    resolve(process.cwd(), ".swarmx", "video", "artifacts"),
 );
 
 // ─── Internal ─────────────────────────────────────────────────────────────────

@@ -7,7 +7,7 @@
 
 import { useState, useId } from "react";
 import { useVideoStore } from "../../stores/video";
-import type { VideoJobRequest } from "../../../../swarmx-api/src/types/video";
+import type { VideoJobRequest } from "../../lib/video-dashboard";
 
 // ─── Select Helper ────────────────────────────────────────────────────────────
 

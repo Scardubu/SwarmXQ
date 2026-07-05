@@ -12,7 +12,7 @@
 
 import { useState, useCallback } from "react";
 import type { PublishResult, VideoExportPlatform } from "@swarmx/types/video-types";
-import type { VideoJob } from "../../../../swarmx-api/src/types/video";
+import type { VideoJob } from "../../lib/video-dashboard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

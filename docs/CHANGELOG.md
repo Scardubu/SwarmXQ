@@ -4,6 +4,44 @@
 
 ---
 
+## V6.2.3 — Production Readiness Pass (2026-07-05)
+
+Codebase audit pass eliminating all React Compiler violations, stale Python test assertions, and unused-variable warnings introduced during the VIDEO-ALPHA integration. Zero regressions.
+
+### Dashboard
+
+- `apps/swarmx-dashboard/src/components/video/VideoJobCard.tsx`
+  - **[V5.9-FIX-10]** Replaced impure `Date.now()` call during render (React Compiler rule violation) with a `useState` + `useEffect` ticker pattern. Elapsed time now updates every second while the job is `running` and remains stable otherwise.
+
+- `apps/swarmx-dashboard/src/app/(dashboard)/video/page.tsx`
+  - **[V5.9-FIX-11]** Removed closure over `queuedJobs` snapshot inside `handleDropOn` — the React Compiler correctly flagged this as a mutable dependency that caused the `useCallback` memoization to be skipped entirely. The callback now reads live queue state via `useVideoStore.getState().listJobs()`, which is safe inside a callback and compiler-transparent.
+  - Removed the now-unnecessary `queuedJobs` derived variable.
+
+- `apps/swarmx-dashboard/src/components/video/CaptionEditor.tsx`
+  - Added `eslint-disable-next-line` comment with rationale on the intentionally unused `jobId` destructure (`_unusedJobId`) to suppress the `no-unused-vars` warning cleanly without altering the component's public API.
+
+### Python tests
+
+- `tests/cli/test_config_model_normalization.py`
+  - Updated all three test assertions to expect APEX-17 r7 canonical tags (`instruct-phi4-pro-q8-prod`, `reason-deepseekr1-pro-q5km-prod`, `code-qwen25-pro-q5km-prod`) instead of pre-migration short names that were removed during the r7 naming migration.
+
+- `tests/cli/test_config_validation.py`
+  - Updated `test_ensure_calls_validate` canonical-tag assertion set to match r7 production tags.
+
+### Dev dependencies
+
+- Installed `typer`, `pytest`, and `pytest-asyncio` into the project venv to unblock previously skipping CLI and async test modules.
+
+### Validation status
+
+- `pnpm --filter @swarmx/dashboard lint` — **0 errors, 0 warnings** (was 3 errors, 1 warning).
+- `pnpm --filter @swarmx/dashboard typecheck` — verified clean.
+- `pnpm --filter @swarmx/api typecheck` — verified clean.
+- `python3 -m pytest tests/cli/test_config_model_normalization.py tests/cli/test_config_validation.py` — **13/13 passed**.
+- Full non-CLI test suite (204 tests) — **all passed**.
+
+---
+
 ## V6.2.2 — VIDEO-ALPHA Integration Finish (2026-07-04)
 
 Final integration pass for the VIDEO-ALPHA upgrade, focused on live-update wiring, route validation, dashboard correctness, and documentation hygiene.

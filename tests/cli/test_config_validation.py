@@ -141,5 +141,12 @@ def test_ensure_calls_validate(tmp_path: Path, monkeypatch) -> None:
     cfg.ensure()
     # Directories should now exist.
     assert (tmp_path / "runs").exists() or (tmp_path).exists()
-    # model_fast must be canonical after ensure().
-    assert cfg.model_fast in {"phi4-fast", "phi4-worker", "deepseek-reasoner", "qwen-worker", "qwen-supervisor"}
+    # model_fast must be canonical after ensure() — APEX-17 r7 production tags.
+    CANONICAL_FAST_TAGS = {
+        "instruct-phi4-pro-q8-prod",
+        "route-phi4-lite-q4km-prod",
+        "plan-phi4-pro-q8-prod",
+    }
+    assert cfg.model_fast in CANONICAL_FAST_TAGS, (
+        f"model_fast '{cfg.model_fast}' is not a recognised canonical fast tag"
+    )

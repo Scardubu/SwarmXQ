@@ -17,6 +17,8 @@ export interface PublisherProfile {
   requiresApproval: boolean;
 }
 
+type LogLevel = "info" | "warn" | "error";
+
 export interface PlatformPublisher {
   platform: VideoExportPlatform;
   publish(job: VideoJob, artifacts: VideoArtifacts): Promise<PublishResult>;
@@ -46,6 +48,54 @@ export abstract class BaseVideoPublisher implements PlatformPublisher {
 
   protected requiresApproval(): boolean {
     return this.profile.requiresApproval;
+  }
+
+  protected async withRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
+    let attempt = 0;
+    let lastError: unknown;
+
+    while (attempt < retries) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error;
+        attempt += 1;
+        if (attempt >= retries) {
+          break;
+        }
+
+        const delayMs = 500 * 2 ** (attempt - 1);
+        this.log("warn", "publisher_retry", {
+          platform: this.platform,
+          attempt,
+          retries,
+          delayMs,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  }
+
+  protected log(level: LogLevel, msg: string, ctx: Record<string, unknown> = {}): void {
+    const sanitized = Object.fromEntries(
+      Object.entries(ctx).filter(([key]) => !/token|secret|authorization/i.test(key)),
+    );
+
+    switch (level) {
+      case "error":
+        console.error(`[video-publisher:${this.platform}] ${msg}`, sanitized);
+        break;
+      case "warn":
+        console.warn(`[video-publisher:${this.platform}] ${msg}`, sanitized);
+        break;
+      case "info":
+      default:
+        console.info(`[video-publisher:${this.platform}] ${msg}`, sanitized);
+        break;
+    }
   }
 
   protected buildResult(

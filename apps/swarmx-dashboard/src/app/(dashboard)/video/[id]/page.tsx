@@ -8,6 +8,7 @@ import { ViralityMeter } from "../../../../components/video/ViralityMeter";
 import { CaptionEditor } from "../../../../components/video/CaptionEditor";
 import { PlatformPublishPanel } from "../../../../components/video/PlatformPublishPanel";
 import type { VideoExportPlatform } from "@swarmx/types/video-types";
+import { getVideoPublishPlatform } from "../../../../lib/video-dashboard";
 
 export default function VideoJobDetailPage() {
   const params = useParams<{ id: string }>();
@@ -53,10 +54,7 @@ export default function VideoJobDetailPage() {
     );
   }
 
-  const selectedPlatform: VideoExportPlatform =
-    job.request.platform === "youtube_shorts"
-      ? "shorts"
-      : (job.request.platform as VideoExportPlatform | undefined) ?? "generic";
+  const selectedPlatform: VideoExportPlatform = getVideoPublishPlatform(job);
 
   return (
     <div className="h-full min-h-0 flex flex-col">

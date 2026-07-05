@@ -17,10 +17,9 @@ function getCanonicalModelTriad() {
     {
       role: "router",
       tag:
-        process.env["SWARMX_COMPOSER_MODEL"] ??
-        process.env["SWARMX_MODEL_FAST"] ??
-        process.env["SWARM_MODEL_FAST"] ??
-        "instruct-phi4-pro-q8-prod",
+        process.env["SWARMX_MODEL_ULTRA_ROUTER"] ??
+        process.env["SWARM_MODEL_ULTRA_ROUTER"] ??
+        "route-phi4-lite-q4km-prod",
       gguf: "microsoft_Phi-4-mini-instruct-Q8_0.gguf",
     },
     {
@@ -137,22 +136,25 @@ export async function systemRouter(server: FastifyInstance): Promise<void> {
       memory: memGb,
       ...(vramWarning ? { warnings: [vramWarning] } : {}),
       config: {
+        modelRouter:
+          process.env["SWARMX_MODEL_ULTRA_ROUTER"] ??
+          process.env["SWARM_MODEL_ULTRA_ROUTER"] ??
+          "route-phi4-lite-q4km-prod",
         // [V6.2-FIX-14] Keep health output aligned with the env precedence used
         // by the API routes/services so diagnostics reflect real runtime state.
         modelFast:
-          process.env["SWARMX_COMPOSER_MODEL"] ??
           process.env["SWARMX_MODEL_FAST"] ??
           process.env["SWARM_MODEL_FAST"] ??
-          "phi4-fast",
+          "instruct-phi4-pro-q8-prod",
         modelReason:
           process.env["SWARMX_MODEL_REASON"] ??
           process.env["SWARMX_MODEL_REASONER"] ??
           process.env["SWARM_MODEL_REASON"] ??
-          "deepseek-reasoner",
+          "reason-deepseekr1-pro-q5km-prod",
         modelCode:
           process.env["SWARMX_MODEL_CODE"] ??
           process.env["SWARM_MODEL_CODE"] ??
-          "qwen-worker",
+          "code-qwen25-pro-q5km-prod",
         apiPort:     Number.parseInt(process.env["SWARMX_API_PORT"] ?? "3001", 10),
       },
     });

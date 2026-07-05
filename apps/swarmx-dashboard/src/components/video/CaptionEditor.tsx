@@ -88,7 +88,7 @@ function PlatformPreview({
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function CaptionEditor({
-  jobId: _jobId,
+  jobId: _unusedJobId, // eslint-disable-line @typescript-eslint/no-unused-vars -- reserved for future job-scoped rescore routing
   initialDraft,
   platform,
   onSignalUpdate,

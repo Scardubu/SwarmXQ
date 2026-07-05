@@ -20,16 +20,18 @@ def _fresh_config() -> SwarmConfig:
 
 
 def test_normalize_model_tag_maps_legacy_triad_names() -> None:
-    assert normalize_model_tag("phi4-mini") == "phi4-fast"
-    assert normalize_model_tag("deepseek-r1:7b") == "deepseek-reasoner"
-    assert normalize_model_tag("qwen2.5-coder") == "qwen-worker"
+    # APEX-17 r7: legacy short tags resolve to canonical production tags.
+    assert normalize_model_tag("phi4-mini") == "instruct-phi4-pro-q8-prod"
+    assert normalize_model_tag("deepseek-r1:7b") == "reason-deepseekr1-pro-q5km-prod"
+    assert normalize_model_tag("qwen2.5-coder") == "code-qwen25-pro-q5km-prod"
 
 
 def test_swarmconfig_defaults_resolve_canonical_tags() -> None:
+    # APEX-17 r7: default models use canonical production tags.
     cfg = _fresh_config()
-    assert cfg.model_fast == "phi4-fast"
-    assert cfg.model_reason == "deepseek-reasoner"
-    assert cfg.model_code == "qwen-worker"
+    assert cfg.model_fast == "instruct-phi4-pro-q8-prod"
+    assert cfg.model_reason == "reason-deepseekr1-pro-q5km-prod"
+    assert cfg.model_code == "code-qwen25-pro-q5km-prod"
 
 
 def test_swarmconfig_env_legacy_aliases_are_normalized() -> None:
@@ -44,6 +46,7 @@ def test_swarmconfig_env_legacy_aliases_are_normalized() -> None:
     ):
         cfg = _fresh_config()
 
-    assert cfg.model_fast == "phi4-fast"
-    assert cfg.model_reason == "deepseek-reasoner"
-    assert cfg.model_code == "qwen-worker"
+    # APEX-17 r7: env legacy aliases must also resolve to canonical production tags.
+    assert cfg.model_fast == "instruct-phi4-pro-q8-prod"
+    assert cfg.model_reason == "reason-deepseekr1-pro-q5km-prod"
+    assert cfg.model_code == "code-qwen25-pro-q5km-prod"

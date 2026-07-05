@@ -7,8 +7,9 @@
 ## Overview
 
 SwarmXQ's TikTok publisher adapter (`apps/swarmx-api/src/services/publishers/tiktok.ts`) defaults to
-a **studio-export handoff** mode that requires no API credentials. It generates a TikTok Studio upload
-URL and records the publish attempt with `status: "pending_review"`.
+a safe fallback path when direct upload is not enabled. Without approval, it falls back to generic local
+export and records the publish attempt with `status: "pending_review"`, `deliveryMode: "studio_export"`,
+and `accountLabel: "TikTok Studio"`.
 
 To enable fully automated video uploads via the TikTok Content API, you need:
 
@@ -16,7 +17,8 @@ To enable fully automated video uploads via the TikTok Content API, you need:
 2. A Business or Creator account with Content API access
 3. A valid access token with the `video.upload` scope
 
-Without these, all TikTok publish requests safely fall back to generic local export.
+Without these, TikTok publish requests safely fall back to generic local export and remain in
+`pending_review` state for manual handoff.
 
 ---
 
@@ -100,8 +102,9 @@ Add these to your `.env` or `apps/swarmx-api/.env.local`:
 
 ```bash
 # ── TikTok Content API ───────────────────────────────────────────────────────
-# Both variables must be set AND SWARMX_TIKTOK_API_APPROVED=1 for real uploads.
-# Without these, all TikTok publishes use studio-export handoff (safe default).
+# Access token + SWARMX_TIKTOK_API_APPROVED=1 are required for direct upload.
+# Client key/secret are used for the OAuth and refresh flows above.
+# Without approval, publishes fall back to local export + pending_review handoff.
 SWARMX_TIKTOK_ACCESS_TOKEN=act.your_access_token_here
 SWARMX_TIKTOK_CLIENT_KEY=your_client_key
 SWARMX_TIKTOK_CLIENT_SECRET=your_client_secret
@@ -163,6 +166,8 @@ SWARMX_INSTAGRAM_USER_ID=your_ig_user_id
 
 Get these from the [Meta for Developers](https://developers.facebook.com/) portal.
 Your access token must have `instagram_content_publish` permission.
+The export also needs a publicly reachable video URL; if the output is only on local disk,
+the adapter falls back to generic export with `pending_review` status.
 
 ---
 

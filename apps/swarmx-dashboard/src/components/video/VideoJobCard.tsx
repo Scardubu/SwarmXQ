@@ -8,9 +8,10 @@
 
 "use client";
 
+import { useState, useEffect } from "react";
 import { useVideoStore } from "../../stores/video";
 import { VideoJobTimeline } from "./VideoJobTimeline";
-import type { VideoJob } from "../../../../swarmx-api/src/types/video";
+import type { VideoJob } from "../../lib/video-dashboard";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -143,8 +144,17 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
     void cancelJob(job.id);
   };
 
+  // [V5.9-FIX-10] Avoid impure Date.now() during render (React Compiler rule).
+  // Track current time in state, updating every second while the job is running.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (job.status !== "running" || !job.startedAt) return;
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [job.status, job.startedAt]);
+
   const elapsed = job.startedAt
-    ? Math.round((Date.now() - Date.parse(job.startedAt)) / 1000)
+    ? Math.round((nowMs - Date.parse(job.startedAt)) / 1000)
     : null;
 
   return (

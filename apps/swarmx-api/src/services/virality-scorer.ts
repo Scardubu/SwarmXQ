@@ -9,10 +9,15 @@ import type {
   ViralitySignal,
 } from "@swarmx/types/video-types";
 import { ModelOrchestrator } from "./model-orchestrator.js";
-import { circuitState } from "./adaptive-timeout-config.js";
+import {
+  getAdaptiveCallConfig,
+  recordFailure,
+  recordSuccess,
+  withTimeout,
+} from "./adaptive-timeout-config.js";
 import { extractJson, sanitizeReasoningOutput } from "./reasoning-sanitizer.js";
+import { generateOllamaText } from "./ollama.js";
 
-const OLLAMA_BASE = process.env["SWARMX_OLLAMA_URL"] ?? process.env["OLLAMA_HOST"] ?? "http://127.0.0.1:11434";
 const ORACLE_TAG = resolveCanonicalTag(
   process.env["SWARMX_MODEL_REASON"] ??
     process.env["SWARMX_MODEL_REASONING"] ??
@@ -125,42 +130,37 @@ function buildPrompt(input: ViralityInput, strictJsonSuffix?: string): string {
 
 async function callOracle(prompt: string): Promise<string> {
   const orchestrator = ModelOrchestrator.getInstance();
-  const modelRequest = await orchestrator.requestModel(ORACLE_TAG);
+  const callConfig = getAdaptiveCallConfig(ORACLE_TAG, "deep_reasoning");
+
+  if (callConfig.circuitOpen) {
+    throw new Error("virality_oracle_circuit_open");
+  }
+
+  const modelRequest = await orchestrator.requestModel(callConfig.modelTag);
 
   try {
-    const response = await fetch(`${OLLAMA_BASE}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const raw = await withTimeout(
+      generateOllamaText({
         model: modelRequest.modelTag,
-        keep_alive: modelRequest.keepAlive,
-        stream: false,
-        options: {
-          num_predict: modelRequest.overrides.num_predict ?? 640,
-          ...(modelRequest.overrides.num_ctx !== undefined
-            ? { num_ctx: modelRequest.overrides.num_ctx }
-            : {}),
+        prompt: [
+          "Respond with valid JSON only. Do not include markdown, prose, or reasoning blocks.",
+          prompt,
+        ].join("\n\n"),
+        maxTokens: modelRequest.overrides.num_predict ?? callConfig.overrides.num_predict ?? 640,
+        overrides: {
+          ...callConfig.overrides,
+          ...modelRequest.overrides,
           temperature: 0.0,
         },
-        messages: [
-          {
-            role: "system",
-            content: "Respond with valid JSON only. Do not include markdown, prose, or reasoning blocks.",
-          },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
       }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Virality scorer failed with status ${response.status}`);
-    }
-
-    const payload = (await response.json()) as { message?: { content?: string } };
-    return payload.message?.content ?? "";
+      callConfig.timeoutMs,
+      "virality_oracle_deep_reasoning",
+    );
+    recordSuccess(modelRequest.modelTag);
+    return raw;
+  } catch (error) {
+    recordFailure(modelRequest.modelTag);
+    throw error;
   } finally {
     orchestrator.onModelCallComplete(modelRequest.modelTag);
   }
@@ -176,7 +176,7 @@ async function parseOracleOutput(rawText: string): Promise<ViralitySignal | unde
 }
 
 export async function scoreVirality(input: ViralityInput): Promise<ViralitySignal | undefined> {
-  if (circuitState(ORACLE_TAG) === "open") {
+  if (getAdaptiveCallConfig(ORACLE_TAG, "deep_reasoning").circuitOpen) {
     console.warn("virality_oracle_circuit_open", { modelTag: ORACLE_TAG });
     return undefined;
   }

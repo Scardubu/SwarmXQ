@@ -10,9 +10,15 @@ import type {
 } from "@swarmx/types/video-types";
 import { resolveCanonicalTag } from "@swarmx/types/operator-map";
 import { ModelOrchestrator } from "./model-orchestrator.js";
+import {
+  getAdaptiveCallConfig,
+  recordFailure,
+  recordSuccess,
+  withTimeout,
+} from "./adaptive-timeout-config.js";
 import { extractJson, sanitizeReasoningOutput } from "./reasoning-sanitizer.js";
+import { generateOllamaText } from "./ollama.js";
 
-const OLLAMA_BASE = process.env["SWARMX_OLLAMA_URL"] ?? process.env["OLLAMA_HOST"] ?? "http://127.0.0.1:11434";
 const MAX_RETRIES = 2;
 
 const CAPTION_RULES = {
@@ -34,6 +40,11 @@ export interface CaptionGenerationInput {
   viralitySummary?: string;
 }
 
+export interface CaptionGenerationResult {
+  draft: CaptionDraft;
+  validation: CaptionValidation;
+}
+
 function toLegacyAwarePlatform(platform: VideoExportPlatform): string {
   if (platform === "shorts") return "youtube_shorts";
   return platform;
@@ -44,45 +55,38 @@ async function callPilotModel(prompt: string): Promise<string> {
   const requestedTag = resolveCanonicalTag(
     process.env["SWARMX_MODEL_FAST"] ?? process.env["SWARM_MODEL_FAST"] ?? "instruct-phi4-pro-q8-prod",
   );
+  const callConfig = getAdaptiveCallConfig(requestedTag, "fast_chat");
 
-  const modelRequest = await orchestrator.requestModel(requestedTag);
+  if (callConfig.circuitOpen) {
+    throw new Error("caption_generator_circuit_open");
+  }
+
+  const modelRequest = await orchestrator.requestModel(callConfig.modelTag);
   try {
-    const response = await fetch(`${OLLAMA_BASE}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const raw = await withTimeout(
+      generateOllamaText({
         model: modelRequest.modelTag,
-        keep_alive: modelRequest.keepAlive,
-        stream: false,
-        options: {
-          num_predict: modelRequest.overrides.num_predict ?? 512,
-          ...(modelRequest.overrides.num_ctx !== undefined
-            ? { num_ctx: modelRequest.overrides.num_ctx }
-            : {}),
+        prompt: [
+          "You generate high-performance short-form video captions.",
+          "Output JSON only with keys: firstLine, body, cta, hashtags, soundSuggestion.",
+          prompt,
+        ].join("\n\n"),
+        maxTokens: modelRequest.overrides.num_predict ?? callConfig.overrides.num_predict ?? 512,
+        overrides: {
+          ...callConfig.overrides,
+          ...modelRequest.overrides,
           temperature: 0.2,
         },
-        messages: [
-          {
-            role: "system",
-            content:
-              "You generate high-performance short-form video captions. Output JSON only with keys: firstLine, body, cta, hashtags, soundSuggestion.",
-          },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
       }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Caption generation failed with ${response.status}`);
-    }
-
-    const payload = (await response.json()) as { message?: { content?: string } };
-    const raw = payload.message?.content ?? "";
+      callConfig.timeoutMs,
+      "caption_generator_fast_chat",
+    );
+    recordSuccess(modelRequest.modelTag);
     const { text } = sanitizeReasoningOutput(raw);
     return text;
+  } catch (error) {
+    recordFailure(modelRequest.modelTag);
+    throw error;
   } finally {
     orchestrator.onModelCallComplete(modelRequest.modelTag);
   }
@@ -198,8 +202,16 @@ function toCaptionDraft(value: unknown): CaptionDraft | null {
 }
 
 export async function generateCaptionDraft(input: CaptionGenerationInput): Promise<CaptionDraft> {
+  const result = await generateCaptionDraftWithValidation(input);
+  return result.draft;
+}
+
+export async function generateCaptionDraftWithValidation(
+  input: CaptionGenerationInput,
+): Promise<CaptionGenerationResult> {
   let violations: string[] = [];
-  let lastValidDraft: CaptionDraft | null = null;
+  let lastDraft: CaptionDraft | null = null;
+  let lastValidation: CaptionValidation | null = null;
   let retryByRule = new Map<string, number>();
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
@@ -209,21 +221,35 @@ export async function generateCaptionDraft(input: CaptionGenerationInput): Promi
     const draft = extracted.ok ? toCaptionDraft(extracted.data) : null;
 
     if (!draft) {
-      violations = ["model output was not valid CaptionDraft JSON"];
+      const invalidJsonRule = "model output was not valid CaptionDraft JSON";
+      const nextCount = (retryByRule.get(invalidJsonRule) ?? 0) + 1;
+      retryByRule.set(invalidJsonRule, nextCount);
+      violations = [invalidJsonRule];
+      lastValidation = {
+        valid: false,
+        violations,
+      };
+      if (nextCount > MAX_RETRIES) {
+        break;
+      }
       continue;
     }
 
-    lastValidDraft = draft;
+    lastDraft = draft;
 
     const validation = validateCaption(draft, input.platform);
+    lastValidation = validation;
     if (validation.valid) {
-      return draft;
+      return {
+        draft,
+        validation,
+      };
     }
 
     violations = validation.violations;
-    retryByRule = new Map(
-      validation.violations.map((rule) => [rule, (retryByRule.get(rule) ?? 0) + 1]),
-    );
+    for (const rule of validation.violations) {
+      retryByRule.set(rule, (retryByRule.get(rule) ?? 0) + 1);
+    }
 
     const exhaustedRule = validation.violations.find((rule) => (retryByRule.get(rule) ?? 0) > MAX_RETRIES);
     if (exhaustedRule) {
@@ -231,19 +257,15 @@ export async function generateCaptionDraft(input: CaptionGenerationInput): Promi
     }
   }
 
-  if (lastValidDraft) {
-    return lastValidDraft;
+  if (lastDraft) {
+    return {
+      draft: lastDraft,
+      validation: lastValidation ?? {
+        valid: false,
+        violations,
+      },
+    };
   }
 
-  return {
-    firstLine: input.topic.slice(0, CAPTION_RULES.firstLineMaxChars),
-    body: input.viralitySummary ?? "",
-    cta: "Save this for later.",
-    hashtags: {
-      broad: [],
-      niche: [],
-      trending: [],
-    },
-    soundSuggestion: "mid-tempo, uplifting pads, light percussion",
-  };
+  throw new Error("caption_generation_failed");
 }

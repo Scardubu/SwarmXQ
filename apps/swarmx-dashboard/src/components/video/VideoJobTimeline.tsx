@@ -8,8 +8,8 @@
 
 "use client";
 
-import type { VideoJob, VideoJobStage } from "../../../../swarmx-api/src/types/video";
-import { VIDEO_JOB_STAGE_ORDER, VIDEO_JOB_STAGE_LABELS } from "../../../../swarmx-api/src/types/video";
+import type { VideoJob, VideoJobStage } from "../../lib/video-dashboard";
+import { VIDEO_JOB_STAGE_ORDER, VIDEO_JOB_STAGE_LABELS } from "../../lib/video-dashboard";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 

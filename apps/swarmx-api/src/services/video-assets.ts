@@ -19,7 +19,8 @@ import type { VideoPerformanceMetrics } from "@swarmx/types/video-types";
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 const OUTPUT_DIR = resolve(
-  process.env.VIDEO_OUTPUT_DIR ??
+  process.env.SWARMX_VIDEO_EXPORT_DIR ??
+    process.env.VIDEO_OUTPUT_DIR ??
     join(process.cwd(), ".swarmx", "video", "output")
 );
 

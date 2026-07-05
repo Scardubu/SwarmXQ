@@ -18,14 +18,10 @@
 "use client";
 
 import { useEffect, useCallback, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useVideoStore } from "../../../stores/video";
 import { VideoJobForm } from "../../../components/video/VideoJobForm";
 import { VideoJobCard } from "../../../components/video/VideoJobCard";
-import { VideoJobTimeline } from "../../../components/video/VideoJobTimeline";
-import { ViralityMeter } from "../../../components/video/ViralityMeter";
-import { CaptionEditor } from "../../../components/video/CaptionEditor";
-import { PlatformPublishPanel } from "../../../components/video/PlatformPublishPanel";
-import type { ViralitySignal, VideoExportPlatform } from "@swarmx/types/video-types";
 
 // ─── Skeleton loading row ─────────────────────────────────────────────────────
 
@@ -60,268 +56,11 @@ function EmptyJobList() {
   );
 }
 
-// ─── Detail Panel ─────────────────────────────────────────────────────────────
-// Module-scope: not nested inside VideoPage
-
-function VideoJobDetailPanel() {
-  const { selectedJob, selectJob, fetchJobDetail, publishJob } = useVideoStore((s) => ({
-    selectedJob: s.selectedJob(),
-    selectJob: s.selectJob,
-    fetchJobDetail: s.fetchJobDetail,
-    publishJob: s.publishJob,
-  }));
-
-  const [viralityOverride, setViralityOverride] = useState<ViralitySignal | null>(null);
-  const [showCaptionEditor, setShowCaptionEditor] = useState(false);
-
-  useEffect(() => {
-    if (!selectedJob) return;
-    void fetchJobDetail(selectedJob.id);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchJobDetail, selectedJob?.id]);
-
-  useEffect(() => {
-    setShowCaptionEditor(false);
-    setViralityOverride(null);
-  }, [selectedJob?.id]);
-
-  const viralitySignal = viralityOverride ?? selectedJob?.viralitySignal ?? null;
-  const captionDraft = viralitySignal?.captionDraft ?? null;
-  const publishHistory = selectedJob?.publishHistory ?? selectedJob?.outputArtifacts?.publishHistory ?? [];
-
-  const handlePublish = useCallback(
-    async (platform: VideoExportPlatform, scheduledAt?: string) => {
-      if (!selectedJob) return null;
-      return publishJob(selectedJob.id, {
-        platform,
-        ...(scheduledAt ? { scheduledAt } : {}),
-      });
-    },
-    [publishJob, selectedJob],
-  );
-
-  if (!selectedJob) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-8 py-12">
-        <div className="w-12 h-12 rounded-2xl bg-zinc-800/60 border border-zinc-700 flex items-center justify-center">
-          <svg className="w-6 h-6 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-              d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.362a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-          </svg>
-        </div>
-        <p className="text-sm text-zinc-600">Select a job to view details</p>
-      </div>
-    );
-  }
-
-  const isDone = selectedJob.status === "completed";
-  const isFailed = selectedJob.status === "failed";
-
-  return (
-    <div className="relative flex flex-col gap-5 p-5">
-      {/* Completion confetti (pure CSS, 1.5s, no external deps) */}
-      {isDone && (
-        <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
-          {Array.from({ length: 18 }, (_, i) => (
-            <span
-              key={i}
-              className="absolute rounded-full opacity-70"
-              style={{
-                width: `${6 + (i % 5) * 2}px`,
-                height: `${6 + (i % 4) * 2}px`,
-                left: `${5 + (i * 5.3) % 90}%`,
-                top: `${5 + (i * 7.1) % 50}%`,
-                background: ["#f59e0b","#10b981","#6366f1","#ec4899","#3b82f6","#f97316"][i % 6],
-                animation: `confettiFall ${0.8 + (i % 4) * 0.2}s ease-out forwards`,
-                animationDelay: `${(i % 5) * 0.1}s`,
-              }}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Header */}
-      <div className="flex items-start gap-3">
-        <button
-          onClick={() => selectJob(null)}
-          className="mt-0.5 p-1 rounded-md text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 transition-colors"
-          aria-label="Close detail"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-mono text-zinc-600 truncate">{selectedJob.id}</p>
-          <p className="mt-0.5 text-sm font-medium text-zinc-200 leading-snug line-clamp-3">
-            {selectedJob.request.prompt}
-          </p>
-        </div>
-      </div>
-
-      {/* Stage timeline */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
-        <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">
-          Stage Timeline
-        </h3>
-        <VideoJobTimeline job={selectedJob} compact={false} />
-      </div>
-
-      {/* Failure notice */}
-      {isFailed && (
-        <div className="rounded-xl border border-red-900/40 bg-red-950/20 p-4 flex items-center justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold text-red-300">Job failed</p>
-            {selectedJob.error && (
-              <p className="text-[10px] font-mono text-zinc-500 mt-0.5">
-                {selectedJob.error.code}: {selectedJob.error.message}
-              </p>
-            )}
-          </div>
-          {selectedJob.error?.retryable && (
-            <span className="text-[10px] text-amber-500 border border-amber-700/40 rounded px-2 py-0.5">
-              Will retry automatically
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Output preview */}
-      {isDone && selectedJob.output && (
-        <div className="rounded-xl border border-emerald-900/40 bg-emerald-950/30 p-4 flex flex-col gap-3">
-          <h3 className="text-xs font-semibold text-emerald-600 uppercase tracking-wider">Output</h3>
-          <video
-            src={selectedJob.output.publicUrl}
-            controls
-            playsInline
-            className="w-full rounded-lg bg-black max-h-64 object-contain"
-          />
-          <div className="grid grid-cols-3 gap-2 text-center">
-            {[
-              { label: "Duration", value: `${selectedJob.output.durationSeconds.toFixed(0)}s` },
-              { label: "Size", value: `${(selectedJob.output.fileSizeBytes / 1024 / 1024).toFixed(1)} MB` },
-              { label: "Resolution", value: `${selectedJob.output.widthPx}×${selectedJob.output.heightPx}` },
-            ].map(({ label, value }) => (
-              <div key={label} className="rounded-lg bg-zinc-900/60 px-2 py-2">
-                <p className="text-[10px] text-zinc-600">{label}</p>
-                <p className="text-xs font-semibold text-zinc-300 font-mono">{value}</p>
-              </div>
-            ))}
-          </div>
-          <a
-            href={selectedJob.output.publicUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center justify-center gap-2 rounded-lg bg-emerald-800/50 border border-emerald-700/50 text-emerald-300 text-xs font-semibold py-2.5 hover:bg-emerald-800 transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            Download
-          </a>
-        </div>
-      )}
-
-      {/* Virality meter */}
-      {viralitySignal && (
-        <ViralityMeter
-          signal={viralitySignal}
-          {...(captionDraft ? { onImprove: () => setShowCaptionEditor(true) } : {})}
-        />
-      )}
-
-      {/* Caption editor toggle */}
-      {captionDraft && !showCaptionEditor && (
-        <button
-          type="button"
-          onClick={() => setShowCaptionEditor(true)}
-          className="w-full rounded-xl border border-cyan-900/40 bg-cyan-950/10 py-3 text-xs font-semibold text-cyan-300 hover:bg-cyan-950/20 transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500"
-        >
-          Edit Caption Draft
-        </button>
-      )}
-
-      {/* Caption editor */}
-      {captionDraft && showCaptionEditor && (
-        <CaptionEditor
-          jobId={selectedJob.id}
-          initialDraft={captionDraft}
-          {...(selectedJob.request.platform && selectedJob.request.platform !== "youtube_shorts"
-            ? { platform: selectedJob.request.platform as VideoExportPlatform }
-            : selectedJob.request.platform === "youtube_shorts"
-            ? { platform: "shorts" as VideoExportPlatform }
-            : {})}
-          onSignalUpdate={(sig) => setViralityOverride(sig)}
-        />
-      )}
-
-      {/* Publish panel */}
-      {isDone && (
-        <PlatformPublishPanel
-          job={selectedJob}
-          publishHistory={publishHistory}
-          onPublish={handlePublish}
-        />
-      )}
-
-      {/* Operator trace */}
-      {selectedJob.operatorTrace && selectedJob.operatorTrace.length > 0 && (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-          <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">
-            Operator Trace
-          </h3>
-          <div className="space-y-1">
-            {selectedJob.operatorTrace.map((entry, idx) => (
-              <div key={idx} className="flex items-center justify-between gap-4 text-[10px]">
-                <span className="text-zinc-500 capitalize">
-                  {String(entry.stage).replace(/_/g, " ")}
-                </span>
-                <span className="text-zinc-600 font-mono truncate max-w-[10rem]">{entry.operator}</span>
-                <span className="text-zinc-600 font-mono shrink-0">{((entry.latencyMs ?? 0) / 1000).toFixed(1)}s</span>
-                <span className="text-zinc-700 font-mono shrink-0">{entry.tokenCount ?? 0}t</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Models used */}
-      {selectedJob.output?.modelsUsed && Object.keys(selectedJob.output.modelsUsed).length > 0 && (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-          <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">
-            Models Used
-          </h3>
-          <dl className="space-y-1">
-            {Object.entries(selectedJob.output.modelsUsed).map(([stage, model]) => (
-              <div key={stage} className="flex items-center justify-between gap-4">
-                <dt className="text-[10px] text-zinc-600 capitalize">{stage.replace(/_/g, " ")}</dt>
-                <dd className="text-[10px] font-mono text-zinc-400">{model as string}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      )}
-
-      {/* Script */}
-      {selectedJob.output?.scriptText && (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-          <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">
-            Generated Script
-          </h3>
-          <pre className="text-xs text-zinc-400 leading-relaxed whitespace-pre-wrap font-mono max-h-48 overflow-y-auto">
-            {selectedJob.output.scriptText}
-          </pre>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function VideoPage() {
-  const { fetchJobs, listJobs, isLoading, listError, selectJob, selectedJobId, reorderQueue, retryFromStage } =
+  const router = useRouter();
+  const { fetchJobs, listJobs, isLoading, listError, selectedJobId, reorderQueue, retryFromStage } =
     useVideoStore();
   const [draggedJobId, setDraggedJobId] = useState<string | null>(null);
 
@@ -330,13 +69,12 @@ export default function VideoPage() {
   }, [fetchJobs]);
 
   const handleSubmitted = useCallback(
-    (jobId: string) => { selectJob(jobId); },
-    [selectJob],
+    (jobId: string) => { router.push(`/video/${jobId}`); },
+    [router],
   );
 
   const jobs = listJobs();
   const hasJobs = jobs.length > 0;
-  const queuedJobs = jobs.filter((job) => job.status === "queued");
 
   const handleRetry = useCallback(
     async (jobId: string) => {
@@ -352,14 +90,23 @@ export default function VideoPage() {
         return;
       }
 
-      const ordered = [...queuedJobs];
-      const fromIndex = ordered.findIndex((job) => job.id === draggedJobId);
-      const toIndex = ordered.findIndex((job) => job.id === targetJobId);
+      // [V5.9-FIX-11] Read queued jobs inside the callback via store accessor
+      // instead of closing over the `queuedJobs` snapshot. This avoids a
+      // mutable-dependency warning from React Compiler that caused the callback
+      // memoization to be skipped entirely.
+      const currentQueued = useVideoStore
+        .getState()
+        .listJobs()
+        .filter((j) => j.status === "queued");
+
+      const fromIndex = currentQueued.findIndex((job) => job.id === draggedJobId);
+      const toIndex = currentQueued.findIndex((job) => job.id === targetJobId);
       if (fromIndex < 0 || toIndex < 0) {
         setDraggedJobId(null);
         return;
       }
 
+      const ordered = [...currentQueued];
       const [moved] = ordered.splice(fromIndex, 1);
       if (!moved) {
         setDraggedJobId(null);
@@ -370,7 +117,7 @@ export default function VideoPage() {
       await reorderQueue(ordered.map((job) => job.id));
       setDraggedJobId(null);
     },
-    [draggedJobId, queuedJobs, reorderQueue],
+    [draggedJobId, reorderQueue],
   );
 
   return (
@@ -435,7 +182,7 @@ export default function VideoPage() {
               >
                 <VideoJobCard
                   job={job}
-                  onSelect={selectJob}
+                  onSelect={(jobId) => router.push(`/video/${jobId}`)}
                   isSelected={selectedJobId === job.id}
                 />
                 {job.status === "failed" && (
@@ -453,11 +200,6 @@ export default function VideoPage() {
               </div>
             ))}
           </div>
-        </div>
-
-        {/* Right: detail panel */}
-        <div className="flex-1 overflow-y-auto min-w-0">
-          <VideoJobDetailPanel />
         </div>
       </div>
     </div>

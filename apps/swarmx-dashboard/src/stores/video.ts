@@ -14,7 +14,7 @@ import type {
   VideoJobRequest,
   VideoJobStage,
   VideoStageProgress,
-} from "../../../swarmx-api/src/types/video";
+} from "../lib/video-dashboard";
 import type {
   CaptionDraft,
   PublishResult,
@@ -22,6 +22,7 @@ import type {
   VideoArtifacts,
   VideoExportPlatform,
 } from "@swarmx/types/video-types";
+import { normalizeVideoJob, normalizeVideoJobs } from "../lib/video-dashboard";
 import type {
   SwarmXEvent,
   VideoEvent,
@@ -90,14 +91,27 @@ function isApiVideoLifecycleEvent(event: SwarmXEvent): event is VideoEvent {
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:7380";
+const API_BASE =
+  process.env.NEXT_PUBLIC_SWARMX_API_URL?.trim() ||
+  process.env.NEXT_PUBLIC_API_URL?.trim() ||
+  "http://127.0.0.1:3001";
+const VIDEO_API_TOKEN = process.env.NEXT_PUBLIC_SWARMX_VIDEO_API_TOKEN?.trim() ?? "";
 
 async function apiFetch<T>(
   path: string,
   init?: RequestInit
 ): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: {
+      "Content-Type": "application/json",
+      ...(VIDEO_API_TOKEN
+        ? {
+            Authorization: `Bearer ${VIDEO_API_TOKEN}`,
+            "x-video-api-key": VIDEO_API_TOKEN,
+          }
+        : {}),
+      ...init?.headers,
+    },
     ...init,
   });
   if (!res.ok) {
@@ -126,7 +140,7 @@ export const useVideoStore = create<VideoStore>()(
         try {
           const data = await apiFetch<{ jobs: VideoJob[] }>("/api/video/jobs");
           const jobs = new Map<string, VideoJob>();
-          for (const job of data.jobs) {
+          for (const job of normalizeVideoJobs(data.jobs)) {
             jobs.set(job.id, job);
           }
           set({ jobs, isLoading: false }, false, "video/fetchJobs/done");
@@ -153,12 +167,12 @@ export const useVideoStore = create<VideoStore>()(
           set(
             (state) => {
               const jobs = new Map(state.jobs);
-              jobs.set(jobId, {
+              jobs.set(jobId, normalizeVideoJob({
                 ...job,
                 ...(artifacts.artifacts ? { outputArtifacts: artifacts.artifacts } : {}),
                 ...(job.publishHistory ? { publishHistory: job.publishHistory } : {}),
                 ...(analysis.viralitySignal ? { viralitySignal: analysis.viralitySignal } : {}),
-              });
+              }));
               return { jobs };
             },
             false,
@@ -192,7 +206,7 @@ export const useVideoStore = create<VideoStore>()(
           set(
             (state) => {
               const jobs = new Map(state.jobs);
-              jobs.set(data.jobId, seedJob);
+              jobs.set(data.jobId, normalizeVideoJob(seedJob));
               return { jobs, isSubmitting: false, selectedJobId: data.jobId };
             },
             false,
@@ -251,7 +265,7 @@ export const useVideoStore = create<VideoStore>()(
           set(
             (state) => {
               const jobs = new Map(state.jobs);
-              jobs.set(jobId, data.job);
+              jobs.set(jobId, normalizeVideoJob(data.job));
 
               return { jobs };
             },
@@ -480,7 +494,7 @@ export const useVideoStore = create<VideoStore>()(
               }
 
               case "video:snapshot": {
-                jobs.set(event.data.job.id, event.data.job);
+                jobs.set(event.data.job.id, normalizeVideoJob(event.data.job));
                 break;
               }
             }

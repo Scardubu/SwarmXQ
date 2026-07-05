@@ -46,7 +46,11 @@ Dashboard: **http://localhost:3000** · API: **http://localhost:3001/health**
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `SWARMX_OLLAMA_URL` | `http://127.0.0.1:11434` | Ollama endpoint |
-| `SWARMX_API_URL` | `http://127.0.0.1:3001` | API endpoint for dashboard |
+| `SWARMX_API_URL` | `http://127.0.0.1:3001` | API endpoint for CLI and server-side integrations |
+| `NEXT_PUBLIC_SWARMX_API_URL` | `http://127.0.0.1:3001` | Preferred dashboard API endpoint |
+| `NEXT_PUBLIC_API_URL` | `http://127.0.0.1:3001` | Legacy dashboard API fallback |
+| `SWARMX_VIDEO_API_TOKEN` | unset | Write-route token for protected `/api/video/*` mutations |
+| `NEXT_PUBLIC_SWARMX_VIDEO_API_TOKEN` | unset | Optional dashboard token forwarded to video write routes |
 | `SWARM_MODEL_FAST` | `instruct-phi4-pro-q8-prod` | Pilot model override |
 | `SWARM_MODEL_CODE` | `code-qwen25-pro-q5km-prod` | Forge model override |
 | `SWARM_MODEL_REASON` | `reason-deepseekr1-pro-q5km-prod` | Oracle model override |
@@ -81,6 +85,8 @@ The `ModelOrchestrator` singleton enforces memory safety on 8 GB systems through
 
 SwarmXQ includes a pressure-aware, faceless video generation subsystem for TikTok and YouTube Shorts.
 
+The dashboard consumes video API payloads through a local adapter boundary in `apps/swarmx-dashboard/src/lib/video-dashboard.ts`, which normalizes route payloads into dashboard-safe job shapes without coupling the UI to API-internal bridge types.
+
 ### Pipeline Stages
 
 1. **Intent Classification** (Pilot by default) — parse user request into structured intent
@@ -91,6 +97,8 @@ SwarmXQ includes a pressure-aware, faceless video generation subsystem for TikTo
 6. **Finalizing** (API assets layer) — write metadata and output manifest
 
 Integrations: ComfyUI (optional), pressure-aware stage gating, and graceful degradation paths. Dashboard: `/video` route with job list and detail timeline. For the exact route and payload contract, see [docs/VIDEO-GENERATION.md](docs/VIDEO-GENERATION.md).
+
+Operational note: the compiled Fastify entrypoint currently resolves to `apps/swarmx-api/dist/apps/swarmx-api/src/server.js` because the API TypeScript build uses the monorepo root as `rootDir`.
 
 ---
 
