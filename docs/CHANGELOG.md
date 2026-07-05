@@ -4,6 +4,59 @@
 
 ---
 
+## V6.2.5 — UI/UX Polish & Accessibility Quick Wins (2026-07-05)
+
+Systematic quality pass across all video dashboard components. Resolves WCAG AA violations, eliminates per-render object allocations, and ships the missing right-panel empty state.
+
+### Dashboard — Accessibility
+
+- `apps/swarmx-dashboard/src/components/video/ViralityMeter.tsx`
+  - **Hoisted `<Tooltip.Provider>`** out of `DimensionBar` into a single wrapper around the dimension bars grid. Previously a new Provider context was mounted for each of the 5 bars per render.
+  - Added `role="progressbar"` with `aria-valuenow/min/max` and `aria-label` to the compact variant bar — was previously an unsemantic `<div>` with no ARIA role.
+
+- `apps/swarmx-dashboard/src/components/video/VideoJobCard.tsx`
+  - Added `tabIndex={0}`, `role="button"`, `aria-label`, `onKeyDown` (Enter/Space → select), and `focus-visible:ring-2` to `<article>` — was click-only, entirely keyboard-inaccessible.
+  - Cancel and download action buttons: added `focus-visible:opacity-100` and `focus-visible:ring-2` so they are reachable without a mouse (previously `opacity-0` until hover).
+  - Cancel/download `aria-label` now includes the job prompt.
+
+- `apps/swarmx-dashboard/src/components/video/CaptionEditor.tsx`
+  - Added `id` attributes to all 6 form controls and matching `htmlFor` to all `<label>` elements — previously no labels were programmatically associated with their controls (WCAG 1.3.1 failure).
+  - Added `role="alert"` to the rescore error container — screen readers now announce API failures immediately.
+  - Sound Suggestion input: added consistent `focus:outline-none focus:ring-1 transition-colors` focus ring.
+  - Error copy: replaced code-language `"firstLine cannot start with I/My/This/We/Our"` with a user-readable message.
+
+- `apps/swarmx-dashboard/src/components/video/PlatformPublishPanel.tsx`
+  - Status feedback paragraph: added `role="status"` and `aria-live="polite"` — publish outcome was previously announced only visually.
+  - History scroll container: added descriptive `aria-label` with event count.
+
+- `apps/swarmx-dashboard/src/app/(dashboard)/video/[id]/page.tsx`
+  - Replaced ASCII arrows `"<- Back to Queue"` / `"Video -> "` with Unicode `←` / `→`.
+  - `!job` loading state now renders `<VideoJobDetailLoading />` skeleton instead of plain text.
+  - `<video>` element: added `aria-label` containing the job prompt.
+  - Operator trace `<table>`: added `<caption className="sr-only">` — was a table with no accessible name.
+
+### Dashboard — Performance
+
+- `apps/swarmx-dashboard/src/components/video/VideoJobCard.tsx`
+  - Moved `StatusBadge` status map to module-scope constant `STATUS_MAP` — was recreated on every render.
+
+### Dashboard — UX
+
+- `apps/swarmx-dashboard/src/app/(dashboard)/video/page.tsx`
+  - Added right-panel empty state (visible above `lg` breakpoint) prompting users to select a job — layout previously left the right column blank.
+  - Derived `runningCount`, `queuedCount`, `doneCount` once — was calling `jobs.filter().length` three times inline in JSX.
+  - Retry button `aria-label` now includes the job prompt (first 50 chars).
+
+- `apps/swarmx-dashboard/src/components/video/CaptionEditor.tsx`
+  - Moved `DISALLOWED_OPENERS` array to module scope — was recreated on every render.
+
+### Validation status
+
+- `pnpm --filter @swarmx/dashboard lint` — **0 errors, 0 warnings**.
+- `pnpm --filter @swarmx/dashboard typecheck` — **clean**.
+
+---
+
 ## V6.2.4 — Accessibility, Error Boundaries & Code Quality (2026-07-05)
 
 Systematic audit pass following V6.2.3. Adds missing Next.js route boundaries, closes accessibility gaps across all video UI components, and removes production anti-patterns.

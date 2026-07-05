@@ -9,6 +9,7 @@ import { CaptionEditor } from "../../../../components/video/CaptionEditor";
 import { PlatformPublishPanel } from "../../../../components/video/PlatformPublishPanel";
 import type { VideoExportPlatform } from "@swarmx/types/video-types";
 import { getVideoPublishPlatform } from "../../../../lib/video-dashboard";
+import VideoJobDetailLoading from "./loading";
 
 export default function VideoJobDetailPage() {
   const params = useParams<{ id: string }>();
@@ -47,11 +48,7 @@ export default function VideoJobDetailPage() {
   );
 
   if (!job) {
-    return (
-      <div className="p-6 text-sm text-text-muted">
-        Loading job details...
-      </div>
-    );
+    return <VideoJobDetailLoading />;
   }
 
   const selectedPlatform: VideoExportPlatform = getVideoPublishPlatform(job);
@@ -65,9 +62,9 @@ export default function VideoJobDetailPage() {
             onClick={() => router.push("/video")}
             className="text-text-muted hover:text-text-primary"
           >
-            {"<- Back to Queue"}
+            ← Back to Queue
           </button>
-          <span className="text-text-muted">{"Video -> "}{job.id.slice(0, 8)}</span>
+          <span className="text-text-muted">Video → {job.id.slice(0, 8)}</span>
         </div>
       </header>
 
@@ -78,6 +75,7 @@ export default function VideoJobDetailPage() {
               <video
                 src={job.output.publicUrl}
                 controls
+                aria-label={`Generated video: ${job.request.prompt.slice(0, 60)}`}
                 className="w-full rounded-lg bg-black aspect-video object-contain"
               />
             ) : (
@@ -106,6 +104,7 @@ export default function VideoJobDetailPage() {
               <p className="text-[10px] text-text-muted font-mono uppercase tracking-wider mb-2">Operator Trace</p>
               <div className="max-h-64 overflow-y-auto">
                 <table className="w-full text-xs">
+                  <caption className="sr-only">Operator trace for job {job.id.slice(0, 8)}</caption>
                   <thead>
                     <tr className="text-text-muted">
                       <th className="text-left py-1">Stage</th>

@@ -701,6 +701,19 @@ via the NavRail at keyboard shortcut `⌘7`.
 }
 ```
 
+**Layout:**
+
+- `/video` (list page) — left panel: submit form + job queue; right panel (lg+): empty state prompting job selection or navigates to `/video/:id` on card click.
+- `/video/[id]` (detail page) — two-column layout: left column has the video player, metadata, timeline, and operator trace; right column has ViralityMeter, CaptionEditor, and PlatformPublishPanel.
+
+**Accessibility notes (V6.2.5+):**
+
+- All interactive job cards are fully keyboard-navigable (Enter/Space to select).
+- Cancel and download action buttons surface via `focus-visible` ring even when hidden from mouse hover.
+- All caption editor form controls have programmatic `<label htmlFor>` associations.
+- Publish status feedback is announced via `aria-live="polite"`.
+- ViralityMeter dimension bars expose `role="progressbar"` with `aria-valuenow`.
+
 ---
 
 ## ComfyUI render setup

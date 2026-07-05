@@ -252,7 +252,7 @@ export function PlatformPublishPanel({
 
       {/* Status feedback */}
       {statusMsg && (
-        <p className="mt-3 text-xs text-zinc-400">{statusMsg}</p>
+        <p role="status" aria-live="polite" className="mt-3 text-xs text-zinc-400">{statusMsg}</p>
       )}
 
       {publishResult && (
@@ -278,7 +278,10 @@ export function PlatformPublishPanel({
           <p className="text-[10px] uppercase tracking-wider text-zinc-500 mb-3">
             Publish History ({publishHistory.length})
           </p>
-          <div className="flex flex-col gap-2 max-h-80 overflow-y-auto">
+          <div
+            aria-label={`Publish history — ${publishHistory.length} event${publishHistory.length === 1 ? "" : "s"}`}
+            className="flex flex-col gap-2 max-h-80 overflow-y-auto"
+          >
             {publishHistory.map((entry) => (
               <HistoryRow key={entry.publishId} entry={entry} />
             ))}

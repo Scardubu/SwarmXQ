@@ -91,49 +91,47 @@ function DimensionBar({ label, value, reasoning, compact = false }: DimensionBar
   const fill = barColour(norm);
 
   return (
-    <Tooltip.Provider delayDuration={300}>
-      <Tooltip.Root>
-        <Tooltip.Trigger asChild>
-          <div
-            className={`flex flex-col gap-1 cursor-default ${compact ? "min-w-[4rem]" : ""}`}
-            tabIndex={0}
-            aria-label={`${label}: ${pct}/100 — ${reasoning}`}
-          >
-            <div className="flex items-center justify-between gap-1">
-              <span className="text-[10px] uppercase tracking-wider text-text-muted font-mono">
-                {label}
-              </span>
-              <span className={`text-[10px] font-mono tabular-nums ${colour}`}>
-                {pct}
-              </span>
-            </div>
-            <div className="h-2 rounded bg-bg-surface overflow-hidden border border-border">
-              <div
-                className={`h-full rounded transition-all duration-700 ease-out ${fill}`}
-                style={{ width: `${pct}%` }}
-                role="progressbar"
-                aria-valuenow={pct}
-                aria-valuemin={0}
-                aria-valuemax={100}
-              />
-            </div>
+    <Tooltip.Root>
+      <Tooltip.Trigger asChild>
+        <div
+          className={`flex flex-col gap-1 cursor-default ${compact ? "min-w-[4rem]" : ""}`}
+          tabIndex={0}
+          aria-label={`${label}: ${pct}/100 — ${reasoning}`}
+        >
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] uppercase tracking-wider text-text-muted font-mono">
+              {label}
+            </span>
+            <span className={`text-[10px] font-mono tabular-nums ${colour}`}>
+              {pct}
+            </span>
           </div>
-        </Tooltip.Trigger>
-        <Tooltip.Portal>
-          <Tooltip.Content
-            sideOffset={6}
-            className="
-              z-50 max-w-xs rounded border border-border bg-bg-surface px-2 py-1.5
-              text-xs text-text-secondary shadow-xl leading-relaxed
-            "
-          >
-            <p className="font-mono text-text-primary mb-1 text-[10px]">{label}</p>
-            <p>{reasoning}</p>
-            <Tooltip.Arrow className="fill-bg-surface" />
-          </Tooltip.Content>
-        </Tooltip.Portal>
-      </Tooltip.Root>
-    </Tooltip.Provider>
+          <div className="h-2 rounded bg-bg-surface overflow-hidden border border-border">
+            <div
+              className={`h-full rounded transition-all duration-700 ease-out ${fill}`}
+              style={{ width: `${pct}%` }}
+              role="progressbar"
+              aria-valuenow={pct}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            />
+          </div>
+        </div>
+      </Tooltip.Trigger>
+      <Tooltip.Portal>
+        <Tooltip.Content
+          sideOffset={6}
+          className="
+            z-50 max-w-xs rounded border border-border bg-bg-surface px-2 py-1.5
+            text-xs text-text-secondary shadow-xl leading-relaxed
+          "
+        >
+          <p className="font-mono text-text-primary mb-1 text-[10px]">{label}</p>
+          <p>{reasoning}</p>
+          <Tooltip.Arrow className="fill-bg-surface" />
+        </Tooltip.Content>
+      </Tooltip.Portal>
+    </Tooltip.Root>
   );
 }
 
@@ -167,11 +165,16 @@ export function ViralityMeter({ signal, isScoring = false, compact = false, onIm
   if (compact) {
     const fill = barColour(overallNorm);
     return (
-      <div className="flex items-center gap-2 w-full">
+      <div className="flex items-center gap-2 w-full" aria-label={`Virality score: ${overallPct}/100`}>
         <div className="h-1.5 rounded bg-bg-surface border border-border overflow-hidden flex-1">
           <div
             className={`h-full rounded transition-all duration-700 ease-out ${fill}`}
             style={{ width: `${overallPct}%` }}
+            role="progressbar"
+            aria-valuenow={overallPct}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={`Virality: ${overallPct}/100`}
           />
         </div>
         <span className={`text-[10px] font-mono ${overallColour}`}>{overallPct}</span>
@@ -216,18 +219,20 @@ export function ViralityMeter({ signal, isScoring = false, compact = false, onIm
         </div>
       </div>
 
-      {/* Dimension bars */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-        {DIMENSIONS.map(({ key, label }) => (
-          <DimensionBar
-            key={key}
-            label={label}
-            value={signal[key] as number}
-            reasoning={dimensionReasoning(signal, label)}
-            compact={false}
-          />
-        ))}
-      </div>
+      {/* Dimension bars — single Provider wraps all bars */}
+      <Tooltip.Provider delayDuration={300}>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+          {DIMENSIONS.map(({ key, label }) => (
+            <DimensionBar
+              key={key}
+              label={label}
+              value={signal[key] as number}
+              reasoning={dimensionReasoning(signal, label)}
+              compact={false}
+            />
+          ))}
+        </div>
+      </Tooltip.Provider>
 
       {/* Recommendations */}
       {signal.recommendations && signal.recommendations.length > 0 && (

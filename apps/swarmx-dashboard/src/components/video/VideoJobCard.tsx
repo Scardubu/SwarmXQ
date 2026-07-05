@@ -23,61 +23,61 @@ interface VideoJobCardProps {
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 
-function StatusBadge({ status }: { status: VideoJob["status"] }) {
-  const map: Record<VideoJob["status"], { label: string; class: string }> = {
-    queued: { label: "Queued", class: "bg-zinc-800 text-zinc-400 border-zinc-700" },
-    classifying: {
-      label: "Classifying",
-      class: "bg-blue-950/60 text-blue-400 border-blue-800/50 animate-pulse",
-    },
-    scripting: {
-      label: "Scripting",
-      class: "bg-indigo-950/60 text-indigo-400 border-indigo-800/50 animate-pulse",
-    },
-    staging: {
-      label: "Staging",
-      class: "bg-cyan-950/60 text-cyan-400 border-cyan-800/50 animate-pulse",
-    },
-    generating: {
-      label: "Generating",
-      class: "bg-amber-950/60 text-amber-400 border-amber-800/50 animate-pulse",
-    },
-    interpolating: {
-      label: "Interpolating",
-      class: "bg-orange-950/60 text-orange-400 border-orange-800/50 animate-pulse",
-    },
-    encoding: {
-      label: "Encoding",
-      class: "bg-teal-950/60 text-teal-400 border-teal-800/50 animate-pulse",
-    },
-    reviewing: {
-      label: "Reviewing",
-      class: "bg-violet-950/60 text-violet-400 border-violet-800/50 animate-pulse",
-    },
-    publishing: {
-      label: "Publishing",
-      class: "bg-fuchsia-950/60 text-fuchsia-400 border-fuchsia-800/50 animate-pulse",
-    },
-    running: {
-      label: "Running",
-      class: "bg-amber-950/60 text-amber-400 border-amber-800/50 animate-pulse",
-    },
-    done: {
-      label: "Done",
-      class: "bg-emerald-950/60 text-emerald-400 border-emerald-800/50",
-    },
-    completed: {
-      label: "Done",
-      class: "bg-emerald-950/60 text-emerald-400 border-emerald-800/50",
-    },
-    failed: { label: "Failed", class: "bg-red-950/60 text-red-400 border-red-800/50" },
-    cancelled: {
-      label: "Cancelled",
-      class: "bg-zinc-900 text-zinc-500 border-zinc-700",
-    },
-  };
+const STATUS_MAP: Record<VideoJob["status"], { label: string; class: string }> = {
+  queued: { label: "Queued", class: "bg-zinc-800 text-zinc-400 border-zinc-700" },
+  classifying: {
+    label: "Classifying",
+    class: "bg-blue-950/60 text-blue-400 border-blue-800/50 animate-pulse",
+  },
+  scripting: {
+    label: "Scripting",
+    class: "bg-indigo-950/60 text-indigo-400 border-indigo-800/50 animate-pulse",
+  },
+  staging: {
+    label: "Staging",
+    class: "bg-cyan-950/60 text-cyan-400 border-cyan-800/50 animate-pulse",
+  },
+  generating: {
+    label: "Generating",
+    class: "bg-amber-950/60 text-amber-400 border-amber-800/50 animate-pulse",
+  },
+  interpolating: {
+    label: "Interpolating",
+    class: "bg-orange-950/60 text-orange-400 border-orange-800/50 animate-pulse",
+  },
+  encoding: {
+    label: "Encoding",
+    class: "bg-teal-950/60 text-teal-400 border-teal-800/50 animate-pulse",
+  },
+  reviewing: {
+    label: "Reviewing",
+    class: "bg-violet-950/60 text-violet-400 border-violet-800/50 animate-pulse",
+  },
+  publishing: {
+    label: "Publishing",
+    class: "bg-fuchsia-950/60 text-fuchsia-400 border-fuchsia-800/50 animate-pulse",
+  },
+  running: {
+    label: "Running",
+    class: "bg-amber-950/60 text-amber-400 border-amber-800/50 animate-pulse",
+  },
+  done: {
+    label: "Done",
+    class: "bg-emerald-950/60 text-emerald-400 border-emerald-800/50",
+  },
+  completed: {
+    label: "Done",
+    class: "bg-emerald-950/60 text-emerald-400 border-emerald-800/50",
+  },
+  failed: { label: "Failed", class: "bg-red-950/60 text-red-400 border-red-800/50" },
+  cancelled: {
+    label: "Cancelled",
+    class: "bg-zinc-900 text-zinc-500 border-zinc-700",
+  },
+};
 
-  const { label, class: cls } = map[status];
+function StatusBadge({ status }: { status: VideoJob["status"] }) {
+  const { label, class: cls } = STATUS_MAP[status];
   return (
     <span
       className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider border ${cls}`}
@@ -159,16 +159,26 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
 
   return (
     <article
+      tabIndex={0}
+      role="button"
+      aria-label={`Video job: ${job.request.prompt.slice(0, 60)}`}
       className={`
         group relative flex flex-col gap-3 rounded-xl border bg-zinc-900/80 p-4
         cursor-pointer transition-all duration-200
         hover:border-zinc-600 hover:bg-zinc-900
+        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600/60
         ${isSelected
           ? "border-amber-700/60 ring-1 ring-amber-700/30 bg-zinc-900"
           : "border-zinc-800"
         }
       `}
       onClick={() => onSelect?.(job.id)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect?.(job.id);
+        }
+      }}
     >
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
@@ -194,10 +204,11 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
               onClick={handleCancel}
               className="
                 p-1 rounded-md text-zinc-500 hover:text-red-400 hover:bg-red-950/40
-                transition-colors duration-150 opacity-0 group-hover:opacity-100
+                transition-colors duration-150 opacity-0 group-hover:opacity-100 focus-visible:opacity-100
+                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/60
               "
               title="Cancel job"
-              aria-label="Cancel video job"
+              aria-label={`Cancel job: ${job.request.prompt.slice(0, 40)}`}
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -212,10 +223,11 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
               onClick={(e) => e.stopPropagation()}
               className="
                 p-1 rounded-md text-zinc-500 hover:text-emerald-400 hover:bg-emerald-950/40
-                transition-colors duration-150 opacity-0 group-hover:opacity-100
+                transition-colors duration-150 opacity-0 group-hover:opacity-100 focus-visible:opacity-100
+                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60
               "
               title="Download video"
-              aria-label="Download generated video"
+              aria-label={`Download video: ${job.request.prompt.slice(0, 40)}`}
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}

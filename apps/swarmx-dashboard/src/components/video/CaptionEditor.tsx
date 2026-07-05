@@ -26,6 +26,8 @@ interface CaptionEditorProps {
 
 const FIRST_LINE_MAX = 40;
 
+const DISALLOWED_OPENERS = ["i ", "my ", "this ", "we ", "our "];
+
 function countChars(text: string): number {
   return [...text].length;
 }
@@ -108,7 +110,6 @@ export function CaptionEditor({
   const [isPending, startTransition] = useTransition();
   const [rescoreError, setRescoreError] = useState<string | null>(null);
   const toastRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const disallowedOpeners = ["i ", "my ", "this ", "we ", "our "];
 
   // ── Sync hashtag sub-fields back into draft ────────────────────────────────
   const syncHashtags = useCallback(
@@ -213,7 +214,7 @@ export function CaptionEditor({
     draft.hashtags.broad.length +
     draft.hashtags.niche.length +
     draft.hashtags.trending.length;
-  const hasDisallowedOpener = disallowedOpeners.some((opener) =>
+  const hasDisallowedOpener = DISALLOWED_OPENERS.some((opener) =>
     draft.firstLine.trimStart().toLowerCase().startsWith(opener),
   );
 
@@ -272,7 +273,7 @@ export function CaptionEditor({
       </div>
 
       {rescoreError && (
-        <div className="mb-3 rounded-lg bg-red-950/40 border border-red-900/40 px-3 py-2">
+        <div role="alert" className="mb-3 rounded-lg bg-red-950/40 border border-red-900/40 px-3 py-2">
           <p className="text-xs text-red-400">{rescoreError}</p>
         </div>
       )}
@@ -282,7 +283,7 @@ export function CaptionEditor({
           {/* First line */}
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="text-[10px] uppercase tracking-wider text-text-muted font-mono">
+              <label htmlFor="caption-firstline" className="text-[10px] uppercase tracking-wider text-text-muted font-mono">
                 Hook Line
               </label>
               <span
@@ -296,6 +297,7 @@ export function CaptionEditor({
               </span>
             </div>
             <textarea
+              id="caption-firstline"
               value={draft.firstLine}
               onChange={(e) => handleFirstLine(e.target.value)}
               rows={1}
@@ -306,16 +308,19 @@ export function CaptionEditor({
               placeholder="Primary hook (<=40 chars visible on feed)"
             />
             {hasDisallowedOpener && (
-              <p className="mt-1 text-amber-400 text-[10px]">firstLine cannot start with I/My/This/We/Our</p>
+              <p className="mt-1 text-amber-400 text-[10px]">
+                Hook Line can&apos;t start with &ldquo;I&rdquo;, &ldquo;My&rdquo;, &ldquo;This&rdquo;, &ldquo;We&rdquo;, or &ldquo;Our&rdquo; — lead with the value or action instead.
+              </p>
             )}
           </div>
 
           {/* Body */}
           <div>
-            <label className="text-[10px] uppercase tracking-wider text-text-muted block mb-1 font-mono">
+            <label htmlFor="caption-body" className="text-[10px] uppercase tracking-wider text-text-muted block mb-1 font-mono">
               Body
             </label>
             <textarea
+              id="caption-body"
               value={draft.body}
               onChange={(e) => handleBody(e.target.value)}
               rows={3}
@@ -330,10 +335,11 @@ export function CaptionEditor({
 
           {/* CTA */}
           <div>
-            <label className="text-[10px] uppercase tracking-wider text-text-muted block mb-1 font-mono">
+            <label htmlFor="caption-cta" className="text-[10px] uppercase tracking-wider text-text-muted block mb-1 font-mono">
               Call to Action
             </label>
             <textarea
+              id="caption-cta"
               value={draft.cta}
               onChange={(e) => handleCta(e.target.value)}
               rows={1}
@@ -364,10 +370,11 @@ export function CaptionEditor({
               }>
             ).map(({ key, label, value }) => (
               <div key={key}>
-                <label className="text-[10px] uppercase tracking-wider text-text-muted block mb-1 font-mono">
+                <label htmlFor={`caption-hashtag-${key}`} className="text-[10px] uppercase tracking-wider text-text-muted block mb-1 font-mono">
                   {label}
                 </label>
                 <input
+                  id={`caption-hashtag-${key}`}
                   type="text"
                   value={value}
                   onChange={(e) => handleHashtagChange(key, e.target.value)}
@@ -394,14 +401,15 @@ export function CaptionEditor({
 
           {/* Sound suggestion */}
           <div>
-            <label className="text-[10px] uppercase tracking-wider text-text-muted block mb-1 font-mono">
+            <label htmlFor="caption-sound" className="text-[10px] uppercase tracking-wider text-text-muted block mb-1 font-mono">
               Sound Suggestion
             </label>
             <input
+              id="caption-sound"
               type="text"
               value={draft.soundSuggestion ?? ""}
               onChange={(e) => setDraft((prev) => ({ ...prev, soundSuggestion: e.target.value }))}
-              className="w-full rounded bg-bg-surface border border-border px-3 py-2 text-xs text-text-secondary placeholder:text-text-muted"
+              className="w-full rounded bg-bg-surface border border-border px-3 py-2 text-xs text-text-secondary placeholder:text-text-muted focus:outline-none focus:ring-1 transition-colors"
               placeholder="e.g. upbeat lo-fi with snare drop"
             />
           </div>

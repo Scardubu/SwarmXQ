@@ -75,6 +75,9 @@ export default function VideoPage() {
 
   const jobs = listJobs();
   const hasJobs = jobs.length > 0;
+  const runningCount = jobs.filter((j) => j.status === "running").length;
+  const queuedCount = jobs.filter((j) => j.status === "queued").length;
+  const doneCount = jobs.filter((j) => j.status === "completed").length;
 
   const handleRetry = useCallback(
     async (jobId: string) => {
@@ -132,9 +135,7 @@ export default function VideoPage() {
         </div>
         {hasJobs && (
           <span className="text-xs font-mono text-zinc-600">
-            {jobs.filter((j) => j.status === "running").length} running ·{" "}
-            {jobs.filter((j) => j.status === "queued").length} queued ·{" "}
-            {jobs.filter((j) => j.status === "completed").length} done
+            {runningCount} running · {queuedCount} queued · {doneCount} done
           </span>
         )}
       </div>
@@ -189,7 +190,7 @@ export default function VideoPage() {
                 {job.status === "failed" && (
                   <button
                     type="button"
-                    aria-label={`Retry video job from last failed stage`}
+                    aria-label={`Retry failed job: ${job.request.prompt.slice(0, 50)}`}
                     onClick={(event) => {
                       event.stopPropagation();
                       void handleRetry(job.id);
@@ -201,6 +202,20 @@ export default function VideoPage() {
                 )}
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* Right: prompt to select a job */}
+        <div className="hidden lg:flex flex-1 items-center justify-center text-center px-8">
+          <div className="space-y-3">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-zinc-800/50 border border-zinc-700/50 flex items-center justify-center">
+              <svg className="w-7 h-7 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.362a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <p className="text-sm font-medium text-zinc-500">Select a job to view details</p>
+            <p className="text-xs text-zinc-700">Click any job card to open the detail view.</p>
           </div>
         </div>
       </div>
