@@ -231,6 +231,7 @@ export function CaptionEditor({
             type="button"
             onClick={handleRescore}
             disabled={isPending}
+            aria-label="Re-score caption virality"
             className="
               rounded border border-border px-2 py-1 text-[10px] font-mono text-text-secondary
               hover:text-sky-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors
@@ -241,6 +242,7 @@ export function CaptionEditor({
           <button
             type="button"
             onClick={handleCopy}
+            aria-label={copyState === "copied" ? "Caption copied to clipboard" : "Copy full caption to clipboard"}
             className="
               relative rounded border border-border px-2 py-1 text-[10px] font-mono text-text-secondary
               hover:text-text-primary transition-colors overflow-hidden
@@ -261,6 +263,7 @@ export function CaptionEditor({
               setTrendingHashtag(initialDraft.hashtags.trending[0] ?? "");
               setRescoreError(null);
             }}
+            aria-label="Reset caption draft to original"
             className="rounded border border-border px-2 py-1 text-[10px] font-mono text-text-muted hover:text-text-primary"
           >
             Reset

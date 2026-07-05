@@ -252,10 +252,9 @@ async function acquireModel(
   const { modelTag: resolvedTag, evictedModels, overrides } = await mo.requestModel(tag);
 
   if (evictedModels.length > 0) {
-    // Expected on 8 GB RAM — log for observability
-    console.log(
-      `[video-orchestrator] SINGLE-7B eviction before stage "${stage}":`,
-      evictedModels.join(", ")
+    // Expected on 8 GB RAM — log for observability via stderr (no fastify logger in service scope)
+    process.stderr.write(
+      `[video-orchestrator] SINGLE-7B eviction before stage "${stage}": ${evictedModels.join(", ")}\n`
     );
   }
 

@@ -233,6 +233,7 @@ export function PlatformPublishPanel({
           type="button"
           onClick={() => void handlePublish()}
           disabled={disabled || isPublishing}
+          aria-label={isPublishing ? "Publishing in progress" : scheduledAt ? `Schedule publish to ${meta.label}` : `Publish video to ${meta.label}`}
           className="
             inline-flex min-h-10 items-center justify-center rounded-lg border
             border-fuchsia-700/50 bg-fuchsia-800/40 px-5 py-2 text-sm font-semibold

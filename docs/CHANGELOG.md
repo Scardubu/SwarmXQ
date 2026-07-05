@@ -4,6 +4,50 @@
 
 ---
 
+## V6.2.4 — Accessibility, Error Boundaries & Code Quality (2026-07-05)
+
+Systematic audit pass following V6.2.3. Adds missing Next.js route boundaries, closes accessibility gaps across all video UI components, and removes production anti-patterns.
+
+### Dashboard — New route files
+
+- `apps/swarmx-dashboard/src/app/(dashboard)/video/[id]/error.tsx` *(new)*
+  - Error boundary for the job detail route. Shows a job-scoped error state with "Try again" and "Back to jobs" affordances. Was previously missing — any unhandled error in the detail page would propagate to the root layout boundary with no route-level recovery path.
+
+- `apps/swarmx-dashboard/src/app/(dashboard)/video/[id]/loading.tsx` *(new)*
+  - Suspense skeleton for the job detail route. Renders animated placeholder sections for the header, progress timeline, and metadata panel while the page component loads.
+
+### Dashboard — Accessibility improvements
+
+- `apps/swarmx-dashboard/src/components/video/CaptionEditor.tsx`
+  - Added `aria-label` to "Re-score", "Copy Caption", and "Reset" action buttons. Copy button label dynamically reflects state ("Caption copied to clipboard" / "Copy full caption to clipboard").
+
+- `apps/swarmx-dashboard/src/components/video/ViralityMeter.tsx`
+  - Added `aria-label` to the "Improve" button: "Get AI recommendations to improve virality score".
+
+- `apps/swarmx-dashboard/src/components/video/PlatformPublishPanel.tsx`
+  - Added dynamic `aria-label` to the publish/schedule button that includes platform name and current state (publishing in progress, schedule, or publish).
+
+- `apps/swarmx-dashboard/src/app/(dashboard)/video/page.tsx`
+  - Added `aria-label` to draggable job containers (describes job prompt for screen readers).
+  - Added `aria-label` to the "Retry from Failed Stage" button.
+
+### API — Code quality
+
+- `apps/swarmx-api/src/services/video-orchestrator.ts`
+  - Replaced `console.log` with `process.stderr.write` for the SINGLE-7B eviction log line. Eliminates the last `console.log` in the orchestration path; all observability output now goes to stderr in a structured format consistent with pino's output stream.
+
+- `apps/swarmx-api/src/routes/workflows.ts`
+  - Replaced `res: any` with `res: import("http").IncomingMessage` in the HTTP callback. Eliminates the last untyped `any` in the API routes layer.
+
+### Validation status
+
+- `pnpm --filter @swarmx/dashboard lint` — **0 errors, 0 warnings**.
+- `pnpm --filter @swarmx/dashboard typecheck` — verified clean.
+- `pnpm --filter @swarmx/api typecheck` — verified clean.
+- Python test suite (204 tests) — all passed.
+
+---
+
 ## V6.2.3 — Production Readiness Pass (2026-07-05)
 
 Codebase audit pass eliminating all React Compiler violations, stale Python test assertions, and unused-variable warnings introduced during the VIDEO-ALPHA integration. Zero regressions.

@@ -205,6 +205,7 @@ export function ViralityMeter({ signal, isScoring = false, compact = false, onIm
           {onImprove && (
             <button
               onClick={onImprove}
+              aria-label="Get AI recommendations to improve virality score"
               className="
                 text-[10px] font-mono text-text-muted hover:text-accent border border-border px-2 py-0.5 rounded
               "

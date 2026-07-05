@@ -182,7 +182,7 @@ function postJson(
         },
         timeout: timeoutMs,
       },
-      (res: any) => {
+      (res: import("http").IncomingMessage) => {
         let data = "";
         res.setEncoding("utf8");
         res.on("data", (chunk: string) => {

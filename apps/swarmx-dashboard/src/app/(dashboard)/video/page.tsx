@@ -178,6 +178,7 @@ export default function VideoPage() {
                     void handleDropOn(job.id);
                   }
                 }}
+                aria-label={job.status === "queued" ? `Drag to reorder job: ${job.request.prompt.slice(0, 40)}` : undefined}
                 className={job.status === "queued" ? "cursor-grab" : ""}
               >
                 <VideoJobCard
@@ -188,6 +189,7 @@ export default function VideoPage() {
                 {job.status === "failed" && (
                   <button
                     type="button"
+                    aria-label={`Retry video job from last failed stage`}
                     onClick={(event) => {
                       event.stopPropagation();
                       void handleRetry(job.id);
