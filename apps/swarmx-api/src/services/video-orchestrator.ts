@@ -101,12 +101,18 @@ import {
   ModelOrchestrator,
   type ModelOverrides,
 } from "./model-orchestrator.js";
-import { resolveCanonicalTag } from "@swarmx/types/operator-map";
+import { resolveOperatorName } from "@swarmx/types/operator-map";
 import { getComfyUIClient } from "./comfyui-client.js";
 import { generateLTXWorkflow } from "./video-workflows.js";
 import { scoreVirality } from "./virality-scorer.js";
 import { generateCaptionDraftWithValidation } from "./caption-generator.js";
 import { generateOllamaText } from "./ollama.js";
+import { renderWithFfmpeg } from "./ffmpeg-video-renderer.js";
+import {
+  resolveVideoModelTag,
+  stageTimeoutMs,
+  type TextVideoJobStage,
+} from "./video-runtime-config.js";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -122,22 +128,14 @@ const HIGH_PRESSURE_DELAY_MS = Math.min(
   Math.max(1_000, parseInt(process.env.HIGH_PRESSURE_DELAY_MS ?? "3000", 10))
 );
 
-function readBoundedTimeoutMs(envName: string, fallbackMs: number): number {
-  const raw = process.env[envName];
-  if (!raw) return fallbackMs;
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed)) return fallbackMs;
-  return Math.min(30_000, Math.max(1_000, parsed));
-}
-
 /** Per-stage timeout matrix (ms) — aligned with architecture review §3. */
 const STAGE_TIMEOUT_MS: Record<VideoJobStage, number> = {
-  intent_classification:  readBoundedTimeoutMs("VIDEO_INTENT_CLASSIFY_TIMEOUT_MS", 4_000),
-  planning:              15_000,
-  scripting:             35_000,
-  storyboard_generation: 60_000,
-  render_assembly:      240_000,
-  finalizing:            15_000,
+  intent_classification:  stageTimeoutMs("intent_classification"),
+  planning:              stageTimeoutMs("planning"),
+  scripting:             stageTimeoutMs("scripting"),
+  storyboard_generation: stageTimeoutMs("storyboard_generation"),
+  render_assembly:      stageTimeoutMs("render_assembly"),
+  finalizing:            stageTimeoutMs("finalizing"),
 };
 
 /**
@@ -153,27 +151,6 @@ const COMFY_POLL_INTERVAL_MS   = 5_000;
 const COMFY_POLL_MAX_ATTEMPTS  = Math.floor(
   STAGE_TIMEOUT_MS["render_assembly"] / COMFY_POLL_INTERVAL_MS
 ); // = 48
-
-/**
- * Canonical model tags per stage (APEX-17 production names).
- * MUST match the Ollama tag in models/Modelfiles/primary/.
- *
- * SINGLE-7B LOCK applies automatically via ModelOrchestrator.requestModel()
- * for any stage whose model has is7B = true in MODEL_REGISTRY.
- *   planning / scripting / storyboard_generation → plan-qwen25-pro-q5km-prod (7B)
- *   intent_classification / render_assembly / finalizing → instruct-phi4-pro-q8-prod (non-7B)
- *
- * [VOT-02] REQUIRES_7B_LOCK Set removed — dead code. ModelOrchestrator
- * is the single source of truth for which tags trigger eviction.
- */
-const STAGE_MODEL_TAG: Record<VideoJobStage, string> = {
-  intent_classification:  "instruct-phi4-pro-q8-prod",  // ~4.27 GB — non-7B, safe
-  planning:               "plan-qwen25-pro-q5km-prod",   // ~5.37 GB — 7B, LOCK enforced
-  scripting:              "plan-qwen25-pro-q5km-prod",   // ~5.37 GB — 7B, LOCK enforced
-  storyboard_generation:  "plan-qwen25-pro-q5km-prod",   // ~5.37 GB — 7B, LOCK enforced
-  render_assembly:        "instruct-phi4-pro-q8-prod",   // ~4.27 GB — non-7B, safe
-  finalizing:             "instruct-phi4-pro-q8-prod",   // ~4.27 GB — non-7B, safe
-};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -213,6 +190,55 @@ function pushOperatorTrace(
   job.operatorTrace.push(entry);
 }
 
+function recordOperatorTrace(
+  ctx: OrchestratorContext,
+  stage: VideoJobStage,
+  model: string,
+  startedAt: string,
+  success: boolean,
+): void {
+  pushOperatorTrace(ctx.job, {
+    stage: toPublicStatus(stage),
+    operatorTag: model,
+    modelTag: model,
+    operator: traceOperatorFor(model),
+    startedAt,
+    completedAt: new Date().toISOString(),
+    latencyMs: 0,
+    tokenCount: 0,
+    success,
+    timestamp: startedAt,
+  });
+}
+
+function extractJsonObject(raw: string): unknown {
+  const trimmed = raw.trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+    if (start < 0 || end <= start) {
+      throw new Error("no JSON object found");
+    }
+    return JSON.parse(trimmed.slice(start, end + 1));
+  }
+}
+
+function parseIntentClassification(raw: string): { intent: string; complexity: number } {
+  const parsed = extractJsonObject(raw);
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("intent classification is not an object");
+  }
+  const candidate = parsed as { intent?: unknown; complexity?: unknown };
+  const intent = typeof candidate.intent === "string" ? candidate.intent.trim() : "";
+  const complexity = typeof candidate.complexity === "number" ? candidate.complexity : Number.NaN;
+  if (!intent || !Number.isFinite(complexity) || complexity < 0 || complexity > 1) {
+    throw new Error("intent classification failed schema validation");
+  }
+  return { intent, complexity };
+}
+
 // ─── Pressure Guard ───────────────────────────────────────────────────────────
 
 interface GovernorSnapshot {
@@ -222,8 +248,7 @@ interface GovernorSnapshot {
 
 /**
  * Read the live governor snapshot from the Python sidecar.
- * On failure, defaults to normal pressure so orchestration is not blocked.
- * Uses AbortController so the probe fetch is cancelled on timeout.
+ * On failure, falls back to local MemAvailable instead of failing open to normal.
  */
 async function readPressure(): Promise<GovernorSnapshot> {
   const controller = new AbortController();
@@ -236,7 +261,17 @@ async function readPressure(): Promise<GovernorSnapshot> {
     if (!res.ok) throw new Error(`governor probe: ${res.status}`);
     return (await res.json()) as GovernorSnapshot;
   } catch {
-    return { pressureLevel: "normal", concurrencyLimit: 1 };
+    try {
+      const { readFile } = await import("node:fs/promises");
+      const meminfo = await readFile("/proc/meminfo", "utf8");
+      const match = meminfo.match(/MemAvailable:\s+(\d+)\s+kB/);
+      const availableMb = match?.[1] ? Math.floor(Number(match[1]) / 1024) : 0;
+      if (availableMb < 800) return { pressureLevel: "critical", concurrencyLimit: 1 };
+      if (availableMb < 2_500) return { pressureLevel: "high", concurrencyLimit: 1 };
+      return { pressureLevel: "normal", concurrencyLimit: 1 };
+    } catch {
+      return { pressureLevel: "high", concurrencyLimit: 1 };
+    }
   } finally {
     clearTimeout(timer);
   }
@@ -252,12 +287,12 @@ async function readPressure(): Promise<GovernorSnapshot> {
  * the overrides computed by getRamAwareOverrides() inside requestModel().
  */
 async function acquireModel(
-  stage: VideoJobStage,
+  stage: TextVideoJobStage,
   request: VideoJobRequest
-): Promise<{ modelTag: string; overrides: ModelOverrides }> {
+): Promise<{ modelTag: string; keepAlive: string; overrides: ModelOverrides }> {
   const tag = resolveModelTag(request, stage);
   const mo  = ModelOrchestrator.getInstance();
-  const { modelTag: resolvedTag, evictedModels, overrides } = await mo.requestModel(tag);
+  const { modelTag: resolvedTag, keepAlive, evictedModels, overrides } = await mo.requestModel(tag);
 
   if (evictedModels.length > 0) {
     // Expected on 8 GB RAM — log for observability via stderr (no fastify logger in service scope)
@@ -266,7 +301,7 @@ async function acquireModel(
     );
   }
 
-  return { modelTag: resolvedTag, overrides };
+  return { modelTag: resolvedTag, keepAlive, overrides };
 }
 
 // ─── Ollama Fetch Helper ──────────────────────────────────────────────────────
@@ -287,7 +322,8 @@ async function ollamaGenerate(
   prompt:    string,
   signal:    AbortSignal,
   maxTokens = 1024,
-  overrides: ModelOverrides = {}   // [VOT-03] new param
+  overrides: ModelOverrides = {},
+  keepAlive?: string,
 ): Promise<string> {
   return generateOllamaText({
     model,
@@ -295,6 +331,7 @@ async function ollamaGenerate(
     signal,
     maxTokens,
     overrides,
+    ...(keepAlive !== undefined ? { keepAlive } : {}),
   });
 }
 
@@ -360,7 +397,7 @@ async function stageIntentClassification(
   ctx: OrchestratorContext
 ): Promise<{ intent: string; complexity: number }> {
   // [VOT-04] Destructure modelTag + overrides from acquireModel
-  const { modelTag: model, overrides } = await acquireModel("intent_classification", ctx.job.request);
+  const { modelTag: model, keepAlive, overrides } = await acquireModel("intent_classification", ctx.job.request);
   const startedAt = new Date().toISOString();
   // [VOT-10] Record actual resolved tag immediately — not re-derived later
   ctx.modelsUsed["intent_classification"] = model;
@@ -373,37 +410,23 @@ async function stageIntentClassification(
       `Classify this video generation request in one sentence and rate complexity 0-1:\n"${ctx.job.request.prompt}"\n\nRespond as JSON: {"intent": "...", "complexity": 0.0}`,
       controller.signal,
       128,
-      overrides
+      overrides,
+      keepAlive,
     );
     try {
-      const parsed = JSON.parse(raw) as { intent: string; complexity: number };
-      pushOperatorTrace(ctx.job, {
-        stage: toPublicStatus("intent_classification"),
-        operatorTag: model,
-        modelTag: model,
-        operator: "Pilot",
-        startedAt,
-        completedAt: new Date().toISOString(),
-        latencyMs: 0,
-        tokenCount: 0,
-        success: true,
-        timestamp: startedAt,
-      });
+      const parsed = parseIntentClassification(raw);
+      recordOperatorTrace(ctx, "intent_classification", model, startedAt, true);
       return parsed;
-    } catch {
-      pushOperatorTrace(ctx.job, {
-        stage: toPublicStatus("intent_classification"),
-        operatorTag: model,
-        modelTag: model,
-        operator: "Pilot",
-        startedAt,
-        completedAt: new Date().toISOString(),
-        latencyMs: 0,
-        tokenCount: 0,
-        success: true,
-        timestamp: startedAt,
-      });
-      return { intent: raw.slice(0, 200), complexity: 0.5 };
+    } catch (err) {
+      if (process.env["SWARMX_VIDEO_ALLOW_UNSTRUCTURED_INTENT"] === "1") {
+        recordOperatorTrace(ctx, "intent_classification", model, startedAt, true);
+        return { intent: raw.slice(0, 200), complexity: 0.5 };
+      }
+      recordOperatorTrace(ctx, "intent_classification", model, startedAt, false);
+      throw Object.assign(
+        new Error(`Intent classification did not return valid JSON: ${err instanceof Error ? err.message : String(err)}`),
+        { code: "INTENT_VALIDATION_FAILED" },
+      );
     }
   } finally {
     controller.abort();
@@ -415,7 +438,7 @@ async function stagePlanning(
   ctx:    OrchestratorContext,
   intent: string
 ): Promise<{ plan: string[] }> {
-  const { modelTag: model, overrides } = await acquireModel("planning", ctx.job.request);
+  const { modelTag: model, keepAlive, overrides } = await acquireModel("planning", ctx.job.request);
   const startedAt = new Date().toISOString();
   // [VOT-10] Record actual resolved tag immediately — not re-derived later
   ctx.modelsUsed["planning"] = model;
@@ -427,7 +450,8 @@ async function stagePlanning(
       buildPlanningPrompt(ctx.job.request, intent),
       controller.signal,
       512,
-      overrides
+      overrides,
+      keepAlive,
     );
     const lines = raw
       .split("\n")
@@ -442,7 +466,7 @@ async function stagePlanning(
       stage: toPublicStatus("planning"),
       operatorTag: model,
       modelTag: model,
-      operator: "Architect",
+      operator: traceOperatorFor(model),
       startedAt,
       completedAt: new Date().toISOString(),
       latencyMs: 0,
@@ -461,7 +485,7 @@ async function stageScripting(
   ctx:  OrchestratorContext,
   plan: string[]
 ): Promise<{ scriptText: string }> {
-  const { modelTag: model, overrides } = await acquireModel("scripting", ctx.job.request);
+  const { modelTag: model, keepAlive, overrides } = await acquireModel("scripting", ctx.job.request);
   const startedAt = new Date().toISOString();
   // [VOT-10] Record actual resolved tag immediately — not re-derived later
   ctx.modelsUsed["scripting"] = model;
@@ -473,13 +497,14 @@ async function stageScripting(
       buildScriptingPrompt(ctx.job.request, plan),
       controller.signal,
       1024,
-      overrides
+      overrides,
+      keepAlive,
     );
     pushOperatorTrace(ctx.job, {
       stage: toPublicStatus("scripting"),
       operatorTag: model,
       modelTag: model,
-      operator: "Forge",
+      operator: traceOperatorFor(model),
       startedAt,
       completedAt: new Date().toISOString(),
       latencyMs: 0,
@@ -498,7 +523,7 @@ async function stageStoryboardGeneration(
   ctx:        OrchestratorContext,
   scriptText: string
 ): Promise<{ frames: string[] }> {
-  const { modelTag: model, overrides } = await acquireModel("storyboard_generation", ctx.job.request);
+  const { modelTag: model, keepAlive, overrides } = await acquireModel("storyboard_generation", ctx.job.request);
   const startedAt = new Date().toISOString();
   // [VOT-10] Record actual resolved tag immediately — not re-derived later
   ctx.modelsUsed["storyboard_generation"] = model;
@@ -510,7 +535,8 @@ async function stageStoryboardGeneration(
       buildStoryboardPrompt(ctx.job.request, scriptText),
       controller.signal,
       768,
-      overrides
+      overrides,
+      keepAlive,
     );
     const frames = raw
       .split("\n")
@@ -526,7 +552,7 @@ async function stageStoryboardGeneration(
       stage: toPublicStatus("storyboard_generation"),
       operatorTag: model,
       modelTag: model,
-      operator: "Forge",
+      operator: traceOperatorFor(model),
       startedAt,
       completedAt: new Date().toISOString(),
       latencyMs: 0,
@@ -545,20 +571,21 @@ async function stageRenderAssembly(
   ctx:    OrchestratorContext,
   frames: string[]
 ): Promise<{ outputFilename: string }> {
-  // [VOT-09] Fully destructure both modelTag and overrides for consistency.
-  // overrides are captured but not forwarded: this stage calls isComfyAvailable()
-  // and comfyRunWorkflow(), neither of which is an Ollama inference call.
-  // The SINGLE-7B LOCK and onModelCallComplete() still require modelTag.
-  const { modelTag: model, overrides: _overrides } = await acquireModel("render_assembly", ctx.job.request);
   const startedAt = new Date().toISOString();
-  // [VOT-10] Record actual resolved tag immediately — not re-derived later
-  ctx.modelsUsed["render_assembly"] = model;
   const controller = stageController(ctx, "render_assembly");
 
   try {
+    for (const model of Object.values(ctx.modelsUsed)) {
+      if (model) {
+        await ModelOrchestrator.getInstance().unloadModel(model);
+      }
+    }
+
+    const backend = process.env["SWARMX_VIDEO_RENDER_BACKEND"] ?? "auto";
     const comfyClient = getComfyUIClient();
     const comfyAvailable = await comfyClient.isAvailable(controller.signal);
-    if (comfyAvailable) {
+    const comfyConfigured = Boolean(process.env["SWARMX_COMFYUI_OUTPUT_DIR"]);
+    if ((backend === "auto" || backend === "comfyui") && comfyAvailable && comfyConfigured) {
       const ram = ModelOrchestrator.getInstance().getRamSnapshot();
       const workflow = generateLTXWorkflow({
         seed: Math.floor(Math.random() * 1_000_000_000),
@@ -602,10 +629,11 @@ async function stageRenderAssembly(
         },
       });
 
+      const outputFilename = await assets.importComfyOutput(run.outputFilename);
       pushOperatorTrace(ctx.job, {
         stage: toPublicStatus("render_assembly"),
         operatorTag: "system",
-        modelTag: model,
+        modelTag: "system",
         operator: "System",
         startedAt,
         completedAt: new Date().toISOString(),
@@ -615,12 +643,32 @@ async function stageRenderAssembly(
         timestamp: startedAt,
       });
 
-      return { outputFilename: run.outputFilename };
+      return { outputFilename };
     }
+
+    if (backend === "comfyui") {
+      throw Object.assign(new Error("ComfyUI is unavailable or SWARMX_COMFYUI_OUTPUT_DIR is not configured"), {
+        code: "COMFY_UNAVAILABLE",
+      });
+    }
+
+    if (backend !== "auto" && backend !== "ffmpeg") {
+      throw Object.assign(new Error(`Unknown video render backend: ${backend}`), {
+        code: "RENDER_BACKEND_INVALID",
+      });
+    }
+
+    const rendered = await renderWithFfmpeg({
+      jobId: ctx.job.id,
+      request: ctx.job.request,
+      storyboardFrames: frames,
+      signal: controller.signal,
+      ...(ctx.scriptText !== undefined ? { scriptText: ctx.scriptText } : {}),
+    });
     pushOperatorTrace(ctx.job, {
       stage: toPublicStatus("render_assembly"),
       operatorTag: "system",
-      modelTag: model,
+      modelTag: "system",
       operator: "System",
       startedAt,
       completedAt: new Date().toISOString(),
@@ -629,10 +677,9 @@ async function stageRenderAssembly(
       success: true,
       timestamp: startedAt,
     });
-    return { outputFilename: `stub_${ctx.job.id}.mp4` };
+    return rendered;
   } finally {
     controller.abort();
-    ModelOrchestrator.getInstance().onModelCallComplete(model);
   }
 }
 
@@ -760,6 +807,7 @@ export async function runOrchestration(
     startedAt:      Date.now(),
     modelsUsed:     {},
   };
+  let retryScheduled = false;
 
   try {
     const pressure = await readPressure();
@@ -878,12 +926,47 @@ export async function runOrchestration(
     ));
 
     if (failedJob.status === "queued") {
-      setTimeout(() => { void runOrchestration(jobId, broadcast); }, 5_000);
+      retryScheduled = true;
+      broadcast({
+        type: "video:stream",
+        timestamp: new Date().toISOString(),
+        data: {
+          jobId,
+          stage: "retry",
+          pct: 0,
+          operatorTag: "system",
+          message: `Retry attempt ${failedJob.retryCount} queued`,
+        },
+      });
+      setTimeout(() => {
+        const retryJob = queue.startJob(jobId);
+        if (retryJob) {
+          void runOrchestration(jobId, broadcast);
+        }
+      }, 5_000);
     }
   } finally {
     clearInterval(cancelWatcher);
     jobAbortController.abort();
+    if (!retryScheduled) {
+      scheduleNextQueuedJob(broadcast);
+    }
   }
+}
+
+function scheduleNextQueuedJob(broadcast: BroadcastFn): void {
+  const next = queue.dequeueNext();
+  if (!next) return;
+  setImmediate(() => {
+    const started = queue.startJob(next.id);
+    if (started) {
+      void runOrchestration(next.id, broadcast).catch((err) => {
+        process.stderr.write(
+          `[video-orchestrator] queued job ${next.id} crashed: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+      });
+    }
+  });
 }
 
 // ─── Stage Runner ─────────────────────────────────────────────────────────────
@@ -989,19 +1072,13 @@ function stageController(
  * resolveCanonicalTag() call handles the edge case where a caller injects
  * a legacy tag string directly as the modelTier value.
  */
-function resolveModelTag(request: VideoJobRequest, stage: VideoJobStage): string {
-  if (request.modelTier) {
-    const tierMap: Record<string, string> = {
-      fast:       "instruct-phi4-pro-q8-prod",
-      worker:     "plan-phi4-pro-q8-prod",
-      supervisor: "plan-qwen25-pro-q5km-prod",
-      reasoner:   "reason-deepseekr1-pro-q5km-prod",
-    };
-    // tierMap lookup first; fallback to stage default; final alias resolution
-    const resolved = tierMap[request.modelTier] ?? STAGE_MODEL_TAG[stage];
-    return resolveCanonicalTag(resolved); // [VOT-07]
-  }
-  return STAGE_MODEL_TAG[stage];
+function resolveModelTag(request: VideoJobRequest, stage: TextVideoJobStage): string {
+  return resolveVideoModelTag(request, stage);
+}
+
+function traceOperatorFor(model: string): string {
+  const operator = resolveOperatorName(model);
+  return operator === model ? "System" : operator;
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {

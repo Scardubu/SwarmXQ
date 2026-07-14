@@ -20,6 +20,7 @@ import * as assets from "../services/video-assets.js";
 import { runOrchestration } from "../services/video-orchestrator.js";
 import type { BroadcastFn } from "../services/video-orchestrator.js";
 import { getAvailableRamMb } from "../services/adaptive-timeout-config.js";
+import { minimumRamRequiredForVideoRequest } from "../services/video-runtime-config.js";
 import { requireVideoWriteAuth } from "../services/video-auth.js";
 import { generateCaptionDraftWithValidation } from "../services/caption-generator.js";
 import { scoreVirality } from "../services/virality-scorer.js";
@@ -281,12 +282,13 @@ export async function videoRoutes(
     },
     async (request, reply) => {
       const availableMb = getAvailableRamMb();
-      if (availableMb < 1000) {
+      const minimumRequired = minimumRamRequiredForVideoRequest(request.body);
+      if (availableMb < minimumRequired) {
         return reply.status(503).send({
           error: "insufficient_ram_for_video",
           message: "Insufficient RAM for video generation",
           availableMb,
-          minimumRequired: 1000,
+          minimumRequired,
         });
       }
 
@@ -861,7 +863,7 @@ export async function videoRoutes(
 
   // ── GET /api/video/files/:filename ─────────────────────────────────────────
   fastify.get<{ Params: { filename: string } }>(
-    "/api/video/files/:filename",
+    "/files/:filename",
     {
       schema: {
         params: {

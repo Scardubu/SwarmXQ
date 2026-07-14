@@ -283,6 +283,7 @@ export interface OllamaGenerateRequest {
   model: string;
   prompt: string;
   maxTokens?: number;
+  keepAlive?: string;
   overrides?: {
     num_predict?: number;
     num_ctx?: number;
@@ -291,25 +292,48 @@ export interface OllamaGenerateRequest {
   signal?: AbortSignal;
 }
 
-export async function generateOllamaText(request: OllamaGenerateRequest): Promise<string> {
-  const baseUrl = await getOllamaBaseUrl();
+function normalizeKeepAlive(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  const match = /^(\d+)(ms|s|m|h)$/.exec(trimmed);
+  if (!match?.[1] || !match[2]) return undefined;
+  const amount = Number.parseInt(match[1], 10);
+  if (!Number.isFinite(amount)) return undefined;
+  const unit = match[2];
+  const seconds =
+    unit === "ms" ? amount / 1000 :
+    unit === "s" ? amount :
+    unit === "m" ? amount * 60 :
+    amount * 3600;
+  if (seconds < 0 || seconds > 3600) return undefined;
+  return trimmed;
+}
+
+export function buildOllamaGenerateBody(request: OllamaGenerateRequest): Record<string, unknown> {
   const maxTokens = request.maxTokens ?? 1024;
   const overrides = request.overrides ?? {};
+  const keepAlive = normalizeKeepAlive(request.keepAlive);
+  return {
+    model: request.model,
+    prompt: request.prompt,
+    stream: false,
+    ...(keepAlive !== undefined ? { keep_alive: keepAlive } : {}),
+    options: {
+      num_predict: overrides.num_predict ?? maxTokens,
+      ...(overrides.num_ctx !== undefined ? { num_ctx: overrides.num_ctx } : {}),
+      temperature: overrides.temperature ?? 0.3,
+    },
+  };
+}
+
+export async function generateOllamaText(request: OllamaGenerateRequest): Promise<string> {
+  const baseUrl = await getOllamaBaseUrl();
 
   const res = await fetch(`${baseUrl}/api/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     ...(request.signal ? { signal: request.signal } : {}),
-    body: JSON.stringify({
-      model: request.model,
-      prompt: request.prompt,
-      stream: false,
-      options: {
-        num_predict: overrides.num_predict ?? maxTokens,
-        ...(overrides.num_ctx !== undefined ? { num_ctx: overrides.num_ctx } : {}),
-        temperature: overrides.temperature ?? 0.3,
-      },
-    }),
+    body: JSON.stringify(buildOllamaGenerateBody(request)),
   });
 
   if (!res.ok) {

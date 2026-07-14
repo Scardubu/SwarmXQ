@@ -145,6 +145,14 @@ ollama pull reason-deepseekr1-pro-q5km-prod
 ollama pull code-qwen25-pro-q5km-prod
 ```
 
+For an 8 GB CPU-only first-video run, use the low-RAM Pilot profile instead of
+the Q8 Pilot or 7B planner:
+
+```bash
+ollama create instruct-phi4-lite-q4km-prod \
+  -f models/Modelfiles/primary/instruct-phi4-lite-q4km-prod.modelfile
+```
+
 Verify they are available:
 
 ```bash
@@ -658,11 +666,36 @@ Current implementation degrades via retryable/terminal failures and pressure-awa
 
 | Stage | Model env var | Default | Typical latency (8 GB) |
 | --- | --- | --- | --- |
-| Intent classification | `SWARMX_MODEL_FAST` | `instruct-phi4-pro-q8-prod` | 3–8 s |
-| Planning | `SWARMX_MODEL_REASON` | `reason-deepseekr1-pro-q5km-prod` | 45–90 s |
-| Scripting | `SWARMX_MODEL_CODE` | `code-qwen25-pro-q5km-prod` | 60–120 s |
-| Storyboard | `SWARMX_MODEL_CODE` | `code-qwen25-pro-q5km-prod` | 120–300 s |
+| Intent classification | `SWARMX_VIDEO_INTENT_MODEL` | `instruct-phi4-pro-q8-prod` | 3–8 s |
+| Planning | `SWARMX_VIDEO_PLAN_MODEL` | `plan-qwen25-pro-q5km-prod` | 45–90 s |
+| Scripting | `SWARMX_VIDEO_SCRIPT_MODEL` | `plan-qwen25-pro-q5km-prod` | 60–120 s |
+| Storyboard | `SWARMX_VIDEO_STORYBOARD_MODEL` | `plan-qwen25-pro-q5km-prod` | 120–300 s |
 | Render assembly | — (HTTP) | — | 2–5 s per shot |
+
+Set `SWARMX_VIDEO_LOW_RAM_MODE=1` to force all four text stages to
+`instruct-phi4-lite-q4km-prod`. Do not send `modelTier` in the first low-RAM
+video payload; it remains a text-stage override for compatibility, not a fast
+pipeline selector.
+
+Startup prewarm can be disabled with `SWARMX_MODEL_STARTUP_PREWARM=0`. This is
+recommended for low-RAM video runs so Relay is not speculatively loaded before
+the foreground text model.
+
+Stage timeouts are bounded through:
+
+```text
+VIDEO_INTENT_CLASSIFY_TIMEOUT_MS
+VIDEO_PLANNING_TIMEOUT_MS
+VIDEO_SCRIPTING_TIMEOUT_MS
+VIDEO_STORYBOARD_TIMEOUT_MS
+VIDEO_RENDER_TIMEOUT_MS
+VIDEO_FINALIZING_TIMEOUT_MS
+```
+
+Renderer selection is controlled by `SWARMX_VIDEO_RENDER_BACKEND=auto|comfyui|ffmpeg`.
+Production runs should keep `SWARMX_VIDEO_ALLOW_STUB_RENDER=0`. ComfyUI handoff
+requires `SWARMX_COMFYUI_OUTPUT_DIR`; returned filenames are copied into the
+SwarmXQ export directory before metadata is built.
 
 Context windows are scaled down under pressure (`adaptive-timeout-config.ts`):
 

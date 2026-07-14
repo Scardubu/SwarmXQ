@@ -300,6 +300,7 @@ const MODEL_BASE_PROFILES: Record<string, BaseModelProfile> = {
   "route-phi4-lite-q4km-prod":         { num_ctx: 2048, num_predict: 96   },
   // Pilot
   "instruct-phi4-pro-q8-prod":         { num_ctx: 2048, num_predict: 256  },
+  "instruct-phi4-lite-q4km-prod":      { num_ctx: 2048, num_predict: 256  },
   // Architect (phi4)
   "plan-phi4-pro-q8-prod":             { num_ctx: 4096, num_predict: 512  },
   // Architect (qwen25)

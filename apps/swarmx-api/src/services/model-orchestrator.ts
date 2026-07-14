@@ -179,6 +179,7 @@ const KEEP_ALIVE_POLICY: Record<
 > = {
   "route-phi4-lite-q4km-prod":         { normal: "10m", lowRam: "10m", evolver: "10m", degraded: "10m" }, // Relay — always resident
   "instruct-phi4-pro-q8-prod":         { normal: "5m",  lowRam: "30s", evolver: "3m",  degraded: "0s"  }, // Pilot
+  "instruct-phi4-lite-q4km-prod":      { normal: "30s", lowRam: "30s", evolver: "30s", degraded: "0s"  }, // Low-RAM Pilot
   "plan-phi4-pro-q8-prod":             { normal: "3m",  lowRam: "20s", evolver: "2m",  degraded: "0s"  }, // Architect (phi4)
   "code-qwen25-pro-q5km-prod":         { normal: "0s",  lowRam: "0s",  evolver: "0s",  degraded: "0s"  }, // Forge
   "plan-qwen25-pro-q5km-prod":         { normal: "0s",  lowRam: "0s",  evolver: "0s",  degraded: "0s"  }, // Architect (qwen25)
@@ -274,7 +275,9 @@ export class ModelOrchestrator {
   async init(): Promise<void> {
     await this._refreshRam();
     await this.syncFromOllama();
-    this._preloadFireAndForget(ALWAYS_RESIDENT_TAG);
+    if (process.env["SWARMX_MODEL_STARTUP_PREWARM"] !== "0") {
+      this._preloadFireAndForget(ALWAYS_RESIDENT_TAG);
+    }
   }
 
   /**
@@ -381,6 +384,7 @@ export class ModelOrchestrator {
    * before the user confirms action. Skips if RAM is too constrained.
    */
   preloadNextSpecialist(predictedModelTag: string): void {
+    if (process.env["SWARMX_MODEL_STARTUP_PREWARM"] === "0") return;
     const canonicalTag = resolveCanonicalTag(predictedModelTag);
     if (this.state.pendingWarmup === canonicalTag) return;
     const profile = MODEL_REGISTRY[canonicalTag];
@@ -398,6 +402,10 @@ export class ModelOrchestrator {
       ...this.state.warmQueue.filter((m) => m !== canonicalTag),
     ].slice(0, 4);
     if (this.state.pendingWarmup === canonicalTag) this.state.pendingWarmup = null;
+  }
+
+  async unloadModel(modelTag: string): Promise<void> {
+    await this._evictModel(resolveCanonicalTag(modelTag));
   }
 
   /** Called when Ollama reports a model was unloaded. */
@@ -540,6 +548,7 @@ export class ModelOrchestrator {
     // POLICY 2 — Adaptive mode based on RAM
     const ram = this.state.availableRamMb;
     if      (ram < RAM_CRITICAL_MB) this.state.currentMode = "degraded";
+    else if (process.env["SWARMX_VIDEO_LOW_RAM_MODE"] === "1") this.state.currentMode = "low-ram";
     else if (ram < RAM_LOW_MB)      this.state.currentMode = "low-ram";
     else if (this.state.currentMode === "degraded" || this.state.currentMode === "low-ram") {
       this.state.currentMode = "normal"; // recover (evolver is set explicitly, not recovered)

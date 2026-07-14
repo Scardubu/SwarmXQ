@@ -8,7 +8,8 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/apps/swarmx-api/src/server.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:video": "tsx scripts/video-regression-check.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",

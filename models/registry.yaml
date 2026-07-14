@@ -114,6 +114,22 @@ triad:
 
 # ── Optional overlay profiles (load on demand) ────────────────────────────────
 optional_profiles:
+  - operator_name: Pilot
+    name: instruct-phi4-lite-q4km-prod
+    gguf_file: microsoft_Phi-4-mini-instruct-Q4_K_M.gguf
+    ollama_tag: instruct-phi4-lite-q4km-prod
+    legacy_aliases: []
+    quant: Q4_K_M
+    role: instruct
+    composer_tier: 2
+    context_window: 2048
+    num_predict: 256
+    keep_alive: "30s"
+    temperature: 0.05
+    top_p: 0.80
+    is_7b: false
+    ram_mb: 2500
+
   - operator_name: Architect
     name: plan-phi4-pro-q8-prod
     gguf_file: microsoft_Phi-4-mini-instruct-Q8_0.gguf

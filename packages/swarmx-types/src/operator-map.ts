@@ -130,6 +130,20 @@ export const MODEL_OPERATOR_MAP: Record<string, OperatorEntry> = {
     topP:           0.90,
     description:    "Fast generalist. Session routing, short Q&A, intake.",
   },
+  "instruct-phi4-lite-q4km-prod": {
+    operator:       "Pilot",
+    role:           "instruct",
+    family:         "phi4",
+    tier:           "lite",
+    quant:          "q4km",
+    env:            "prod",
+    is7B:           false,
+    estimatedRamMb: 2500,
+    defaultCtx:     2048,
+    temperature:    0.05,
+    topP:           0.80,
+    description:    "Low-RAM Pilot. Video text stages on 8 GB CPU-only hosts.",
+  },
 
   // ── Architect ──────────────────────────────────────────────────────────────
   "plan-phi4-pro-q8-prod": {

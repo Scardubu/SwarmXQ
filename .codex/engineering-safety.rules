@@ -1,0 +1,123 @@
+Destructive Git operations
+
+prefix_rule(
+pattern = ["git", "reset", "--hard"],
+decision = "forbidden",
+justification = "May irreversibly discard uncommitted work."
+)
+
+prefix_rule(
+pattern = ["git", "clean"],
+decision = "forbidden",
+justification = "May delete untracked source files and local artifacts."
+)
+
+prefix_rule(
+pattern = ["git", "push", "--force"],
+decision = "forbidden",
+justification = "May overwrite remote history."
+)
+
+prefix_rule(
+pattern = ["git", "push", "--force-with-lease"],
+decision = "prompt",
+justification = "History rewriting requires explicit authorization."
+)
+
+Destructive filesystem operations
+
+prefix_rule(
+pattern = ["rm", "-rf"],
+decision = "prompt",
+justification = "Recursive forced deletion requires path review and explicit approval."
+)
+
+prefix_rule(
+pattern = ["sudo"],
+decision = "prompt",
+justification = "System-level changes require explicit review."
+)
+
+Dependency changes
+
+prefix_rule(
+pattern = ["pnpm", "add"],
+decision = "prompt",
+justification = "New dependencies must be justified and reviewed."
+)
+
+prefix_rule(
+pattern = ["npm", "install"],
+decision = "prompt",
+justification = "Dependency and lockfile changes require review."
+)
+
+prefix_rule(
+pattern = ["yarn", "add"],
+decision = "prompt",
+justification = "Dependency and lockfile changes require review."
+)
+
+Database safety
+
+prefix_rule(
+pattern = ["prisma", "migrate", "reset"],
+decision = "forbidden",
+justification = "Resets and destroys database data."
+)
+
+prefix_rule(
+pattern = ["npx", "prisma", "migrate", "reset"],
+decision = "forbidden",
+justification = "Resets and destroys database data."
+)
+
+prefix_rule(
+pattern = ["prisma", "db", "push"],
+decision = "prompt",
+justification = "Direct schema synchronization is unsafe for controlled production migration."
+)
+
+prefix_rule(
+pattern = ["npx", "prisma", "db", "push"],
+decision = "prompt",
+justification = "Direct schema synchronization is unsafe for controlled production migration."
+)
+
+Normal verification commands
+
+prefix_rule(
+pattern = ["git", "status"],
+decision = "allow",
+justification = "Read-only repository inspection."
+)
+
+prefix_rule(
+pattern = ["git", "diff"],
+decision = "allow",
+justification = "Read-only change inspection."
+)
+
+prefix_rule(
+pattern = ["pnpm", "lint"],
+decision = "allow",
+justification = "Standard non-destructive validation."
+)
+
+prefix_rule(
+pattern = ["pnpm", "typecheck"],
+decision = "allow",
+justification = "Standard non-destructive validation."
+)
+
+prefix_rule(
+pattern = ["pnpm", "test"],
+decision = "allow",
+justification = "Standard non-destructive validation."
+)
+
+prefix_rule(
+pattern = ["pnpm", "build"],
+decision = "allow",
+justification = "Standard build validation."
+)
