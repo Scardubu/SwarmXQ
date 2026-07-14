@@ -92,6 +92,7 @@ import {
   getModelOverrides,
   type ModelCallOverrides,
 } from "./adaptive-timeout-config.js";
+import { recordEviction } from "./swarm-pressure-monitor.js";
 import type { TimeoutPressureLevel } from "@swarmx/types/operation-types";
 
 // ─── Memory pressure thresholds (orchestrator's own policy — see ORCH-r8-03) ──
@@ -316,6 +317,7 @@ export class ModelOrchestrator {
     if (profile?.is7B && this.state.active7BModel && this.state.active7BModel !== canonicalTarget) {
       const victim = this.state.active7BModel;
       await this._evictModel(victim);
+      recordEviction();
       evicted.push(victim);
     }
 
@@ -332,6 +334,7 @@ export class ModelOrchestrator {
 
         if (needsHeadroom || lowRamNon7B) {
           await this._evictModel(activeProfile.tag);
+          recordEviction();
           evicted.push(activeProfile.tag);
           projectedAvailableMb += activeProfile.estimatedRamMb;
         }
