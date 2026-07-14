@@ -147,6 +147,7 @@ python -m pip install --editable '.[dev]'
 pnpm --filter @swarmx/types typecheck
 pnpm --filter @swarmx/api build
 pnpm --filter @swarmx/api test
+pnpm --filter @swarmx/api run test:regression
 pnpm --filter @swarmx/api run test:video:smoke
 pnpm --filter @swarmx/dashboard typecheck
 python -m pytest

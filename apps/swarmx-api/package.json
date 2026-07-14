@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "pnpm run test:video",
     "test:video": "tsx scripts/video-regression-check.ts",
-    "test:video:smoke": "tsx scripts/video-render-smoke.ts"
+    "test:video:smoke": "tsx scripts/video-render-smoke.ts",
+    "test:regression": "tsx scripts/eviction-metric-regression.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",
