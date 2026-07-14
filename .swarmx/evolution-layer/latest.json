@@ -1,7 +1,7 @@
 {
-  "stage_id": "stage-20260521081746211288",
-  "cycle_id": "cycle-20260521081746074228",
-  "repo": "/home/scar/Downloads/SwarmXQ",
+  "stage_id": "stage-20260705083303686289",
+  "cycle_id": "cycle-20260705083303591513",
+  "repo": "/home/scar/Documents/SwarmXQ",
   "candidate": {
     "id": "reasoning-escalation",
     "title": "Escalate ambiguous or risky tasks to the reasoning model",
@@ -27,5 +27,5 @@
     "risk": "low"
   },
   "summary": "Heuristic critique identified routing, latency, and learning-surface opportunities.",
-  "timestamp": "2026-05-21T08:17:46.211313+00:00"
+  "timestamp": "2026-07-05T08:33:03.686379+00:00"
 }

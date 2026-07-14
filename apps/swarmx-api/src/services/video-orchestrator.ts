@@ -122,9 +122,17 @@ const HIGH_PRESSURE_DELAY_MS = Math.min(
   Math.max(1_000, parseInt(process.env.HIGH_PRESSURE_DELAY_MS ?? "3000", 10))
 );
 
+function readBoundedTimeoutMs(envName: string, fallbackMs: number): number {
+  const raw = process.env[envName];
+  if (!raw) return fallbackMs;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return fallbackMs;
+  return Math.min(30_000, Math.max(1_000, parsed));
+}
+
 /** Per-stage timeout matrix (ms) — aligned with architecture review §3. */
 const STAGE_TIMEOUT_MS: Record<VideoJobStage, number> = {
-  intent_classification:  4_000,
+  intent_classification:  readBoundedTimeoutMs("VIDEO_INTENT_CLASSIFY_TIMEOUT_MS", 4_000),
   planning:              15_000,
   scripting:             35_000,
   storyboard_generation: 60_000,

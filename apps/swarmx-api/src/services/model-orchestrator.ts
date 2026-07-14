@@ -547,24 +547,42 @@ export class ModelOrchestrator {
   }
 
   private _preloadFireAndForget(tag: string): void {
+    const canonicalTag = resolveCanonicalTag(tag);
+    if (!this._canPreload(canonicalTag)) return;
+
+    const ctrl = new AbortController();
+    const timeout = setTimeout(() => ctrl.abort(), 10_000);
+
     fetch(`${this.ollamaBase}/api/generate`, {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
+      signal:  ctrl.signal,
       body:    JSON.stringify({
-        model:      tag,
+        model:      canonicalTag,
         prompt:     "x",
         stream:     false,
-        keep_alive: this._keepAliveFor(tag),
+        keep_alive: this._keepAliveFor(canonicalTag),
         options:    { num_predict: 1 },
       }),
     })
       .then((r) => {
         if (r.ok) {
-          this.state.activeModels.add(tag);
-          if (MODEL_REGISTRY[tag]?.is7B) this.state.active7BModel = tag;
+          this.state.activeModels.add(canonicalTag);
+          if (MODEL_REGISTRY[canonicalTag]?.is7B) this.state.active7BModel = canonicalTag;
         }
       })
-      .catch(() => { /* preload failure is non-critical */ });
+      .catch(() => { /* preload failure is non-critical */ })
+      .finally(() => clearTimeout(timeout));
+  }
+
+  private _canPreload(tag: string): boolean {
+    if (this.state.activeModels.has(tag)) return false;
+    const profile = MODEL_REGISTRY[tag];
+    if (!profile) return false;
+
+    // Speculative warm-up must not consume the reserve needed for foreground
+    // requests and health probes on 8 GB CPU-only hosts.
+    return this.state.availableRamMb >= profile.estimatedRamMb + RAM_CRITICAL_MB;
   }
 }
 
