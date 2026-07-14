@@ -677,6 +677,11 @@ Set `SWARMX_VIDEO_LOW_RAM_MODE=1` to force all four text stages to
 video payload; it remains a text-stage override for compatibility, not a fast
 pipeline selector.
 
+The dashboard video form defaults to **Auto** model routing, which intentionally
+omits `modelTier` from `POST /api/video/jobs`. Operators can still choose an
+explicit model tier from the form, but that should be reserved for hosts with
+measured memory headroom for the selected profile.
+
 Startup prewarm can be disabled with `SWARMX_MODEL_STARTUP_PREWARM=0`. This is
 recommended for low-RAM video runs so Relay is not speculatively loaded before
 the foreground text model.

@@ -8,6 +8,7 @@
 
 "use client";
 
+import { CheckCircle2, XCircle } from "lucide-react";
 import type { VideoJob, VideoJobStage } from "../../lib/video-dashboard";
 import { VIDEO_JOB_STAGE_ORDER, VIDEO_JOB_STAGE_LABELS } from "../../lib/video-dashboard";
 
@@ -24,36 +25,24 @@ interface VideoJobTimelineProps {
 function StageIcon({ state }: { state: "complete" | "active" | "pending" | "error" }) {
   if (state === "complete") {
     return (
-      <svg className="w-3.5 h-3.5 text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
-        <path
-          fillRule="evenodd"
-          d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-          clipRule="evenodd"
-        />
-      </svg>
+      <CheckCircle2 className="h-3.5 w-3.5 text-status-success" aria-hidden="true" />
     );
   }
   if (state === "error") {
     return (
-      <svg className="w-3.5 h-3.5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
-        <path
-          fillRule="evenodd"
-          d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-          clipRule="evenodd"
-        />
-      </svg>
+      <XCircle className="h-3.5 w-3.5 text-status-error" aria-hidden="true" />
     );
   }
   if (state === "active") {
     return (
       <span className="relative flex h-3.5 w-3.5">
-        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-        <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-amber-500" />
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-60" />
+        <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-accent" />
       </span>
     );
   }
   return (
-    <span className="h-3.5 w-3.5 rounded-full border-2 border-zinc-600 bg-zinc-800" />
+    <span className="h-3.5 w-3.5 rounded-full border-2 border-border-active bg-bg-input" />
   );
 }
 
@@ -77,9 +66,9 @@ function resolveState(
 
 function StageProgressBar({ progress }: { progress: number }) {
   return (
-    <div className="h-0.5 w-full bg-zinc-700 rounded-full overflow-hidden">
+    <div className="h-0.5 w-full overflow-hidden rounded-full bg-bg-input">
       <div
-        className="h-full bg-gradient-to-r from-amber-500 to-emerald-400 rounded-full transition-all duration-500"
+        className="h-full rounded-full bg-accent transition-all duration-500"
         style={{ width: `${progress}%` }}
       />
     </div>
@@ -99,29 +88,29 @@ export function VideoJobTimeline({ job, compact = false }: VideoJobTimelineProps
       {/* Overall progress bar */}
       <div className="flex items-center gap-3">
         <div className="flex-1">
-          <div className="h-1 w-full bg-zinc-800 rounded-full overflow-hidden">
+          <div className="h-1 w-full overflow-hidden rounded-full bg-bg-input">
             <div
               className={`h-full rounded-full transition-all duration-700 ease-out ${
                 job.status === "completed"
-                  ? "bg-emerald-500"
+                  ? "bg-status-success"
                   : job.status === "failed"
-                  ? "bg-red-500"
+                  ? "bg-status-error"
                   : job.status === "cancelled"
-                  ? "bg-zinc-500"
-                  : "bg-gradient-to-r from-amber-500 via-orange-400 to-emerald-400"
+                  ? "bg-status-idle"
+                  : "bg-accent"
               }`}
               style={{ width: `${job.overallProgress}%` }}
             />
           </div>
         </div>
-        <span className="text-xs font-mono text-zinc-400 tabular-nums w-8 text-right">
+        <span className="w-8 text-right font-mono text-xs tabular-nums text-text-secondary">
           {job.overallProgress}%
         </span>
       </div>
 
       {/* Stage list */}
       {!compact && (
-        <ol className="relative ml-2 border-l border-zinc-800 space-y-3 py-1">
+        <ol className="relative ml-2 space-y-3 border-l border-border py-1">
           {VIDEO_JOB_STAGE_ORDER.map((stage) => {
             const state = resolveState(job, stage);
             const stageData = job.stages[stage];
@@ -138,18 +127,18 @@ export function VideoJobTimeline({ job, compact = false }: VideoJobTimelineProps
                   <p
                     className={`text-xs font-medium leading-tight ${
                       state === "complete"
-                        ? "text-zinc-400 line-through decoration-zinc-600"
+                        ? "text-text-muted line-through decoration-border-active"
                         : state === "active"
-                        ? "text-amber-300"
+                        ? "text-accent"
                         : state === "error"
-                        ? "text-red-400"
-                        : "text-zinc-600"
+                        ? "text-status-error"
+                        : "text-text-muted"
                     }`}
                   >
                     {label}
                   </p>
                   {stageData?.durationMs != null && (
-                    <span className="shrink-0 text-[10px] font-mono text-zinc-600">
+                    <span className="shrink-0 font-mono text-[10px] text-text-muted">
                       {(stageData.durationMs / 1000).toFixed(1)}s
                     </span>
                   )}
@@ -160,7 +149,7 @@ export function VideoJobTimeline({ job, compact = false }: VideoJobTimelineProps
                   <div className="mt-1">
                     <StageProgressBar progress={stageData.stageProgress} />
                     {stageData.message && (
-                      <p className="mt-0.5 text-[10px] text-zinc-500 truncate">
+                      <p className="mt-0.5 truncate text-[10px] text-text-muted">
                         {stageData.message}
                       </p>
                     )}
@@ -174,8 +163,8 @@ export function VideoJobTimeline({ job, compact = false }: VideoJobTimelineProps
 
       {/* Compact: just show current stage label */}
       {compact && job.currentStage && !isTerminal && (
-        <p className="text-[10px] text-amber-400 font-medium truncate">
-          ↳ {VIDEO_JOB_STAGE_LABELS[job.currentStage]}
+        <p className="truncate text-[10px] font-medium text-accent">
+          {VIDEO_JOB_STAGE_LABELS[job.currentStage]}
           {job.stages[job.currentStage]?.stageProgress != null &&
             ` (${job.stages[job.currentStage]!.stageProgress}%)`}
         </p>
@@ -183,12 +172,12 @@ export function VideoJobTimeline({ job, compact = false }: VideoJobTimelineProps
 
       {/* Error message */}
       {job.status === "failed" && job.error && (
-        <div className="mt-1 rounded-md bg-red-950/50 border border-red-900/50 px-2.5 py-1.5">
-          <p className="text-xs text-red-400 font-mono leading-snug">
+        <div className="mt-1 rounded border border-status-error/35 bg-status-error/10 px-2.5 py-1.5">
+          <p className="font-mono text-xs leading-snug text-status-error">
             {job.error.code}: {job.error.message}
           </p>
           {job.error.retryable && (
-            <p className="text-[10px] text-red-500/70 mt-0.5">Will retry automatically</p>
+            <p className="mt-0.5 text-[10px] text-status-error/75">Will retry automatically</p>
           )}
         </div>
       )}

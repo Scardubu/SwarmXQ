@@ -9,6 +9,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Download, X } from "lucide-react";
 import { useVideoStore } from "../../stores/video";
 import { VideoJobTimeline } from "./VideoJobTimeline";
 import type { VideoJob } from "../../lib/video-dashboard";
@@ -23,64 +24,64 @@ interface VideoJobCardProps {
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 
-const STATUS_MAP: Record<VideoJob["status"], { label: string; class: string }> = {
-  queued: { label: "Queued", class: "bg-zinc-800 text-zinc-400 border-zinc-700" },
+const STATUS_MAP: Record<VideoJob["status"], { label: string; className: string }> = {
+  queued: { label: "Queued", className: "border-status-queued/35 bg-status-queued/10 text-status-queued" },
   classifying: {
     label: "Classifying",
-    class: "bg-blue-950/60 text-blue-400 border-blue-800/50 animate-pulse",
+    className: "border-status-reload/35 bg-status-reload/10 text-status-reload animate-pulse",
   },
   scripting: {
     label: "Scripting",
-    class: "bg-indigo-950/60 text-indigo-400 border-indigo-800/50 animate-pulse",
+    className: "border-status-throttled/35 bg-status-throttled/10 text-status-throttled animate-pulse",
   },
   staging: {
     label: "Staging",
-    class: "bg-cyan-950/60 text-cyan-400 border-cyan-800/50 animate-pulse",
+    className: "border-status-reload/35 bg-status-reload/10 text-status-reload animate-pulse",
   },
   generating: {
     label: "Generating",
-    class: "bg-amber-950/60 text-amber-400 border-amber-800/50 animate-pulse",
+    className: "border-status-active/35 bg-status-active/10 text-status-active animate-pulse",
   },
   interpolating: {
     label: "Interpolating",
-    class: "bg-orange-950/60 text-orange-400 border-orange-800/50 animate-pulse",
+    className: "border-status-warning/35 bg-status-warning/10 text-status-warning animate-pulse",
   },
   encoding: {
     label: "Encoding",
-    class: "bg-teal-950/60 text-teal-400 border-teal-800/50 animate-pulse",
+    className: "border-status-active/35 bg-status-active/10 text-status-active animate-pulse",
   },
   reviewing: {
     label: "Reviewing",
-    class: "bg-violet-950/60 text-violet-400 border-violet-800/50 animate-pulse",
+    className: "border-status-throttled/35 bg-status-throttled/10 text-status-throttled animate-pulse",
   },
   publishing: {
     label: "Publishing",
-    class: "bg-fuchsia-950/60 text-fuchsia-400 border-fuchsia-800/50 animate-pulse",
+    className: "border-status-throttled/35 bg-status-throttled/10 text-status-throttled animate-pulse",
   },
   running: {
     label: "Running",
-    class: "bg-amber-950/60 text-amber-400 border-amber-800/50 animate-pulse",
+    className: "border-status-active/35 bg-status-active/10 text-status-active animate-pulse",
   },
   done: {
     label: "Done",
-    class: "bg-emerald-950/60 text-emerald-400 border-emerald-800/50",
+    className: "border-status-success/35 bg-status-success/10 text-status-success",
   },
   completed: {
     label: "Done",
-    class: "bg-emerald-950/60 text-emerald-400 border-emerald-800/50",
+    className: "border-status-success/35 bg-status-success/10 text-status-success",
   },
-  failed: { label: "Failed", class: "bg-red-950/60 text-red-400 border-red-800/50" },
+  failed: { label: "Failed", className: "border-status-error/35 bg-status-error/10 text-status-error" },
   cancelled: {
     label: "Cancelled",
-    class: "bg-zinc-900 text-zinc-500 border-zinc-700",
+    className: "border-border bg-bg-surface text-text-muted",
   },
 };
 
 function StatusBadge({ status }: { status: VideoJob["status"] }) {
-  const { label, class: cls } = STATUS_MAP[status];
+  const { label, className } = STATUS_MAP[status];
   return (
     <span
-      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider border ${cls}`}
+      className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${className}`}
     >
       {label}
     </span>
@@ -97,7 +98,7 @@ function PlatformTag({ platform }: { platform?: string }) {
     reels: "Reels",
   };
   return (
-    <span className="text-[10px] text-zinc-500 font-medium uppercase tracking-wider">
+    <span className="font-mono text-[10px] font-medium uppercase tracking-wide text-text-muted">
       {labels[platform] ?? platform}
     </span>
   );
@@ -118,14 +119,14 @@ function PublishSummary({ job }: { job: VideoJob }) {
   };
 
   return (
-    <div className="rounded-lg border border-fuchsia-900/40 bg-fuchsia-950/20 px-2.5 py-2">
+    <div className="rounded border border-status-throttled/35 bg-status-throttled/10 px-2.5 py-2">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-[10px] uppercase tracking-wider text-fuchsia-300">Publish</span>
-        <span className="text-[10px] font-medium text-zinc-400">{history.length} event{history.length === 1 ? "" : "s"}</span>
+        <span className="font-mono text-[10px] uppercase tracking-wide text-status-throttled">Publish</span>
+        <span className="text-[10px] font-medium text-text-muted">{history.length} event{history.length === 1 ? "" : "s"}</span>
       </div>
       <div className="mt-1 flex items-center justify-between gap-3 text-xs">
-        <span className="font-medium text-zinc-200">{labelMap[latest.status] ?? latest.status}</span>
-        <span className="uppercase tracking-wider text-zinc-500">{latest.platform}</span>
+        <span className="font-medium text-text-primary">{labelMap[latest.status] ?? latest.status}</span>
+        <span className="font-mono uppercase tracking-wide text-text-muted">{latest.platform}</span>
       </div>
     </div>
   );
@@ -139,8 +140,7 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
   const canCancel = job.status === "queued" || job.status === "running";
   const isComplete = job.status === "completed";
 
-  const handleCancel = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleCancel = () => {
     void cancelJob(job.id);
   };
 
@@ -159,114 +159,106 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
 
   return (
     <article
-      tabIndex={0}
-      role="button"
-      aria-label={`Video job: ${job.request.prompt.slice(0, 60)}`}
       className={`
-        group relative flex flex-col gap-3 rounded-xl border bg-zinc-900/80 p-4
-        cursor-pointer transition-all duration-200
-        hover:border-zinc-600 hover:bg-zinc-900
-        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600/60
+        group relative rounded border bg-bg-elevated/80 transition-all duration-200
+        hover:border-border-active hover:bg-bg-elevated
         ${isSelected
-          ? "border-amber-700/60 ring-1 ring-amber-700/30 bg-zinc-900"
-          : "border-zinc-800"
+          ? "border-border-accent ring-1 ring-accent/25 bg-bg-elevated"
+          : "border-border"
         }
       `}
-      onClick={() => onSelect?.(job.id)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onSelect?.(job.id);
-        }
-      }}
     >
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <StatusBadge status={job.status} />
-            <PlatformTag {...(job.request.platform !== undefined ? { platform: job.request.platform } : {})} />
-            {job.request.niche && (
-              <span className="text-[10px] text-zinc-600 font-medium">
-                #{job.request.niche}
-              </span>
-            )}
+      <div className="absolute right-3 top-3 z-10 flex items-center gap-1.5">
+        {canCancel && (
+          <button
+            type="button"
+            onClick={handleCancel}
+            className="
+              rounded p-1 text-text-muted hover:bg-status-error/10 hover:text-status-error
+              transition-colors duration-150 opacity-0 group-hover:opacity-100 focus-visible:opacity-100
+              focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-status-error
+            "
+            title="Cancel job"
+            aria-label={`Cancel job: ${job.request.prompt.slice(0, 40)}`}
+          >
+            <X className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        )}
+        {isComplete && job.output?.publicUrl && (
+          <a
+            href={job.output.publicUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="
+              rounded p-1 text-text-muted hover:bg-status-success/10 hover:text-status-success
+              transition-colors duration-150 opacity-0 group-hover:opacity-100 focus-visible:opacity-100
+              focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-status-success
+            "
+            title="Download video"
+            aria-label={`Download video: ${job.request.prompt.slice(0, 40)}`}
+          >
+            <Download className="h-3.5 w-3.5" aria-hidden="true" />
+          </a>
+        )}
+      </div>
+
+      <button
+        type="button"
+        aria-label={`Open video job: ${job.request.prompt.slice(0, 60)}`}
+        className="
+          flex w-full cursor-pointer flex-col gap-3 rounded p-4 pr-14 text-left
+          focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent
+        "
+        onClick={() => onSelect?.(job.id)}
+      >
+        {/* Header */}
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge status={job.status} />
+              <PlatformTag {...(job.request.platform !== undefined ? { platform: job.request.platform } : {})} />
+              {job.request.niche && (
+                <span className="text-[10px] font-medium text-text-muted">
+                  #{job.request.niche}
+                </span>
+              )}
+            </div>
+            <p className="mt-1.5 line-clamp-2 text-sm font-medium leading-snug text-text-primary">
+              {job.request.prompt}
+            </p>
           </div>
-          <p className="mt-1.5 text-sm text-zinc-200 font-medium leading-snug line-clamp-2">
-            {job.request.prompt}
-          </p>
         </div>
 
-        {/* Actions */}
-        <div className="shrink-0 flex items-center gap-1.5">
-          {canCancel && (
-            <button
-              onClick={handleCancel}
-              className="
-                p-1 rounded-md text-zinc-500 hover:text-red-400 hover:bg-red-950/40
-                transition-colors duration-150 opacity-0 group-hover:opacity-100 focus-visible:opacity-100
-                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/60
-              "
-              title="Cancel job"
-              aria-label={`Cancel job: ${job.request.prompt.slice(0, 40)}`}
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+        {/* Timeline — uses VideoJobTimeline (compact mode) */}
+        {/* FIX: No more duplicated inline stage rendering logic here */}
+        <VideoJobTimeline job={job} compact />
+
+        <PublishSummary job={job} />
+
+        {/* Footer metadata */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[10px] text-text-muted">
+          <span title="Job ID" className="max-w-[8rem] truncate">
+            {job.id.slice(0, 8)}…
+          </span>
+          {job.retryCount > 0 && (
+            <span className="text-status-warning">retry #{job.retryCount}</span>
           )}
-          {isComplete && job.output?.publicUrl && (
-            <a
-              href={job.output.publicUrl}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="
-                p-1 rounded-md text-zinc-500 hover:text-emerald-400 hover:bg-emerald-950/40
-                transition-colors duration-150 opacity-0 group-hover:opacity-100 focus-visible:opacity-100
-                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60
-              "
-              title="Download video"
-              aria-label={`Download video: ${job.request.prompt.slice(0, 40)}`}
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-            </a>
+          {elapsed != null && job.status === "running" && (
+            <span className="ml-auto">{elapsed}s elapsed</span>
+          )}
+          {job.completedAt && (
+            <span className="ml-auto">
+              {new Date(job.completedAt).toLocaleTimeString()}
+            </span>
+          )}
+          {job.output && (
+            <span>
+              {(job.output.fileSizeBytes / 1024 / 1024).toFixed(1)} MB ·{" "}
+              {job.output.durationSeconds.toFixed(0)}s
+            </span>
           )}
         </div>
-      </div>
-
-      {/* Timeline — uses VideoJobTimeline (compact mode) */}
-      {/* FIX: No more duplicated inline stage rendering logic here */}
-      <VideoJobTimeline job={job} compact />
-
-      <PublishSummary job={job} />
-
-      {/* Footer metadata */}
-      <div className="flex items-center gap-3 text-[10px] text-zinc-600 font-mono">
-        <span title="Job ID" className="truncate max-w-[8rem]">
-          {job.id.slice(0, 8)}…
-        </span>
-        {job.retryCount > 0 && (
-          <span className="text-amber-700">retry #{job.retryCount}</span>
-        )}
-        {elapsed != null && job.status === "running" && (
-          <span className="ml-auto">{elapsed}s elapsed</span>
-        )}
-        {job.completedAt && (
-          <span className="ml-auto">
-            {new Date(job.completedAt).toLocaleTimeString()}
-          </span>
-        )}
-        {job.output && (
-          <span>
-            {(job.output.fileSizeBytes / 1024 / 1024).toFixed(1)} MB ·{" "}
-            {job.output.durationSeconds.toFixed(0)}s
-          </span>
-        )}
-      </div>
+      </button>
     </article>
   );
 }

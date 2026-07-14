@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { ArrowLeft, Clapperboard } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useVideoStore } from "../../../../stores/video";
 import { VideoJobTimeline } from "../../../../components/video/VideoJobTimeline";
 import { ViralityMeter } from "../../../../components/video/ViralityMeter";
@@ -55,52 +57,66 @@ export default function VideoJobDetailPage() {
 
   return (
     <div className="h-full min-h-0 flex flex-col">
-      <header className="sticky top-0 z-10 border-b border-border bg-bg-surface px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3 text-sm">
-          <button
+      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-bg-surface/95 px-4 py-3 sm:px-6">
+        <div className="flex min-w-0 items-center gap-3 text-sm">
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={() => router.push("/video")}
-            className="text-text-muted hover:text-text-primary"
+            className="shrink-0"
           >
-            ← Back to Queue
-          </button>
-          <span className="text-text-muted">Video → {job.id.slice(0, 8)}</span>
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+            Queue
+          </Button>
+          <span className="truncate font-mono text-xs text-text-muted">Video / {job.id.slice(0, 8)}</span>
         </div>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[55%_45%] gap-5 p-6 overflow-y-auto">
+      <div className="grid grid-cols-1 gap-5 overflow-y-auto p-4 sm:p-6 lg:grid-cols-[minmax(320px,55%)_minmax(280px,45%)]">
         <section className="space-y-4">
-          <div className="rounded-xl border border-border bg-bg-elevated p-3">
+          <div className="rounded border border-border bg-bg-elevated p-3">
             {job.output?.publicUrl ? (
-              <video
-                src={job.output.publicUrl}
-                controls
-                aria-label={`Generated video: ${job.request.prompt.slice(0, 60)}`}
-                className="w-full rounded-lg bg-black aspect-video object-contain"
-              />
+              <div className="mx-auto aspect-[9/16] max-h-[70vh] w-full max-w-[420px] overflow-hidden rounded bg-black">
+                <video
+                  src={job.output.publicUrl}
+                  controls
+                  aria-label={`Generated video: ${job.request.prompt.slice(0, 60)}`}
+                  className="h-full w-full object-contain"
+                />
+              </div>
             ) : (
-              <div className="aspect-video rounded-lg bg-bg-surface border border-border flex items-center justify-center text-text-muted text-sm">
-                Generating...
+              <div className="mx-auto flex aspect-[9/16] max-h-[70vh] w-full max-w-[420px] items-center justify-center rounded border border-border bg-bg-surface text-sm text-text-muted">
+                <div className="space-y-2 text-center">
+                  <Clapperboard className="mx-auto h-7 w-7 text-text-muted" aria-hidden="true" />
+                  <p>Generating preview</p>
+                </div>
               </div>
             )}
           </div>
 
-          <div className="rounded-xl border border-border bg-bg-elevated p-4">
+          <div className="rounded border border-border bg-bg-elevated p-4">
             <p className="text-[10px] text-text-muted font-mono uppercase tracking-wider">Metadata</p>
-            <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-text-secondary">
-              <div>ID: {job.id.slice(0, 12)}...</div>
-              <div>Mode: {job.request.modelTier ?? "auto"}</div>
-              <div>Resolution: {job.output ? `${job.output.widthPx}x${job.output.heightPx}` : "pending"}</div>
-              <div>Created: {new Date(job.createdAt).toLocaleString()}</div>
+            <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-text-secondary sm:grid-cols-2">
+              <div><span className="text-text-muted">ID:</span> {job.id.slice(0, 12)}...</div>
+              <div><span className="text-text-muted">Mode:</span> {job.request.modelTier ?? "auto"}</div>
+              <div><span className="text-text-muted">Resolution:</span> {job.output ? `${job.output.widthPx}x${job.output.heightPx}` : "pending"}</div>
+              <div><span className="text-text-muted">Created:</span> {new Date(job.createdAt).toLocaleString()}</div>
+              {job.output && (
+                <>
+                  <div><span className="text-text-muted">Size:</span> {(job.output.fileSizeBytes / 1024 / 1024).toFixed(1)} MB</div>
+                  <div><span className="text-text-muted">Duration:</span> {job.output.durationSeconds.toFixed(1)}s</div>
+                </>
+              )}
             </div>
           </div>
 
-          <div className="rounded-xl border border-border bg-bg-elevated p-4">
+          <div className="rounded border border-border bg-bg-elevated p-4">
             <VideoJobTimeline job={job} />
           </div>
 
           {job.operatorTrace && job.operatorTrace.length > 0 && (
-            <div className="rounded-xl border border-border bg-bg-elevated p-4">
+            <div className="rounded border border-border bg-bg-elevated p-4">
               <p className="text-[10px] text-text-muted font-mono uppercase tracking-wider mb-2">Operator Trace</p>
               <div className="max-h-64 overflow-y-auto">
                 <table className="w-full text-xs">
@@ -135,13 +151,13 @@ export default function VideoJobDetailPage() {
 
         <section className="space-y-4">
           {job.viralitySignal && (
-            <div className="rounded-xl border border-border bg-bg-elevated p-4">
+            <div className="rounded border border-border bg-bg-elevated p-4">
               <ViralityMeter signal={job.viralitySignal} />
             </div>
           )}
 
           {job.viralitySignal?.captionDraft && (
-            <div className="rounded-xl border border-border bg-bg-elevated p-4">
+            <div className="rounded border border-border bg-bg-elevated p-4">
               <CaptionEditor
                 jobId={job.id}
                 initialDraft={job.viralitySignal.captionDraft}
@@ -151,7 +167,7 @@ export default function VideoJobDetailPage() {
           )}
 
           {job.status === "completed" && (
-            <div className="rounded-xl border border-border bg-bg-elevated p-4">
+            <div className="rounded border border-border bg-bg-elevated p-4">
               <PlatformPublishPanel
                 job={job}
                 publishHistory={publishHistory}

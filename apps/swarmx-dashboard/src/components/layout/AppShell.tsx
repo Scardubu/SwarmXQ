@@ -37,6 +37,8 @@ export function AppShell({ children }: AppShellProps) {
         "h-dvh w-full overflow-hidden",
         "grid grid-cols-[var(--app-nav-width)_1fr_var(--app-telemetry-width)]",
         "grid-rows-[var(--command-bar-height)_1fr_var(--app-terminal-height)]",
+        "max-lg:[--app-telemetry-width:0px]",
+        "max-md:[--app-terminal-height:0px]",
         "transition-[grid-template-columns,grid-template-rows] duration-(--duration-panel) ease-snap",
         "motion-reduce:transition-none",
         navExpanded

@@ -19,6 +19,8 @@
 
 import { useEffect, useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Clapperboard, GripVertical, ListVideo, RotateCcw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useVideoStore } from "../../../stores/video";
 import { VideoJobForm } from "../../../components/video/VideoJobForm";
 import { VideoJobCard } from "../../../components/video/VideoJobCard";
@@ -27,14 +29,14 @@ import { VideoJobCard } from "../../../components/video/VideoJobCard";
 
 function JobSkeleton() {
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 animate-pulse">
+    <div className="animate-pulse rounded border border-border bg-bg-elevated/60 p-4">
       <div className="flex items-center gap-2 mb-3">
-        <div className="h-4 w-14 rounded bg-zinc-800" />
-        <div className="h-4 w-10 rounded bg-zinc-800" />
+        <div className="h-4 w-14 rounded bg-bg-input" />
+        <div className="h-4 w-10 rounded bg-bg-input" />
       </div>
-      <div className="h-3 w-4/5 rounded bg-zinc-800 mb-1" />
-      <div className="h-3 w-3/5 rounded bg-zinc-800 mb-3" />
-      <div className="h-1 w-full rounded bg-zinc-800" />
+      <div className="mb-1 h-3 w-4/5 rounded bg-bg-input" />
+      <div className="mb-3 h-3 w-3/5 rounded bg-bg-input" />
+      <div className="h-1 w-full rounded bg-bg-input" />
     </div>
   );
 }
@@ -43,16 +45,24 @@ function JobSkeleton() {
 
 function EmptyJobList() {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-      <div className="w-14 h-14 rounded-2xl bg-zinc-800/50 border border-zinc-700/50 flex items-center justify-center">
-        <svg className="w-7 h-7 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-            d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
-        </svg>
+    <div className="flex flex-col items-center justify-center gap-3 rounded border border-dashed border-border bg-bg-surface/50 px-4 py-14 text-center">
+      <div className="flex h-14 w-14 items-center justify-center rounded border border-border bg-bg-elevated">
+        <ListVideo className="h-7 w-7 text-text-muted" aria-hidden="true" />
       </div>
-      <p className="text-sm font-medium text-zinc-500">No video jobs yet</p>
-      <p className="text-xs text-zinc-700">Submit your first job using the form above.</p>
+      <p className="text-sm font-medium text-text-secondary">No video jobs yet</p>
+      <p className="max-w-72 text-xs leading-5 text-text-muted">
+        Submit a prompt above. New jobs appear here immediately, then advance by SSE updates.
+      </p>
     </div>
+  );
+}
+
+function QueueMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded border border-border bg-bg-elevated px-2 py-1 font-mono text-[10px] uppercase tracking-wide text-text-muted">
+      <span className="text-text-primary tabular-nums">{value}</span>
+      {label}
+    </span>
   );
 }
 
@@ -78,6 +88,7 @@ export default function VideoPage() {
   const runningCount = jobs.filter((j) => j.status === "running").length;
   const queuedCount = jobs.filter((j) => j.status === "queued").length;
   const doneCount = jobs.filter((j) => j.status === "completed").length;
+  const failedCount = jobs.filter((j) => j.status === "failed").length;
 
   const handleRetry = useCallback(
     async (jobId: string) => {
@@ -124,29 +135,46 @@ export default function VideoPage() {
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-0">
-      {/* Page header */}
-      <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
-        <div>
-          <h1 className="text-base font-semibold text-zinc-100 tracking-tight">Video Generation</h1>
-          <p className="text-xs text-zinc-600 mt-0.5">
-            Faceless short-form video pipeline · ComfyUI + LTX/Wan · local 8 GB
-          </p>
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="border-b border-border bg-bg-surface/80 px-4 py-4 sm:px-6">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <Clapperboard className="h-5 w-5 text-accent" aria-hidden="true" />
+              <h1 className="text-base font-semibold tracking-tight text-text-primary">
+                Video Generation
+              </h1>
+            </div>
+            <p className="mt-1 max-w-3xl text-xs leading-5 text-text-secondary">
+              Faceless short-form pipeline with low-RAM text routing, ComfyUI handoff, and FFmpeg fallback.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <QueueMetric label="running" value={runningCount} />
+            <QueueMetric label="queued" value={queuedCount} />
+            <QueueMetric label="done" value={doneCount} />
+            {failedCount > 0 && <QueueMetric label="failed" value={failedCount} />}
+          </div>
         </div>
-        {hasJobs && (
-          <span className="text-xs font-mono text-zinc-600">
-            {runningCount} running · {queuedCount} queued · {doneCount} done
-          </span>
-        )}
-      </div>
+      </header>
 
-      {/* Body */}
-      <div className="flex-1 flex min-h-0">
-        {/* Left: form + list */}
-        <div className="flex flex-col gap-4 w-full max-w-xl border-r border-zinc-800 overflow-y-auto p-5">
+      <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(360px,540px)_1fr]">
+        <section className="flex min-h-0 flex-col gap-4 overflow-y-auto border-b border-border p-4 sm:p-5 xl:border-b-0 xl:border-r">
           <VideoJobForm onSubmitted={handleSubmitted} />
 
           <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-xs font-medium text-text-secondary">
+                <GripVertical className="h-3.5 w-3.5 text-text-muted" aria-hidden="true" />
+                Queue
+              </div>
+              {queuedCount > 1 && (
+                <span className="font-mono text-[10px] uppercase tracking-wide text-text-muted">
+                  Drag queued jobs to reorder
+                </span>
+              )}
+            </div>
+
             {isLoading && (
               <>
                 <JobSkeleton />
@@ -156,8 +184,8 @@ export default function VideoPage() {
             )}
 
             {listError && (
-              <div className="rounded-lg bg-red-950/40 border border-red-900/40 px-3 py-2">
-                <p className="text-xs text-red-400">{listError}</p>
+              <div className="rounded border border-status-error/35 bg-status-error/10 px-3 py-2" role="alert">
+                <p className="text-xs text-status-error">{listError}</p>
               </div>
             )}
 
@@ -179,7 +207,7 @@ export default function VideoPage() {
                     void handleDropOn(job.id);
                   }
                 }}
-                aria-label={job.status === "queued" ? `Drag to reorder job: ${job.request.prompt.slice(0, 40)}` : undefined}
+                aria-label={job.status === "queued" ? `Queued video job: ${job.request.prompt.slice(0, 40)}` : undefined}
                 className={job.status === "queued" ? "cursor-grab" : ""}
               >
                 <VideoJobCard
@@ -188,36 +216,37 @@ export default function VideoPage() {
                   isSelected={selectedJobId === job.id}
                 />
                 {job.status === "failed" && (
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
+                    size="sm"
                     aria-label={`Retry failed job: ${job.request.prompt.slice(0, 50)}`}
                     onClick={(event) => {
                       event.stopPropagation();
                       void handleRetry(job.id);
                     }}
-                    className="mt-2 w-full rounded-lg border border-amber-900/50 bg-amber-950/20 py-2 text-[10px] font-semibold uppercase tracking-wider text-amber-300 hover:bg-amber-950/30"
+                    className="mt-2 w-full border-status-warning/35 bg-status-warning/8 text-status-warning hover:bg-status-warning/15"
                   >
+                    <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
                     Retry from Failed Stage
-                  </button>
+                  </Button>
                 )}
               </div>
             ))}
           </div>
-        </div>
+        </section>
 
-        {/* Right: prompt to select a job */}
-        <div className="hidden lg:flex flex-1 items-center justify-center text-center px-8">
-          <div className="space-y-3">
-            <div className="w-14 h-14 mx-auto rounded-2xl bg-zinc-800/50 border border-zinc-700/50 flex items-center justify-center">
-              <svg className="w-7 h-7 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                  d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.362a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
+        <aside className="hidden min-h-0 items-center justify-center px-8 text-center xl:flex">
+          <div className="max-w-md space-y-3">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded border border-border bg-bg-elevated">
+              <Clapperboard className="h-7 w-7 text-text-muted" aria-hidden="true" />
             </div>
-            <p className="text-sm font-medium text-zinc-500">Select a job to view details</p>
-            <p className="text-xs text-zinc-700">Click any job card to open the detail view.</p>
+            <p className="text-sm font-medium text-text-secondary">Select a job to inspect output</p>
+            <p className="text-xs leading-5 text-text-muted">
+              Job details show render preview, metadata, operator trace, virality scoring, caption editing, and publishing state.
+            </p>
           </div>
-        </div>
+        </aside>
       </div>
     </div>
   );

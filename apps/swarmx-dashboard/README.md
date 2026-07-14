@@ -1,36 +1,40 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SwarmXQ Dashboard
 
-## Getting Started
+Next.js operator console for SwarmXQ runtime telemetry, agent control, logs, and video generation.
 
-First, run the development server:
+## Local Development
+
+From the repository root:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm --filter @swarmx/dashboard dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Dashboard: `http://localhost:3000`
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+The dashboard expects the API at `NEXT_PUBLIC_SWARMX_API_URL`, falling back to
+`NEXT_PUBLIC_API_URL`, then `http://127.0.0.1:3001`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Video Workspace
 
-## Learn More
+The `/video` route submits jobs to `/api/video/jobs`, listens to shared and
+job-specific SSE updates, and renders queue state from `src/stores/video.ts`.
 
-To learn more about Next.js, take a look at the following resources:
+The form defaults to `Auto` model routing. Auto mode omits `modelTier` from the
+request so the API can apply low-RAM video configuration such as
+`SWARMX_VIDEO_LOW_RAM_MODE=1`. Explicit model overrides remain available for
+hosts that have enough memory for the selected profile.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Validation
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Run the dashboard gates after UI or store changes:
 
-## Deploy on Vercel
+```bash
+pnpm --filter @swarmx/dashboard lint
+pnpm --filter @swarmx/dashboard typecheck
+pnpm --filter @swarmx/dashboard test
+pnpm --filter @swarmx/dashboard build
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+For visual verification, restart the dashboard dev server and inspect
+`/video` at desktop and narrow widths.

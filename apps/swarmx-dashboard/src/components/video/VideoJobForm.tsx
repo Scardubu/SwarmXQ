@@ -1,15 +1,13 @@
-/**
- * apps/swarmx-dashboard/src/components/video/VideoJobForm.tsx
- * Video generation request form with platform/niche/duration controls.
- */
-
 "use client";
 
-import { useState, useId } from "react";
+import { useId, useState } from "react";
+import { AlertTriangle, Clapperboard, Loader2, Sparkles } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { useVideoStore } from "../../stores/video";
 import type { VideoJobRequest } from "../../lib/video-dashboard";
 
-// ─── Select Helper ────────────────────────────────────────────────────────────
+type ModelRoute = NonNullable<VideoJobRequest["modelTier"]> | "auto";
 
 function Select<T extends string>({
   id,
@@ -27,32 +25,31 @@ function Select<T extends string>({
   disabled?: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <label htmlFor={id} className="text-[10px] font-mono uppercase tracking-wide text-text-muted">
         {label}
       </label>
       <select
         id={id}
         value={value}
-        onChange={(e) => onChange(e.target.value as T)}
+        onChange={(event) => onChange(event.target.value as T)}
         disabled={disabled}
-        className="
-          w-full rounded-lg bg-zinc-800/60 border border-zinc-700 text-zinc-200 text-sm
-          px-3 py-2 focus:outline-none focus:ring-1 focus:ring-amber-600/60 focus:border-amber-700
-          disabled:opacity-50 disabled:cursor-not-allowed transition-colors
-        "
+        className={cn(
+          "h-9 w-full rounded border border-border bg-bg-input px-2.5 text-sm text-text-primary",
+          "transition-colors duration-(--duration-micro)",
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
+          "disabled:cursor-not-allowed disabled:opacity-50",
+        )}
       >
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
           </option>
         ))}
       </select>
     </div>
   );
 }
-
-// ─── Component ────────────────────────────────────────────────────────────────
 
 interface VideoJobFormProps {
   onSubmitted?: (jobId: string) => void;
@@ -63,24 +60,25 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
   const { submitJob, isSubmitting, submitError, clearErrors } = useVideoStore();
 
   const [prompt, setPrompt] = useState("");
-  const [platform, setPlatform] = useState<VideoJobRequest["platform"]>("tiktok");
-  const [niche, setNiche] = useState<NonNullable<VideoJobRequest["niche"]>>("motivational");
-  const [targetDuration, setTargetDuration] = useState(60);
-  const [modelTier, setModelTier] =
-    useState<NonNullable<VideoJobRequest["modelTier"]>>("supervisor");
+  const [platform, setPlatform] = useState<NonNullable<VideoJobRequest["platform"]>>("tiktok");
+  const [niche, setNiche] = useState<NonNullable<VideoJobRequest["niche"]>>("tech");
+  const [targetDuration, setTargetDuration] = useState("30");
+  const [modelRoute, setModelRoute] = useState<ModelRoute>("auto");
 
-  const canSubmit = prompt.trim().length > 0 && !isSubmitting;
+  const trimmedPrompt = prompt.trim();
+  const canSubmit = trimmedPrompt.length > 0 && !isSubmitting;
+  const modelTier = modelRoute === "auto" ? undefined : modelRoute;
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     clearErrors();
 
     const jobRequest: VideoJobRequest = {
-      prompt: prompt.trim(),
-      targetDurationSeconds: targetDuration,
-      modelTier,
-      ...(platform !== undefined ? { platform } : {}),
-      ...(niche !== undefined ? { niche } : {}),
+      prompt: trimmedPrompt,
+      platform,
+      niche,
+      targetDurationSeconds: Number(targetDuration),
+      ...(modelTier !== undefined ? { modelTier } : {}),
     };
 
     const jobId = await submitJob(jobRequest);
@@ -94,57 +92,64 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-col gap-4 rounded-xl border border-zinc-800 bg-zinc-900/70 p-5"
+      className="live-panel-edge flex flex-col gap-4 rounded border border-border bg-bg-elevated/80 p-4 shadow-[var(--shadow-accent-glow)]"
       aria-labelledby={`${formId}-title`}
     >
-      <div className="flex items-center justify-between">
-        <h2
-          id={`${formId}-title`}
-          className="text-sm font-semibold text-zinc-200 tracking-tight"
-        >
-          New Video Job
-        </h2>
-        <span className="text-[10px] font-mono text-zinc-600 uppercase tracking-widest">
-          Vidgen
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <Clapperboard className="h-4 w-4 text-accent" aria-hidden="true" />
+            <h2 id={`${formId}-title`} className="text-sm font-semibold tracking-tight text-text-primary">
+              New Video Job
+            </h2>
+          </div>
+          <p className="mt-1 text-xs leading-5 text-text-secondary">
+            Queue a vertical short with low-RAM-safe routing by default.
+          </p>
+        </div>
+        <span className="shrink-0 rounded border border-border-accent bg-[var(--color-accent-dim)] px-2 py-1 font-mono text-[10px] uppercase tracking-wide text-accent">
+          {modelRoute === "auto" ? "Auto route" : "Override"}
         </span>
       </div>
 
-      {/* Prompt */}
       <div className="flex flex-col gap-1.5">
         <label
           htmlFor={`${formId}-prompt`}
-          className="text-xs font-medium text-zinc-400 uppercase tracking-wider"
+          className="text-[10px] font-mono uppercase tracking-wide text-text-muted"
         >
           Prompt
         </label>
         <textarea
           id={`${formId}-prompt`}
           value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          placeholder="Describe the faceless video you want to generate…"
-          rows={3}
+          onChange={(event) => setPrompt(event.target.value)}
+          placeholder="Create a 30-second faceless TikTok-style video titled '3 habits that improve focus'..."
+          rows={4}
           maxLength={2000}
           disabled={isSubmitting}
-          className="
-            w-full resize-none rounded-lg bg-zinc-800/60 border border-zinc-700
-            text-zinc-200 text-sm px-3 py-2.5 placeholder:text-zinc-600
-            focus:outline-none focus:ring-1 focus:ring-amber-600/60 focus:border-amber-700
-            disabled:opacity-50 disabled:cursor-not-allowed transition-colors leading-relaxed
-          "
+          className={cn(
+            "min-h-28 w-full resize-none rounded border border-border bg-bg-input px-3 py-2.5",
+            "text-sm leading-6 text-text-primary placeholder:text-text-muted",
+            "transition-colors duration-(--duration-micro)",
+            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
+            "disabled:cursor-not-allowed disabled:opacity-50",
+          )}
         />
-        <div className="flex justify-end">
-          <span className="text-[10px] text-zinc-600 font-mono">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[10px] text-text-muted">
+            Auto route omits `modelTier`; explicit overrides remain available for compatible hosts.
+          </span>
+          <span className="shrink-0 font-mono text-[10px] text-text-muted tabular-nums">
             {prompt.length}/2000
           </span>
         </div>
       </div>
 
-      {/* Controls row */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <Select
           id={`${formId}-platform`}
           label="Platform"
-          value={platform ?? "generic"}
+          value={platform}
           onChange={setPlatform}
           disabled={isSubmitting}
           options={[
@@ -161,35 +166,36 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
           onChange={setNiche}
           disabled={isSubmitting}
           options={[
+            { value: "tech", label: "Tech" },
             { value: "motivational", label: "Motivational" },
             { value: "finance", label: "Finance" },
             { value: "facts", label: "Facts" },
             { value: "true_crime", label: "True Crime" },
-            { value: "tech", label: "Tech" },
             { value: "other", label: "Other" },
           ]}
         />
         <Select
           id={`${formId}-duration`}
           label="Duration"
-          value={String(targetDuration) as never}
-          onChange={(v) => setTargetDuration(Number(v))}
+          value={targetDuration}
+          onChange={setTargetDuration}
           disabled={isSubmitting}
           options={[
-            { value: "15" as never, label: "15s" },
-            { value: "30" as never, label: "30s" },
-            { value: "60" as never, label: "60s" },
-            { value: "90" as never, label: "90s" },
-            { value: "120" as never, label: "2 min" },
+            { value: "15", label: "15s" },
+            { value: "30", label: "30s" },
+            { value: "60", label: "60s" },
+            { value: "90", label: "90s" },
+            { value: "120", label: "2 min" },
           ]}
         />
         <Select
           id={`${formId}-model`}
-          label="Model Tier"
-          value={modelTier}
-          onChange={setModelTier}
+          label="Model"
+          value={modelRoute}
+          onChange={setModelRoute}
           disabled={isSubmitting}
           options={[
+            { value: "auto", label: "Auto" },
             { value: "fast", label: "Fast" },
             { value: "worker", label: "Worker" },
             { value: "supervisor", label: "Supervisor" },
@@ -198,43 +204,39 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
         />
       </div>
 
-      {/* Error */}
-      {submitError && (
-        <div className="rounded-lg bg-red-950/50 border border-red-900/50 px-3 py-2">
-          <p className="text-xs text-red-400">{submitError}</p>
+      {modelRoute !== "auto" && (
+        <div className="flex items-start gap-2 rounded border border-status-warning/30 bg-status-warning/8 px-3 py-2 text-xs text-status-warning">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <p>
+            Model overrides apply to every text stage. Use Auto for the controlled low-RAM video path.
+          </p>
         </div>
       )}
 
-      {/* Submit */}
-      <button
-        type="submit"
-        disabled={!canSubmit}
-        className="
-          self-end flex items-center gap-2 rounded-lg bg-amber-600 hover:bg-amber-500
-          text-white text-sm font-semibold px-5 py-2.5
-          disabled:opacity-40 disabled:cursor-not-allowed
-          transition-all duration-150 active:scale-95
-        "
-      >
-        {isSubmitting ? (
-          <>
-            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
-            Submitting…
-          </>
-        ) : (
-          <>
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-            Generate Video
-          </>
-        )}
-      </button>
+      {submitError && (
+        <div
+          className="rounded border border-status-error/35 bg-status-error/10 px-3 py-2 text-xs text-status-error"
+          role="alert"
+        >
+          {submitError}
+        </div>
+      )}
+
+      <div className="flex items-center justify-end">
+        <Button type="submit" variant="accent" size="lg" disabled={!canSubmit}>
+          {isSubmitting ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              Submitting
+            </>
+          ) : (
+            <>
+              <Sparkles className="h-4 w-4" aria-hidden="true" />
+              Generate Video
+            </>
+          )}
+        </Button>
+      </div>
     </form>
   );
 }
