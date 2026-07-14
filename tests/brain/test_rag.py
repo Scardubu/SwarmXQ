@@ -6,12 +6,8 @@ requiring any optional ML dependencies to be installed.
 """
 from __future__ import annotations
 
-import importlib
 import sys
-from unittest.mock import MagicMock, patch
-
-import pytest
-
+from unittest.mock import patch
 
 # ── Helper: block optional imports for tier isolation ──────────────────────────
 

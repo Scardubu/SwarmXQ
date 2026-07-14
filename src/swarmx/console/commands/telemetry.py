@@ -6,8 +6,8 @@ from typing import Annotated
 
 import typer
 
-from swarmx.console.output import get_console, safe_print, emit_json, make_table, kv_panel
 from swarmx.console.compat import is_json_mode
+from swarmx.console.output import emit_json, get_console, kv_panel, make_table, safe_print
 
 logger = logging.getLogger(__name__)
 

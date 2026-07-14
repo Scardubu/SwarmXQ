@@ -36,8 +36,9 @@ import logging
 import os
 import sys
 from collections import Counter, defaultdict
+from collections.abc import Generator
 from pathlib import Path
-from typing import Any, Generator, Optional
+from typing import Any
 
 from .journal import append_event, load_events
 
@@ -169,7 +170,7 @@ def recent(
     runtime_home: Path,
     limit: int = 100,
     *,
-    kind_filter: Optional[str] = None,
+    kind_filter: str | None = None,
 ) -> list[dict[str, Any]]:
     """
     Return the most recent `limit` events, optionally filtered by kind.
@@ -183,7 +184,7 @@ def recent(
 def subscribe(
     runtime_home: Path,
     *,
-    kind: Optional[str] = None,
+    kind: str | None = None,
     limit: int = 500,
 ) -> Generator[dict[str, Any], None, None]:
     """

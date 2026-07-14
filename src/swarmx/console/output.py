@@ -20,9 +20,9 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.spinner import Spinner
-from rich.table import Table, Column
+from rich.table import Column, Table
 
-from .compat import is_no_color, is_json_mode, terminal_width, supports_unicode
+from .compat import is_json_mode, is_no_color, supports_unicode, terminal_width
 from .theme import SWARMX_THEME
 
 # ── Singleton console ─────────────────────────────────────────────────────────

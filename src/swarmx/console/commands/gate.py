@@ -12,8 +12,8 @@ from typing import Annotated
 import typer
 from rich.live import Live
 
-from swarmx.console.output import get_console, safe_print, emit_json, emit_error, make_spinner, kv_panel
 from swarmx.console.compat import is_json_mode, is_no_progress
+from swarmx.console.output import emit_error, emit_json, get_console, kv_panel, make_spinner, safe_print
 
 logger = logging.getLogger(__name__)
 

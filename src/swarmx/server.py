@@ -44,21 +44,18 @@ from . import __version__
 from .config import SwarmConfig
 from .event_bus import recent as recent_events
 from .event_bus import snapshot as event_snapshot
-from .evolver import (apply_proposals, build_evolution_proposals,
-                      run_skill_crystallization)
+from .evolver import apply_proposals, build_evolution_proposals, run_skill_crystallization
 from .execution_gate import gate_execution
 from .executor import execute_plan
 from .journal import append_event, load_events
 from .memory import load_recent_memories, load_recent_runs
 from .memory_graph import build_memory_graph, search_memory_graph
 from .metrics import build_metrics
-from .mission import (activate_mission, build_mission, mission_list,
-                      save_mission)
+from .mission import activate_mission, build_mission, mission_list, save_mission
 from .planner import build_plan, detect_stack
 from .policy import assess_mission
 from .queue import append_job, queue_summary, update_job
-from .runtime import (build_snapshot, ensure_runtime_dirs, load_runtime_state,
-                      update_runtime_state)
+from .runtime import build_snapshot, ensure_runtime_dirs, load_runtime_state, update_runtime_state
 from .skills import skill_library
 from .storage import list_jobs
 from .tooling import detect_tools

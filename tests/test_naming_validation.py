@@ -23,7 +23,6 @@ import pytest
 from swarmx.operator_map import (
     MODEL_ALIASES,
     MODEL_OPERATOR_MAP,
-    OPERATOR_NAMES,
     find_legacy_tags,
     format_operator_label,
     get_7b_tags,
@@ -36,7 +35,6 @@ from swarmx.operator_map import (
     resolve_operator_name,
     tags_by_operator,
 )
-
 
 # ─── Fixtures ────────────────────────────────────────────────────────────────
 

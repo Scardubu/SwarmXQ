@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from swarmx.evolver import build_evolution_proposals, apply_proposals
+from swarmx.evolver import apply_proposals, build_evolution_proposals
 
 logger = logging.getLogger(__name__)
 
@@ -89,8 +89,8 @@ def delta_capture(
     Returns:
         Dict with: delta_id, delta_fitness, keeper, rollback_candidate, proposals_generated
     """
-    import uuid
     import datetime
+    import uuid
 
     try:
         from swarmx.storage import get_kv, store_kv

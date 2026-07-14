@@ -21,12 +21,13 @@ from .evolver import apply_proposals, build_evolution_proposals, run_skill_cryst
 from .execution_gate import gate_execution  # [V5.9-ENH-GATE-01] shared policy gate
 from .executor import execute_plan
 from .memory_graph import build_memory_graph, search_memory_graph
-from .mission import build_mission, save_mission, activate_mission
+from .mission import activate_mission, build_mission, save_mission
 from .planner import build_plan
+
 # Single, consolidated queue import — includes V5 resume helpers.
 # Previously there were two import lines for this module; the first was a stale
 # duplicate left over from the V5 merge and shadowed by the second.
-from .queue import claim_next_job, claim_resume_job, enqueue_resume, queue_summary, update_job
+from .queue import claim_next_job, claim_resume_job, queue_summary, update_job
 from .runtime import update_runtime_state
 from .storage import list_jobs  # used in "inspect" job handler
 
@@ -166,7 +167,7 @@ def _process_job(
 
             plan_dict = state_snapshot.get("plan") or {}
             if plan_dict:
-                from .state import Plan, TaskItem, RiskLevel
+                from .state import Plan, RiskLevel, TaskItem
                 tasks_raw = plan_dict.get("tasks", [])
                 tasks = [
                     TaskItem(**{k: v for k, v in t.items() if k in TaskItem.__dataclass_fields__})
@@ -222,7 +223,6 @@ def _worker_loop(
     interval: float,
 ) -> None:
     """Main worker loop: claim → dispatch → update, then sleep."""
-    import time
 
     while not stop_event.is_set():
         try:

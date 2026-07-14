@@ -19,16 +19,17 @@
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
 from .config import SwarmConfig
-from .planner import build_plan, detect_stack
-from .state import RiskLevel
+from .planner import build_plan
+
 # Canonical risk signals — single source of truth
-from .risk import HIGH_RISK_KEYWORDS, DANGEROUS_COMMANDS, risk_from_text  # noqa: F401
+from .risk import DANGEROUS_COMMANDS, HIGH_RISK_KEYWORDS, risk_from_text  # noqa: F401
+from .state import RiskLevel
 
 # ── Tiered phrase map (ordered: critical → high → medium) ────────────────────
 _RISK_TIER_PHRASES: dict[str, list[str]] = {

@@ -2,17 +2,19 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from .state import EvolutionProposal, RunRecord
+from .storage import list_memories as db_list_memories
+from .storage import list_runs as db_list_runs
+from .storage import store_proposal_record, store_run_record
 from .utils import load_yaml, write_json
-from .storage import list_memories as db_list_memories, list_runs as db_list_runs, store_memory_record, store_proposal_record, store_run_record
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _dir(runtime_dir: Path, name: str) -> Path:
@@ -106,7 +108,7 @@ def store_memory(runtime_dir: Path, payload: dict[str, Any]) -> Path:
     memory_dir = _dir(runtime_dir, "memory")
     memory_dir.mkdir(parents=True, exist_ok=True)
     entry = dict(payload)
-    entry.setdefault("id", f"memory-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}")
+    entry.setdefault("id", f"memory-{datetime.now(UTC).strftime('%Y%m%d%H%M%S%f')}")
     entry.setdefault("created_at", now_iso())
     entry.setdefault("kind", "lesson")
     path = memory_dir / f"{entry['id']}.json"
@@ -349,7 +351,7 @@ def decay_score(memory: dict[str, Any], now: datetime | None = None) -> float:
     Returns a float in [0.0, 1.0].
     """
     if now is None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
     confidence = float(memory.get("confidence") or memory.get("score") or 0.5)
     created_str = memory.get("created_at") or ""
     days_old = 0.0
@@ -357,7 +359,7 @@ def decay_score(memory: dict[str, Any], now: datetime | None = None) -> float:
         try:
             created = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
             if created.tzinfo is None:
-                created = created.replace(tzinfo=timezone.utc)
+                created = created.replace(tzinfo=UTC)
             days_old = max(0.0, (now - created).total_seconds() / 86400.0)
         except Exception:
             days_old = 0.0
@@ -388,7 +390,7 @@ def hybrid_search(
     if not query or not query.strip():
         return load_recent_memories(runtime_dir, limit=limit)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Attempt FTS5 path
     try:
@@ -473,7 +475,7 @@ def consolidate_memories(
 
     Returns the new consolidated memory record.
     """
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+    ts = datetime.now(UTC).strftime("%Y%m%d%H%M%S%f")
     new_id = f"consolidated-{ts}"
     record: dict[str, Any] = {
         "id": new_id,

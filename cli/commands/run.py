@@ -11,7 +11,7 @@ import os
 import signal
 import sys
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -35,7 +35,7 @@ def run_task(
         str,
         typer.Argument(help="Task description *or* repo path (legacy form)."),
     ] = ".",
-    target: Annotated[Optional[str], typer.Option("--target", "-t", help="Task description (legacy flag).")] = None,
+    target: Annotated[str | None, typer.Option("--target", "-t", help="Task description (legacy flag).")] = None,
     repo: Annotated[str, typer.Option("--repo", "-r", help="Repository root (new-style flag).")] = ".",
     autonomous: Annotated[bool, typer.Option("--autonomous", "-a", help="Run without human gates.")] = False,
     max_iterations: Annotated[int, typer.Option("--max-iterations", "-n", help="Max plan iterations.")] = 3,

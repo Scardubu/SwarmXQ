@@ -12,8 +12,8 @@ import pytest
 
 def test_scorer_reexports_loop_scorer():
     """brain.scorer.score_output must be the SAME object as brain.loop.score_output."""
-    from brain.scorer import score_output as scorer_fn
     from brain.loop import score_output as loop_fn
+    from brain.scorer import score_output as scorer_fn
     assert scorer_fn is loop_fn, (
         "brain.scorer.score_output must re-export brain.loop.score_output — "
         "do NOT define a separate score_output in brain/scorer.py"

@@ -11,8 +11,7 @@ import time
 
 import pytest
 
-from brain.graph import TaskGraph, TaskNode, TaskNodeResult, build_graph_from_plan
-
+from brain.graph import TaskGraph, TaskNode, build_graph_from_plan
 
 # ── Async helpers ─────────────────────────────────────────────────────────────
 

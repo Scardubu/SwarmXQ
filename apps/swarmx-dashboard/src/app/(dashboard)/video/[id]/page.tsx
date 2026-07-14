@@ -100,6 +100,13 @@ export default function VideoJobDetailPage() {
             <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-text-secondary sm:grid-cols-2">
               <div><span className="text-text-muted">ID:</span> {job.id.slice(0, 12)}...</div>
               <div><span className="text-text-muted">Mode:</span> {job.request.modelTier ?? "auto"}</div>
+              <div><span className="text-text-muted">Tone:</span> {job.request.tone ?? "educational"}</div>
+              <div><span className="text-text-muted">Style:</span> {(job.request.style ?? "faceless_broll").replace(/_/g, " ")}</div>
+              <div><span className="text-text-muted">Captions:</span> {(job.request.captionStyle ?? "bold_center").replace(/_/g, " ")}</div>
+              <div><span className="text-text-muted">Voice:</span> {job.request.voice ?? "default"}</div>
+              {job.request.audience && (
+                <div className="sm:col-span-2"><span className="text-text-muted">Audience:</span> {job.request.audience}</div>
+              )}
               <div><span className="text-text-muted">Resolution:</span> {job.output ? `${job.output.widthPx}x${job.output.heightPx}` : "pending"}</div>
               <div><span className="text-text-muted">Created:</span> {new Date(job.createdAt).toLocaleString()}</div>
               {job.output && (
@@ -110,6 +117,33 @@ export default function VideoJobDetailPage() {
               )}
             </div>
           </div>
+
+          {(job.output?.scriptText || job.output?.storyboardFrames?.length) && (
+            <div className="rounded border border-border bg-bg-elevated p-4">
+              <p className="text-[10px] text-text-muted font-mono uppercase tracking-wider">Creative Review</p>
+              {job.output.scriptText && (
+                <div className="mt-3">
+                  <p className="text-xs font-medium text-text-secondary">Script</p>
+                  <p className="mt-1 whitespace-pre-wrap rounded border border-border bg-bg-surface p-3 text-xs leading-5 text-text-secondary">
+                    {job.output.scriptText}
+                  </p>
+                </div>
+              )}
+              {job.output.storyboardFrames && job.output.storyboardFrames.length > 0 && (
+                <div className="mt-3">
+                  <p className="text-xs font-medium text-text-secondary">Storyboard</p>
+                  <ol className="mt-1 space-y-1 rounded border border-border bg-bg-surface p-3 text-xs leading-5 text-text-secondary">
+                    {job.output.storyboardFrames.map((frame, index) => (
+                      <li key={`${frame}-${index}`} className="flex gap-2">
+                        <span className="font-mono text-text-muted">{index + 1}.</span>
+                        <span>{frame}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="rounded border border-border bg-bg-elevated p-4">
             <VideoJobTimeline job={job} />

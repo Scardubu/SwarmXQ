@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -66,7 +66,7 @@ def _rotate_if_needed(path: Path) -> None:
 
 def now_iso() -> str:
     """Return the current UTC timestamp in ISO-8601 format."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 # ── Structured event emission ──────────────────────────────────────────────────
@@ -99,7 +99,7 @@ def emit_event(
         record["run_id"] = run_id  # [TEL-04]
 
     # ── 1. Per-event JSON trace file ──────────────────────────────────────────
-    ts_tag = datetime.now(timezone.utc).strftime("trace-%Y%m%d%H%M%S%f")
+    ts_tag = datetime.now(UTC).strftime("trace-%Y%m%d%H%M%S%f")
     trace_path = runtime_dir / "traces" / f"{ts_tag}.json"
     try:
         write_json(trace_path, record)

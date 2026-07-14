@@ -31,12 +31,11 @@ from __future__ import annotations
 import json
 import os
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from .utils import write_json
-
 
 # ── Rotation threshold [AUDIT-02] ─────────────────────────────────────────────
 _MAX_AUDIT_BYTES = int(os.environ.get("SWARMX_AUDIT_MAX_BYTES", str(20 * 1024 * 1024)))
@@ -54,7 +53,7 @@ def _next_seq() -> int:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -157,7 +156,7 @@ def append_audit_log(
 
     # ── 2. Per-event JSON file (Fastify API indexing) ─────────────────────────
     try:
-        ts_tag = datetime.now(timezone.utc).strftime("audit-%Y%m%d%H%M%S%f")
+        ts_tag = datetime.now(UTC).strftime("audit-%Y%m%d%H%M%S%f")
         event_file = runtime_home / "traces" / f"{ts_tag}.json"
         write_json(event_file, record)
     except Exception:

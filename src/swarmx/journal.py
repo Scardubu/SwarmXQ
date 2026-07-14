@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from .runtime import ensure_runtime_dirs
-from .storage import list_events as db_list_events, record_event
+from .storage import list_events as db_list_events
+from .storage import record_event
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def journal_path(runtime_home: Path) -> Path:

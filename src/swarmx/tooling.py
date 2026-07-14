@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import json as _json
+import urllib.request
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from .utils import cmd_exists, load_yaml, read_json, write_json
-import json as _json
-import urllib.request
-from dataclasses import dataclass, asdict, field
-from datetime import datetime, timezone
+
 DEFAULT_MCP_ALLOWLIST = [
     "filesystem",
     "git",
@@ -136,7 +137,7 @@ class MCPTool:
     schema: dict = field(default_factory=dict)
     server_name: str = "unknown"
     enabled: bool = True
-    registered_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    registered_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -195,6 +196,3 @@ def call_mcp_tool(
 def list_registered_tools() -> list[dict[str, Any]]:
     """Return a serialisable snapshot of all registered MCP tools."""
     return [t.to_dict() for t in _TOOL_REGISTRY]
-
-    """Return a serialisable snapshot of all registered MCP tools."""
-    return out

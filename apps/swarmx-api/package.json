@@ -9,7 +9,9 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/apps/swarmx-api/src/server.js",
     "typecheck": "tsc --noEmit",
-    "test:video": "tsx scripts/video-regression-check.ts"
+    "test": "pnpm run test:video",
+    "test:video": "tsx scripts/video-regression-check.ts",
+    "test:video:smoke": "tsx scripts/video-render-smoke.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from .storage import list_memories, list_runs, list_missions, list_events, search_memories
+from .storage import list_events, list_memories, list_missions, list_runs
 
 
 def _tokenize(text: str) -> list[str]:

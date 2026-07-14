@@ -40,11 +40,11 @@ from pathlib import Path
 
 try:
     import httpx
+    from rich import box
     from rich.console import Console
-    from rich.table import Table
     from rich.panel import Panel
     from rich.progress import Progress, SpinnerColumn, TextColumn
-    from rich import box
+    from rich.table import Table
 except ImportError:
     print("Install rich and httpx: pip install rich httpx")
     sys.exit(1)
@@ -220,14 +220,14 @@ def check_env_vars() -> dict:
     important = {
         "OLLAMA_FLASH_ATTENTION":   ("1",     "Always enable — reduces KV bandwidth pressure"),
         "OLLAMA_KV_CACHE_TYPE":     ("q8_0",  "Halves KV VRAM vs f16 — best quality/memory balance"),
-        "OLLAMA_MAX_LOADED_MODELS": ("1",     "1 for strict single-model; 2 to allow phi4-fast co-load"),
-        "OLLAMA_KEEP_ALIVE":        ("300",   "Keeps models warm for prefix cache reuse"),
+        "OLLAMA_MAX_LOADED_MODELS": ("1",     "Strict single-model residency for 8 GB CPU-only hosts"),
+        "OLLAMA_KEEP_ALIVE":        ("0",     "Let request-level keep_alive policy decide residency"),
         "OLLAMA_NUM_PARALLEL":      ("1",     "Must be 1 on constrained VRAM"),
     }
     results, warnings = {}, []
     for var, (ideal, note) in important.items():
         val = os.environ.get(var, "NOT SET")
-        ok = val == ideal or (var == "OLLAMA_MAX_LOADED_MODELS" and val == "2")
+        ok = val == ideal
         if not ok:
             warnings.append(f"{var}={val} (recommend {ideal}): {note}")
         results[var] = {"value": val, "ideal": ideal, "set": val != "NOT SET"}
@@ -374,7 +374,6 @@ def render_preflight_table(checks: dict) -> Table:
     env = checks.get("env", {})
     for var, info in env.get("vars", {}).items():
         ok_val = info.get("value") == info.get("ideal") or \
-                 (var == "OLLAMA_MAX_LOADED_MODELS" and info.get("value") in ("1", "2")) or \
                  (var == "SWARMX_OLLAMA_URL" and info.get("set"))
         detail = f"={info.get('value', 'NOT SET')} (ideal: {info.get('ideal')})"
         if ok_val:

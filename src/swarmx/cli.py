@@ -6,10 +6,10 @@ import logging
 import os
 import threading
 import webbrowser
-from urllib.parse import urlencode
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 from rich.console import Console
 from rich.table import Table
@@ -17,25 +17,25 @@ from rich.table import Table
 from . import __version__
 from .audit import write_audit
 from .config import SwarmConfig
+from .event_bus import EventKind  # [V5.9-FIX-05] typed event kinds — replaces bare strings
 from .evolver import apply_proposals, build_evolution_proposals, run_skill_crystallization
 from .executor import execute_plan
 from .framework_adapters import adapter_matrix, adapter_summary, preferred_orchestrator
-from .memory import load_recent_memories, load_recent_runs, store_checkpoint, summarize_memories, summarize_runs
 from .journal import append_event
-from .event_bus import EventKind  # [V5.9-FIX-05] typed event kinds — replaces bare strings
-from .metrics import build_metrics
-from .queue import append_job, queue_summary, update_job, enqueue_resume
-from .runtime import load_runtime_state, update_runtime_state
-from .planner import build_plan, detect_stack
-from .skills import skill_library
-from .tooling import detect_tools, load_mcp_manifest, summarize_tooling
-from .server import serve_dashboard
-from .worker import start_worker
+from .memory import load_recent_memories, load_recent_runs, store_checkpoint, summarize_memories, summarize_runs
 from .memory_graph import build_memory_graph, search_memory_graph
-from .mission import build_mission, save_mission, activate_mission, mission_list
-from .policy import assess_mission, assess_action  # V4: assess_action added for run/evolve gates
-from .storage import write_audit_log, payload_sha256, list_incomplete_step_checkpoints
+from .metrics import build_metrics
+from .mission import activate_mission, build_mission, mission_list, save_mission
+from .planner import build_plan, detect_stack
+from .policy import assess_action, assess_mission  # V4: assess_action added for run/evolve gates
+from .queue import append_job, enqueue_resume, queue_summary, update_job
+from .runtime import load_runtime_state, update_runtime_state
+from .server import serve_dashboard
+from .skills import skill_library
+from .storage import list_incomplete_step_checkpoints, payload_sha256, write_audit_log
+from .tooling import detect_tools, load_mcp_manifest, summarize_tooling
 from .utils import platform_summary, read_json, write_json
+from .worker import start_worker
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +151,7 @@ def _copy_bundle_assets(bundle_root: Path, runtime: Path) -> None:
 def _bootstrap_snapshot(repo: Path, cfg: SwarmConfig) -> dict[str, Any]:
     runtime = _runtime_target(repo)
     return {
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "repo": str(repo),
         "runtime": str(runtime),
         "stack": detect_stack(repo),
@@ -328,12 +328,12 @@ def run(repo: Path, target: str, autonomous: bool = False, max_iterations: int =
     if not policy_decision.allowed:
         console.print(f"[bold red]╳ Policy BLOCKED[/bold red]: risk={policy_decision.risk}")
         console.print(f"  Reasons: {', '.join(policy_decision.reasons) or 'critical action with auto_apply=False'}")
-        console.print(f"  Set SWARM_REVIEW_REQUIRED=0 and SWARM_RISK_FLOOR=low to relax the gate.")
+        console.print("  Set SWARM_REVIEW_REQUIRED=0 and SWARM_RISK_FLOOR=low to relax the gate.")
         return 1
     if policy_decision.human_gate and not (autonomous or cfg.autonomous):
         console.print(f"[bold yellow]⚠ Policy GATE[/bold yellow]: human review required (risk={policy_decision.risk}).")
         console.print(f"  Mitigations: {', '.join(policy_decision.mitigations)}")
-        console.print(f"  Pass --autonomous to proceed in autonomous mode.")
+        console.print("  Pass --autonomous to proceed in autonomous mode.")
         return 1
     # ── End policy gate ────────────────────────────────────────────────────────
 
@@ -341,7 +341,7 @@ def run(repo: Path, target: str, autonomous: bool = False, max_iterations: int =
     update_job(cfg.home, job["id"], status="running", run_id=job["id"])
     append_event(cfg.home, EventKind.RUN_STARTED, {"job_id": job["id"], "repo": str(repo), "target": target})
 
-    run_id = datetime.now(timezone.utc).strftime("run-%Y%m%d%H%M%S%f")
+    run_id = datetime.now(UTC).strftime("run-%Y%m%d%H%M%S%f")
     record = execute_plan(repo=repo, plan=plan_obj, run_id=run_id, autonomous=autonomous or cfg.autonomous, max_iterations=max_iterations, cfg=cfg)
 
     checkpoint = store_checkpoint(cfg.home, run_id, {"plan": plan_obj.to_dict(), "summary": record.summary, "mission": mission})
@@ -362,7 +362,7 @@ def evolve(repo: Path | None = None, auto_apply: bool = False, self_improve: boo
 
     # ── V4 Policy gate: assess evolve flow before running proposals ───────────
     policy_decision = assess_action("evolve", "evolution proposals", repo, cfg)
-    _evolve_mission_id = f"evolve-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
+    _evolve_mission_id = f"evolve-{datetime.now(UTC).strftime('%Y%m%d%H%M%S%f')}"
     _evolve_proposal = {"action": "evolve", "risk": policy_decision.risk, "reasons": policy_decision.reasons}
     write_audit_log(
         cfg.home,

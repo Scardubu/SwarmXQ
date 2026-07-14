@@ -33,9 +33,9 @@ from __future__ import annotations
 import asyncio
 import time
 from collections import defaultdict, deque
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Optional, Union
-
+from typing import Any
 
 # ─── Result dataclass ─────────────────────────────────────────────────────────
 
@@ -44,7 +44,7 @@ class TaskNodeResult:
     node_id: str
     status: str          # "complete" | "failed" | "skipped"
     result: Any = None
-    error: Optional[str] = None
+    error: str | None = None
     duration_s: float = 0.0
     dependency_errors: list[str] = field(default_factory=list)
 
@@ -68,12 +68,12 @@ class TaskNode:
         self,
         node_id: str,
         task: Any,
-        depends_on: Optional[list[str]] = None,
+        depends_on: list[str] | None = None,
     ) -> None:
         self.node_id = node_id
         self.task = task
         self.depends_on: list[str] = depends_on or []
-        self.result: Optional[TaskNodeResult] = None
+        self.result: TaskNodeResult | None = None
 
     def __repr__(self) -> str:
         return f"TaskNode(id={self.node_id!r}, deps={self.depends_on!r})"
@@ -120,7 +120,7 @@ class TaskGraph:
         Level k = depends only on nodes in levels < k.
         All nodes in the same level can run in parallel.
         """
-        in_degree: dict[str, int] = {nid: 0 for nid in self.nodes}
+        in_degree: dict[str, int] = dict.fromkeys(self.nodes, 0)
         children: dict[str, list[str]] = defaultdict(list)
 
         for node in self.nodes.values():

@@ -25,12 +25,10 @@ CHANGES V6.0 (new):
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import re
 import time
 import warnings
-from typing import Any
 
 import structlog
 
@@ -158,7 +156,8 @@ def _publish_event(kind: str, payload: dict) -> None:
         return
     try:
         from pathlib import Path
-        from swarmx.event_bus import publish, EventKind  # type: ignore[import]
+
+        from swarmx.event_bus import EventKind, publish  # type: ignore[import]
         _KIND_MAP = {
             "task.start":    EventKind.TASK_START,
             "task.complete": EventKind.TASK_COMPLETE,

@@ -187,7 +187,8 @@ def _check_pressure(cfg: Any) -> tuple[str, int, float, int]:
 
 async def _warmup_models(cfg: Any) -> bool:
     """
-    Send a 1-token prompt to phi4-fast only if it is ALREADY loaded in Ollama.
+    Send a 1-token prompt to phi4-fast only when explicitly enabled and the
+    model is ALREADY loaded in Ollama.
 
     [V6.2-FIX-25] Skip warmup when the model is not resident. On low-RAM
     systems (no GPU, 8 GB) loading a fresh model via /api/generate with
@@ -202,6 +203,10 @@ async def _warmup_models(cfg: Any) -> bool:
     Returns True if the warmup ping succeeds.
     """
     import httpx
+
+    if os.environ.get("SWARMX_MODEL_STARTUP_PREWARM") != "1":
+        log.info("startup_warmup_skipped", reason="startup_prewarm_disabled")
+        return False
 
     ollama_url: str = getattr(cfg, "ollama_url", "http://127.0.0.1:11434")
     fast_model_raw: str = getattr(cfg, "model_fast", "phi4-fast")
@@ -241,7 +246,7 @@ async def _warmup_models(cfg: Any) -> bool:
                             "model": fast_model,
                             "prompt": "Hi",
                             "stream": False,
-                            "keep_alive": "10m",
+                            "keep_alive": "30s",
                             "options": {
                                 "num_predict": 1,
                                 "temperature": 0,
@@ -417,7 +422,9 @@ def load_startup_summary(home: Path | None = None) -> dict[str, Any] | None:
         h = home or Path(os.environ.get("SWARM_HOME", Path.home() / ".swarmx"))
         p = Path(h) / "state" / "startup_summary.json"
         if p.exists():
-            return json.loads(p.read_text(encoding="utf-8"))
+            loaded = json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                return loaded
     except Exception:
         pass
     return None

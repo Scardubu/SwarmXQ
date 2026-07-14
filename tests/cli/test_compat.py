@@ -1,10 +1,7 @@
 """Tests for src/swarmx/console/compat.py — env-var detection helpers."""
 from __future__ import annotations
 
-import os
 import importlib
-
-import pytest
 
 
 def _reload_compat():

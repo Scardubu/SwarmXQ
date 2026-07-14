@@ -13,7 +13,7 @@
 
 export OLLAMA_NUM_PARALLEL=1
 export OLLAMA_MAX_LOADED_MODELS=1
-export OLLAMA_KEEP_ALIVE=180
+export OLLAMA_KEEP_ALIVE=0
 export OLLAMA_FLASH_ATTENTION=1
 export OLLAMA_KV_CACHE_TYPE=q8_0
 export OLLAMA_SCHED_SPREAD=0
@@ -28,10 +28,12 @@ export NVIDIA_TF32_OVERRIDE=1
 export PYTHONMALLOC=malloc
 
 # ── SwarmX agent model routing ─────────────────────────────────────────────────
-export SWARMX_WORKER_MODEL="phi4-worker"
-export SWARMX_SUPERVISOR_MODEL="qwen-supervisor"
-export SWARMX_REASONER_MODEL="deepseek-reasoner"
-export SWARMX_FAST_MODEL="phi4-fast"
+export SWARMX_WORKER_MODEL="plan-phi4-pro-q8-prod"
+export SWARMX_SUPERVISOR_MODEL="plan-qwen25-pro-q5km-prod"
+export SWARMX_REASONER_MODEL="reason-deepseekr1-pro-q5km-prod"
+export SWARMX_FAST_MODEL="instruct-phi4-pro-q8-prod"
+export SWARMX_MODEL_STARTUP_PREWARM="${SWARMX_MODEL_STARTUP_PREWARM:-0}"
+export SWARMX_MODEL_PREDICTIVE_PREWARM="${SWARMX_MODEL_PREDICTIVE_PREWARM:-0}"
 
 # V5.6-refined: PRIMARY — matches orchestrator.py OLLAMA_BASE_URL() reader.
 export SWARMX_OLLAMA_URL="http://127.0.0.1:11434"

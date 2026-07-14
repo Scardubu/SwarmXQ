@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import functools
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any
 
@@ -27,7 +27,7 @@ class RiskLevel(str, Enum):
             return _RISK_ORDER[self.value] < _RISK_ORDER[other.value]
         return NotImplemented
 
-    def __eq__(self, other: object) -> bool:  # type: ignore[override]
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, RiskLevel):
             return self.value == other.value
         if isinstance(other, str):
@@ -43,7 +43,7 @@ class RiskLevel(str, Enum):
         return self >= RiskLevel.HIGH
 
     @classmethod
-    def from_str(cls, value: str, default: "RiskLevel" = None) -> "RiskLevel":
+    def from_str(cls, value: str, default: RiskLevel | None = None) -> RiskLevel:
         """Case-insensitive coercion; returns `default` (LOW) if unknown."""
         try:
             return cls(value.lower())

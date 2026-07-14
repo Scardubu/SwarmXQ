@@ -60,6 +60,16 @@ export interface VideoJobRequest {
   targetDurationSeconds?: number;
   /** Model tier override — defaults to auto-routing via complexity score. */
   modelTier?: "fast" | "worker" | "supervisor" | "reasoner";
+  /** Intended audience, used to shape script and caption guidance. */
+  audience?: string;
+  /** Creative tone for script and caption generation. */
+  tone?: "educational" | "urgent" | "warm" | "contrarian" | "cinematic" | "minimal";
+  /** Visual/story format guidance for local and ComfyUI render plans. */
+  style?: "faceless_broll" | "kinetic_text" | "storytime" | "tutorial" | "myth_busting";
+  /** Caption placement and density preference. */
+  captionStyle?: "bold_center" | "lower_third" | "minimal";
+  /** Voice style hint for local TTS/render metadata. */
+  voice?: "default" | "calm" | "energetic" | "narrator";
   /** Client-supplied idempotency key. */
   clientRequestId?: string;
 }
@@ -172,6 +182,8 @@ export type VideoErrorCode =
   | "ARTIFACT_INVALID"
   | "STUB_RENDER_DISABLED"
   | "FFMPEG_UNAVAILABLE"
+  | "FFPROBE_UNAVAILABLE"
+  | "ESPEAK_UNAVAILABLE"
   | "FONT_UNAVAILABLE"
   | "FRAME_BUDGET_EXCEEDED"
   | "comfyui_ram_budget_exceeded"

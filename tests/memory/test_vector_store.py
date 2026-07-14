@@ -12,7 +12,6 @@ CHANGES:
 """
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
@@ -117,7 +116,7 @@ def test_max_docs_compact(tmp_path, monkeypatch):
         if mod.startswith("memory."):
             del sys.modules[mod]
 
-    from memory.vector_store import VectorStore, _STORE_FILE
+    from memory.vector_store import _STORE_FILE, VectorStore
     store = VectorStore()
     for i in range(10):
         store.add(f"document number {i} about swarm intelligence and agents")

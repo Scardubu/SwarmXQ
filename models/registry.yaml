@@ -27,7 +27,7 @@
 version: APEX-17-r7
 provider: ollama
 
-# ── Tier 0: Relay — ultra-light router (always resident, sub-second) ─────────
+# ── Tier 0: Relay — ultra-light router (opt-in warm on 8 GB hosts) ───────────
 ultra_router:
   operator_name: Relay
   name: route-phi4-lite-q4km-prod
@@ -238,7 +238,7 @@ constraints:
   max_resident_7b_models: 1
   max_resident_non7b_models: 2
   evolve_requires_explicit_mode: true
-  always_resident_relay: true   # [REG-r7-05] Relay is always-on; never evict
+  always_resident_relay: false  # Relay warmup is opt-in on 8 GB CPU-only hosts
 
 # ── Operator taxonomy (informational; do not edit) ────────────────────────────
 operator_taxonomy:

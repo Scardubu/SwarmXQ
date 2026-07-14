@@ -28,7 +28,7 @@ import os
 import threading
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 MAX_ENTRIES        = int(os.environ.get("SWARM_MEMORY_MAX_ENTRIES", "500"))
 MEMORY_TTL_SECONDS = float(os.environ.get("SWARM_MEMORY_TTL_SECONDS", "0"))  # 0 = no TTL
@@ -38,7 +38,7 @@ MEMORY_FILE        = MEMORY_DIR / "brain_memory.jsonl"
 # [FIX-03] Dual-mode locking:
 #   async context → asyncio.Lock (created lazily inside a running loop)
 #   sync context  → threading.Lock (always available)
-_ASYNC_LOCK: Optional[asyncio.Lock] = None
+_ASYNC_LOCK: asyncio.Lock | None = None
 _SYNC_LOCK = threading.Lock()
 
 
@@ -64,8 +64,8 @@ def _ensure_dir() -> None:
 def store(
     task: str,
     result: str,
-    improved: Optional[str] = None,
-    tags: Optional[list[str]] = None,
+    improved: str | None = None,
+    tags: list[str] | None = None,
 ) -> None:
     """
     Append a memory record. Auto-compacts when MAX_ENTRIES is exceeded.
@@ -94,8 +94,8 @@ def store(
 async def store_async(
     task: str,
     result: str,
-    improved: Optional[str] = None,
-    tags: Optional[list[str]] = None,
+    improved: str | None = None,
+    tags: list[str] | None = None,
 ) -> None:
     """[FIX-03] Async-safe store — uses asyncio.Lock created inside the event loop."""
     lock = _get_async_lock()
@@ -123,7 +123,7 @@ def _maybe_compact() -> None:
 
 def load_all(
     limit: int = 100,
-    since_ts: Optional[float] = None,
+    since_ts: float | None = None,
 ) -> list[dict[str, Any]]:
     """
     Return the most recent `limit` memory entries.

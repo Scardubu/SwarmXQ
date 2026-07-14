@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict, field
-from typing import Any
 import os
+from dataclasses import asdict, dataclass, field
+from typing import Any
 
 from swarmx.config import SwarmConfig
 

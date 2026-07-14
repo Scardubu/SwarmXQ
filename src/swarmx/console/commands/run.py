@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
-from swarmx.console.output import get_console, safe_print, emit_json, emit_error
 from swarmx.console.compat import is_json_mode
+from swarmx.console.output import emit_error, emit_json, get_console, safe_print
 
 logger = logging.getLogger(__name__)
 

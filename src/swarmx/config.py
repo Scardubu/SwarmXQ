@@ -32,6 +32,8 @@ import yaml
 
 from .operator_map import (
     MODEL_ALIASES as _CANONICAL_ALIASES,
+)
+from .operator_map import (
     MODEL_OPERATOR_MAP,
     resolve_canonical_tag,
     resolve_operator_name,
@@ -221,7 +223,7 @@ class SwarmConfig:
     model_reason: str = field(default_factory=lambda: _resolved_model_setting(
         "SWARM_MODEL_REASON", "MODEL_REASON", "reason", "model_reason", _DEFAULT_ORACLE))
 
-    # Relay — ultra-light always-resident router (Q4_K_M, ~2.5 GB)
+    # Relay — ultra-light router (Q4_K_M, ~2.5 GB), opt-in warm on 8 GB hosts
     model_ultra_router: str = field(default_factory=lambda: normalize_model_tag(
         os.environ.get("SWARM_MODEL_ULTRA_ROUTER")
         or _cfg("ultra_router", "ollama_tag", default=_DEFAULT_RELAY),

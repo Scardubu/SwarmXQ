@@ -1143,10 +1143,21 @@ async function isComfyAvailable(signal: AbortSignal): Promise<boolean> {
 
 // ─── Prompt Builders ──────────────────────────────────────────────────────────
 
+function creativeBriefLines(req: VideoJobRequest): string {
+  return [
+    `Audience: ${req.audience ?? "general viewers"}`,
+    `Tone: ${req.tone ?? "educational"}`,
+    `Style: ${req.style ?? "faceless_broll"}`,
+    `Caption style: ${req.captionStyle ?? "bold_center"}`,
+    `Voice: ${req.voice ?? "default"}`,
+  ].join("\n");
+}
+
 function buildPlanningPrompt(req: VideoJobRequest, intent: string): string {
   return `You are a video production planner for a faceless short-form video.
 Platform: ${req.platform ?? "generic"}
 Niche: ${req.niche ?? "general"}
+${creativeBriefLines(req)}
 Intent: ${intent}
 Prompt: "${req.prompt}"
 Target duration: ${req.targetDurationSeconds ?? 60}s
@@ -1157,18 +1168,20 @@ List 4-6 concise production steps needed to create this video. One per line, num
 function buildScriptingPrompt(req: VideoJobRequest, plan: string[]): string {
   return `You are a faceless short-form video scriptwriter.
 Platform: ${req.platform ?? "generic"} | Niche: ${req.niche ?? "general"}
+${creativeBriefLines(req)}
 Original prompt: "${req.prompt}"
 Production plan:
 ${plan.map((p, i) => `${i + 1}. ${p}`).join("\n")}
 
 Write a ${req.targetDurationSeconds ?? 60}-second narration script.
-Include [VISUAL: description] cues inline. Strong 3-second hook. End with CTA.`;
+Include [VISUAL: description] cues inline. Strong 3-second hook. Retention-oriented pacing. End with CTA.`;
 }
 
 function buildStoryboardPrompt(req: VideoJobRequest, scriptText: string): string {
   return `You are a visual director for faceless short-form content.
 Extract 4-8 distinct visual scene descriptions from this script.
 Each should describe an abstract, cinematic, text-overlay scene for ${req.platform ?? "generic"}.
+${creativeBriefLines(req)}
 Script:
 ${scriptText.slice(0, 1200)}
 

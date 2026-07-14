@@ -10,12 +10,12 @@ Subcommands:
 from __future__ import annotations
 
 import logging
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
-from swarmx.console.output import get_console, safe_print, emit_json, make_table
 from swarmx.console.compat import is_json_mode
+from swarmx.console.output import emit_json, get_console, make_table, safe_print
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ _APEX17_SKILLS = {
 
 @app.command("list")
 def skills_list(
-    stack: Annotated[Optional[str], typer.Option("--stack", "-s", help="Filter by stack (frontend/backend/security/devops/generic).")] = None,
+    stack: Annotated[str | None, typer.Option("--stack", "-s", help="Filter by stack (frontend/backend/security/devops/generic).")] = None,
     apex17: Annotated[bool, typer.Option("--apex17", help="Show only the 13 APEX-17 skills.")] = False,
     json_out: Annotated[bool, typer.Option("--json", help="JSON output.")] = False,
 ) -> None:
@@ -143,7 +143,7 @@ def skills_show(
 
 @app.command("triggers")
 def skills_triggers(
-    name: Annotated[Optional[str], typer.Argument(help="Skill name. Omit to list all APEX-17 trigger keywords.")] = None,
+    name: Annotated[str | None, typer.Argument(help="Skill name. Omit to list all APEX-17 trigger keywords.")] = None,
     json_out: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Show trigger keywords for a skill or all APEX-17 skills.
@@ -152,7 +152,7 @@ def skills_triggers(
     from the mission planner. Use this to understand what target text will
     invoke which skill.
     """
-    from swarmx.core.skill_manager import get_skill, list_skills, skill_to_dict
+    from swarmx.core.skill_manager import get_skill, list_skills
 
     _json = json_out or is_json_mode()
 

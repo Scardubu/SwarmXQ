@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 
 @dataclass
@@ -40,6 +40,20 @@ No markdown. JSON only.
     def __init__(self, llm_client: Any):
         self.llm = llm_client
 
+    @staticmethod
+    def _decision(value: object) -> Literal["PASS", "FAIL"]:
+        raw = str(value).upper()
+        if raw == "PASS":
+            return "PASS"
+        return "FAIL"
+
+    @staticmethod
+    def _severity(value: object) -> Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"] | None:
+        raw = str(value).upper()
+        if raw in {"LOW", "MEDIUM", "HIGH", "CRITICAL"}:
+            return cast("Literal['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']", raw)
+        return None
+
     def attack(self, proposal: dict[str, Any], policy_rules: list[str]) -> RedTeamVerdict:
         context = {
             "proposal": proposal,
@@ -52,9 +66,9 @@ No markdown. JSON only.
         )
         raw = json.loads(response)
         return RedTeamVerdict(
-            decision=str(raw.get("decision", "FAIL")),
+            decision=self._decision(raw.get("decision", "FAIL")),
             attack_vector=(str(raw["attack_vector"]) if raw.get("attack_vector") is not None else None),
             failure_scenario=(str(raw["failure_scenario"]) if raw.get("failure_scenario") is not None else None),
-            severity=(str(raw["severity"]) if raw.get("severity") is not None else None),
+            severity=self._severity(raw.get("severity")),
             reasoning=str(raw.get("reasoning", "Red-team response missing reasoning.")),
         )

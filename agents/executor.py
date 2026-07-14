@@ -23,10 +23,10 @@ CHANGES V5.9 vs V5.8:
 from __future__ import annotations
 
 import asyncio
-import inspect
 import os
 import time
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 _SWARM_HOME = os.environ.get("SWARM_HOME", "")
 
@@ -42,7 +42,8 @@ def _publish_event(kind: str, payload: dict) -> None:
         return
     try:
         from pathlib import Path
-        from swarmx.event_bus import publish, EventKind  # type: ignore[import]
+
+        from swarmx.event_bus import publish  # type: ignore[import]
         publish(Path(_SWARM_HOME), kind, payload)
     except Exception:
         pass
@@ -53,7 +54,7 @@ async def execute_parallel(
     route: Callable,
     *,
     return_exceptions: bool = True,
-    timeout_per_step: Optional[float] = None,
+    timeout_per_step: float | None = None,
 ) -> list[dict[str, Any]]:
     """
     Execute all steps concurrently via asyncio.gather.
@@ -88,21 +89,20 @@ async def execute_parallel(
         )
         _publish_event(_EK_STEP_START, {"step": step_label})
         try:
-            if inspect.iscoroutinefunction(route):
+            if asyncio.iscoroutinefunction(route):
                 coro = route(step)
+                if timeout_per_step is not None:
+                    result = await asyncio.wait_for(coro, timeout=timeout_per_step)
+                else:
+                    result = await coro
             else:
-                coro = asyncio.to_thread(route, step)
-
-            if timeout_per_step is not None:
-                result = await asyncio.wait_for(coro, timeout=timeout_per_step)
-            else:
-                result = await coro
+                result = route(step)
 
             duration_s = round(time.monotonic() - t0, 3)
             _publish_event(_EK_STEP_COMPLETE, {"step": step_label, "duration_s": duration_s})
             return {"step": step, "result": result, "error": None, "duration_s": duration_s}
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             duration_s = round(time.monotonic() - t0, 3)
             err = f"TimeoutError: step exceeded {timeout_per_step}s"
             _publish_event(_EK_STEP_FAILED, {"step": step_label, "error": err, "duration_s": duration_s})
@@ -121,19 +121,14 @@ def execute_parallel_sync(
     steps: list[Any],
     route: Callable,
     *,
-    timeout_per_step: Optional[float] = None,
+    timeout_per_step: float | None = None,
 ) -> list[dict[str, Any]]:
     """Synchronous wrapper for execute_parallel (for legacy / CLI callers)."""
     try:
         asyncio.get_running_loop()
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            return pool.submit(
-                asyncio.run,
-                execute_parallel(steps, route, timeout_per_step=timeout_per_step),
-            ).result()
     except RuntimeError:
         return asyncio.run(execute_parallel(steps, route, timeout_per_step=timeout_per_step))
+    raise RuntimeError("execute_parallel_sync cannot run inside an active event loop")
 
 
 __all__ = ["execute_parallel", "execute_parallel_sync"]

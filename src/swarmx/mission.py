@@ -1,20 +1,21 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from .config import SwarmConfig
 from .planner import build_plan, detect_stack
 from .policy import assess_action
-from .storage import list_missions as db_list_missions, store_mission_record, update_mission_record
+from .storage import list_missions as db_list_missions
+from .storage import store_mission_record, update_mission_record
 
 logger = logging.getLogger(__name__)
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 # ── Semantic memory helpers (non-critical — never raises) ─────────────────────
@@ -33,7 +34,7 @@ def _vs_retrieve(home: Path, query: str, k: int = 5) -> list[dict[str, Any]]:
 
 
 def mission_id(target: str) -> str:
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+    stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S%f")
     slug = "".join(ch if ch.isalnum() else "-" for ch in target.lower()).strip("-")[:24] or "mission"
     return f"mission-{slug}-{stamp}"
 

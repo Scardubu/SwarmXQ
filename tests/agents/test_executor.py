@@ -14,10 +14,7 @@ import asyncio
 import time
 from unittest.mock import patch
 
-import pytest
-
 from agents.executor import execute_parallel, execute_parallel_sync
-
 
 # ── Async dispatchers for tests ────────────────────────────────────────────────
 

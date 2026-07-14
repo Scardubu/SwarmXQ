@@ -121,12 +121,12 @@
       "presentation": { "reveal": "always", "panel": "new" }
     },
     {
-      "label": "SwarmX: Warm Relay (preload router)",
+      "label": "SwarmX: Warm Relay Opt-In",
       "type": "shell",
-      "command": "curl -s -X POST http://localhost:11434/api/generate -H 'Content-Type: application/json' -d '{\"model\":\"route-phi4-lite-q4km-prod\",\"prompt\":\"classify: ping\",\"keep_alive\":\"30m\",\"stream\":false,\"options\":{\"num_predict\":8}}' | python3 -m json.tool",
+      "command": "curl -s -X POST http://localhost:11434/api/generate -H 'Content-Type: application/json' -d '{\"model\":\"route-phi4-lite-q4km-prod\",\"prompt\":\"classify: ping\",\"keep_alive\":\"2m\",\"stream\":false,\"options\":{\"num_predict\":8}}' | python3 -m json.tool",
       "group": "build",
       "problemMatcher": [],
-      "detail": "Preload Relay with 30m keep_alive for fast first-token latency"
+      "detail": "Explicitly preload Relay for this session with a short keep_alive. Not part of default startup on 8 GB hosts."
     }
   ]
 }

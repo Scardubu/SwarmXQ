@@ -344,7 +344,7 @@ Expected: confirms operator_map.py/ts exist, registry.yaml uses canonical tags, 
 bash scripts/swarm-healthcheck-apex17.sh
 ```
 
-Expected: PASS for Ollama, canonical models registered, Relay warmth check, API health, memory tier, naming compliance.
+Expected: PASS for Ollama, canonical models registered, Relay probe, API health, memory tier, naming compliance.
 On 8 GB hardware, if free RAM drops below 800 MB or Ollama model probes stall, the script can legitimately return `HEALTH: DEGRADED` even when the API is otherwise serving traffic. Treat that as an operational pressure signal and recover memory before re-running.
 
 ### 6.4 — Live Smoke Test

@@ -12,7 +12,7 @@
  *   - Monitor available RAM from /proc/meminfo (WSL2 procfs)
  *   - Gate expensive model transitions under memory pressure
  *   - Apply adaptive keep-alive per memory pressure level (§2 Policy 2)
- *   - Predictive warmup after router classification (§2 Policy 3)
+ *   - Predictive warmup after router classification only when explicitly enabled
  *   - Serialize high-memory tasks to prevent OOM
  *   - Select composer tier (0–4) based on message and mode (§8)
  *
@@ -37,9 +37,9 @@
  *   already the authoritative source for is7B / RAM / context-window data.
  *   Only the keep-alive policy (which operator-map.ts does not carry) is
  *   defined locally, in KEEP_ALIVE_POLICY, sourced from configs/routing.yaml
- *   (Pilot keep_alive: 300 / Oracle + Forge keep_alive: 0) and
- *   models/registry.yaml (Relay keep_alive: "10m", always_resident_relay:
- *   true). Callers may still pass a legacy alias tag — requestModel() and
+ *   and models/registry.yaml. Startup and predictive prewarm are off by
+ *   default on 8 GB hosts. Callers may still pass a legacy alias tag —
+ *   requestModel() and
  *   evictIncompatible() resolve through resolveCanonicalTag() first — but
  *   the registry itself, and everything logged or returned, is canonical.
  *
@@ -100,8 +100,9 @@ const RAM_NORMAL_MB   = 2500;  // available_mb >= this → normal
 const RAM_LOW_MB      = 1500;  // available_mb < this → high pressure
 const RAM_CRITICAL_MB = 800;   // available_mb < this → degraded — DO NOT LOWER (Hard Constraint #4)
 
-/** The one canonical tag that is always resident (models/registry.yaml constraints.always_resident_relay). */
-const ALWAYS_RESIDENT_TAG = "route-phi4-lite-q4km-prod"; // Relay
+/** Relay tag. It is opt-in warm, not automatically resident on 8 GB hosts. */
+const RELAY_PREWARM_TAG = "route-phi4-lite-q4km-prod"; // Relay
+const MODEL_HEADROOM_RESERVE_MB = 800;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -163,8 +164,8 @@ interface OrchestratorState {
 // ─── Keep-alive policy (canonical tags only — see ORCH-r8-01) ────────────────
 //
 // Sourced from:
-//   configs/routing.yaml      → Pilot keep_alive: 300 ("5m"); Oracle / Forge keep_alive: 0 ("0s")
-//   models/registry.yaml      → Relay keep_alive: "10m", always_resident_relay: true
+//   configs/routing.yaml      → Pilot keep_alive: 30 ("30s"); Oracle / Forge keep_alive: 0 ("0s")
+//   models/registry.yaml      → Relay is opt-in warm, not always resident
 // Every is7B tag not explicitly covered by routing.yaml's triadic_model_config
 // (Architect-qwen, Architect-deepseek, Auditor, Lab-qwen, Lab-deepseek) is set
 // to "0s" in every non-evolver mode, consistent with SINGLE-7B LOCK discipline
@@ -177,16 +178,16 @@ const KEEP_ALIVE_POLICY: Record<
   string,
   { normal: string; lowRam: string; evolver: string; degraded: string }
 > = {
-  "route-phi4-lite-q4km-prod":         { normal: "10m", lowRam: "10m", evolver: "10m", degraded: "10m" }, // Relay — always resident
-  "instruct-phi4-pro-q8-prod":         { normal: "5m",  lowRam: "30s", evolver: "3m",  degraded: "0s"  }, // Pilot
+  "route-phi4-lite-q4km-prod":         { normal: "30s", lowRam: "0s",  evolver: "2m",  degraded: "0s"  }, // Relay — opt-in warm
+  "instruct-phi4-pro-q8-prod":         { normal: "30s", lowRam: "30s", evolver: "30s", degraded: "0s"  }, // Pilot
   "instruct-phi4-lite-q4km-prod":      { normal: "30s", lowRam: "30s", evolver: "30s", degraded: "0s"  }, // Low-RAM Pilot
-  "plan-phi4-pro-q8-prod":             { normal: "3m",  lowRam: "20s", evolver: "2m",  degraded: "0s"  }, // Architect (phi4)
+  "plan-phi4-pro-q8-prod":             { normal: "30s", lowRam: "20s", evolver: "30s", degraded: "0s"  }, // Architect (phi4)
   "code-qwen25-pro-q5km-prod":         { normal: "0s",  lowRam: "0s",  evolver: "0s",  degraded: "0s"  }, // Forge
   "plan-qwen25-pro-q5km-prod":         { normal: "0s",  lowRam: "0s",  evolver: "0s",  degraded: "0s"  }, // Architect (qwen25)
   "plan-deepseekr1-pro-q5km-prod":     { normal: "0s",  lowRam: "0s",  evolver: "0s",  degraded: "0s"  }, // Architect (deepseekr1)
   "reason-deepseekr1-pro-q5km-prod":   { normal: "0s",  lowRam: "0s",  evolver: "0s",  degraded: "0s"  }, // Oracle
   "critique-deepseekr1-pro-q5km-prod": { normal: "0s",  lowRam: "0s",  evolver: "0s",  degraded: "0s"  }, // Auditor
-  "synth-phi4-exp-q8-dev":             { normal: "3m",  lowRam: "20s", evolver: "5m",  degraded: "0s"  }, // Lab (phi4 — observe)
+  "synth-phi4-exp-q8-dev":             { normal: "30s", lowRam: "20s", evolver: "30s", degraded: "0s"  }, // Lab (phi4 — observe)
   "synth-qwen25-exp-q5km-dev":         { normal: "0s",  lowRam: "0s",  evolver: "2m",  degraded: "0s"  }, // Lab (qwen25 — mutate)
   "synth-deepseekr1-exp-q5km-dev":     { normal: "0s",  lowRam: "0s",  evolver: "2m",  degraded: "0s"  }, // Lab (deepseekr1 — critique/validate)
 };
@@ -269,14 +270,15 @@ export class ModelOrchestrator {
   }
 
   /**
-   * Initialize orchestrator state from live Ollama residency and prewarm Relay.
+   * Initialize orchestrator state from live Ollama residency. Relay prewarm is
+   * opt-in via SWARMX_MODEL_STARTUP_PREWARM=1 on the 8 GB profile.
    * Safe to call multiple times.
    */
   async init(): Promise<void> {
     await this._refreshRam();
     await this.syncFromOllama();
-    if (process.env["SWARMX_MODEL_STARTUP_PREWARM"] !== "0") {
-      this._preloadFireAndForget(ALWAYS_RESIDENT_TAG);
+    if (process.env["SWARMX_MODEL_STARTUP_PREWARM"] === "1") {
+      this._preloadFireAndForget(RELAY_PREWARM_TAG);
     }
   }
 
@@ -295,7 +297,7 @@ export class ModelOrchestrator {
   /**
    * Evict whatever is currently the resident 7B model if it is not
    * `targetTag` itself, plus (in low-ram mode) any non-7B model other than
-   * the always-resident Relay. Resolves legacy/-scar tags through
+   * the requested target. Resolves legacy/-scar tags through
    * resolveCanonicalTag() first. Safe to call even if targetTag is not 7B —
    * it is then a no-op beyond the low-ram sweep.
    *
@@ -305,6 +307,7 @@ export class ModelOrchestrator {
    */
   async evictIncompatible(targetTag: string): Promise<string[]> {
     await this._refreshRam();
+    await this.syncFromOllama();
     const canonicalTarget = resolveCanonicalTag(targetTag);
     const profile = MODEL_REGISTRY[canonicalTarget];
     const evicted: string[] = [];
@@ -316,15 +319,21 @@ export class ModelOrchestrator {
       evicted.push(victim);
     }
 
-    // PRESSURE EVICTION — under low-ram mode, an incoming 7B load also evicts
-    // every resident non-7B model except the always-resident Relay.
-    if (profile?.is7B && this.state.currentMode === "low-ram") {
+    if (profile?.is7B) {
+      let projectedAvailableMb = this.state.availableRamMb;
       for (const active of Array.from(this.state.activeModels)) {
-        if (active === ALWAYS_RESIDENT_TAG) continue;
+        if (active === canonicalTarget) continue;
         const activeProfile = MODEL_REGISTRY[resolveCanonicalTag(active)];
-        if (activeProfile && !activeProfile.is7B) {
-          await this._evictModel(active);
-          evicted.push(active);
+        if (!activeProfile) continue;
+
+        const needsHeadroom =
+          projectedAvailableMb < profile.estimatedRamMb + MODEL_HEADROOM_RESERVE_MB;
+        const lowRamNon7B = this.state.currentMode === "low-ram" && !activeProfile.is7B;
+
+        if (needsHeadroom || lowRamNon7B) {
+          await this._evictModel(activeProfile.tag);
+          evicted.push(activeProfile.tag);
+          projectedAvailableMb += activeProfile.estimatedRamMb;
         }
       }
     }
@@ -384,7 +393,7 @@ export class ModelOrchestrator {
    * before the user confirms action. Skips if RAM is too constrained.
    */
   preloadNextSpecialist(predictedModelTag: string): void {
-    if (process.env["SWARMX_MODEL_STARTUP_PREWARM"] === "0") return;
+    if (process.env["SWARMX_MODEL_PREDICTIVE_PREWARM"] !== "1") return;
     const canonicalTag = resolveCanonicalTag(predictedModelTag);
     if (this.state.pendingWarmup === canonicalTag) return;
     const profile = MODEL_REGISTRY[canonicalTag];

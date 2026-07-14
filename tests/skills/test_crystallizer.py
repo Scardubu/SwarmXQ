@@ -9,6 +9,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import pytest
+
 from core.skills.crystallizer import (
     CRYSTALLIZATION_THRESHOLD,
     MIN_SUCCESS_RATE,

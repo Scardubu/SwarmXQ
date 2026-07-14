@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import importlib
 
-import pytest
 import typer
 from typer.testing import CliRunner
 

@@ -11,13 +11,13 @@ import pytest
 from swarmx.pressure import (
     PressureLevel,
     PressureSnapshot,
+    _measure,
     _read_meminfo,
     _read_zram_used_pct,
-    _measure,
+    concurrency_limit_from_config,
     get_pressure,
     get_pressure_async,
     level_from_config,
-    concurrency_limit_from_config,
     reset_pressure_cache,
 )
 

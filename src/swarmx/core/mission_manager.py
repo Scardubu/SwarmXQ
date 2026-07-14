@@ -4,16 +4,19 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from swarmx.mission import (
+    activate_mission,
+    mission_id,
+    mission_list,
+    save_mission,
+)
+
 # Re-export the raw builder and helpers from the existing runtime module so
 # command modules can import from a stable ``swarmx.core`` namespace.
 from swarmx.mission import (
     build_mission as _build_mission,
-    save_mission,
-    activate_mission,
-    mission_list,
-    mission_id,
 )
-from swarmx.storage import list_missions as _list_missions, update_mission_record
+from swarmx.storage import list_missions as _list_missions
 
 
 def get_active_mission(runtime_home: Path) -> dict[str, Any] | None:

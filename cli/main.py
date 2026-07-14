@@ -15,8 +15,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -58,7 +57,7 @@ def _version_callback(value: bool) -> None:
 @app.callback()
 def root_callback(
     version: Annotated[
-        Optional[bool],
+        bool | None,
         typer.Option(
             "--version",
             "-V",
@@ -68,15 +67,15 @@ def root_callback(
         ),
     ] = None,
     json_out: Annotated[
-        Optional[bool],
+        bool | None,
         typer.Option("--json", help="Output as JSON (sets SWARMX_JSON=1).", is_eager=False),
     ] = None,
     no_color: Annotated[
-        Optional[bool],
+        bool | None,
         typer.Option("--no-color", help="Disable colour output.", is_eager=False),
     ] = None,
     quiet: Annotated[
-        Optional[bool],
+        bool | None,
         typer.Option("--quiet", "-q", help="Suppress decorative output.", is_eager=False),
     ] = None,
 ) -> None:

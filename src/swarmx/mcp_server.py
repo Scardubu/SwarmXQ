@@ -15,12 +15,10 @@ from __future__ import annotations
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from pathlib import Path
 from typing import Any
 
 from .config import SwarmConfig
 from .tooling import list_registered_tools
-
 
 # ── MCP capability manifest ──────────────────────────────────────────────────
 

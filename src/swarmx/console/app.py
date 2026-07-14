@@ -14,13 +14,13 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
 from swarmx import __version__
-from swarmx.console.output import get_console, safe_print, emit_json, print_banner
 from swarmx.console.compat import is_json_mode
+from swarmx.console.output import emit_json, print_banner, safe_print
 
 _log = logging.getLogger(__name__)
 
@@ -50,19 +50,19 @@ def _version_callback(value: bool) -> None:
 @app.callback()
 def root_callback(
     version: Annotated[
-        Optional[bool],
+        bool | None,
         typer.Option("--version", "-V", callback=_version_callback, is_eager=True, help="Show version and exit."),
     ] = None,
     json_out: Annotated[
-        Optional[bool],
+        bool | None,
         typer.Option("--json", help="Output as JSON (sets SWARMX_JSON env var).", is_eager=False),
     ] = None,
     no_color: Annotated[
-        Optional[bool],
+        bool | None,
         typer.Option("--no-color", help="Disable color output.", is_eager=False),
     ] = None,
     quiet: Annotated[
-        Optional[bool],
+        bool | None,
         typer.Option("--quiet", "-q", help="Suppress decorative output.", is_eager=False),
     ] = None,
 ) -> None:
@@ -143,6 +143,7 @@ def cmd_init(
 ) -> None:
     """Initialize a SwarmX workspace."""
     from pathlib import Path as _Path
+
     from swarmx.config import SwarmConfig
 
     repo = _Path(str(path)).expanduser().resolve()

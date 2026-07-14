@@ -57,13 +57,13 @@ import json
 import os
 import subprocess
 import time
+import urllib.parse
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Optional
-import urllib.parse
+from typing import Any
 
 import httpx
-
 
 # ─── OLLAMA_BASE_URL helper ───────────────────────────────────────────────────
 
@@ -77,9 +77,9 @@ def _ollama_base_url() -> str:
 class ToolResult:
     status: str          # "success" | "error" | "partial"
     result: Any          # JSON-serializable
-    error_detail: Optional[str] = None
+    error_detail: str | None = None
 
-    def truncated(self, max_chars: int = 2000) -> "ToolResult":
+    def truncated(self, max_chars: int = 2000) -> ToolResult:
         try:
             result_str = json.dumps(self.result)
         except (TypeError, ValueError):
@@ -106,7 +106,7 @@ class ToolResult:
 
 _TOOL_REGISTRY: dict[str, dict] = {}
 _CALL_LOG: collections.deque = collections.deque(maxlen=500)  # O(1) append+eviction
-_DISPATCH_LOG_PATH: Optional[Path] = None
+_DISPATCH_LOG_PATH: Path | None = None
 
 _RATE_LIMIT_PER_MIN: int = int(os.environ.get("TOOL_RATE_LIMIT_PER_MIN", "60"))
 _RATE_WINDOWS: dict[str, collections.deque] = {}
@@ -129,8 +129,8 @@ def set_per_tool_rate_limit(tool_name: str, limit_per_min: int) -> None:
     _PER_TOOL_RATE_LIMITS[tool_name] = max(1, int(limit_per_min))
 
 def set_circuit_breaker_thresholds(
-    open_threshold: Optional[int] = None,
-    reset_s: Optional[float] = None,
+    open_threshold: int | None = None,
+    reset_s: float | None = None,
 ) -> None:
     """
     Set circuit-breaker globals from config (called by orchestrator at startup).
@@ -147,7 +147,7 @@ def set_circuit_breaker_thresholds(
         _CB_OPEN_THRESHOLD = max(1, int(open_threshold))
     if reset_s is not None:
         _CB_RESET_S = max(1.0, float(reset_s))
-def _cb_check(tool_name: str) -> Optional[ToolResult]:
+def _cb_check(tool_name: str) -> ToolResult | None:
     """
     [V5.7-ENH-02] Returns an error ToolResult if the circuit is open, else None.
     On expiry of _CB_RESET_S the circuit enters half-open (one probe allowed).
@@ -197,7 +197,9 @@ def _cb_record(tool_name: str, success: bool) -> None:
             if _swarm_home:
                 try:
                     from pathlib import Path as _Path
-                    from swarmx.event_bus import publish as _pub, EventKind as _EK  # type: ignore
+
+                    from swarmx.event_bus import EventKind as _EK
+                    from swarmx.event_bus import publish as _pub  # type: ignore
                     _pub(_Path(_swarm_home), _EK.TOOL_CB_OPEN, {
                         "tool":       tool_name,
                         "failures":   state["consecutive_failures"],
@@ -207,7 +209,7 @@ def _cb_record(tool_name: str, success: bool) -> None:
                     pass
 
 
-def configure_dispatch_log(path: Optional[str]) -> None:
+def configure_dispatch_log(path: str | None) -> None:
     global _DISPATCH_LOG_PATH
     _DISPATCH_LOG_PATH = Path(path) if path else None
 
@@ -266,7 +268,7 @@ async def dispatch_tool(tool_name: str, args: dict) -> ToolResult:
         )
         result = result.truncated()
         _cb_record(tool_name, success=True)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         result = ToolResult(
             status="error",
             result=None,
@@ -292,7 +294,9 @@ async def dispatch_tool(tool_name: str, args: dict) -> ToolResult:
     if _swarm_home:
         try:
             from pathlib import Path as _Path
-            from swarmx.event_bus import publish as _pub, EventKind as _EK  # type: ignore
+
+            from swarmx.event_bus import EventKind as _EK
+            from swarmx.event_bus import publish as _pub  # type: ignore
             _ek = _EK.TOOL_ERROR if result.status == "error" else _EK.TOOL_RESULT
             _pub(_Path(_swarm_home), _ek, {
                 "tool":       tool_name,
@@ -368,7 +372,7 @@ _SSRF_BLOCKED_HOSTS = {
 }
 
 
-def _ssrf_check(url: str) -> Optional[ToolResult]:
+def _ssrf_check(url: str) -> ToolResult | None:
     parsed_url = urllib.parse.urlparse(url)
     if parsed_url.scheme not in ("http", "https"):
         return ToolResult(status="error", result=None, error_detail=f"Blocked scheme: {parsed_url.scheme}")
@@ -633,7 +637,7 @@ async def tool_run_python(args: dict) -> ToolResult:
                 error_detail=proc_result.stderr[:500],
             )
         return ToolResult(status="success", result=proc_result.stdout[:2000])
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return ToolResult(status="error", result=None, error_detail=f"Timeout after {timeout}s")
     except Exception as e:
         return ToolResult(status="error", result=None, error_detail=str(e))
@@ -705,7 +709,7 @@ async def tool_run_shell_safe(args: dict) -> ToolResult:
             },
             error_detail=proc.stderr[:500] if proc.returncode != 0 else None,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return ToolResult(status="error", result=None, error_detail=f"Timeout after {timeout}s")
     except Exception as e:
         return ToolResult(status="error", result=None, error_detail=str(e))
@@ -764,7 +768,7 @@ async def tool_git_status(args: dict) -> ToolResult:
             result={"operation": operation, "repo": str(repo_resolved), "output": output},
             error_detail=proc.stderr[:300] if proc.returncode != 0 else None,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return ToolResult(status="error", result=None, error_detail="git operation timed out after 15s")
     except Exception as e:
         return ToolResult(status="error", result=None, error_detail=str(e))
@@ -862,7 +866,7 @@ async def tool_json_validate(args: dict) -> ToolResult:
 async def tool_json_transform(args: dict) -> ToolResult:
     data    = args.get("data")
     path    = args.get("path", "")
-    default = args.get("default", None)
+    default = args.get("default")
 
     if isinstance(data, str):
         try:
@@ -1156,7 +1160,6 @@ async def tool_calculate(args: dict) -> ToolResult:
     """
     import ast as _ast
     import math as _math
-    import operator as _op
 
     expression = str(args.get("expression", "")).strip()
     precision  = min(int(args.get("precision", 6)), 15)
@@ -1288,7 +1291,7 @@ async def tool_env_info(_args: dict) -> ToolResult:
 
     _SAFE_ENV_PREFIXES = ("SWARMX_", "OLLAMA_", "SWARM_", "LANG", "HOME", "USER", "PATH")
 
-    def _ram_avail_gb() -> Optional[float]:
+    def _ram_avail_gb() -> float | None:
         try:
             with open("/proc/meminfo") as f:
                 for line in f:

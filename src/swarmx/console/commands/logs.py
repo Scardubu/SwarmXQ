@@ -7,15 +7,13 @@ from __future__ import annotations
 
 import json
 import logging
-import sys
 import time
-from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
-from swarmx.console.output import get_console, safe_print, emit_json
 from swarmx.console.compat import is_json_mode
+from swarmx.console.output import emit_json, get_console, safe_print
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +42,7 @@ def logs_callback(
     lines: Annotated[int, typer.Option("--lines", "-n", help="Number of historical lines to show before tailing.")] = 50,
     follow: Annotated[bool, typer.Option("--follow", "-f", help="Tail the log stream in real time.")] = False,
     level: Annotated[str, typer.Option("--level", "-l", help="Minimum log level to show (debug/info/warn/error). ")] = "info",
-    agent: Annotated[Optional[str], typer.Option("--agent", "-a", help="Filter by agent ID or name substring.")] = None,
+    agent: Annotated[str | None, typer.Option("--agent", "-a", help="Filter by agent ID or name substring.")] = None,
     json_out: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Default to log streaming when ``swarm logs`` is invoked without a subcommand."""
@@ -58,7 +56,7 @@ def cmd_stream(
     lines: Annotated[int, typer.Option("--lines", "-n", help="Number of historical lines to show before tailing.")] = 50,
     follow: Annotated[bool, typer.Option("--follow", "-f", help="Tail the log stream in real time.")] = False,
     level: Annotated[str, typer.Option("--level", "-l", help="Minimum log level to show (debug/info/warn/error).")] = "info",
-    agent: Annotated[Optional[str], typer.Option("--agent", "-a", help="Filter by agent ID or name substring.")] = None,
+    agent: Annotated[str | None, typer.Option("--agent", "-a", help="Filter by agent ID or name substring.")] = None,
     json_out: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Show recent log entries from the SwarmX runtime log file."""
@@ -107,7 +105,7 @@ def cmd_stream(
             prefix += f" [dim]{aid}[/dim]"
         console.print(f"{prefix} {msg}")
 
-    def _parse_line(raw: str) -> Optional[dict[str, object]]:
+    def _parse_line(raw: str) -> dict[str, object] | None:
         raw = raw.strip()
         if not raw:
             return None

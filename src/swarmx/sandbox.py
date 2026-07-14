@@ -10,12 +10,10 @@ Safety contract:
 """
 from __future__ import annotations
 
-import json
-import os
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -173,7 +171,7 @@ def run_in_sandbox(
             risk_score_delta=0.0, sandbox_used=True,
             error_message="sandbox timeout",
         )
-    except Exception as exc:
+    except Exception:
         return _preview_fallback(cmd, repo)
 
 

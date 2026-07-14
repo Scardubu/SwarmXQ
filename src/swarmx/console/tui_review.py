@@ -14,9 +14,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from .compat import has_textual, has_questionary
+from .compat import has_questionary, has_textual
 from .output import get_console, safe_print
-
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
@@ -72,8 +71,8 @@ def _review_textual(
     decisions: dict[str, str],
 ) -> dict[str, str]:
     from textual.app import App, ComposeResult
-    from textual.widgets import DataTable, Footer, Header, Label
     from textual.binding import Binding
+    from textual.widgets import DataTable, Footer, Header, Label
 
     class ReviewApp(App[None]):
         BINDINGS = [

@@ -4,7 +4,6 @@ import math
 import random
 from typing import Any
 
-
 ISLAND_AXES = ("correctness", "leverage", "reversibility", "simplicity", "swarm_synergy")
 AXIS_WEIGHTS = {
     "correctness":   0.30,

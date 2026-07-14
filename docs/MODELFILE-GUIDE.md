@@ -76,14 +76,15 @@ KV cache formula (q4_0, 0.5 bytes/element):
 | 32k     | q8_0    | ~749   | ~4,900    | ~6,049   |
 
 > **Rule of thumb:** Every model in this stack fits under 6.2 GB VRAM at its maximum
-> configured context window. The 12 GB VRAM budget allows comfortable single-model
-> operation and selective co-loading of phi4-fast with any 7B specialist.
+> configured context window, but the 8 GB CPU-only profile is strict single-model
+> residency. Co-loading is historical guidance for larger GPU hosts only.
 
 ---
 
 ## Co-load Matrix (12 GB VRAM)
 
-`OLLAMA_MAX_LOADED_MODELS=2` enables co-loading. The default is `1` (strict).
+`OLLAMA_MAX_LOADED_MODELS=1` is required for the supported 8 GB profile. The
+matrix below is retained only for operators on larger GPU hosts.
 
 | Pair                                        | Total MB | Headroom | Safe? |
 |---------------------------------------------|----------|----------|-------|
@@ -190,9 +191,11 @@ kv_cache:
 - `q4_0`: ~75% VRAM reduction vs f16 KV. ~1% quality degradation on JSON syntax tasks.
   Use only for phi4 models doing fast routing/classification where speed dominates.
 
-**Prefix caching:** Set `OLLAMA_KEEP_ALIVE=300` and ensure the system prompt stays
-constant across calls. Ollama will cache the KV state of the system prompt, reducing
-latency on subsequent calls by 40–70%.
+**Prefix caching:** On the 8 GB CPU-only profile, leave global
+`OLLAMA_KEEP_ALIVE=0` and let SwarmX pass short request-level `keep_alive`
+windows. Longer global keep-alive values can preserve prefix cache state, but
+they also pin multi-GB models and should be used only for explicit short
+operator sessions with measured headroom.
 
 ---
 
@@ -284,8 +287,8 @@ Source `setup/ollama_env.sh` before running `ollama serve`. Key variables:
 ```bash
 OLLAMA_FLASH_ATTENTION=1          # ALWAYS set — reduces KV bandwidth pressure
 OLLAMA_KV_CACHE_TYPE=q8_0         # Half KV VRAM vs f16, near-zero quality loss
-OLLAMA_MAX_LOADED_MODELS=1        # 1=strict single-model; 2=phi4-fast co-load
-OLLAMA_KEEP_ALIVE=300             # Keep warm for prefix cache reuse
+OLLAMA_MAX_LOADED_MODELS=1        # Strict single-model residency
+OLLAMA_KEEP_ALIVE=0               # Request-level keep_alive is authoritative
 OLLAMA_NUM_PARALLEL=1             # Must be 1 on constrained VRAM
 OLLAMA_GPU_MEMORY_FRACTION=0.90   # Leave 10% headroom for CUDA runtime
 ```

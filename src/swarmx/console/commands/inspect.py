@@ -2,13 +2,12 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
-from swarmx.console.output import get_console, safe_print, emit_json, make_table, kv_panel
 from swarmx.console.compat import is_json_mode
+from swarmx.console.output import emit_json, get_console, kv_panel, make_table, safe_print
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +61,7 @@ def inspect_memory(
 ) -> None:
     """Search swarm memory for relevant records."""
     from swarmx.config import SwarmConfig
-    from swarmx.memory import load_recent_memories, summarize_memories
+    from swarmx.memory import load_recent_memories
 
     cfg = SwarmConfig()
     _json = json_out or is_json_mode()

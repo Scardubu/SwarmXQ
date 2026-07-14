@@ -119,6 +119,8 @@ SWARMX_COMFYUI_URL=http://127.0.0.1:8188
 SWARMX_VIDEO_ARTIFACT_DIR=./.swarmx/video-output
 SWARMX_VIDEO_EXPORT_DIR=./.swarmx/video-export
 SWARMX_VIDEO_TEMP_DIR=./.swarmx/video-temp
+SWARMX_VIDEO_FFMPEG_TIMEOUT_MS=120000
+SWARMX_VIDEO_FFPROBE_TIMEOUT_MS=30000
 SWARMX_VIDEO_API_TOKEN=replace-me-for-write-routes
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
@@ -134,6 +136,23 @@ NEXT_PUBLIC_SWARMX_VIDEO_API_TOKEN=replace-me-if-write-routes-are-protected
 ```
 
 The dashboard store prefers `NEXT_PUBLIC_SWARMX_API_URL`, falls back to `NEXT_PUBLIC_API_URL`, and normalizes all video route payloads through `src/lib/video-dashboard.ts` before state is written.
+
+### Local media binary requirements
+
+Production local renders require:
+
+```bash
+command -v ffmpeg
+command -v ffprobe
+command -v espeak-ng
+```
+
+`ffmpeg` renders the MP4, `ffprobe` validates the final artifact, and
+`espeak-ng` produces narration audio. Missing binaries fail with stable,
+actionable video error codes (`FFMPEG_UNAVAILABLE`, `FFPROBE_UNAVAILABLE`, or
+`ESPEAK_UNAVAILABLE`). Silent audio is allowed only when
+`SWARMX_VIDEO_ALLOW_SILENT_AUDIO=1`; the default is to fail rather than produce
+a misleading voiced-video success.
 
 ### Ollama model requirements
 
@@ -167,7 +186,7 @@ From the monorepo root:
 
 ```bash
 # 1. Install all workspace dependencies
-pnpm install
+pnpm install --frozen-lockfile
 
 # 2. (Optional) Ensure video output dir exists
 mkdir -p .swarmx/video-output .swarmx/video-export .swarmx/video-temp
@@ -191,7 +210,9 @@ Validate package gates before exercising the video UI:
 
 ```bash
 pnpm --filter @swarmx/types typecheck
-pnpm --filter @swarmx/api typecheck
+pnpm --filter @swarmx/api build
+pnpm --filter @swarmx/api test
+pnpm --filter @swarmx/api run test:video:smoke
 pnpm --filter @swarmx/dashboard typecheck
 ```
 
@@ -244,6 +265,11 @@ Create a new video generation job and enqueue it.
   "niche": "motivational | finance | facts | true_crime | tech | other",
   "targetDurationSeconds": 15,
   "modelTier": "fast | worker | supervisor | reasoner",
+  "audience": "string (optional, <=160 chars)",
+  "tone": "educational | urgent | warm | contrarian | cinematic | minimal",
+  "style": "faceless_broll | kinetic_text | storytime | tutorial | myth_busting",
+  "captionStyle": "bold_center | lower_third | minimal",
+  "voice": "default | calm | energetic | narrator",
   "clientRequestId": "optional-idempotency-key"
 }
 ```
@@ -263,7 +289,7 @@ Observed smoke result on the current local stack: the route returns `201 Created
 ```bash
 curl -X POST http://localhost:3001/api/video/jobs \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Explain compound interest in a way that motivates a first-time investor", "platform": "tiktok", "niche": "finance", "targetDurationSeconds": 45}'
+  -d '{"prompt": "Explain compound interest in a way that motivates a first-time investor", "platform": "tiktok", "niche": "finance", "targetDurationSeconds": 45, "audience":"first-time investors", "tone":"warm", "style":"faceless_broll", "captionStyle":"bold_center", "voice":"narrator"}'
 ```
 
 **Response `201`:**
@@ -433,7 +459,7 @@ curl http://localhost:3001/api/video/jobs/550e8400-e29b-41d4-a716-446655440000/a
 
 ### GET /api/video/jobs/:id/analysis
 
-Fetch virality analysis and caption draft state for a completed job.
+Fetch engagement heuristic analysis and caption draft state for a completed job.
 
 ```bash
 curl http://localhost:3001/api/video/jobs/550e8400-e29b-41d4-a716-446655440000/analysis
@@ -508,7 +534,9 @@ Observed smoke result on the current local stack: the route reaches handler logi
 
 ### POST /api/video/virality-score
 
-Generate a standalone virality score preview.
+Generate a standalone engagement heuristic preview. The endpoint name is kept
+for backward compatibility; scores are guidance signals, not predictions that a
+video will become viral.
 
 ```bash
 curl -X POST http://localhost:3001/api/video/virality-score \
@@ -519,7 +547,7 @@ curl -X POST http://localhost:3001/api/video/virality-score \
 
 ### POST /api/video/caption/score
 
-Generate a caption draft and virality score in one call.
+Generate a caption draft and engagement heuristic score in one call.
 
 Rate limit: 10 requests/minute per connection by default
 (`SWARMX_VIDEO_CAPTION_SCORE_LIMIT_PER_MIN`).
@@ -658,6 +686,11 @@ Current implementation degrades via retryable/terminal failures and pressure-awa
 
 - Under critical pressure, orchestration fails fast with `PRESSURE_CRITICAL`.
 - Transient upstream failures (`TIMEOUT`, `OLLAMA_UNAVAILABLE`, `COMFY_UNAVAILABLE`) are marked retryable.
+- Missing local render binaries fail clearly with `FFMPEG_UNAVAILABLE`,
+  `FFPROBE_UNAVAILABLE`, or `ESPEAK_UNAVAILABLE`.
+- Final artifacts are accepted only after the export file exists, has nonzero
+  size, and FFprobe reports a valid stream, duration, dimensions, frame rate,
+  and format.
 - Job retry behavior is controlled by queue policy (`VIDEO_MAX_RETRIES`).
 
 ---
@@ -670,7 +703,7 @@ Current implementation degrades via retryable/terminal failures and pressure-awa
 | Planning | `SWARMX_VIDEO_PLAN_MODEL` | `plan-qwen25-pro-q5km-prod` | 45–90 s |
 | Scripting | `SWARMX_VIDEO_SCRIPT_MODEL` | `plan-qwen25-pro-q5km-prod` | 60–120 s |
 | Storyboard | `SWARMX_VIDEO_STORYBOARD_MODEL` | `plan-qwen25-pro-q5km-prod` | 120–300 s |
-| Render assembly | — (HTTP) | — | 2–5 s per shot |
+| Render assembly | `ffmpeg` / `ffprobe` / `espeak-ng` | Local binaries | 15–120 s |
 
 Set `SWARMX_VIDEO_LOW_RAM_MODE=1` to force all four text stages to
 `instruct-phi4-lite-q4km-prod`. Do not send `modelTier` in the first low-RAM
@@ -682,9 +715,10 @@ omits `modelTier` from `POST /api/video/jobs`. Operators can still choose an
 explicit model tier from the form, but that should be reserved for hosts with
 measured memory headroom for the selected profile.
 
-Startup prewarm can be disabled with `SWARMX_MODEL_STARTUP_PREWARM=0`. This is
-recommended for low-RAM video runs so Relay is not speculatively loaded before
-the foreground text model.
+Startup prewarm and predictive prewarm are disabled by default with
+`SWARMX_MODEL_STARTUP_PREWARM=0` and `SWARMX_MODEL_PREDICTIVE_PREWARM=0`. Keep
+those defaults on low-RAM video runs so Relay or a specialist is not
+speculatively loaded before the foreground text model.
 
 Stage timeouts are bounded through:
 
@@ -698,9 +732,10 @@ VIDEO_FINALIZING_TIMEOUT_MS
 ```
 
 Renderer selection is controlled by `SWARMX_VIDEO_RENDER_BACKEND=auto|comfyui|ffmpeg`.
-Production runs should keep `SWARMX_VIDEO_ALLOW_STUB_RENDER=0`. ComfyUI handoff
-requires `SWARMX_COMFYUI_OUTPUT_DIR`; returned filenames are copied into the
-SwarmXQ export directory before metadata is built.
+Production runs should keep `SWARMX_VIDEO_ALLOW_STUB_RENDER=0`. The local FFmpeg
+path is the default production fallback. ComfyUI handoff requires
+`SWARMX_COMFYUI_OUTPUT_DIR`; returned filenames are copied into the SwarmXQ
+export directory before metadata is built.
 
 Context windows are scaled down under pressure (`adaptive-timeout-config.ts`):
 
@@ -901,13 +936,13 @@ not reliably complete for `medium` or `long` jobs.
 | `/api/video/jobs/:id/resume` | POST | Resume a terminal job from a stage marker when partial artifacts exist |
 | `/api/video/jobs/reprioritize` | POST | Reorder queued jobs by explicit ordered job IDs |
 | `/api/video/templates` | GET | List available ComfyUI workflow templates with RAM requirements |
-| `/api/video/caption/score` | POST | Score a caption draft and return both captionDraft + viralitySignal |
+| `/api/video/caption/score` | POST | Score a caption draft and return both captionDraft + engagement heuristic signal |
 
 ### New dashboard components
 
 | Component | Path | Purpose |
 | --- | --- | --- |
-| `ViralityMeter` | `components/video/ViralityMeter.tsx` | 5-bar virality signal display with Oracle reasoning tooltips |
+| `ViralityMeter` | `components/video/ViralityMeter.tsx` | 5-bar engagement heuristic display with reasoning tooltips |
 | `CaptionEditor` | `components/video/CaptionEditor.tsx` | Editable caption draft with live char count, hashtag pills, re-score, copy |
 | `PlatformPublishPanel` | `components/video/PlatformPublishPanel.tsx` | Publishing panel with scheduling, approval notices, publish history |
 

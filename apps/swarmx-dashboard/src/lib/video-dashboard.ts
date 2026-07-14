@@ -42,6 +42,11 @@ export interface VideoJobRequest {
   niche?: "motivational" | "finance" | "facts" | "true_crime" | "tech" | "other";
   targetDurationSeconds?: number;
   modelTier?: "fast" | "worker" | "supervisor" | "reasoner";
+  audience?: string;
+  tone?: "educational" | "urgent" | "warm" | "contrarian" | "cinematic" | "minimal";
+  style?: "faceless_broll" | "kinetic_text" | "storytime" | "tutorial" | "myth_busting";
+  captionStyle?: "bold_center" | "lower_third" | "minimal";
+  voice?: "default" | "calm" | "energetic" | "narrator";
   clientRequestId?: string;
 }
 

@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from swarmx.config import SwarmConfig
 from swarmx.utils import write_json
 
-from .observer import collect_observation
 from .critique import critique_observation
-from .mutation import generate_mutations
-from .validation import validate_candidate
 from .deployment import stage_candidate
+from .mutation import generate_mutations
+from .observer import collect_observation
+from .validation import validate_candidate
 
 
 def _store_cycle(cfg: SwarmConfig, cycle: dict[str, Any]) -> Path:
@@ -66,7 +65,7 @@ def run_cycle(repo: str | Path | None = None, cfg: SwarmConfig | None = None, *,
 
         cycle = {
             "cycle_id": observation["cycle_id"],
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "repo": str(repo_path),
             "observation": observation,
             "critique": critique,

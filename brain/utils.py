@@ -18,7 +18,8 @@ CHANGES FROM LEGACY VERSION:
 """
 from __future__ import annotations
 
-from typing import Any, AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, Generator
+from typing import Any
 
 
 def chunk_tasks(tasks: list[Any], size: int = 3) -> Generator[list[Any], None, None]:

@@ -68,10 +68,11 @@ import json
 import os
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any
 from urllib import request
 from urllib.error import URLError
 
@@ -1227,7 +1228,6 @@ def generate(
 
     # Standard escalation chain
     chain    = _escalation_chain_for(model)
-    last_exc: Exception | None = None
     t_total  = time.monotonic()
 
     for candidate in chain:
@@ -1292,7 +1292,6 @@ def generate(
 
         except Exception as exc:
             elapsed_ms = int((time.monotonic() - t_start) * 1000)
-            last_exc   = exc
             if stream_callback is None:
                 _record_latency(candidate, elapsed_ms)
                 _emit_dispatch_telemetry(candidate, "error", elapsed_ms)

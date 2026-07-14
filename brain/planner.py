@@ -20,7 +20,6 @@ import json
 import re
 import warnings
 
-
 _DEPRECATION_WARNED = False
 
 
@@ -60,7 +59,7 @@ async def plan_task(prompt: str) -> list[str]:
 
     try:
         raw = await run_model("reason", plan_prompt)
-    except Exception as e:
+    except Exception:
         return [prompt]  # planning failure — run as single step
 
     # Strip think blocks (DeepSeek-R1 produces these)

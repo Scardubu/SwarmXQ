@@ -25,8 +25,8 @@
 triadic_model_config:
 
   # ── Pilot (instruct-phi4-pro-q8-prod) — Fast Orchestrator ───────────────────
-  # Always-on router brain. Fires first on every request.
-  # RAM footprint: ~4.3 GB. Safe to stay warm at low pressure (keep_alive: 5m).
+  # Fast orchestrator. Fires first on many requests, but is not always-on.
+  # RAM footprint: ~4.3 GB. Keep only a short reuse window on 8 GB hosts.
   instruct-phi4-pro-q8-prod:
     operator_name: Pilot
     ollama_model: instruct-phi4-pro-q8-prod
@@ -35,12 +35,12 @@ triadic_model_config:
     quant: Q8_0
     ram_footprint_gb: 4.3
     role: orchestrator
-    always_on: true
+    always_on: false
     context_window: 2048
     temperature: 0.20
     top_p: 0.90
     timeout_seconds: 30
-    keep_alive: 300            # 5m stay-warm
+    keep_alive: 30             # 30s short reuse window
     num_predict: 1024
     dispatch_signal: "router"
     adversarial_check: false   # Pilot is the router, not the critiqued

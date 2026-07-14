@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Optional
 
 import httpx
 
@@ -96,7 +95,7 @@ ANALYSIS_SCHEMA: dict = {
 def call_model(
     model: str,
     messages: list[dict],
-    schema: Optional[dict] = None,
+    schema: dict | None = None,
     timeout: int = 120,
 ) -> dict:
     """
@@ -135,7 +134,7 @@ def build_langgraph_app():
       planner → executor (planner decomposes → executor implements)
     """
     try:
-        from langgraph.graph import StateGraph, END
+        from langgraph.graph import END, StateGraph
     except ImportError:
         print('Install langgraph: pip install "langgraph>=0.2.0"')
         return None
@@ -222,7 +221,7 @@ def build_crewai_crew(tools: list | None = None):
     Returns the assembled Crew object ready for kickoff.
     """
     try:
-        from crewai import Agent, Task, Crew, Process
+        from crewai import Agent, Crew, Process, Task
     except ImportError:
         print('Install crewai: pip install "crewai>=0.80.0"')
         return None
@@ -388,8 +387,8 @@ def demo_native_schema_enforcement(
     """
     print("=== Native schema enforcement demo ===")
     print(f"Task:   {task}")
-    print(f"Model:  phi4-fast")
-    print(f"Schema: ROUTING_SCHEMA\n")
+    print("Model:  phi4-fast")
+    print("Schema: ROUTING_SCHEMA\n")
 
     response = httpx.post(
         OLLAMA_BASE,

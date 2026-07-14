@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import json
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from .runtime import ensure_runtime_dirs, load_runtime_state, update_runtime_state
-from .storage import claim_next_job as db_claim_next_job, list_jobs as db_list_jobs, upsert_job as db_upsert_job, update_job as db_update_job
+from .storage import claim_next_job as db_claim_next_job
+from .storage import list_jobs as db_list_jobs
+from .storage import update_job as db_update_job
+from .storage import upsert_job as db_upsert_job
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def queue_path(runtime_home: Path) -> Path:
@@ -19,7 +22,7 @@ def queue_path(runtime_home: Path) -> Path:
 
 
 def _job_id(kind: str) -> str:
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+    stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S%f")
     nonce = secrets.token_hex(3)
     return f"job-{kind}-{stamp}-{nonce}"
 

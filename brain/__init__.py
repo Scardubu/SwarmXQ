@@ -13,30 +13,30 @@ Usage:
 """
 from __future__ import annotations
 
-# Core async entry points
-from brain.orchestrator import run_task, run_task_sync  # noqa: F401
+# Dispatch / routing
+from brain.dispatcher import classify, dispatch, dispatch_sync  # noqa: F401
+
+# Graph execution
+from brain.graph import TaskGraph, TaskNode, TaskNodeResult, build_graph_from_plan  # noqa: F401
 
 # Loop (autonomous multi-iteration)
 from brain.loop import autonomous_run, autonomous_run_sync, score_output  # noqa: F401
 
+# Memory
+from brain.memory import clear, load_all, search, store  # noqa: F401
+
+# Core async entry points
+from brain.orchestrator import run_task, run_task_sync  # noqa: F401
+
 # Planning
 from brain.planner import plan_task, plan_task_sync  # noqa: F401
-
-# Dispatch / routing
-from brain.dispatcher import dispatch, dispatch_sync, classify  # noqa: F401
-from brain.router import route, route_sync, run_model, run_model_sync, detect_intent  # noqa: F401
-
-# Reflection
-from brain.reflector import reflect, reflect_sync  # noqa: F401
-
-# Memory
-from brain.memory import store, load_all, search, clear  # noqa: F401
 
 # RAG enrichment
 from brain.rag import enrich  # noqa: F401
 
-# Graph execution
-from brain.graph import TaskGraph, TaskNode, TaskNodeResult, build_graph_from_plan  # noqa: F401
+# Reflection
+from brain.reflector import reflect, reflect_sync  # noqa: F401
+from brain.router import detect_intent, route, route_sync, run_model, run_model_sync  # noqa: F401
 
 __all__ = [
     # Orchestration

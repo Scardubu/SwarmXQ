@@ -194,7 +194,8 @@ Maximizing prefix cache hit rate:
   1. Keep system prompts IDENTICAL across calls (no dynamic content in system)
   2. Prepend shared context (task_id, compressed_memory) at the START of
      user messages, not the end — tokens must match from the beginning
-  3. Set OLLAMA_KEEP_ALIVE=180+ to keep models warm between calls
+  3. On larger hosts, use a short request-level keep_alive window for repeated
+     calls. On the 8 GB profile, keep global OLLAMA_KEEP_ALIVE=0.
   4. Never modify the Modelfile system prompt at runtime
 
 Monitoring prefix cache hits:
@@ -247,8 +248,8 @@ Status: Available in llama.cpp server mode.
 □ 3. Verify OLLAMA_MAX_LOADED_MODELS=1
       → Prevents KV cache from being split across two loaded models
 
-□ 4. Set OLLAMA_KEEP_ALIVE=180
-      → Keeps model warm for prefix cache reuse between consecutive calls
+□ 4. Keep global OLLAMA_KEEP_ALIVE=0 on 8 GB hosts
+      → Request-level keep_alive controls short reuse without global pinning
 
 □ 5. Keep num_ctx conservative (see Modelfile values)
       → KV memory pre-allocated at load — overly large num_ctx wastes VRAM

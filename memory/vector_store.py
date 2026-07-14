@@ -22,7 +22,6 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Optional
 
 MAX_DOCS = int(os.environ.get("SWARM_VECTOR_MAX_DOCS", "1000"))
 
@@ -85,8 +84,8 @@ class VectorStore:
 
         # Tier-1: TF-IDF cosine similarity
         try:
-            from sklearn.feature_extraction.text import TfidfVectorizer  # type: ignore
             import numpy as np  # type: ignore
+            from sklearn.feature_extraction.text import TfidfVectorizer  # type: ignore
 
             vectorizer = TfidfVectorizer()
             corpus = docs + [query]

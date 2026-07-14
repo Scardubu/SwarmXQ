@@ -4,6 +4,40 @@
 
 ---
 
+## V6.2.6 — Low-RAM Runtime Finalization & Video Render Hardening (2026-07-14)
+
+### Runtime
+
+- Enforced 8 GB defaults across startup, Docker, setup helpers, and health checks:
+  `OLLAMA_MAX_LOADED_MODELS=1`, `OLLAMA_NUM_PARALLEL=1`, and `OLLAMA_KEEP_ALIVE=0`.
+- Made Relay startup prewarm and speculative specialist prewarm opt-in with
+  `SWARMX_MODEL_STARTUP_PREWARM=1` and `SWARMX_MODEL_PREDICTIVE_PREWARM=1`.
+- Shortened request-level keep-alive windows for Relay, Pilot, and non-7B Phi4
+  operators; 7B specialists continue to unload after calls outside explicit
+  evolver reuse windows.
+- Added pre-eviction headroom checks before 7B loads and refreshed `/api/ps`
+  residency state before eviction decisions.
+
+### Video
+
+- Added a bounded FFmpeg render smoke test that creates and probes a real MP4.
+- Required `ffmpeg`, `ffprobe`, and `espeak-ng` for local voiced production
+  renders; silent output is opt-in only.
+- Added artifact validation before completed status: file existence, nonzero
+  size, duration, dimensions, frame rate, and format.
+- Added backward-compatible creative request fields for audience, tone, style,
+  caption style, and voice.
+
+### Tooling And Docs
+
+- Added root workspace `test`, `lint`, `typecheck`, and `build` scripts.
+- Restored reproducible Python validation through project dev dependencies and
+  deterministic async paths that no longer hang during default-executor teardown.
+- Updated setup, startup, config, video, and low-RAM documentation with clean
+  clone commands and current hardware constraints.
+
+---
+
 ## V6.2.5 — UI/UX Polish & Accessibility Quick Wins (2026-07-05)
 
 Systematic quality pass across all video dashboard components. Resolves WCAG AA violations, eliminates per-render object allocations, and ships the missing right-panel empty state.

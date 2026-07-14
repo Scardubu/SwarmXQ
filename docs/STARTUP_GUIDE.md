@@ -29,7 +29,10 @@ If you prefer the traditional method:
 
 ```bash
 cd SwarmXQ
+python -m venv .venv
 source .venv/bin/activate
+python -m pip install --editable '.[dev]'
+pnpm install --frozen-lockfile
 python -m cli up --dashboard --host 127.0.0.1 --port 3001
 ```
 
@@ -82,7 +85,7 @@ python -m cli up --dashboard --host 127.0.0.1 --port 3002
 | `SWARMX_COMPOSER_TIMEOUT_MS` | `60000` (API default) | Composer model timeout in milliseconds. Increase on slow/cold hosts, decrease for faster fallback behavior. |
 | `SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS` | `45000` | Cap used for short prompts (<=180 chars). Keeps interactive queries responsive without forcing premature 30s fallbacks. |
 | `SWARMX_COMPOSER_NUM_PREDICT` | `256` | Composer response token ceiling; lower values reduce latency on constrained hosts. |
-| `SWARMX_COMPOSER_KEEP_ALIVE` | `10m` | Composer model keep-alive window passed to Ollama chat calls to reduce repeated cold starts. |
+| `SWARMX_COMPOSER_KEEP_ALIVE` | unset | Optional override for Composer model keep-alive. Leave unset on 8 GB hosts so the request-level model policy remains authoritative. |
 | `SWARMX_COMPOSER_FAST_MODEL` | `phi4-fast` | Fast fallback model candidate used when configured composer model fails. |
 | `SWARMX_COMPOSER_TIMEOUT_HISTO_LOG_EVERY` | `3` | Log compact composer timeout histogram every N timeout fallbacks (`0` or negative logs every timeout). |
 | `SWARMX_COMPOSER_RETRY_MAX_ATTEMPTS` | `2` | Max model call attempts per candidate before fallback. |
@@ -100,6 +103,8 @@ python -m cli up --dashboard --host 127.0.0.1 --port 3002
 | `SWARMX_REPO_ROOT` | Auto-detected | Absolute path to SwarmX repository; auto-set by `swarm up`. Required for metrics subprocess PYTHONPATH composition. |
 | `SWARMX_PYTHON` | `sys.executable` | Python interpreter for metrics poller and CLI sidecars; auto-detected from active venv by `swarm up`. |
 | `SWARMX_STARTUP_CURL_MAX_TIME` | `8` | Hard max-time (seconds) for startup script curl probes (Ollama/API/dashboard). Prevents hangs on half-open sockets. |
+| `SWARMX_MODEL_STARTUP_PREWARM` | `0` | Set to `1` only when you explicitly want startup Relay prewarm. |
+| `SWARMX_MODEL_PREDICTIVE_PREWARM` | `0` | Set to `1` only when you explicitly want speculative specialist prewarm after routing. |
 | `VERBOSE` | (not set) | Enable verbose logging in startup script |
 
 ### Ollama Tuning (constrained-host)
@@ -110,10 +115,10 @@ These Ollama variables are read by the Ollama daemon at startup. Export them bef
 |----------|---------------------|--------|
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama base URL; must point to the daemon that holds model blobs. |
 | `OLLAMA_NUM_PARALLEL` | `1` | Concurrent model inference slots. `1` prevents dual-slot VRAM splits on single-GPU hosts. |
-| `OLLAMA_MAX_LOADED_MODELS` | `1` | Maximum models resident in VRAM simultaneously. `1` ensures strict single-model mode (aligns with `strict_single_model: true` in config). |
+| `OLLAMA_MAX_LOADED_MODELS` | `1` | Maximum resident models. `1` enforces strict single-model mode on 8 GB CPU-only hosts. |
 | `OLLAMA_FLASH_ATTENTION` | `1` | Enable flash-attention kernel; reduces KV-cache VRAM usage ~30% on supported hardware with no quality loss. |
 | `OLLAMA_KV_CACHE_TYPE` | `q8_0` | Quantize KV-cache to INT8. Saves ~40% KV-cache VRAM at minimal accuracy cost; safe for reasoning and coding workloads. |
-| `OLLAMA_KEEP_ALIVE` | `15m` | How long Ollama keeps a model loaded after the last request. `15m` is a good balance between warm-start speed and memory reclaim. |
+| `OLLAMA_KEEP_ALIVE` | `0` | Global keep-alive off. SwarmX passes explicit request-level `keep_alive` values per model and pressure tier. |
 
 ### Setting Environment Variables
 
@@ -133,8 +138,9 @@ on demand. On a CPU-only host without enough VRAM, cold loading takes 60-120 s.
 
 **After V6.2-FIX-25/26/27/28** (active since V6.2):
 
-- **Python warmup** (`startup.py`): checks `/api/ps` before sending any warmup
-  request. If the model is not resident, warmup is skipped — no deadlock trigger.
+- **Python warmup** (`startup.py`): disabled unless
+  `SWARMX_MODEL_STARTUP_PREWARM=1`. When enabled, it checks `/api/ps` before
+  sending any warmup request. If the model is not resident, warmup is skipped.
 - **Python health probe** (`startup.py`): uses `/api/version` with a short timeout
   instead of `/api/tags`, so startup health checks fail fast even when model listing
   is blocked by an in-flight load.
@@ -156,8 +162,8 @@ Add to `.env.local` to optimize for this host:
 # marked unreachable during the startup health check.
 SWARMX_OLLAMA_PROBE_TIMEOUT_MS=5000
 
-# Keep model resident for 15 min after each inference (avoids repeated loads).
-OLLAMA_KEEP_ALIVE=15m
+# Keep global residency disabled. Request-level keep_alive remains authoritative.
+OLLAMA_KEEP_ALIVE=0
 
 # Reduce response token ceiling for faster turnaround on simple queries.
 SWARMX_COMPOSER_NUM_PREDICT=96
@@ -172,20 +178,20 @@ SWARMX_COMPOSER_TIMEOUT_MS=150000
 when available RAM falls below roughly 2.2 GB, so restarts default to the safer
 single-model path even if these values are not exported manually.
 
-### Manual pre-warm before first use
+### Manual opt-in prewarm before first use
 
-To avoid the 90 s wait on the first Composer request after a restart:
+To avoid the first cold request after a restart, explicitly warm the model with
+a short keep-alive and verify residency. Do this only when you have enough
+physical `MemAvailable` headroom:
 
 ```bash
-# Pre-load phi4-fast before starting the stack (no AbortSignal — safe)
-ollama run phi4-fast:latest "Hi" --verbose
-
-# Or trigger via the API generate endpoint directly:
+# Pre-load the canonical Pilot for this session.
 curl -s http://127.0.0.1:11434/api/generate \
-  -d '{"model":"phi4-fast:latest","prompt":"Hi","stream":false,"options":{"num_predict":1}}'
+  -d '{"model":"instruct-phi4-pro-q8-prod","prompt":"Hi","stream":false,"keep_alive":"2m","options":{"num_predict":1}}'
 
-# Then verify the model is loaded:
-ollama ps   # should show phi4-fast:latest
+# Then verify the model is loaded, and unload it when finished:
+ollama ps
+ollama stop instruct-phi4-pro-q8-prod
 ```
 
 ```bash
@@ -213,13 +219,15 @@ SWARMX_OLLAMA_BASE_URL=http://127.0.0.1:11434
 # Ollama constrained-host tuning
 OLLAMA_NUM_PARALLEL=1
 OLLAMA_MAX_LOADED_MODELS=1
-OLLAMA_KEEP_ALIVE=15m
+OLLAMA_KEEP_ALIVE=0
 OLLAMA_FLASH_ATTENTION=1
 OLLAMA_KV_CACHE_TYPE=q8_0
+SWARMX_MODEL_STARTUP_PREWARM=0
+SWARMX_MODEL_PREDICTIVE_PREWARM=0
 
 # Composer tuning for constrained hardware
-SWARMX_COMPOSER_MODEL=phi4-fast:latest
-SWARMX_COMPOSER_FAST_MODEL=phi4-fast:latest
+SWARMX_COMPOSER_MODEL=instruct-phi4-pro-q8-prod
+SWARMX_COMPOSER_FAST_MODEL=instruct-phi4-pro-q8-prod
 SWARMX_COMPOSER_NUM_PREDICT=96
 SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS=120000
 SWARMX_COMPOSER_TIMEOUT_MS=150000
@@ -301,7 +309,7 @@ bash scripts/startup-enhanced.sh --dashboard
 
 ### Composer always falls back or times out on a low-RAM host
 
-Symptons: every Composer response is a fleet summary (mode = `fallback`) even when
+Symptoms: every Composer response is a fleet summary (mode = `fallback`) even when
 `ollama list` shows models installed, or requests time out after 60 s.
 
 **Diagnosis:**
@@ -328,7 +336,7 @@ OLLAMA_NUM_PARALLEL=1
 OLLAMA_MAX_LOADED_MODELS=1
 OLLAMA_FLASH_ATTENTION=1
 OLLAMA_KV_CACHE_TYPE=q8_0
-SWARMX_COMPOSER_MODEL=phi4-fast:latest
+SWARMX_COMPOSER_MODEL=instruct-phi4-pro-q8-prod
 SWARMX_COMPOSER_NUM_PREDICT=96
 SWARMX_COMPOSER_TIMEOUT_MS=150000
 SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS=120000
@@ -337,7 +345,7 @@ bash scripts/startup-enhanced.sh --dashboard
 ```
 
 Key notes:
-- `phi4-fast:latest` requires ~4.2 GB VRAM. If the host has <5 GB available, the model
+- `instruct-phi4-pro-q8-prod` requires ~4.3 GB RAM. If the host has <5 GB available, the model
   may be paged to RAM and take 2–3 min to answer. Token ceiling (`NUM_PREDICT=96`) keeps
   responses short and prevents runaway inference.
 - `startup-enhanced.sh` auto-discovers the live Ollama endpoint on startup
@@ -354,7 +362,7 @@ If Composer falls back even when models are installed:
 ollama list
 
 # Recommended explicit setting (tag included)
-export SWARMX_COMPOSER_MODEL=phi4-fast:latest
+export SWARMX_COMPOSER_MODEL=instruct-phi4-pro-q8-prod
 ```
 
 Notes:

@@ -8,7 +8,7 @@ non-essential steps under memory stress.
 Design constraints:
   - Never raises — all reads degrade gracefully to PressureLevel.NORMAL.
   - No external dependencies; stdlib only.
-  - Async-safe: get_pressure_async wraps the sync read in asyncio.to_thread.
+  - Async-safe: get_pressure_async does the same bounded procfs read directly.
   - Module-level cached snapshot (TTL-based) avoids hammering procfs every step.
 
 CHANGES V5.9 vs prior:
@@ -17,12 +17,10 @@ CHANGES V5.9 vs prior:
 """
 from __future__ import annotations
 
-import asyncio
 import time
 from enum import Enum
 from pathlib import Path
 from typing import NamedTuple
-
 
 # ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -179,9 +177,13 @@ async def get_pressure_async(
     ttl_s: float = 5.0,
     force: bool = False,
 ) -> PressureSnapshot:
-    """Async wrapper — off-loads procfs reads to a thread to avoid blocking the event loop."""
-    return await asyncio.to_thread(
-        get_pressure,
+    """Async wrapper for the cached pressure reader.
+
+    The work is limited to small procfs reads and cache checks. Running it
+    directly avoids default-executor lifecycle issues in short-lived asyncio
+    runners while keeping the public async API intact.
+    """
+    return get_pressure(
         warn_mb,
         critical_mb,
         zram_warn_pct,

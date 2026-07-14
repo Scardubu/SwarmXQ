@@ -6,7 +6,6 @@ read-aggregate and reset operations required by the ``telemetry`` command.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 

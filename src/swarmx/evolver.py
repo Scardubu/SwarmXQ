@@ -4,7 +4,7 @@ import json
 import logging
 import secrets
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -27,8 +27,8 @@ from .memory import (
 from .policy import assess_action
 from .risk import HIGH_RISK_KEYWORDS  # [V5.9-FIX-03] Import from risk.py — RISK_KEYWORDS was never in policy.py
 from .skills import save_generated_skill_catalog, synthesize_skills_from_summary
-from .storage import get_kv, list_missions, store_skill_record
 from .state import EvolutionProposal
+from .storage import get_kv, list_missions, store_skill_record
 from .telemetry import emit_event  # [IEP-FIX] For IEP block telemetry
 from .utils import read_json, write_json
 
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 # ── IEP Elite Invariants — field-level auto-apply lock ───────────────────────
@@ -126,7 +126,7 @@ Your stance for this proposal is specified below the schema hint.
 
 
 def _proposal_id(scope: str) -> str:
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+    stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S%f")
     nonce = secrets.token_hex(3)
     return f"proposal-{stamp}-{nonce}-{scope}"
 
@@ -922,7 +922,7 @@ def run_skill_crystallization(
     ) -> list[dict[str, Any]]:
         results = apply_proposals(runtime_dir, proposals, auto_apply=auto_apply, cfg=cfg)
         # Persist approved, applied proposals to the skills table
-        for res, proposal in zip(results, proposals):
+        for res, proposal in zip(results, proposals, strict=False):
             if res.get("applied"):
                 crystallized = (
                     proposal.patch.get("skills", {}).get("crystallized", {})

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +33,7 @@ def _stage_root(cfg: SwarmConfig) -> Path:
 def stage_candidate(*, repo: str | Path | None, cfg: SwarmConfig, cycle_id: str, candidate: dict[str, Any], validation: dict[str, Any], summary: str) -> dict[str, Any]:
     root = _stage_root(cfg)
     repo_path = Path(repo or ".").expanduser().resolve()
-    stage_id = f"stage-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
+    stage_id = f"stage-{datetime.now(UTC).strftime('%Y%m%d%H%M%S%f')}"
     artifact = {
         "stage_id": stage_id,
         "cycle_id": cycle_id,
@@ -41,7 +41,7 @@ def stage_candidate(*, repo: str | Path | None, cfg: SwarmConfig, cycle_id: str,
         "candidate": candidate,
         "validation": validation,
         "summary": summary,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
     artifact_path = root / "staged" / f"{stage_id}.json"
     write_json(artifact_path, artifact)

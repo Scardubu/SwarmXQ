@@ -74,7 +74,6 @@ class _FAISSStoreImpl:
 
     def _save(self) -> None:
         try:
-            import numpy as np  # already imported upstream
             tmp_idx  = _INDEX_FILE.with_suffix(".tmp")
             tmp_data = _DATA_FILE.with_suffix(".tmp")
             self._faiss.write_index(self._index, str(tmp_idx))

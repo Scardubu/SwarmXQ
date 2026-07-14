@@ -64,6 +64,11 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
   const [niche, setNiche] = useState<NonNullable<VideoJobRequest["niche"]>>("tech");
   const [targetDuration, setTargetDuration] = useState("30");
   const [modelRoute, setModelRoute] = useState<ModelRoute>("auto");
+  const [audience, setAudience] = useState("");
+  const [tone, setTone] = useState<NonNullable<VideoJobRequest["tone"]>>("educational");
+  const [style, setStyle] = useState<NonNullable<VideoJobRequest["style"]>>("faceless_broll");
+  const [captionStyle, setCaptionStyle] = useState<NonNullable<VideoJobRequest["captionStyle"]>>("bold_center");
+  const [voice, setVoice] = useState<NonNullable<VideoJobRequest["voice"]>>("default");
 
   const trimmedPrompt = prompt.trim();
   const canSubmit = trimmedPrompt.length > 0 && !isSubmitting;
@@ -78,6 +83,11 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
       platform,
       niche,
       targetDurationSeconds: Number(targetDuration),
+      tone,
+      style,
+      captionStyle,
+      voice,
+      ...(audience.trim() ? { audience: audience.trim() } : {}),
       ...(modelTier !== undefined ? { modelTier } : {}),
     };
 
@@ -104,7 +114,7 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
             </h2>
           </div>
           <p className="mt-1 text-xs leading-5 text-text-secondary">
-            Queue a vertical short with low-RAM-safe routing by default.
+            Shape the brief, then queue a low-RAM-safe render by default.
           </p>
         </div>
         <span className="shrink-0 rounded border border-border-accent bg-[var(--color-accent-dim)] px-2 py-1 font-mono text-[10px] uppercase tracking-wide text-accent">
@@ -200,6 +210,85 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
             { value: "worker", label: "Worker" },
             { value: "supervisor", label: "Supervisor" },
             { value: "reasoner", label: "Reasoner" },
+          ]}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <label
+            htmlFor={`${formId}-audience`}
+            className="text-[10px] font-mono uppercase tracking-wide text-text-muted"
+          >
+            Audience
+          </label>
+          <input
+            id={`${formId}-audience`}
+            value={audience}
+            onChange={(event) => setAudience(event.target.value)}
+            maxLength={160}
+            disabled={isSubmitting}
+            placeholder="Busy founders, new creators, students..."
+            className={cn(
+              "h-9 w-full rounded border border-border bg-bg-input px-2.5 text-sm text-text-primary",
+              "placeholder:text-text-muted transition-colors duration-(--duration-micro)",
+              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
+              "disabled:cursor-not-allowed disabled:opacity-50",
+            )}
+          />
+        </div>
+        <Select
+          id={`${formId}-tone`}
+          label="Tone"
+          value={tone}
+          onChange={setTone}
+          disabled={isSubmitting}
+          options={[
+            { value: "educational", label: "Educational" },
+            { value: "urgent", label: "Urgent" },
+            { value: "warm", label: "Warm" },
+            { value: "contrarian", label: "Contrarian" },
+            { value: "cinematic", label: "Cinematic" },
+            { value: "minimal", label: "Minimal" },
+          ]}
+        />
+        <Select
+          id={`${formId}-style`}
+          label="Style"
+          value={style}
+          onChange={setStyle}
+          disabled={isSubmitting}
+          options={[
+            { value: "faceless_broll", label: "Faceless B-roll" },
+            { value: "kinetic_text", label: "Kinetic Text" },
+            { value: "storytime", label: "Storytime" },
+            { value: "tutorial", label: "Tutorial" },
+            { value: "myth_busting", label: "Myth Busting" },
+          ]}
+        />
+        <Select
+          id={`${formId}-caption-style`}
+          label="Captions"
+          value={captionStyle}
+          onChange={setCaptionStyle}
+          disabled={isSubmitting}
+          options={[
+            { value: "bold_center", label: "Bold Center" },
+            { value: "lower_third", label: "Lower Third" },
+            { value: "minimal", label: "Minimal" },
+          ]}
+        />
+        <Select
+          id={`${formId}-voice`}
+          label="Voice"
+          value={voice}
+          onChange={setVoice}
+          disabled={isSubmitting}
+          options={[
+            { value: "default", label: "Default" },
+            { value: "calm", label: "Calm" },
+            { value: "energetic", label: "Energetic" },
+            { value: "narrator", label: "Narrator" },
           ]}
         />
       </div>

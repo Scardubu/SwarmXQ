@@ -33,7 +33,7 @@ import os
 import threading
 import warnings
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
@@ -123,7 +123,7 @@ def _ollama_url() -> str:
 # ─── [FIX-05] Module-level httpx singleton ────────────────────────────────────
 # One connection pool for the process lifetime — no TCP setup overhead per call.
 
-_HTTP_CLIENT: Optional[httpx.AsyncClient] = None
+_HTTP_CLIENT: httpx.AsyncClient | None = None
 _HTTP_BASE_URL: str = ""
 _HTTP_CLIENT_LOCK = threading.Lock()
 

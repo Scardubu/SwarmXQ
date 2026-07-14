@@ -13,8 +13,8 @@ from typing import Annotated
 
 import typer
 
-from swarmx.console.output import get_console, safe_print, emit_json, emit_error
 from swarmx.console.compat import is_json_mode
+from swarmx.console.output import emit_error, emit_json, get_console, safe_print
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +153,8 @@ def _current_version(*, refresh: bool = False) -> str:
 def _latest_version() -> str:
     """Query PyPI for the latest swarmx release. Falls back to current on error."""
     try:
-        import urllib.request, json as _json  # noqa: E401
+        import json as _json
+        import urllib.request  # noqa: E401
         url = f"https://pypi.org/pypi/{_PACKAGE_NAME}/json"
         with urllib.request.urlopen(url, timeout=8) as resp:  # noqa: S310
             data = _json.loads(resp.read().decode())

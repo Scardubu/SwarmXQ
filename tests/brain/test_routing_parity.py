@@ -10,11 +10,9 @@ Covers:
 """
 from __future__ import annotations
 
-import importlib
 import os
 import sys
 from unittest.mock import patch
-
 
 # ─── role_model env-var override ─────────────────────────────────────────────
 
@@ -96,28 +94,27 @@ def test_publish_event_unknown_kind_is_skipped(monkeypatch) -> None:
 
     monkeypatch.setenv("SWARM_HOME", "/tmp/swarmx-test")
     # Mock the event bus publish so we don't need SWARM_HOME to exist
-    with patch("brain.loop._SWARM_HOME", "/tmp/swarmx-test"):
-        with patch.dict(sys.modules, {
-            "swarmx.event_bus": type(sys)("swarmx.event_bus"),
-        }):
-            import types
-            bus_mock = types.ModuleType("swarmx.event_bus")
+    with patch("brain.loop._SWARM_HOME", "/tmp/swarmx-test"), patch.dict(sys.modules, {
+        "swarmx.event_bus": type(sys)("swarmx.event_bus"),
+    }):
+        import types
+        bus_mock = types.ModuleType("swarmx.event_bus")
 
-            class FakeEventKind:
-                TASK_START = "TASK_START"
-                TASK_COMPLETE = "TASK_COMPLETE"
-                TASK_FAILED = "TASK_FAILED"
+        class FakeEventKind:
+            TASK_START = "TASK_START"
+            TASK_COMPLETE = "TASK_COMPLETE"
+            TASK_FAILED = "TASK_FAILED"
 
-            bus_mock.EventKind = FakeEventKind
-            bus_mock.publish = fake_publish
-            sys.modules["swarmx.event_bus"] = bus_mock
+        bus_mock.EventKind = FakeEventKind
+        bus_mock.publish = fake_publish
+        sys.modules["swarmx.event_bus"] = bus_mock
 
-            # Known kind — should publish
-            loop._publish_event("task.start", {"goal": "test"})
-            # Unknown kind — should NOT raise, should not publish
-            loop._publish_event("unknown.kind", {"goal": "test"})
+        # Known kind — should publish
+        loop._publish_event("task.start", {"goal": "test"})
+        # Unknown kind — should NOT raise, should not publish
+        loop._publish_event("unknown.kind", {"goal": "test"})
 
-            del sys.modules["swarmx.event_bus"]
+        del sys.modules["swarmx.event_bus"]
 
     # Only the known kind was forwarded
     assert len(published) == 1
@@ -128,8 +125,8 @@ def test_publish_event_unknown_kind_is_skipped(monkeypatch) -> None:
 
 def test_detect_intent_classify_agree_on_code_signals() -> None:
     """router.detect_intent and dispatcher.classify must agree on code-heavy prompts."""
-    from brain.router import detect_intent
     from brain.dispatcher import classify
+    from brain.router import detect_intent
 
     prompt = "implement a Python class for the payment schema"
     router_role = detect_intent(prompt)
@@ -142,8 +139,8 @@ def test_detect_intent_classify_agree_on_code_signals() -> None:
 
 def test_detect_intent_classify_agree_on_reason_signals() -> None:
     """router.detect_intent and dispatcher.classify must agree on analysis prompts."""
-    from brain.router import detect_intent
     from brain.dispatcher import classify
+    from brain.router import detect_intent
 
     prompt = "analyze and design the architecture for the auth service"
     router_role = detect_intent(prompt)

@@ -7,6 +7,12 @@ import { tmpdir } from "node:os";
 import type { VideoJobRequest } from "../types/video.js";
 import { outputDir, resolveOutputPath } from "./video-assets.js";
 
+const RENDER_COMMAND_TIMEOUT_MS = Math.min(
+  900_000,
+  Math.max(30_000, Number.parseInt(process.env["SWARMX_VIDEO_FFMPEG_TIMEOUT_MS"] ?? "240000", 10) || 240_000),
+);
+const COMMAND_MAX_BUFFER_BYTES = 1024 * 1024;
+
 interface FfmpegRenderInput {
   jobId: string;
   request: VideoJobRequest;
@@ -24,7 +30,11 @@ function execFileChecked(
     const child = execFile(
       command,
       args,
-      signal !== undefined ? { signal } : {},
+      {
+        ...(signal !== undefined ? { signal } : {}),
+        timeout: RENDER_COMMAND_TIMEOUT_MS,
+        maxBuffer: COMMAND_MAX_BUFFER_BYTES,
+      },
       (error, _stdout, stderr) => {
       if (error) {
         reject(Object.assign(error, { stderr }));
@@ -81,6 +91,10 @@ function titleFromRequest(request: VideoJobRequest): string {
 
 function renderCards(input: FfmpegRenderInput): string[] {
   const title = titleFromRequest(input.request);
+  const audience = input.request.audience?.trim() || "people who need this now";
+  const tone = input.request.tone ?? "educational";
+  const style = input.request.style?.replace(/_/g, " ") ?? "faceless broll";
+  const captionStyle = input.request.captionStyle?.replace(/_/g, " ") ?? "bold center";
   const scriptLines = (input.scriptText ?? "")
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -89,7 +103,8 @@ function renderCards(input: FfmpegRenderInput): string[] {
 
   return [
     title,
-    firstNonEmpty(scriptLines, "Stop scrolling. These three habits make deep focus easier."),
+    firstNonEmpty(scriptLines, `Stop scrolling. This ${tone} short is for ${audience}.`),
+    `Format: ${style}. Captions: ${captionStyle}.`,
     firstNonEmpty(frameLines.slice(0, 1), "Habit 1: protect one distraction-free block."),
     firstNonEmpty(frameLines.slice(1, 2), "Habit 2: write the next action before you start."),
     firstNonEmpty(frameLines.slice(2, 3), "Habit 3: reset your environment before every session."),
@@ -139,6 +154,11 @@ export async function renderWithFfmpeg(input: FfmpegRenderInput): Promise<{ outp
       code: "FFMPEG_UNAVAILABLE",
     });
   }
+  if (!(await commandAvailable("ffprobe"))) {
+    throw Object.assign(new Error("ffprobe is not available"), {
+      code: "FFPROBE_UNAVAILABLE",
+    });
+  }
 
   const fontFile = discoverFont();
   const duration = clampDuration(input.request.targetDurationSeconds);
@@ -158,12 +178,23 @@ export async function renderWithFfmpeg(input: FfmpegRenderInput): Promise<{ outp
 
     const narrationPath = join(workDir, "narration.wav");
     const hasEspeak = await commandAvailable("espeak-ng");
+    if (!hasEspeak && process.env["SWARMX_VIDEO_ALLOW_SILENT_AUDIO"] !== "1") {
+      throw Object.assign(new Error("espeak-ng is not available"), {
+        code: "ESPEAK_UNAVAILABLE",
+      });
+    }
     if (hasEspeak) {
+      const speedByVoice: Record<string, string> = {
+        default: "165",
+        calm: "145",
+        energetic: "185",
+        narrator: "155",
+      };
       await execFileChecked("espeak-ng", [
         "-w",
         narrationPath,
         "-s",
-        "165",
+        speedByVoice[input.request.voice ?? "default"] ?? "165",
         narrationText(input, cards),
       ], input.signal);
     }

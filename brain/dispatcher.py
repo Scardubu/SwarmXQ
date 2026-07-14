@@ -23,8 +23,6 @@ import warnings
 
 import structlog
 
-from brain.router import route, route_sync
-
 log = structlog.get_logger("swarmx.brain.dispatcher")
 
 _DEPRECATION_WARNED = False

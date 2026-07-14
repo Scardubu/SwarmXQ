@@ -142,7 +142,8 @@ startup:
   health_timeout_s: 6.0
   warmup_timeout_s: 20.0
   evolver_timeout_s: 15.0
-  # [DEF-r7-04] Predictive warmup target — Relay (Q4_K_M, ~2.5GB) loads on boot
+  # [DEF-r8-01] Optional warmup target. Startup warmup is disabled unless
+  # SWARMX_MODEL_STARTUP_PREWARM=1 so Relay is not pinned on 8 GB hosts.
   warmup_target: route-phi4-lite-q4km-prod
 
 # ── Memory ───────────────────────────────────────────────────────────────────

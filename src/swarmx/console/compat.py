@@ -38,11 +38,16 @@ def _argv_has(flag: str) -> bool:
 # ── Terminal capability detection ────────────────────────────────────────────
 
 def is_no_color() -> bool:
-    """True when NO_COLOR is set (https://no-color.org/) or TERM=dumb."""
+    """True when color output should be suppressed.
+
+    Explicit NO_COLOR-style environment variables apply globally. TERM=dumb is
+    only honored for SwarmX CLI invocations so unrelated non-interactive test
+    runners do not change default behavior.
+    """
     return (
         "NO_COLOR" in os.environ
-        or os.environ.get("TERM", "").lower() == "dumb"
         or _flag("SWARMX_NO_COLOR")
+        or (_is_swarm_invocation() and os.environ.get("TERM", "").lower() == "dumb")
     )
 
 

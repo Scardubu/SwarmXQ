@@ -211,6 +211,23 @@ const VideoJobRequestSchema = {
       type: "string",
       enum: ["fast", "worker", "supervisor", "reasoner"],
     },
+    audience: { type: "string", minLength: 1, maxLength: 160 },
+    tone: {
+      type: "string",
+      enum: ["educational", "urgent", "warm", "contrarian", "cinematic", "minimal"],
+    },
+    style: {
+      type: "string",
+      enum: ["faceless_broll", "kinetic_text", "storytime", "tutorial", "myth_busting"],
+    },
+    captionStyle: {
+      type: "string",
+      enum: ["bold_center", "lower_third", "minimal"],
+    },
+    voice: {
+      type: "string",
+      enum: ["default", "calm", "energetic", "narrator"],
+    },
     clientRequestId: { type: "string", maxLength: 128 },
   },
 } as const;

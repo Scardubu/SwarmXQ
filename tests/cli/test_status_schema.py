@@ -1,8 +1,6 @@
 """Tests for swarmx.core.status_schema — canonical status vocabulary."""
 from __future__ import annotations
 
-import pytest
-
 from swarmx.core.status_schema import (
     AgentStatus,
     RiskLevel,

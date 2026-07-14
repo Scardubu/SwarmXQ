@@ -13,8 +13,10 @@ import hashlib
 import json
 import logging
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from datetime import UTC
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -204,8 +206,7 @@ class SkillCrystallizer:
         # Convert raw dicts to EvolutionProposal objects so they traverse the
         # same gate as all other evolution proposals.
         try:
-            import secrets
-            from datetime import datetime, timezone
+            from datetime import datetime
 
             from swarmx.evolver import _proposal_id  # type: ignore[import]
             from swarmx.state import EvolutionProposal  # type: ignore[import]
@@ -213,7 +214,7 @@ class SkillCrystallizer:
             evolution_proposals = [
                 EvolutionProposal(
                     id=_proposal_id("skill-crystallization"),
-                    created_at=datetime.now(timezone.utc).isoformat(),
+                    created_at=datetime.now(UTC).isoformat(),
                     scope=p.get("scope", "skills"),
                     reason=p.get("reason", ""),
                     patch=p.get("patch", {}),

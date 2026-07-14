@@ -4,19 +4,20 @@ import hashlib
 import json
 import sqlite3
 import threading
+from collections.abc import Iterable
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from .runtime import ensure_runtime_dirs
-from .utils import read_json, write_json
+from .utils import write_json
 
 _DB_LOCK = threading.RLock()
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def database_path(runtime_home: Path) -> Path:
@@ -227,7 +228,7 @@ def list_events(runtime_home: Path, limit: int = 100) -> list[dict[str, Any]]:
 def upsert_job(runtime_home: Path, job: dict[str, Any]) -> dict[str, Any]:
     init_store(runtime_home)
     payload = dict(job)
-    payload.setdefault("id", f"job-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}")
+    payload.setdefault("id", f"job-{datetime.now(UTC).strftime('%Y%m%d%H%M%S%f')}")
     payload.setdefault("created_at", now_iso())
     payload.setdefault("updated_at", payload["created_at"])
     payload.setdefault("status", "queued")
@@ -372,7 +373,7 @@ def list_runs(runtime_home: Path, limit: int = 200) -> list[dict[str, Any]]:
 def store_memory_record(runtime_home: Path, entry: dict[str, Any]) -> dict[str, Any]:
     init_store(runtime_home)
     payload = dict(entry)
-    payload.setdefault("id", f"memory-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}")
+    payload.setdefault("id", f"memory-{datetime.now(UTC).strftime('%Y%m%d%H%M%S%f')}")
     payload.setdefault("created_at", now_iso())
     payload.setdefault("kind", "lesson")
     tags = payload.get("tags") or []
@@ -492,7 +493,7 @@ def store_bulk_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> None:
 def store_mission_record(runtime_home: Path, mission: dict[str, Any]) -> dict[str, Any]:
     init_store(runtime_home)
     payload = dict(mission)
-    payload.setdefault("id", f"mission-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}")
+    payload.setdefault("id", f"mission-{datetime.now(UTC).strftime('%Y%m%d%H%M%S%f')}")
     payload.setdefault("created_at", now_iso())
     payload.setdefault("updated_at", payload["created_at"])
     payload.setdefault("status", "proposed")

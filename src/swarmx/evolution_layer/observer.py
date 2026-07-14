@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -35,14 +35,14 @@ def collect_observation(repo: str | Path | None = None, cfg: SwarmConfig | None 
     cfg = cfg or SwarmConfig()
     repo_path = Path(repo or ".").expanduser().resolve()
 
-    from swarmx.memory import load_recent_memories, load_recent_runs
     from swarmx.core.evolution_engine import get_proposals
-    from swarmx.runtime import load_runtime_state
+    from swarmx.memory import load_recent_memories, load_recent_runs
     from swarmx.metrics import build_metrics
+    from swarmx.runtime import load_runtime_state
 
     observation = Observation(
-        cycle_id=f"cycle-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}",
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        cycle_id=f"cycle-{datetime.now(UTC).strftime('%Y%m%d%H%M%S%f')}",
+        timestamp=datetime.now(UTC).isoformat(),
         repo=str(repo_path),
         model_router=cfg.model_fast,
         model_reason=cfg.model_reason,

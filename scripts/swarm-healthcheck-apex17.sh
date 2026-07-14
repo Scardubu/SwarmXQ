@@ -6,7 +6,7 @@
 # Validates:
 #   1. Ollama running and responsive
 #   2. Core canonical models registered
-#   3. Relay is warm and responsive
+#   3. Relay responds without being pinned resident
 #   4. API health endpoint OK
 #   5. Memory pressure within operating bounds
 #   6. Naming standard compliance
@@ -88,13 +88,13 @@ else
   WARN=$((WARN + STALE_FOUND))
 fi
 
-# ── 3. Relay warmth ──────────────────────────────────────────────────────────
+# ── 3. Relay probe ───────────────────────────────────────────────────────────
 echo ""
-echo -e "${CYAN}Relay Warmth${NC}"
+echo -e "${CYAN}Relay Probe${NC}"
 warn_check "Relay responds to classification prompt" bash -c '
   RESP=$(curl -sf -X POST "'$OLLAMA_URL'/api/generate" \
     -H "Content-Type: application/json" \
-    -d "{\"model\":\"route-phi4-lite-q4km-prod\",\"prompt\":\"classify: hello\",\"keep_alive\":\"10m\",\"stream\":false,\"options\":{\"num_predict\":8,\"temperature\":0}}" \
+    -d "{\"model\":\"route-phi4-lite-q4km-prod\",\"prompt\":\"classify: hello\",\"keep_alive\":\"0s\",\"stream\":false,\"options\":{\"num_predict\":8,\"temperature\":0}}" \
     --max-time 45 2>/dev/null)
   echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get(\"response\") else 1)" 2>/dev/null
 '

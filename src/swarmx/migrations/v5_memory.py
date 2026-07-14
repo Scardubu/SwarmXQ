@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 V5_MEMORY_MIGRATION = """
 -- ── V5 memory column additions ────────────────────────────────────────────────
 -- SQLite 3.37+ supports ADD COLUMN with DEFAULT safely

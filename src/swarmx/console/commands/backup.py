@@ -15,15 +15,14 @@ import json
 import logging
 import shutil
 import tarfile
-import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
-from swarmx.console.output import get_console, safe_print, emit_json, emit_error
 from swarmx.console.compat import is_json_mode
+from swarmx.console.output import emit_error, emit_json, get_console, safe_print
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +68,7 @@ def cmd_create(
     console = get_console()
     cfg = SwarmConfig()
 
-    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     dir_name = f"swarmx-backup-{ts}" + (f"-{tag}" if tag else "")
     backup_dir = cfg.home / "backups" / dir_name
     backup_dir.mkdir(parents=True, exist_ok=True)

@@ -17,9 +17,8 @@ Covers:
 from __future__ import annotations
 
 import os
-import sys
-import tempfile
 import stat
+import sys
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch

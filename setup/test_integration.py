@@ -18,19 +18,18 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Optional
 
 try:
     import httpx
+    from rich import box
     from rich.console import Console
     from rich.table import Table
-    from rich import box
 except ImportError:
     print("pip install rich httpx")
     sys.exit(1)
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "orchestration"))
-from orchestrator import extract_json, strip_think_block, validate_message, load_schemas
+from orchestrator import extract_json, load_schemas, strip_think_block, validate_message
 
 console   = Console()
 OLLAMA_URL = "http://127.0.0.1:11434"

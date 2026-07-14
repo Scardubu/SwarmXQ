@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -33,8 +33,9 @@ def doctor_check(
         os.environ["SWARMX_JSON"] = "1"
     # Prefer the premium console doctor if available; fall back to cli.doctor.
     try:
-        from swarmx.console.commands.doctor import doctor_check as _premium_check  # type: ignore[attr-defined]
         import inspect
+
+        from swarmx.console.commands.doctor import doctor_check as _premium_check  # type: ignore[attr-defined]
         sig = inspect.signature(_premium_check)
         kwargs: dict = {}
         if "strict" in sig.parameters:

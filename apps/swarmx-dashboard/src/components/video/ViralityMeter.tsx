@@ -1,5 +1,5 @@
 /**
- * ViralityMeter — 5-dimension virality signal display
+ * ViralityMeter — 5-dimension engagement heuristic display
  *
  * Renders Hook / Completion / Shareability / SEO / Overall as labeled bars
  * with colour-coded thresholds:
@@ -165,7 +165,7 @@ export function ViralityMeter({ signal, isScoring = false, compact = false, onIm
   if (compact) {
     const fill = barColour(overallNorm);
     return (
-      <div className="flex items-center gap-2 w-full" aria-label={`Virality score: ${overallPct}/100`}>
+      <div className="flex items-center gap-2 w-full" aria-label={`Engagement heuristic score: ${overallPct}/100`}>
         <div className="h-1.5 rounded bg-bg-surface border border-border overflow-hidden flex-1">
           <div
             className={`h-full rounded transition-all duration-700 ease-out ${fill}`}
@@ -174,7 +174,7 @@ export function ViralityMeter({ signal, isScoring = false, compact = false, onIm
             aria-valuenow={overallPct}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label={`Virality: ${overallPct}/100`}
+            aria-label={`Engagement heuristic: ${overallPct}/100`}
           />
         </div>
         <span className={`text-[10px] font-mono ${overallColour}`}>{overallPct}</span>
@@ -184,23 +184,23 @@ export function ViralityMeter({ signal, isScoring = false, compact = false, onIm
 
   return (
     <section
-      aria-label="Virality score"
+      aria-label="Engagement heuristic score"
       className="rounded border border-border bg-bg-elevated p-3"
     >
       {/* Header */}
       <div className="flex items-center justify-between gap-3 mb-4">
         <div>
           <h3 className="text-xs font-mono text-text-secondary uppercase tracking-wider">
-            Virality Signal
+            Engagement Heuristic
           </h3>
           <p className="text-[10px] text-text-muted mt-0.5 font-mono">
-            Scored by {signal.scoredBy}
+            Heuristic guidance scored by {signal.scoredBy}
           </p>
         </div>
         <div className="flex items-center gap-3">
           <div
             className={`text-2xl font-bold tabular-nums font-mono ${overallColour}`}
-            aria-label={`Overall virality score: ${overallPct} out of 100`}
+            aria-label={`Overall engagement heuristic score: ${overallPct} out of 100`}
           >
             {overallPct}
             <span className="text-xs text-text-muted font-normal">/100</span>
@@ -208,7 +208,7 @@ export function ViralityMeter({ signal, isScoring = false, compact = false, onIm
           {onImprove && (
             <button
               onClick={onImprove}
-              aria-label="Get AI recommendations to improve virality score"
+              aria-label="Get recommendations to improve engagement score"
               className="
                 text-[10px] font-mono text-text-muted hover:text-accent border border-border px-2 py-0.5 rounded
               "
@@ -238,7 +238,7 @@ export function ViralityMeter({ signal, isScoring = false, compact = false, onIm
       {signal.recommendations && signal.recommendations.length > 0 && (
         <div className="mt-4 rounded border border-border bg-bg-surface p-3">
           <p className="text-[10px] uppercase tracking-wider text-text-muted mb-2 font-mono">
-            Oracle Recommendations
+            Suggested Improvements
           </p>
           <ul className="space-y-1.5">
             {signal.recommendations.map((rec, idx) => (

@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from swarmx.skills import skill_library, SkillCard
+from swarmx.skills import SkillCard, skill_library
 
 
 def list_skills(runtime_home: Path | None = None) -> list[SkillCard]:

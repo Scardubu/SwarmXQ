@@ -9,7 +9,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from swarmx.startup import StartupSummary, format_startup_banner, load_startup_summary, run_startup_autopilot
+from swarmx.startup import StartupSummary, _warmup_models, format_startup_banner, load_startup_summary, run_startup_autopilot
 
 
 class _FakeCfg:
@@ -74,6 +74,14 @@ def test_run_startup_autopilot_persists_summary(monkeypatch, tmp_path: Path) -> 
     assert saved["pressureLevel"] == "high"
     assert saved["warmupDone"] is False
     assert json.loads(saved_path.read_text(encoding="utf-8"))["evolverProposals"] == 2
+
+
+def test_startup_model_warmup_is_opt_in(monkeypatch, tmp_path: Path) -> None:
+    cfg = _FakeCfg(tmp_path)
+
+    monkeypatch.delenv("SWARMX_MODEL_STARTUP_PREWARM", raising=False)
+
+    assert asyncio.run(_warmup_models(cfg)) is False
 
 
 def test_format_startup_banner_accepts_serialised_dict() -> None:

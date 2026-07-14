@@ -1,8 +1,7 @@
 """``swarm evolve`` — generate, review, and apply evolution proposals."""
 from __future__ import annotations
 
-import os
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 

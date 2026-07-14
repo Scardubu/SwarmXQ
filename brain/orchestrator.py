@@ -162,7 +162,11 @@ async def _get_orch() -> tuple[Any, Any]:
 
         _add_orchestration_to_path()
         from orchestrator import (  # type: ignore[import]
-            OllamaClient, SwarmXOrchestrator, _init_cache, load_config, load_schemas,
+            OllamaClient,
+            SwarmXOrchestrator,
+            _init_cache,
+            load_config,
+            load_schemas,
         )
         load_config()
         load_schemas()

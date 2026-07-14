@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 # Whitelist of known tables — used by count_table() to reject arbitrary names.
 _VALID_TABLES: frozenset[str] = frozenset({
     "kv", "events", "jobs", "runs", "memories", "memories_fts",

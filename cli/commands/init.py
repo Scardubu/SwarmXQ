@@ -1,7 +1,6 @@
 """``swarm init`` — initialise a repository for SwarmX."""
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Annotated
 
 import typer

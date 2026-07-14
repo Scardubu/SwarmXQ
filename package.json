@@ -1,0 +1,13 @@
+{
+  "name": "swarmxq",
+  "version": "2026.6.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm --filter @swarmx/types typecheck && pnpm --filter @swarmx/api build && pnpm --filter @swarmx/dashboard build",
+    "lint": "pnpm --filter @swarmx/dashboard lint && python -m ruff check .",
+    "test": "pnpm --filter @swarmx/dashboard test && pnpm --filter @swarmx/api test",
+    "typecheck": "pnpm --filter @swarmx/types typecheck && pnpm --filter @swarmx/api typecheck && pnpm --filter @swarmx/dashboard typecheck"
+  },
+  "packageManager": "pnpm@11.9.0"
+}

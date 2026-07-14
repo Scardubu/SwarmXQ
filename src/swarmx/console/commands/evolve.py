@@ -11,12 +11,12 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
-from swarmx.console.output import get_console, safe_print, emit_json, emit_error, make_table
-from swarmx.console.compat import is_json_mode, is_no_progress
+from swarmx.console.compat import is_json_mode
+from swarmx.console.output import emit_error, emit_json, get_console, make_table, safe_print
 
 logger = logging.getLogger(__name__)
 
@@ -103,8 +103,8 @@ def evolve_review(
 ) -> None:
     """Interactively review pending proposals (Textual → questionary → stdin)."""
     from swarmx.config import SwarmConfig
-    from swarmx.core.evolution_engine import pending_proposals
     from swarmx.console.tui_review import review_proposals
+    from swarmx.core.evolution_engine import pending_proposals
 
     cfg = SwarmConfig()
     proposals = pending_proposals(cfg.home)
@@ -136,7 +136,7 @@ def evolve_apply(
 ) -> None:
     """Apply approved evolution proposals (gated, BUG-09)."""
     from swarmx.config import SwarmConfig
-    from swarmx.core.evolution_engine import get_proposals, apply_proposals
+    from swarmx.core.evolution_engine import apply_proposals, get_proposals
     from swarmx.policy import assess_action
 
     cfg = SwarmConfig()

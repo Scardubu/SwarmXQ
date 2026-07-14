@@ -1,22 +1,28 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from .config import SwarmConfig
 from .evaluator import island_tournament, rank_outputs
 from .event_bus import EventKind  # [FIX] Import EventKind constants — replaces bare string literals
-from .llm import choose_model, choose_model_for_task, generate, prompt_for_task
-from .memory import learn_from_run, load_recent_memories, store_checkpoint, store_run, summarize_evidence, summarize_memories
+from .llm import choose_model_for_task, generate, prompt_for_task
+from .memory import (
+    learn_from_run,
+    load_recent_memories,
+    store_checkpoint,
+    store_run,
+    summarize_evidence,
+    summarize_memories,
+)
 from .pressure import PressureLevel, level_from_config  # [V5.9-ENH-PRESS-01]
 from .risk import approval_required
 from .state import Checkpoint, Plan, RunRecord
 from .storage import store_checkpoint_record, upsert_step_checkpoint
 from .telemetry import emit_event
 from .utils import cmd_exists, run_cmd, write_json
-
 
 # ── Semantic memory helper (non-critical — never raises) ──────────────────────
 
@@ -65,7 +71,7 @@ def _write_v5_checkpoint(
         ckpt = Checkpoint(
             thread_id=f"{mid}:{run_id}:{stage_index}",
             stage=stage,
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
             state_snapshot=state_snapshot,
             risk_at_snapshot=risk,
             is_human_interrupt=is_human_interrupt,
@@ -416,7 +422,7 @@ def execute_plan(repo: Path, plan: Plan, run_id: str, autonomous: bool, max_iter
     }
     record = RunRecord(
         id=run_id,
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
         target=plan.target,
         workflow=plan.workflow,
         risk=plan.risk.value,

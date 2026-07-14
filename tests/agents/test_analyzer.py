@@ -12,8 +12,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
-
 from agents.analyzer import analyze_output, analyze_output_async
 
 

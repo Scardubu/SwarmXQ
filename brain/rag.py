@@ -23,13 +23,12 @@ Tier 4 — bare prompt passthrough        (always available)
 from __future__ import annotations
 
 import os
-from typing import Optional
 
 # ── Singleton store references — instantiated once at first use ────────────────
-_faiss_store: Optional[object]  = None
-_tfidf_store: Optional[object]  = None
-_faiss_ready: Optional[bool]    = None   # None = not yet checked
-_tfidf_ready: Optional[bool]    = None
+_faiss_store: object | None  = None
+_tfidf_store: object | None  = None
+_faiss_ready: bool | None    = None   # None = not yet checked
+_tfidf_ready: bool | None    = None
 
 
 def _top_k() -> int:
@@ -40,7 +39,7 @@ def _max_chars() -> int:
     return int(os.environ.get("SWARM_RAG_MAX_CHARS", "300"))
 
 
-def _get_faiss_store() -> Optional[object]:
+def _get_faiss_store() -> object | None:
     """[FIX-01] Lazy singleton — never re-loads the model after first init."""
     global _faiss_store, _faiss_ready
     if _faiss_ready is not None:
@@ -59,7 +58,7 @@ def _get_faiss_store() -> Optional[object]:
     return _faiss_store
 
 
-def _get_tfidf_store() -> Optional[object]:
+def _get_tfidf_store() -> object | None:
     """[FIX-01] Lazy singleton — VectorStore is cheap but still worth caching."""
     global _tfidf_store, _tfidf_ready
     if _tfidf_ready is not None:
@@ -76,7 +75,7 @@ def _get_tfidf_store() -> Optional[object]:
 
 # ── Tier search helpers ────────────────────────────────────────────────────────
 
-def _search_faiss(query: str, top_k: int) -> Optional[list[str]]:
+def _search_faiss(query: str, top_k: int) -> list[str] | None:
     """Tier-1: FAISS semantic search (singleton store)."""
     store = _get_faiss_store()
     if store is None:
@@ -88,7 +87,7 @@ def _search_faiss(query: str, top_k: int) -> Optional[list[str]]:
         return None
 
 
-def _search_tfidf(query: str, top_k: int) -> Optional[list[str]]:
+def _search_tfidf(query: str, top_k: int) -> list[str] | None:
     """Tier-2: TF-IDF cosine similarity search (singleton store)."""
     store = _get_tfidf_store()
     if store is None:
@@ -100,7 +99,7 @@ def _search_tfidf(query: str, top_k: int) -> Optional[list[str]]:
         return None
 
 
-def _search_jsonl(query: str, top_k: int) -> Optional[list[str]]:
+def _search_jsonl(query: str, top_k: int) -> list[str] | None:
     """Tier-3: brain.memory JSONL keyword search (stdlib only)."""
     try:
         from brain.memory import search as mem_search  # type: ignore[import]
@@ -115,7 +114,7 @@ def _search_jsonl(query: str, top_k: int) -> Optional[list[str]]:
         return None
 
 
-def _build_ctx_block(query: str) -> Optional[str]:
+def _build_ctx_block(query: str) -> str | None:
     """Run tier chain; return formatted context block or None."""
     k       = _top_k()
     results = (

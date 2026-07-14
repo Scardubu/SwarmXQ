@@ -86,10 +86,11 @@ import signal
 import sys
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 import httpx
 import jsonschema
@@ -105,7 +106,7 @@ from tenacity import (
 # ─── Auto-configure dispatch log from environment ─────────────────────────────
 _env_dispatch_log = os.environ.get("SWARMX_DISPATCH_LOG", "")
 if _env_dispatch_log:
-    _dispatch_log_path_env: Optional[Path] = Path(_env_dispatch_log)
+    _dispatch_log_path_env: Path | None = Path(_env_dispatch_log)
 else:
     _dispatch_log_path_env = None
 
@@ -278,8 +279,8 @@ def CO_LOAD_MAX_CONCURRENT() -> int:
     # [V5.9-ENH-05] Pressure-aware concurrency: under memory stress the
     # governance.concurrency.* thresholds take precedence over co_load limits.
     try:
-        from src.swarmx.pressure import PressureLevel, level_from_config  # type: ignore
         from src.swarmx.config import SwarmConfig  # type: ignore
+        from src.swarmx.pressure import PressureLevel, level_from_config  # type: ignore
         _swarm_cfg = SwarmConfig()
         _level = level_from_config(_swarm_cfg)
         if _level is PressureLevel.CRITICAL:
@@ -441,7 +442,7 @@ def validate_message(msg: dict, schema_name: str) -> list[str]:
 
 # ─── LLM Response Cache ───────────────────────────────────────────────────────
 
-_CACHE_DIR: Optional[Path] = None
+_CACHE_DIR: Path | None = None
 _CACHE_TTL_S: int = 3600
 _CACHE_ENABLED: bool = False
 
@@ -461,7 +462,7 @@ def _cache_key(model: str, messages: list[dict]) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()[:32]
 
 
-def _cache_get(key: str) -> Optional[str]:
+def _cache_get(key: str) -> str | None:
     if not _CACHE_ENABLED or _CACHE_DIR is None:
         return None
     cache_file = _CACHE_DIR / f"{key}.json"
@@ -585,11 +586,11 @@ class TaskTrace:
     task_id: str
     goal: str
     status: TaskStatus = TaskStatus.PENDING
-    plan: Optional[dict] = None
+    plan: dict | None = None
     steps: list[StepRecord] = field(default_factory=list)
     messages: list[dict] = field(default_factory=list)
     memory: dict = field(default_factory=dict)
-    final_answer: Optional[dict] = None
+    final_answer: dict | None = None
     escalations: list[dict] = field(default_factory=list)
     started_at: float = field(default_factory=time.time)
     finished_at: float = 0.0
@@ -643,13 +644,13 @@ class OllamaClient:
     Async wrapper around Ollama /api/chat with escalation, caching, and streaming.
     """
 
-    def __init__(self, base_url: Optional[str] = None):
+    def __init__(self, base_url: str | None = None):
         self.base_url = base_url or OLLAMA_BASE_URL()
         self._client = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=httpx.Timeout(REQUEST_TIMEOUT(), connect=CONNECT_TIMEOUT()),
         )
-        self._current_model: Optional[str] = None
+        self._current_model: str | None = None
 
     async def close(self) -> None:
         await self._client.aclose()
@@ -663,9 +664,9 @@ class OllamaClient:
         self,
         model: str,
         messages: list[dict],
-        options: Optional[dict] = None,
-        schema: Optional[dict] = None,
-        stream_callback: Optional[Callable[[str], None]] = None,
+        options: dict | None = None,
+        schema: dict | None = None,
+        stream_callback: Callable[[str], None] | None = None,
     ) -> tuple[str, dict]:
         if self._current_model != model:
             log.info(
@@ -750,9 +751,9 @@ class OllamaClient:
         self,
         model: str,
         messages: list[dict],
-        options: Optional[dict] = None,
-        schema: Optional[dict] = None,
-        stream_callback: Optional[Callable[[str], None]] = None,
+        options: dict | None = None,
+        schema: dict | None = None,
+        stream_callback: Callable[[str], None] | None = None,
     ) -> tuple[str, dict]:
         """Chat with automatic escalation chain on OllamaError."""
         if stream_callback is None:
@@ -763,7 +764,7 @@ class OllamaClient:
                 return cached, {"cached": True, "completion_tokens": 0, "duration_s": 0.0}
 
         chain = _escalation_chain_for(model)
-        last_exc: Optional[Exception] = None
+        last_exc: Exception | None = None
 
         for candidate in chain:
             try:
@@ -839,8 +840,8 @@ def _deterministic_fallback(model: str, messages: list[dict]) -> str:
 async def run_batch(
     ollama: OllamaClient,
     prompts: list[str],
-    model: Optional[str] = None,
-    max_concurrent: Optional[int] = None,
+    model: str | None = None,
+    max_concurrent: int | None = None,
 ) -> list[str]:
     """Fan-out prompts to the fast model in parallel. Results in input order."""
     _model = model or MODEL_ROLES()["fast"]
@@ -862,7 +863,7 @@ def strip_think_block(text: str) -> str:
     return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
 
-def extract_json(text: str) -> Optional[dict]:
+def extract_json(text: str) -> dict | None:
     """Robustly extract a JSON object from model output."""
     text = strip_think_block(text)
     text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.MULTILINE)
@@ -1027,7 +1028,7 @@ async def score_complexity(
                 task_id=task_id,
             )
             return score
-    except asyncio.TimeoutError:
+    except TimeoutError:
         log.warning("complexity_scoring_timeout", timeout_s=_timeout, task_id=task_id)
     except Exception as e:
         log.warning("complexity_scoring_failed", error=str(e))
@@ -1054,7 +1055,7 @@ class SwarmXOrchestrator:
         self.trace_dir = trace_dir
         self._tool_dispatch = None
         self._tool_dispatch_lock = asyncio.Lock()   # [V5.9] async safety
-        self._active_trace: Optional[TaskTrace] = None
+        self._active_trace: TaskTrace | None = None
 
     def _get_tool_dispatch(self):
         if self._tool_dispatch is None:
@@ -1142,7 +1143,7 @@ class SwarmXOrchestrator:
         step: StepRecord,
         model: str,
         delegation: dict,
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """
         Multi-turn tool call loop for a single step.
         Message list accumulated across all turns — never rebuilt.
@@ -1568,13 +1569,13 @@ class SwarmXOrchestrator:
             # [V5.9-ENH-05] Pressure gate: skip fanout entirely under CRITICAL
             # or HIGH pressure to avoid ZRAM thrash; fall through to sequential.
             try:
-                from brain.graph import build_graph_from_plan, TaskGraph, TaskNode  # type: ignore
+                from brain.graph import TaskGraph, TaskNode, build_graph_from_plan  # type: ignore
 
                 # Check runtime pressure before attempting parallel fanout.
                 _allow_parallel = True
                 try:
-                    from src.swarmx.pressure import PressureLevel, level_from_config  # type: ignore
                     from src.swarmx.config import SwarmConfig as _SC  # type: ignore
+                    from src.swarmx.pressure import PressureLevel, level_from_config  # type: ignore
                     _fanout_level = level_from_config(_SC())
                     if _fanout_level in (PressureLevel.HIGH, PressureLevel.CRITICAL):
                         _allow_parallel = False
@@ -1858,7 +1859,7 @@ class SwarmXOrchestrator:
             with open(improvements_log, "a") as f:
                 f.write(json.dumps(audit) + "\n")
             log.info("critic_audit_logged", path=str(improvements_log))
-        except asyncio.TimeoutError:
+        except TimeoutError:
             log.warning("critic_bg_timeout",
                         timeout_s=timeout_s, trace=str(trace_path))
         except Exception as e:
@@ -1896,7 +1897,7 @@ class SwarmXOrchestrator:
         reversibility_floor = int(cfg("evolution.reversibility_floor", 3))
         log.info("evolution_cycle_start")
 
-        async def _evo_chat(phase: str, instruction: str, data: Any) -> Optional[dict]:
+        async def _evo_chat(phase: str, instruction: str, data: Any) -> dict | None:
             model = evo_models[phase]
             raw, _ = await self.ollama.chat(
                 model=model,

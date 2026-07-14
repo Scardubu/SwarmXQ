@@ -32,7 +32,6 @@ from __future__ import annotations
 
 from typing import Literal, TypedDict
 
-
 # ─── Operator name literals ──────────────────────────────────────────────────
 
 OPERATOR_NAMES: tuple[str, ...] = (

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import SwarmConfig
-from .risk import approval_required, risk_from_text, risk_for_path
+from .risk import approval_required, risk_for_path, risk_from_text
 from .skills import match_skills
 from .state import AgentRole, Plan, RiskLevel, TaskItem
 from .workflows import load_workflow, normalize_workflow, workflow_for_target

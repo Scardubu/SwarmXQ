@@ -7,8 +7,8 @@ Bug fix vs v0.2.0:
 """
 from __future__ import annotations
 
-import time
 import logging
+import time
 from pathlib import Path
 from typing import Annotated
 
@@ -16,8 +16,8 @@ import typer
 from rich.live import Live
 from rich.table import Table
 
-from swarmx.console.output import get_console, safe_print, emit_json, make_table
 from swarmx.console.compat import is_json_mode, is_no_progress
+from swarmx.console.output import emit_json, get_console, make_table, safe_print
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +53,8 @@ def status_callback(
 
 def _build_status_table(runtime_home: Path) -> Table:
     """Build a Rich table with current runtime status."""
-    from swarmx.core.mission_manager import list_missions
     from swarmx.core.db import db_exists
+    from swarmx.core.mission_manager import list_missions
     from swarmx.runtime import load_runtime_state
 
     t = make_table("Component", "Status", "Detail", title="SwarmX Status")
@@ -103,8 +103,8 @@ def status_show(
     _json = json_out or is_json_mode()
 
     if _json:
-        from swarmx.core.mission_manager import list_missions
         from swarmx.core.db import db_exists
+        from swarmx.core.mission_manager import list_missions
         emit_json({
             "db": db_exists(cfg.home),
             "missions": list_missions(cfg.home, limit=10),
@@ -142,8 +142,9 @@ def status_dashboard(
         status_show(watch=watch, interval=_REFRESH_INTERVAL, json_out=False)
     else:
         try:
-            import webbrowser
             import threading
+            import webbrowser
+
             from swarmx.config import SwarmConfig
             from swarmx.server import serve_dashboard
             cfg = SwarmConfig()

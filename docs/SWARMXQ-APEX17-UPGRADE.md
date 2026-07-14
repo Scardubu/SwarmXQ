@@ -99,7 +99,7 @@ Three pillars:
 |--------|---------|
 | `scripts/migrate-to-r7.sh` | One-shot migration with `--dry-run`, `--apply`, `--rollback`, `--rename-only`, `--validate-only` modes |
 | `scripts/rebuild-all-modelfiles.sh` | Canonical model rebuild with `--validate`, `--evict-legacy`, `--only` modes |
-| `scripts/swarm-healthcheck-apex17.sh` | Production healthcheck covering Ollama, canonical models, Relay warmth, API, memory, naming |
+| `scripts/swarm-healthcheck-apex17.sh` | Production healthcheck covering Ollama, canonical models, Relay probe, API, memory, naming |
 
 ### 4.4 New Modelfiles (5 canonical names)
 

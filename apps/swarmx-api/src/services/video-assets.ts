@@ -10,9 +10,9 @@
  */
 
 import { createHash } from "node:crypto";
-import { copyFile, stat, unlink, readFile, writeFile, mkdir } from "node:fs/promises";
+import { copyFile, stat, unlink, writeFile, mkdir } from "node:fs/promises";
 import { basename, join, resolve, sep } from "node:path";
-import { existsSync } from "node:fs";
+import { createReadStream, existsSync } from "node:fs";
 import type { VideoOutputMetadata, VideoJobRequest, VideoJobStage } from "../types/video.js";
 import type { VideoPerformanceMetrics } from "@swarmx/types/video-types";
 
@@ -35,6 +35,10 @@ const STUB_DURATION_SECONDS = 30;
 const STUB_WIDTH = 720;
 const STUB_HEIGHT = 1280;
 const STUB_FPS = 24;
+const FFPROBE_TIMEOUT_MS = Math.min(
+  60_000,
+  Math.max(5_000, Number.parseInt(process.env["SWARMX_VIDEO_FFPROBE_TIMEOUT_MS"] ?? "15000", 10) || 15_000),
+);
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -104,8 +108,7 @@ export async function buildOutputMetadata(
     });
   }
 
-  const buf = await readFile(absolutePath);
-  const checksum = createHash("sha256").update(buf).digest("hex");
+  const checksum = await hashFile(absolutePath);
   const probe = await probeMedia(absolutePath);
   const durationSeconds = probe.durationSeconds;
   const widthPx = probe.width;
@@ -137,6 +140,16 @@ export async function buildOutputMetadata(
     ...(input.storyboardFrames !== undefined ? { storyboardFrames: input.storyboardFrames } : {}),
     modelsUsed: input.modelsUsed,
   };
+}
+
+function hashFile(path: string): Promise<string> {
+  return new Promise((resolveHash, reject) => {
+    const hash = createHash("sha256");
+    const stream = createReadStream(path);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("error", reject);
+    stream.on("end", () => resolveHash(hash.digest("hex")));
+  });
 }
 
 function buildStubMetadata(
@@ -228,14 +241,18 @@ async function probeMedia(
     const { promisify } = await import("node:util");
     const execFileAsync = promisify(execFile);
 
-    const { stdout } = await execFileAsync("ffprobe", [
-      "-v", "error",
-      "-show_entries",
-      "format=duration:stream=codec_type,width,height",
-      "-of",
-      "json",
-      filePath,
-    ]);
+    const { stdout } = await execFileAsync(
+      "ffprobe",
+      [
+        "-v", "error",
+        "-show_entries",
+        "format=duration:stream=codec_type,width,height",
+        "-of",
+        "json",
+        filePath,
+      ],
+      { timeout: FFPROBE_TIMEOUT_MS, maxBuffer: 1024 * 1024 },
+    );
 
     const parsed = JSON.parse(stdout) as {
       format?: { duration?: string };

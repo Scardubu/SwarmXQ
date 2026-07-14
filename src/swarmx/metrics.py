@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -121,7 +121,7 @@ def _build_governor_snapshot() -> dict[str, Any]:
             "concurrencyLimit": int(concurrency_limit_from_config(swarm_cfg)),
             "observeOnly": bool(swarm_cfg.governance_observe_only),
             "tokenCeilings": {str(key): int(value) for key, value in dict(token_ceilings).items()},
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
     except Exception:
         return {
@@ -137,7 +137,7 @@ def _build_governor_snapshot() -> dict[str, Any]:
                 "reasoner": 4096,
                 "critic": 2048,
             },
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
 
@@ -147,8 +147,8 @@ def build_v5_metrics(runtime_home: Path) -> dict[str, Any]:
     Extends build_metrics() with NEW_V5_METRICS.
     Performance contract: < 20ms (all reads from SQLite WAL; no LLM calls).
     """
-    from .storage import connect, get_kv
     from .narrative import compute_scs
+    from .storage import connect, get_kv
 
     base = build_metrics(runtime_home)
 

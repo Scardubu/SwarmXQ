@@ -1,7 +1,6 @@
 """Tests for src/swarmx/console/output.py — singleton console, safe_print, emit_json."""
 from __future__ import annotations
 
-import io
 import json
 
 
@@ -47,7 +46,7 @@ def test_emit_json_nested(capsys):
 
 def test_safe_print_no_crash(monkeypatch):
     """safe_print must not raise even if markup is malformed."""
-    from swarmx.console.output import safe_print, reset_console
+    from swarmx.console.output import reset_console, safe_print
 
     reset_console()
     # Should not raise
@@ -58,7 +57,7 @@ def test_safe_print_no_crash(monkeypatch):
 
 def test_safe_print_in_no_color_mode(monkeypatch):
     monkeypatch.setenv("NO_COLOR", "1")
-    from swarmx.console.output import safe_print, reset_console
+    from swarmx.console.output import reset_console, safe_print
 
     reset_console()
     safe_print("[brand]SwarmX[/brand]")  # must not raise
@@ -66,14 +65,13 @@ def test_safe_print_in_no_color_mode(monkeypatch):
 
 def test_emit_error_prints_message(capsys, monkeypatch):
     """emit_error prints an error panel (it does NOT raise SystemExit by itself)."""
-    import os
 
-    from swarmx.console.output import emit_error, reset_console
 
     # Use JSON mode so output goes to stdout and is easy to assert.
     monkeypatch.setenv("SWARMX_JSON", "1")
-    import swarmx.console.compat as _compat
     import importlib
+
+    import swarmx.console.compat as _compat
     importlib.reload(_compat)
 
     # Reload output so it picks up the new compat state

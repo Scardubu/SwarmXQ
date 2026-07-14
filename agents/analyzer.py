@@ -15,7 +15,6 @@ CHANGES FROM LEGACY VERSION:
 """
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 
@@ -53,8 +52,13 @@ def analyze_output(results: list[Any]) -> dict[str, Any]:
 
 
 async def analyze_output_async(results: list[Any]) -> dict[str, Any]:
-    """Async wrapper for analyze_output (runs in thread pool to stay non-blocking)."""
-    return await asyncio.to_thread(analyze_output, results)
+    """Async wrapper for analyze_output.
+
+    Aggregation is CPU-trivial and does not perform I/O, so running it directly
+    avoids creating a default executor thread during tests and short-lived CLI
+    invocations.
+    """
+    return analyze_output(results)
 
 
 __all__ = ["analyze_output", "analyze_output_async"]

@@ -11,12 +11,12 @@ import logging
 import shutil
 import tarfile
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
-from swarmx.console.output import get_console, safe_print, emit_json, emit_error
 from swarmx.console.compat import is_json_mode
+from swarmx.console.output import emit_error, emit_json, get_console
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[4]
 
 
-def _latest_backup_path() -> Optional[Path]:
+def _latest_backup_path() -> Path | None:
     from swarmx.config import SwarmConfig
 
     cfg = SwarmConfig()
@@ -90,7 +90,7 @@ def cmd_run(
         raise typer.Exit(code=1)
 
     # ── Extract if archive ────────────────────────────────────────────────────
-    work_dir: Optional[Path] = None
+    work_dir: Path | None = None
     actual_dir: Path
 
     if backup_path.is_file() and backup_path.suffix in (".gz", ".tgz"):
@@ -234,7 +234,7 @@ def _validate_tar_members(tar: tarfile.TarFile, base_dir: Path) -> None:
             raise ValueError(f"Path traversal attempt detected in archive: {member.name}")
 
 
-def _cleanup(work_dir: Optional[Path]) -> None:
+def _cleanup(work_dir: Path | None) -> None:
     if work_dir and work_dir.exists():
         shutil.rmtree(work_dir, ignore_errors=True)
 

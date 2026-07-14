@@ -21,7 +21,6 @@ import asyncio
 import json
 import re
 import warnings
-from typing import Optional
 
 # [V5.9-FIX-01] Add _DEPRECATION_WARNED pattern consistent with all other
 # brain/ modules so the phase-1 deprecation test can validate this module.
@@ -44,7 +43,7 @@ def _warn_deprecated(entrypoint: str) -> None:
     _DEPRECATION_WARNED = True
 
 
-async def reflect(prompt: str, results: str, min_improvement_len: int = 50) -> Optional[str]:
+async def reflect(prompt: str, results: str, min_improvement_len: int = 50) -> str | None:
     """
     Ask the reasoning model to evaluate and improve `results` for `prompt`.
 
@@ -67,7 +66,7 @@ async def reflect(prompt: str, results: str, min_improvement_len: int = 50) -> O
 
     try:
         raw = await run_model("reason", reflection_prompt)
-    except Exception as e:
+    except Exception:
         return None
 
     # Strip think blocks
@@ -95,6 +94,6 @@ async def reflect(prompt: str, results: str, min_improvement_len: int = 50) -> O
     return None  # original result is sufficient or model failed to improve
 
 
-def reflect_sync(prompt: str, results: str) -> Optional[str]:
+def reflect_sync(prompt: str, results: str) -> str | None:
     """Synchronous wrapper for reflect (for legacy callers)."""
     return asyncio.run(reflect(prompt, results))

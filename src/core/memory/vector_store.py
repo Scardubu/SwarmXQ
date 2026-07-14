@@ -16,11 +16,11 @@ import sqlite_vec
 EMBEDDING_DIM = 384  # matches all-MiniLM-L6-v2; change if using different model
 
 # Module-level cache: one VectorStore per resolved db_path string.
-_STORE_CACHE: dict[str, "VectorStore"] = {}
+_STORE_CACHE: dict[str, VectorStore] = {}
 _MODEL_LOCK = threading.Lock()
 
 
-def get_vector_store(db_path: str | Path) -> "VectorStore":
+def get_vector_store(db_path: str | Path) -> VectorStore:
     """Return a cached VectorStore for *db_path*, creating it on first access."""
     key = str(Path(db_path).resolve())
     if key not in _STORE_CACHE:
@@ -40,9 +40,9 @@ class VectorStore:
 
     def _init_schema(self) -> None:
         self.conn.executescript(
-            """
+            f"""
             CREATE VIRTUAL TABLE IF NOT EXISTS mission_embeddings USING vec0(
-                embedding float[{dim}]
+                embedding float[{EMBEDDING_DIM}]
             );
             CREATE TABLE IF NOT EXISTS mission_memory (
                 rowid       INTEGER PRIMARY KEY,
@@ -52,7 +52,7 @@ class VectorStore:
                 outcome     TEXT,
                 ts          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
             );
-            """.format(dim=EMBEDDING_DIM)
+            """
         )
         self.conn.commit()
 

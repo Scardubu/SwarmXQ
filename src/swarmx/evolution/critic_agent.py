@@ -39,6 +39,15 @@ No markdown, no preamble. JSON only.
         self.llm = llm_client
         self.memory = memory_graph
 
+    @staticmethod
+    def _decision(value: object) -> Literal["APPROVE", "REJECT", "REVISE"]:
+        raw = str(value).upper()
+        if raw == "APPROVE":
+            return "APPROVE"
+        if raw == "REVISE":
+            return "REVISE"
+        return "REJECT"
+
     def evaluate(self, proposal: dict[str, Any], recent_missions: list[dict[str, Any]]) -> CriticVerdict:
         context = {
             "proposal": proposal,
@@ -52,7 +61,7 @@ No markdown, no preamble. JSON only.
         )
         raw = json.loads(response)
         return CriticVerdict(
-            decision=str(raw.get("decision", "REJECT")),
+            decision=self._decision(raw.get("decision", "REJECT")),
             confidence=float(raw.get("confidence", 0.0)),
             improvement_delta=float(raw.get("improvement_delta", 0.0)),
             reasoning=str(raw.get("reasoning", "Critic response missing reasoning.")),

@@ -8,9 +8,8 @@ All functions are additive — no existing swarmx APIs modified.
 """
 from __future__ import annotations
 
-import math
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -18,11 +17,11 @@ from .config import SwarmConfig
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _narrative_id() -> str:
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+    stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S%f")
     nonce = secrets.token_hex(3)
     return f"narrative-{stamp}-{nonce}"
 
