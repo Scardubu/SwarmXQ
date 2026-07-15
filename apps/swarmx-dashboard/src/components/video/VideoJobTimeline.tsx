@@ -25,24 +25,36 @@ interface VideoJobTimelineProps {
 function StageIcon({ state }: { state: "complete" | "active" | "pending" | "error" }) {
   if (state === "complete") {
     return (
-      <CheckCircle2 className="h-3.5 w-3.5 text-status-success" aria-hidden="true" />
+      <>
+        <CheckCircle2 className="h-3.5 w-3.5 text-status-success" aria-hidden="true" />
+        <span className="sr-only">complete</span>
+      </>
     );
   }
   if (state === "error") {
     return (
-      <XCircle className="h-3.5 w-3.5 text-status-error" aria-hidden="true" />
+      <>
+        <XCircle className="h-3.5 w-3.5 text-status-error" aria-hidden="true" />
+        <span className="sr-only">failed</span>
+      </>
     );
   }
   if (state === "active") {
     return (
-      <span className="relative flex h-3.5 w-3.5">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-60" />
-        <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-accent" />
-      </span>
+      <>
+        <span className="relative flex h-3.5 w-3.5" aria-hidden="true">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-60" />
+          <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-accent" />
+        </span>
+        <span className="sr-only">in progress</span>
+      </>
     );
   }
   return (
-    <span className="h-3.5 w-3.5 rounded-full border-2 border-border-active bg-bg-input" />
+    <>
+      <span className="h-3.5 w-3.5 rounded-full border-2 border-border-active bg-bg-input" aria-hidden="true" />
+      <span className="sr-only">pending</span>
+    </>
   );
 }
 
@@ -110,14 +122,19 @@ export function VideoJobTimeline({ job, compact = false }: VideoJobTimelineProps
 
       {/* Stage list */}
       {!compact && (
-        <ol className="relative ml-2 space-y-3 border-l border-border py-1">
+        <ol className="relative ml-2 space-y-3 border-l border-border py-1" aria-label="Video job processing stages">
           {VIDEO_JOB_STAGE_ORDER.map((stage) => {
             const state = resolveState(job, stage);
             const stageData = job.stages[stage];
             const label = VIDEO_JOB_STAGE_LABELS[stage];
 
             return (
-              <li key={stage} className="ml-4 group">
+              <li
+                key={stage}
+                className="ml-4 group"
+                aria-current={state === "active" ? "step" : undefined}
+                aria-label={`Stage ${label}: ${state}`}
+              >
                 {/* Connector dot */}
                 <span className="absolute -left-[9px] flex items-center justify-center">
                   <StageIcon state={state} />

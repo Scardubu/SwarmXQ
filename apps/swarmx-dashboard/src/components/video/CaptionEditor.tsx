@@ -279,7 +279,8 @@ export function CaptionEditor({
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[55%_45%] gap-4">
-        <div className="space-y-3">
+        <fieldset className="space-y-3" aria-label="Caption structure fields">
+          <legend className="sr-only">Caption structure fields</legend>
           {/* First line */}
           <div>
             <div className="flex items-center justify-between mb-1">
@@ -301,12 +302,14 @@ export function CaptionEditor({
               value={draft.firstLine}
               onChange={(e) => handleFirstLine(e.target.value)}
               rows={1}
+              aria-describedby="caption-firstline-help"
               className={`
                 w-full rounded bg-bg-surface border border-border px-3 py-2 text-sm text-text-primary
                 placeholder:text-text-muted focus:outline-none focus:ring-1 transition-colors font-mono ${firstLineClass(draft.firstLine)}
               `}
               placeholder="Primary hook (<=40 chars visible on feed)"
             />
+            <p id="caption-firstline-help" className="sr-only">Maximum 40 characters are visible in platform feed previews.</p>
             {hasDisallowedOpener && (
               <p className="mt-1 text-amber-400 text-[10px]">
                 Hook Line can&apos;t start with &ldquo;I&rdquo;, &ldquo;My&rdquo;, &ldquo;This&rdquo;, &ldquo;We&rdquo;, or &ldquo;Our&rdquo; — lead with the value or action instead.
@@ -324,6 +327,7 @@ export function CaptionEditor({
               value={draft.body}
               onChange={(e) => handleBody(e.target.value)}
               rows={3}
+              aria-describedby="caption-body-help"
               className="
                 w-full rounded bg-bg-surface border border-border px-3 py-2 text-sm
                 text-text-secondary placeholder:text-text-muted focus:outline-none
@@ -331,6 +335,7 @@ export function CaptionEditor({
               "
               placeholder="2–3 lines: value, story, or relatability..."
             />
+            <p id="caption-body-help" className="sr-only">Use two to three concise lines to provide value and context.</p>
           </div>
 
           {/* CTA */}
@@ -343,6 +348,7 @@ export function CaptionEditor({
               value={draft.cta}
               onChange={(e) => handleCta(e.target.value)}
               rows={1}
+              aria-describedby="caption-cta-help"
               className="
                 w-full rounded bg-bg-surface border border-border px-3 py-2
                 text-sm text-text-primary placeholder:text-text-muted focus:outline-none
@@ -350,6 +356,7 @@ export function CaptionEditor({
               "
               placeholder="Follow for more..."
             />
+            <p id="caption-cta-help" className="sr-only">Provide a short call to action for the viewer.</p>
           </div>
 
           {/* Hashtag inputs */}
@@ -413,7 +420,7 @@ export function CaptionEditor({
               placeholder="e.g. upbeat lo-fi with snare drop"
             />
           </div>
-        </div>
+        </fieldset>
 
         <div className="space-y-3">
           <PlatformPreview draft={draft} {...(platform ? { platform } : {})} />

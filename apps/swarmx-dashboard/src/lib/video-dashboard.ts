@@ -10,6 +10,26 @@ import type {
 
 export type VideoJobStatus = CanonicalVideoJobStatus | "running" | "completed";
 
+export const VIDEO_TERMINAL_STATUSES = [
+  "done",
+  "completed",
+  "failed",
+  "cancelled",
+] as const;
+
+export function isTerminalVideoStatus(status: VideoJobStatus): boolean {
+  return VIDEO_TERMINAL_STATUSES.includes(status as (typeof VIDEO_TERMINAL_STATUSES)[number]);
+}
+
+export function isIsoTimestampNewerOrEqual(incoming: string, current: string): boolean {
+  const incomingMs = Date.parse(incoming);
+  const currentMs = Date.parse(current);
+  if (Number.isNaN(incomingMs) || Number.isNaN(currentMs)) {
+    return true;
+  }
+  return incomingMs >= currentMs;
+}
+
 export type VideoJobStage =
   | "intent_classification"
   | "planning"

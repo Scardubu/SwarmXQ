@@ -251,9 +251,9 @@ export function PlatformPublishPanel({
       </div>
 
       {/* Status feedback */}
-      {statusMsg && (
-        <p role="status" aria-live="polite" className="mt-3 text-xs text-zinc-400">{statusMsg}</p>
-      )}
+      <p role="status" aria-live="polite" aria-label="Publish status" className="mt-3 text-xs text-zinc-400">
+        {statusMsg ?? "Awaiting publish action"}
+      </p>
 
       {publishResult && (
         <div className="mt-3 rounded border border-border bg-bg-surface px-3 py-2">

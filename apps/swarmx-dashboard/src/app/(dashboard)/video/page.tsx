@@ -29,7 +29,7 @@ import { VideoJobCard } from "../../../components/video/VideoJobCard";
 
 function JobSkeleton() {
   return (
-    <div className="animate-pulse rounded border border-border bg-bg-elevated/60 p-4">
+    <div className="animate-pulse rounded border border-border bg-bg-elevated/60 p-4" role="status" aria-live="polite" aria-label="Loading video jobs">
       <div className="flex items-center gap-2 mb-3">
         <div className="h-4 w-14 rounded bg-bg-input" />
         <div className="h-4 w-10 rounded bg-bg-input" />
@@ -162,7 +162,7 @@ export default function VideoPage() {
         <section className="flex min-h-0 flex-col gap-4 overflow-y-auto border-b border-border p-4 sm:p-5 xl:border-b-0 xl:border-r">
           <VideoJobForm onSubmitted={handleSubmitted} />
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2" aria-busy={isLoading}>
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-xs font-medium text-text-secondary">
                 <GripVertical className="h-3.5 w-3.5 text-text-muted" aria-hidden="true" />

@@ -115,12 +115,23 @@ export function selectedInitialVideoModelTag(request: VideoJobRequest): string {
   return resolveVideoModelTag(request, "intent_classification");
 }
 
+export function videoModelTagsForRequest(request: VideoJobRequest): string[] {
+  if (isLowRamVideoMode()) {
+    return VIDEO_TEXT_STAGES.map(() => LOW_RAM_VIDEO_MODEL);
+  }
+
+  return VIDEO_TEXT_STAGES.map((stage) => resolveVideoModelTag(request, stage));
+}
+
 export function modelEstimatedRamMb(modelTag: string): number | null {
   const canonical = resolveCanonicalTag(modelTag);
   return MODEL_OPERATOR_MAP[canonical]?.estimatedRamMb ?? null;
 }
 
 export function minimumRamRequiredForVideoRequest(request: VideoJobRequest): number {
-  const estimate = modelEstimatedRamMb(selectedInitialVideoModelTag(request)) ?? 2_500;
-  return estimate + VIDEO_RAM_RESERVE_MB;
+  const estimates = videoModelTagsForRequest(request).map(
+    (tag) => modelEstimatedRamMb(tag) ?? 2_500,
+  );
+  const maxEstimate = Math.max(2_500, ...estimates);
+  return maxEstimate + VIDEO_RAM_RESERVE_MB;
 }

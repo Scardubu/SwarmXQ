@@ -31,6 +31,13 @@ process.env["SWARMX_VIDEO_PLAN_MODEL"] = "plan-phi4-pro-q8-prod";
 assert.equal(resolveVideoModelTag(request, "planning"), "plan-phi4-pro-q8-prod");
 delete process.env["SWARMX_VIDEO_PLAN_MODEL"];
 
+const reasonerRequest = { ...request, modelTier: "reasoner" as const };
+const reasonerRequiredMb = minimumRamRequiredForVideoRequest(reasonerRequest);
+assert.ok(
+  reasonerRequiredMb > 3300,
+  `expected reasoner workflow to require more RAM than pilot mode, got ${reasonerRequiredMb}`,
+);
+
 process.env["VIDEO_PLANNING_TIMEOUT_MS"] = "999999";
 assert.equal(stageTimeoutMs("planning"), 120000);
 delete process.env["VIDEO_PLANNING_TIMEOUT_MS"];
