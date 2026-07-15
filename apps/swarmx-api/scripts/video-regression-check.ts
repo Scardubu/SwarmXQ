@@ -19,6 +19,14 @@ const request: VideoJobRequest = {
   clientRequestId: "video-regression-check",
 };
 
+delete process.env["SWARMX_VIDEO_LOW_RAM_MODE"];
+delete process.env["SWARMX_VIDEO_INTENT_MODEL"];
+delete process.env["SWARMX_VIDEO_PLAN_MODEL"];
+delete process.env["SWARMX_VIDEO_SCRIPT_MODEL"];
+delete process.env["SWARMX_VIDEO_STORYBOARD_MODEL"];
+const defaultProfileRequiredMb = minimumRamRequiredForVideoRequest(request);
+assert.equal(defaultProfileRequiredMb, 6170);
+
 process.env["SWARMX_VIDEO_LOW_RAM_MODE"] = "1";
 assert.equal(resolveVideoModelTag(request, "intent_classification"), LOW_RAM_VIDEO_MODEL);
 assert.equal(resolveVideoModelTag(request, "planning"), LOW_RAM_VIDEO_MODEL);
@@ -97,6 +105,7 @@ const tempOutput = await mkdtemp(join(tmpdir(), "swarmx-video-regression-"));
 process.env["SWARMX_VIDEO_EXPORT_DIR"] = tempOutput;
 process.env["SWARMX_VIDEO_ALLOW_STUB_RENDER"] = "0";
 const assets = await import("../src/services/video-assets.js");
+assert.equal(assets.outputDir(), tempOutput);
 await assert.rejects(
   () => assets.buildOutputMetadata({
     jobId: "missing",

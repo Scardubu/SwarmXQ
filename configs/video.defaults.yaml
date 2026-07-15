@@ -18,9 +18,11 @@ video:
     teacache_enabled: ${SWARMX_COMFYUI_TEACACHE:-0}
     teacache_requires_available_mb: 6000
 
+  # The API derives the effective gate per request in video-runtime-config.ts.
+  # These values document the supported Pilot-lite and 7B profile requirements.
   ram_gates:
-    minimum_required_mb: 1000
-    downgrade_threshold_mb: 2000
+    minimum_required_mb: 3300
+    downgrade_threshold_mb: 6170
     enforce_single_14b_lock: ${SWARMX_VIDEO_SINGLE_14B_LOCK:-1}
 
   frame_math:

@@ -99,7 +99,7 @@ export interface VideoStageProgress {
 // ─── Output Metadata ──────────────────────────────────────────────────────────
 
 export interface VideoOutputMetadata {
-  /** Relative path under SWARM_VIDEO_OUTPUT_DIR. */
+  /** Relative path under SWARMX_VIDEO_EXPORT_DIR. */
   relativePath: string;
   /** Absolute path on-disk — API-internal only. */
   absolutePath: string;

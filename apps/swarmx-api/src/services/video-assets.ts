@@ -21,7 +21,7 @@ import type { VideoPerformanceMetrics } from "@swarmx/types/video-types";
 const OUTPUT_DIR = resolve(
   process.env.SWARMX_VIDEO_EXPORT_DIR ??
     process.env.VIDEO_OUTPUT_DIR ??
-    join(process.cwd(), ".swarmx", "video", "output")
+    join(process.cwd(), ".swarmx", "video", "exports")
 );
 
 const ARTIFACT_DIR = resolve(

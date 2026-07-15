@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import { cn, formatBytes, formatPct } from "@/lib/utils";
 import { useEventsStore } from "@/stores/events";
 import { useQuery } from "@tanstack/react-query";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { ChevronRight, ChevronDown, Server, MemoryStick, Cpu, HardDrive } from "lucide-react";
+import { Server, MemoryStick, Cpu, HardDrive } from "lucide-react";
 import type { CgroupScopeMetrics } from "@swarmx/types";
 
 const SYSTEMD_SKELETON_KEYS = ["sd-1", "sd-2", "sd-3", "sd-4", "sd-5", "sd-6", "sd-7", "sd-8"] as const;
@@ -15,21 +15,13 @@ const METRICS_SKELETON_KEYS = ["metric-1", "metric-2", "metric-3", "metric-4", "
 
 // ── cgroup v2 tree ────────────────────────────────────────────────────────────
 
-interface CgroupNode {
+interface CgroupRowData {
   path: string;
   name: string;
   cpuPct: number;
   memMb: number;
   oomEvents: number;
   throttledPct: number;
-  children: CgroupNode[];
-}
-
-function cgroupDepthClass(depth: number): string {
-  if (depth <= 0) return "depth-0";
-  if (depth === 1) return "depth-1";
-  if (depth === 2) return "depth-2";
-  return "depth-3";
 }
 
 function cpuToneClass(value: number): string {
@@ -84,121 +76,67 @@ function tierMeterClass(label: string): string {
   return "swarm-meter";
 }
 
-function buildCgroupTree(scopes: Map<string, CgroupScopeMetrics>): CgroupNode[] {
-  // Organize scopes into a pseudo-tree based on path segments
-  const nodes: CgroupNode[] = [];
+function buildCgroupRows(scopes: Map<string, CgroupScopeMetrics>): CgroupRowData[] {
+  const rows: CgroupRowData[] = [];
   for (const [path, scope] of scopes.entries()) {
     const name = path.split("/").pop() ?? path;
-    nodes.push({
+    rows.push({
       path,
       name,
       cpuPct: scope.cpuUsagePercent,
       memMb: scope.memCurrentMb,
       oomEvents: scope.oomKillCount,
       throttledPct: scope.cpuThrottledPercent ?? 0,
-      children: [],
     });
   }
-  return nodes;
+  return rows.sort((left, right) => left.path.localeCompare(right.path));
 }
 
-function CgroupRow({ node, depth = 0 }: { readonly node: CgroupNode; readonly depth?: number }) {
-  const [expanded, setExpanded] = useState(true);
-  const throttleClassName = node.throttledPct > 10 ? "text-status-warning" : "text-text-muted";
-  const leafPath = node.path.split("/").at(-1) ?? node.path;
+function CgroupTableRow({ row }: { readonly row: CgroupRowData }) {
+  const throttleClassName = row.throttledPct > 10 ? "text-status-warning" : "text-text-muted";
+  const leafPath = row.path.split("/").at(-1) ?? row.path;
 
   return (
-    <>
-      <div
-        className={cn(
-          "grid system-grid-cgroup items-center gap-3 py-1.5 font-mono text-[11px]",
-          "hover:bg-bg-elevated transition-colors duration-(--duration-micro)",
-          "border-b border-border/50",
-          cgroupDepthClass(depth)
-        )}
-      >
-        <div className="flex items-center gap-1.5 min-w-0">
-          {node.children.length > 0 ? (
-            <button
-              type="button"
-              onClick={() => setExpanded(!expanded)}
-              onKeyDown={(e) => {
-                if (e.key === "ArrowRight" && !expanded) { setExpanded(true); e.preventDefault(); }
-                if (e.key === "ArrowLeft" && expanded) { setExpanded(false); e.preventDefault(); }
-              }}
-              aria-expanded={expanded}
-              aria-label={expanded ? `Collapse ${node.name}` : `Expand ${node.name}`}
-              className="text-text-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded"
-            >
-              {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-            </button>
-          ) : (
-            <span className="w-3" />
-          )}
-          <span
-            className={cn(
-              "truncate",
-              node.oomEvents > 0 ? "text-status-error" : "text-text-secondary"
-            )}
-          >
-            {node.name}
-          </span>
-          {node.oomEvents > 0 && (
-            <span className="text-status-error text-[9px] shrink-0">OOM×{node.oomEvents}</span>
-          )}
-        </div>
-        <span
-          className={cn("tabular-nums text-right", cpuToneClass(node.cpuPct))}
-          data-metric
-        >
-          {formatPct(node.cpuPct)}
-        </span>
-        <span className="tabular-nums text-right text-text-secondary" data-metric>
-          {Math.round(node.memMb)} MB
-        </span>
-        <span
-          className={cn("tabular-nums text-right", throttleClassName)}
-          data-metric
-        >
-          {formatPct(node.throttledPct)}
-        </span>
-        <span className="text-text-muted truncate text-[10px]">{leafPath}</span>
-      </div>
-      {expanded && node.children.map((child) => (
-        <CgroupRow key={child.path} node={child} depth={depth + 1} />
-      ))}
-    </>
+    <tr className="border-b border-border/50 font-mono text-[11px] transition-colors duration-(--duration-micro) hover:bg-bg-elevated">
+      <th scope="row" className={cn("max-w-52 truncate px-3 py-1.5 text-left font-normal", row.oomEvents > 0 ? "text-status-error" : "text-text-secondary")}>
+        {row.name}
+        {row.oomEvents > 0 && <span className="ml-1.5 text-[9px] text-status-error">OOM×{row.oomEvents}</span>}
+      </th>
+      <td className={cn("px-3 py-1.5 text-right tabular-nums", cpuToneClass(row.cpuPct))} data-metric>{formatPct(row.cpuPct)}</td>
+      <td className="px-3 py-1.5 text-right tabular-nums text-text-secondary" data-metric>{Math.round(row.memMb)} MB</td>
+      <td className={cn("px-3 py-1.5 text-right tabular-nums", throttleClassName)} data-metric>{formatPct(row.throttledPct)}</td>
+      <td className="max-w-64 truncate px-3 py-1.5 text-text-muted">{leafPath}</td>
+    </tr>
   );
 }
 
 function CgroupTree() {
   const cgroupScopes = useEventsStore((s) => s.cgroupScopes);
-  // Memoize tree construction: buildCgroupTree iterates the Map on every call
-  // and would execute on every parent render without this guard.
-  const nodes = React.useMemo(() => buildCgroupTree(cgroupScopes), [cgroupScopes]);
+  const rows = React.useMemo(() => buildCgroupRows(cgroupScopes), [cgroupScopes]);
 
   return (
-    <div role="treegrid" aria-label="cgroup v2 process tree">
-      {/* Header */}
-      <div
-        className="grid system-grid-cgroup gap-3 px-3 py-1.5 border-b border-border bg-bg-surface"
-      >
-        {["Scope", "CPU", "Memory", "Throttle", "Path"].map((h) => (
-          <span key={h} className="text-[9px] font-mono text-text-muted uppercase tracking-wide text-right first:text-left">
-            {h}
-          </span>
-        ))}
-      </div>
-
-      {nodes.length === 0 ? (
-        <div className="flex items-center justify-center h-32">
-          <span className="text-xs font-mono text-text-muted">
-            No cgroup scopes. Is SwarmX API running?
-          </span>
-        </div>
-      ) : (
-        nodes.map((node) => <CgroupRow key={node.path} node={node} />)
-      )}
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[42rem] border-collapse" aria-label="cgroup v2 process metrics">
+        <caption className="sr-only">Live CPU, memory, throttle, and OOM metrics for each cgroup scope.</caption>
+        <thead className="border-b border-border bg-bg-surface">
+          <tr className="font-mono text-[9px] uppercase tracking-wide text-text-muted">
+            <th scope="col" className="px-3 py-1.5 text-left">Scope</th>
+            <th scope="col" className="px-3 py-1.5 text-right">CPU</th>
+            <th scope="col" className="px-3 py-1.5 text-right">Memory</th>
+            <th scope="col" className="px-3 py-1.5 text-right">Throttle</th>
+            <th scope="col" className="px-3 py-1.5 text-left">Path</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={5} className="h-32 px-3 text-center text-xs font-mono text-text-muted">No cgroup scopes. Is SwarmX API running?</td>
+            </tr>
+          ) : (
+            rows.map((row) => <CgroupTableRow key={row.path} row={row} />)
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }

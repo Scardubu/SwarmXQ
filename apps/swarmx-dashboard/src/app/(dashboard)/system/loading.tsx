@@ -1,6 +1,7 @@
 export default function SystemLoading() {
   return (
-    <div className="flex h-full flex-col gap-0 overflow-auto">
+    <div className="flex h-full flex-col gap-0 overflow-auto" role="status" aria-live="polite" aria-busy="true">
+      <span className="sr-only">Loading system metrics</span>
       {/* Tab bar skeleton */}
       <div className="border-b border-border bg-bg-surface/80 px-4 py-3 sm:px-6">
         <div className="flex items-center gap-2">

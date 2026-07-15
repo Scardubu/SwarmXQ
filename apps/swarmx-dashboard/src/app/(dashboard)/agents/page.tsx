@@ -308,19 +308,33 @@ function AgentsPageContent() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const connectionStatus = useEventsStore((s) => s.connectionStatus);
 
-  const handleRefresh = useCallback(async () => {
-    setIsRefreshing(true);
+  const refreshAgents = useCallback(async (signal?: AbortSignal) => {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    const timeoutId = window.setTimeout(abort, 5_000);
+    if (signal?.aborted) abort();
+    signal?.addEventListener("abort", abort, { once: true });
+
     try {
       const base = process.env.NEXT_PUBLIC_SWARMX_API_URL ?? "http://127.0.0.1:3001";
-      const res = await fetch(`${base}/api/agents`, { cache: "no-store" });
+      const res = await fetch(`${base}/api/agents`, { cache: "no-store", signal: controller.signal });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
       const data = await res.json() as { agents?: AgentState[] };
       replaceAgents(data.agents ?? []);
     } catch { /* best-effort */ }
-    setTimeout(() => setIsRefreshing(false), 800);
+    finally {
+      window.clearTimeout(timeoutId);
+      signal?.removeEventListener("abort", abort);
+    }
   }, [replaceAgents]);
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await refreshAgents();
+    setIsRefreshing(false);
+  }, [refreshAgents]);
 
   React.useEffect(() => {
     const id = setInterval(() => {
@@ -328,6 +342,21 @@ function AgentsPageContent() {
     }, 1000);
     return () => clearInterval(id);
   }, []);
+
+  React.useEffect(() => {
+    if (connectionStatus !== "disconnected") return;
+
+    const controller = new AbortController();
+    void refreshAgents(controller.signal);
+    const intervalId = window.setInterval(() => {
+      void refreshAgents(controller.signal);
+    }, 30_000);
+
+    return () => {
+      controller.abort();
+      window.clearInterval(intervalId);
+    };
+  }, [connectionStatus, refreshAgents]);
 
   const handleSelectAgent = useCallback(
     (chosen: AgentState) => {
@@ -386,17 +415,19 @@ function AgentsPageContent() {
           <div className="flex items-center gap-2">
             {(connectionStatus === "disconnected" || connectionStatus === "connecting") && (
               <span className="text-[9px] font-mono text-status-warning uppercase tracking-wide" role="status">
-                {connectionStatus === "connecting" ? "connecting…" : "disconnected"}
+                {connectionStatus === "connecting" ? "reconnecting…" : "live feed unavailable · polling every 30 s"}
               </span>
             )}
             <span className="text-xs font-mono text-text-muted tabular-nums" data-metric>
               {filtered.length} of {agents.length}
             </span>
             <button
+              type="button"
               onClick={() => void handleRefresh()}
               disabled={isRefreshing}
-              className="p-1 rounded hover:bg-bg-elevated transition-colors disabled:opacity-50"
+              className="flex h-11 w-11 items-center justify-center rounded hover:bg-bg-elevated transition-colors disabled:opacity-50"
               aria-label="Refresh agent list"
+              aria-busy={isRefreshing}
             >
               <RefreshCw className={cn("h-3 w-3 text-text-muted", isRefreshing && "animate-spin")} />
             </button>

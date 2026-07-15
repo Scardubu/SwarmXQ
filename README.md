@@ -1,6 +1,6 @@
 # SwarmXQ — Autonomous Multi-Agent Orchestration Platform
 
-**Version:** APEX-17 r7-final · Optimized for 8 GB RAM · CPU-only · WSL2
+**Version:** APEX-17 r8 runtime profile · Optimized for 8 GB RAM · CPU-only · WSL2
 
 SwarmXQ is a self-improving, pressure-aware multi-agent system that runs a fleet of specialized local LLMs through Ollama. It observes, critiques, mutates, validates, and deploys improvements autonomously — bounded by memory constraints, safety guardrails, and a deterministic governance layer.
 
@@ -21,6 +21,8 @@ SwarmXQ organizes its model fleet through a **dual-layer naming system** — mem
 | **Lab** | Experimental / evolution / non-production | `synth-*-exp-*-dev` | 4.4–5.4 GB | Mixed |
 
 **Usage rules:** Code, configs, and Ollama commands use canonical tags. Docs, dashboards, logs, and UI use Operator names. Both layers are synchronized through `MODEL_OPERATOR_MAP` — the single source of truth (defined in `packages/swarmx-types/src/operator-map.ts` and mirrored in `src/swarmx/operator_map.py`).
+
+**8 GB startup behavior:** no model is loaded by default. Relay loads on the first eligible request, or only when `SWARMX_MODEL_STARTUP_PREWARM=1` is set deliberately. Predictive specialist warmup is also off by default. This avoids reserving 2.5–5.4 GB before an operator needs it.
 
 ---
 
@@ -134,9 +136,9 @@ Pre-scar tags (V5 and earlier) also resolve: `phi4-mini`, `deepseek-r1`, `qwen2.
 
 On 8 GB hosts, `scripts/startup-enhanced.sh` now clamps inherited Ollama overrides back to the constrained profile automatically: `OLLAMA_NUM_PARALLEL=1`, `OLLAMA_MAX_LOADED_MODELS=1`, and `OLLAMA_KEEP_ALIVE=0`.
 
-### Migrate to r7
+### Legacy r7 migration
 
-See **[docs/SETUP_AND_IMPLEMENTATION.md](docs/SETUP_AND_IMPLEMENTATION.md)** for the complete step-by-step guide. The one-shot migration:
+The current runtime uses canonical tags. Only repositories still on the legacy r7 naming scheme need the migration guide in **[docs/SETUP_AND_IMPLEMENTATION.md](docs/SETUP_AND_IMPLEMENTATION.md)**:
 
 ```bash
 bash scripts/migrate-to-r7.sh --apply
@@ -201,7 +203,7 @@ pnpm --filter @swarmx/dashboard build
 | Document | Purpose |
 |----------|---------|
 | [docs/SETUP_AND_IMPLEMENTATION.md](docs/SETUP_AND_IMPLEMENTATION.md) | **Step-by-step bundle installation** |
-| [docs/SWARMXQ-APEX17-UPGRADE.md](docs/SWARMXQ-APEX17-UPGRADE.md) | Full APEX-17 r7 changelog |
+| [docs/SWARMXQ-APEX17-UPGRADE.md](docs/SWARMXQ-APEX17-UPGRADE.md) | Historical APEX-17 r7 upgrade changelog |
 | `ARCHITECTURE.md` | System architecture deep dive |
 | `SAFETY.md` | Safety guardrails and execution policy |
 | `manifests/swarmx_model_manifest.yaml` | Bundle manifest with replacement matrix |

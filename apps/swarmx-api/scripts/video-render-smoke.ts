@@ -8,6 +8,10 @@ import type { VideoJobRequest } from "../src/types/video.js";
 const tempOutput = await mkdtemp(join(tmpdir(), "swarmx-video-smoke-"));
 process.env["SWARMX_VIDEO_EXPORT_DIR"] = tempOutput;
 process.env["SWARMX_VIDEO_ALLOW_STUB_RENDER"] = "0";
+// This smoke test validates FFmpeg/FFprobe artifact generation independently of
+// host TTS installation. Production renders remain fail-closed unless operators
+// explicitly configure this fallback.
+process.env["SWARMX_VIDEO_ALLOW_SILENT_AUDIO"] = "1";
 process.env["SWARMX_VIDEO_FFMPEG_TIMEOUT_MS"] = "120000";
 
 try {

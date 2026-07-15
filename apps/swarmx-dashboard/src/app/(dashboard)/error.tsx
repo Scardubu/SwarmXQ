@@ -30,13 +30,8 @@ export default function Error({
             Something went sideways
           </div>
           <div className="text-xs font-mono text-text-muted max-w-sm">
-            {error.message || "An unexpected error occurred in the operator console."}
+            Try again. If the problem persists, confirm that the API and event stream are available.
           </div>
-          {error.digest && (
-            <div className="text-[10px] font-mono text-text-muted/60 mt-2">
-              digest: {error.digest}
-            </div>
-          )}
         </div>
       </div>
       <Button

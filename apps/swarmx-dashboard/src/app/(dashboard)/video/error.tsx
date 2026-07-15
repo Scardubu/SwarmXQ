@@ -25,13 +25,8 @@ export default function VideoError({ error, reset }: ErrorProps) {
           Video page failed to load
         </h2>
         <p className="text-sm leading-relaxed text-text-secondary">
-          {error.message || "An unexpected error occurred rendering the video workspace."}
+          Try again. If the problem persists, confirm that the API is available before submitting a job.
         </p>
-        {error.digest && (
-          <p className="font-mono text-[10px] text-text-muted">
-            digest: {error.digest}
-          </p>
-        )}
       </div>
 
       <Button type="button" onClick={reset}>

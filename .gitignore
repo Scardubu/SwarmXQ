@@ -28,6 +28,9 @@ htmlcov/
 # Turborepo
 .turbo/
 
+# Runtime video artifacts and render workspaces
+/.swarmx/video/
+
 # Editor
 .vscode/settings.json
 

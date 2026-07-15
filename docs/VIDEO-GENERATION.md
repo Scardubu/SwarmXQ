@@ -116,11 +116,11 @@ SWARMX_MODEL_CODE=code-qwen25-pro-q5km-prod             # script + storyboard ge
 
 # ── Render target (optional — jobs degrade gracefully without it) ────────────
 SWARMX_COMFYUI_URL=http://127.0.0.1:8188
-SWARMX_VIDEO_ARTIFACT_DIR=./.swarmx/video-output
-SWARMX_VIDEO_EXPORT_DIR=./.swarmx/video-export
-SWARMX_VIDEO_TEMP_DIR=./.swarmx/video-temp
-SWARMX_VIDEO_FFMPEG_TIMEOUT_MS=120000
-SWARMX_VIDEO_FFPROBE_TIMEOUT_MS=30000
+SWARMX_VIDEO_ARTIFACT_DIR=./.swarmx/video/artifacts
+SWARMX_VIDEO_EXPORT_DIR=./.swarmx/video/exports
+SWARMX_VIDEO_TEMP_DIR=./.swarmx/video/tmp
+SWARMX_VIDEO_FFMPEG_TIMEOUT_MS=240000
+SWARMX_VIDEO_FFPROBE_TIMEOUT_MS=15000
 SWARMX_VIDEO_API_TOKEN=replace-me-for-write-routes
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
@@ -152,7 +152,9 @@ command -v espeak-ng
 actionable video error codes (`FFMPEG_UNAVAILABLE`, `FFPROBE_UNAVAILABLE`, or
 `ESPEAK_UNAVAILABLE`). Silent audio is allowed only when
 `SWARMX_VIDEO_ALLOW_SILENT_AUDIO=1`; the default is to fail rather than produce
-a misleading voiced-video success.
+a misleading voiced-video success. This escape hatch is for deliberate local
+testing only: the renderer supplies an AAC silence track so the MP4 remains
+valid, but it does not synthesize narration or honor the selected `voice`.
 
 ### Ollama model requirements
 
@@ -189,7 +191,7 @@ From the monorepo root:
 pnpm install --frozen-lockfile
 
 # 2. (Optional) Ensure video output dir exists
-mkdir -p .swarmx/video-output .swarmx/video-export .swarmx/video-temp
+mkdir -p .swarmx/video/artifacts .swarmx/video/exports .swarmx/video/tmp
 
 # 3. Start the API
 pnpm --filter @swarmx/api dev
@@ -263,7 +265,7 @@ Create a new video generation job and enqueue it.
   "prompt": "string (required, 1-2000 chars)",
   "platform": "tiktok | youtube_shorts | reels | generic",
   "niche": "motivational | finance | facts | true_crime | tech | other",
-  "targetDurationSeconds": 15,
+  "targetDurationSeconds": "optional; default 30, clamped to 15–180",
   "modelTier": "fast | worker | supervisor | reasoner",
   "audience": "string (optional, <=160 chars)",
   "tone": "educational | urgent | warm | contrarian | cinematic | minimal",
@@ -305,14 +307,17 @@ curl -X POST http://localhost:3001/api/video/jobs \
 
 **Response `503` (RAM gate):**
 
-When available RAM is below 1000 MB, admission is blocked:
+Admission is profile-aware: the route calculates the selected model's estimated
+RAM plus an 800 MB reserve. The low-RAM Pilot-lite profile needs at least 3300
+MB; full 7B planning profiles need at least 6170 MB. When available RAM is
+below the selected profile's requirement, admission is blocked:
 
 ```json
 {
   "error": "insufficient_ram_for_video",
   "message": "Insufficient RAM for video generation",
   "availableMb": 742,
-  "minimumRequired": 1000
+  "minimumRequired": 3300
 }
 ```
 
@@ -688,6 +693,9 @@ Current implementation degrades via retryable/terminal failures and pressure-awa
 - Transient upstream failures (`TIMEOUT`, `OLLAMA_UNAVAILABLE`, `COMFY_UNAVAILABLE`) are marked retryable.
 - Missing local render binaries fail clearly with `FFMPEG_UNAVAILABLE`,
   `FFPROBE_UNAVAILABLE`, or `ESPEAK_UNAVAILABLE`.
+- `SWARMX_VIDEO_ALLOW_SILENT_AUDIO=1` is an explicit development-only fallback:
+  it creates a valid MP4 with an AAC silence track when `espeak-ng` is absent;
+  it does not create a narrated video.
 - Final artifacts are accepted only after the export file exists, has nonzero
   size, and FFprobe reports a valid stream, duration, dimensions, frame rate,
   and format.
@@ -709,6 +717,16 @@ Set `SWARMX_VIDEO_LOW_RAM_MODE=1` to force all four text stages to
 `instruct-phi4-lite-q4km-prod`. Do not send `modelTier` in the first low-RAM
 video payload; it remains a text-stage override for compatibility, not a fast
 pipeline selector.
+
+### First-job admission checklist
+
+Do not submit a real job merely because `POST /api/video/jobs` is reachable.
+Before the first render, verify API and Ollama liveness, ensure `ffmpeg`,
+`ffprobe`, and `espeak-ng` are installed (or explicitly choose silent testing),
+and compare available physical RAM with the selected profile requirement. On
+the supported 8 GB host, use `SWARMX_VIDEO_LOW_RAM_MODE=1` only when at least
+3300 MB is available and no model is resident. Do not preload Relay or a
+specialist before that measurement.
 
 The dashboard video form defaults to **Auto** model routing, which intentionally
 omits `modelTier` from `POST /api/video/jobs`. Operators can still choose an

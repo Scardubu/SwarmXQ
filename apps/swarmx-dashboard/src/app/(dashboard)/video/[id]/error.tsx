@@ -26,13 +26,8 @@ export default function VideoJobDetailError({ error, reset }: ErrorProps) {
           Job detail failed to load
         </h2>
         <p className="text-sm leading-relaxed text-text-secondary">
-          {error.message || "An unexpected error occurred loading this video job."}
+          Try again. If the problem persists, return to the queue and confirm that the API is available.
         </p>
-        {error.digest && (
-          <p className="font-mono text-[10px] text-text-muted">
-            digest: {error.digest}
-          </p>
-        )}
       </div>
 
       <div className="flex flex-wrap items-center justify-center gap-3">

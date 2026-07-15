@@ -1,7 +1,8 @@
 export default function AgentsLoading() {
   const rowCount = 8;
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col" role="status" aria-live="polite" aria-busy="true">
+      <span className="sr-only">Loading agent fleet</span>
       {/* Toolbar skeleton */}
       <header className="border-b border-border bg-bg-surface/80 px-4 py-3 sm:px-6">
         <div className="flex items-center justify-between gap-3">

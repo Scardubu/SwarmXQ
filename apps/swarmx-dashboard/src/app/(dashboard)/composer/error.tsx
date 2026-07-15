@@ -25,11 +25,8 @@ export default function ComposerError({ error, reset }: ErrorProps) {
           Composer failed to initialize
         </h2>
         <p className="text-sm leading-relaxed text-text-secondary">
-          {error.message || "An unexpected error occurred in the composer workspace."}
+          Try again. If the problem persists, confirm that the API and Ollama are available.
         </p>
-        {error.digest && (
-          <p className="font-mono text-[10px] text-text-muted">digest: {error.digest}</p>
-        )}
       </div>
 
       <Button type="button" onClick={reset} className="gap-1.5">

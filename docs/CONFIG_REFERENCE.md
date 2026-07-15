@@ -39,12 +39,14 @@ decisions use physical `MemAvailable` and report ZRAM separately.
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `SWARMX_VIDEO_ARTIFACT_DIR` | `.swarmx/video-output` | Job manifests and metadata. |
-| `SWARMX_VIDEO_EXPORT_DIR` | `.swarmx/video-export` | Final rendered files. |
-| `SWARMX_VIDEO_TEMP_DIR` | `.swarmx/video-temp` | Deterministic render scratch directory. |
-| `SWARMX_VIDEO_FFMPEG_TIMEOUT_MS` | `120000` | Local render command timeout, bounded by code. |
-| `SWARMX_VIDEO_FFPROBE_TIMEOUT_MS` | `30000` | Probe timeout for artifact validation. |
-| `SWARMX_VIDEO_ALLOW_SILENT_AUDIO` | unset | Set `1` only to allow silent renders when `espeak-ng` is unavailable. |
+| `SWARMX_VIDEO_ARTIFACT_DIR` | `.swarmx/video/artifacts` | Job metadata, queue recovery data, and performance records. |
+| `SWARMX_VIDEO_EXPORT_DIR` | `.swarmx/video/exports` | Final rendered files served by the API. |
+| `SWARMX_VIDEO_TEMP_DIR` | `.swarmx/video/tmp` | Per-render FFmpeg workspaces, removed after each render. |
+| `SWARMX_VIDEO_FFMPEG_TIMEOUT_MS` | `240000` | Local render command timeout, bounded to 30–900 seconds. |
+| `SWARMX_VIDEO_FFPROBE_TIMEOUT_MS` | `15000` | Artifact validation timeout, bounded to 5–60 seconds. |
+| `SWARMX_VIDEO_ALLOW_SILENT_AUDIO` | unset | Set `1` only for deliberate silent renders when `espeak-ng` is unavailable; FFmpeg writes an AAC silence track. |
+| `SWARMX_VIDEO_ALLOW_UNSTRUCTURED_INTENT` | unset | Set `1` only to continue when intent classification is not valid structured output. |
+| `SWARMX_VIDEO_LOW_RAM_MODE` | unset | Set `1` to force all video text stages through the 2.5 GB Pilot-lite profile; requires at least 3300 MB available RAM. |
 | `SWARMX_VIDEO_API_TOKEN` | unset | Optional bearer/API-key token for video write routes. |
 
 Required local binaries for production local renders:

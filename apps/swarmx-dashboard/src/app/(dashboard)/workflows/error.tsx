@@ -25,11 +25,8 @@ export default function WorkflowsError({ error, reset }: ErrorProps) {
           Workflows failed to load
         </h2>
         <p className="text-sm leading-relaxed text-text-secondary">
-          {error.message || "Could not fetch the workflow registry. The API may be unavailable."}
+          Try again. If the problem persists, confirm that the API is available.
         </p>
-        {error.digest && (
-          <p className="font-mono text-[10px] text-text-muted">digest: {error.digest}</p>
-        )}
       </div>
 
       <Button type="button" onClick={reset} className="gap-1.5">

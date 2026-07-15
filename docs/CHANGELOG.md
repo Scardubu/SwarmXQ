@@ -4,7 +4,40 @@
 
 ---
 
-## V6.2.7 — Degraded Runtime Health Integration (Unreleased)
+## V6.2.8 — Final Runtime and Dashboard Polish (2026-07-15)
+
+### Dashboard reliability and accessibility
+
+- Added a bounded 30-second REST fallback for the Agent Fleet only while its
+  SSE connection is disconnected, so live data recovers without imposing a
+  duplicate polling loop during normal streaming.
+- Replaced misleading cgroup `treegrid` semantics with a native accessible
+  metrics table because the API supplies a flat scope collection, not a
+  parent-child hierarchy.
+- Announced Agent Fleet and System loading states to assistive technology and
+  increased the refresh control to a touch-friendly target.
+- Removed raw route-boundary exception messages and digests from the operator
+  UI while retaining structured client-side diagnostics.
+
+### Video runtime and documentation
+
+- Aligned API video export and render-workspace defaults with
+  `configs/video.defaults.yaml`: `.swarmx/video/exports` and
+  `.swarmx/video/tmp`.
+- Updated the video configuration, duration, audio fallback, and first-job
+  admission documentation to match source behavior.
+- Reframed the obsolete V5 Modelfile document and the r7 migration manual as
+  historical references; the supported policy is canonical tags with strict
+  single-model residency on 8 GB hosts.
+
+### Validation
+
+- API regression scripts, dashboard tests, lint, workspace type checks, and
+  production builds passed before release.
+
+---
+
+## V6.2.7 — Degraded Runtime Health Integration (2026-07-15)
 
 ### Health and performance
 

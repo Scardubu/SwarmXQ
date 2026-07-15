@@ -2,8 +2,7 @@ import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rename, rm, unlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import type { VideoJobRequest } from "../types/video.js";
 import { outputDir, resolveOutputPath } from "./video-assets.js";
 
@@ -12,6 +11,9 @@ const RENDER_COMMAND_TIMEOUT_MS = Math.min(
   Math.max(30_000, Number.parseInt(process.env["SWARMX_VIDEO_FFMPEG_TIMEOUT_MS"] ?? "240000", 10) || 240_000),
 );
 const COMMAND_MAX_BUFFER_BYTES = 1024 * 1024;
+const RENDER_TEMP_DIR = resolve(
+  process.env["SWARMX_VIDEO_TEMP_DIR"] ?? join(process.cwd(), ".swarmx", "video", "tmp"),
+);
 
 interface FfmpegRenderInput {
   jobId: string;
@@ -167,7 +169,8 @@ export async function renderWithFfmpeg(input: FfmpegRenderInput): Promise<{ outp
   const fontFile = discoverFont();
   const duration = clampDuration(input.request.targetDurationSeconds);
   const cards = renderCards(input);
-  const workDir = await mkdtemp(join(tmpdir(), `swarmx-video-${input.jobId}-`));
+  await mkdir(RENDER_TEMP_DIR, { recursive: true });
+  const workDir = await mkdtemp(join(RENDER_TEMP_DIR, `swarmx-video-${input.jobId}-`));
   const outputFilename = `video_${input.jobId}.mp4`;
   const outputPath = resolveOutputPath(outputFilename);
   const tempOutputPath = join(workDir, outputFilename);

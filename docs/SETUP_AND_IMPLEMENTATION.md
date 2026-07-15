@@ -1,9 +1,14 @@
-# SwarmXQ APEX-17 r7 — Setup & Implementation Guide
+# Historical SwarmXQ APEX-17 r7 Migration Guide
 
-**Version:** v2026.5.25-apex17-r7-final
+> **Migration-only reference.** Current repositories use the APEX-17 r8 runtime
+> profile, canonical model tags, and pnpm 11.9.0. For a clean installation or
+> normal operation, use [README.md](../README.md). Follow this document only
+> when upgrading an older r5/r6/r7 installation that still uses legacy aliases.
+
+**Historical version:** v2026.5.25-apex17-r7-final
 **Target Hardware:** HP EliteBook 850 G3 · 8 GB RAM · CPU-only · WSL2
 
-This guide walks you through installing the APEX-17 r7 bundle onto an existing SwarmXQ repository, performing the dual-layer naming migration, renaming Ollama models, and validating the result.
+This guide records the r7 bundle migration, including dual-layer naming and Ollama model renaming. Do not rerun it against an already canonical r8 checkout unless a dry run identifies a specific migration defect.
 
 ---
 
@@ -41,7 +46,7 @@ which python3                               # should point to .venv
 
 # Node + pnpm
 node --version                              # v22+
-pnpm --version                              # 9+
+pnpm --version                              # 11.9.0+
 
 # Ollama
 ollama --version
