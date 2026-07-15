@@ -122,9 +122,13 @@ function CgroupRow({ node, depth = 0 }: { readonly node: CgroupNode; readonly de
             <button
               type="button"
               onClick={() => setExpanded(!expanded)}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowRight" && !expanded) { setExpanded(true); e.preventDefault(); }
+                if (e.key === "ArrowLeft" && expanded) { setExpanded(false); e.preventDefault(); }
+              }}
               aria-expanded={expanded}
               aria-label={expanded ? `Collapse ${node.name}` : `Expand ${node.name}`}
-              className="text-text-muted hover:text-text-primary"
+              className="text-text-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded"
             >
               {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
             </button>
@@ -169,10 +173,12 @@ function CgroupRow({ node, depth = 0 }: { readonly node: CgroupNode; readonly de
 
 function CgroupTree() {
   const cgroupScopes = useEventsStore((s) => s.cgroupScopes);
-  const nodes = buildCgroupTree(cgroupScopes);
+  // Memoize tree construction: buildCgroupTree iterates the Map on every call
+  // and would execute on every parent render without this guard.
+  const nodes = React.useMemo(() => buildCgroupTree(cgroupScopes), [cgroupScopes]);
 
   return (
-    <div>
+    <div role="treegrid" aria-label="cgroup v2 process tree">
       {/* Header */}
       <div
         className="grid system-grid-cgroup gap-3 px-3 py-1.5 border-b border-border bg-bg-surface"
@@ -208,7 +214,7 @@ interface SystemdUnit {
 }
 
 function SystemdUnitsTable() {
-  const { data: units, isLoading } = useQuery<SystemdUnit[]>({
+  const { data: units, isLoading, isError } = useQuery<SystemdUnit[]>({
     queryKey: ["systemd-units"],
     queryFn: async () => {
       const res = await fetch("/api/system/units");
@@ -216,6 +222,7 @@ function SystemdUnitsTable() {
       return res.json() as Promise<SystemdUnit[]>;
     },
     staleTime: 15_000,
+    retry: false,
   });
 
   if (isLoading) {
@@ -224,6 +231,15 @@ function SystemdUnitsTable() {
         {SYSTEMD_SKELETON_KEYS.map((key) => (
           <div key={key} className="h-6 skeleton rounded" />
         ))}
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-32 gap-1.5">
+        <span className="text-xs font-mono text-status-error">systemd units unavailable</span>
+        <span className="text-[10px] font-mono text-text-muted">API may be down or running on non-Linux host</span>
       </div>
     );
   }
@@ -404,6 +420,7 @@ function V5MetricsPanel() {
     },
     refetchInterval: 15_000,
     staleTime: 10_000,
+    retry: false,
   });
 
   if (isLoading) {

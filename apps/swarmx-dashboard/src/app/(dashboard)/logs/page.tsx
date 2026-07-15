@@ -162,7 +162,13 @@ export default function LogsPage() {
           <Tabs value={levelFilter} onValueChange={(v) => setLevelFilter(v as LevelFilter)}>
             <TabsList>
               {LEVEL_FILTERS.map((f) => (
-                <TabsTrigger key={f.value} value={f.value}>{f.label}</TabsTrigger>
+                <TabsTrigger
+                  key={f.value}
+                  value={f.value}
+                  aria-current={levelFilter === f.value ? "true" : undefined}
+                >
+                  {f.label}
+                </TabsTrigger>
               ))}
             </TabsList>
           </Tabs>

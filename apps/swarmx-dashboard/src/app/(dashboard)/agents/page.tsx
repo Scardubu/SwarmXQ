@@ -329,6 +329,14 @@ function AgentsPageContent() {
     return () => clearInterval(id);
   }, []);
 
+  const handleSelectAgent = useCallback(
+    (chosen: AgentState) => {
+      setIgnoreUrlFocus(true);
+      setSelectedAgentId(chosen.id);
+    },
+    [],
+  );
+
   const selectedAgent = useMemo(() => {
     const focusId = ignoreUrlFocus ? null : searchParams.get("focus");
     const effectiveId = selectedAgentId ?? focusId;
@@ -376,8 +384,8 @@ function AgentsPageContent() {
         <div className="flex items-center justify-between">
           <h1 className="text-sm font-mono font-semibold text-text-primary">Agent Fleet</h1>
           <div className="flex items-center gap-2">
-            {connectionStatus !== "connected" && (
-              <span className="text-[9px] font-mono text-status-warning uppercase tracking-wide">
+            {(connectionStatus === "disconnected" || connectionStatus === "connecting") && (
+              <span className="text-[9px] font-mono text-status-warning uppercase tracking-wide" role="status">
                 {connectionStatus === "connecting" ? "connecting…" : "disconnected"}
               </span>
             )}
@@ -446,10 +454,7 @@ function AgentsPageContent() {
               key={agent.id}
               agent={agent}
               nowMs={nowMs}
-              onSelect={(chosen) => {
-                setIgnoreUrlFocus(true);
-                setSelectedAgentId(chosen.id);
-              }}
+              onSelect={handleSelectAgent}
             />
           ))
         )}
