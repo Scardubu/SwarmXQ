@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { VideoJobRequest } from "../types/video.js";
@@ -114,8 +114,12 @@ function renderCards(input: FfmpegRenderInput): string[] {
 
 function narrationText(input: FfmpegRenderInput, cards: string[]): string {
   const script = input.scriptText?.trim();
-  if (script) return script;
-  return cards.join(". ");
+  const raw = script || cards.join(". ");
+  const normalized = raw
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return normalized.slice(0, 600);
 }
 
 function drawTextFilter(fontFile: string, textFiles: string[], duration: number): string {
@@ -166,6 +170,8 @@ export async function renderWithFfmpeg(input: FfmpegRenderInput): Promise<{ outp
   const workDir = await mkdtemp(join(tmpdir(), `swarmx-video-${input.jobId}-`));
   const outputFilename = `video_${input.jobId}.mp4`;
   const outputPath = resolveOutputPath(outputFilename);
+  const tempOutputPath = join(workDir, outputFilename);
+  let renderCompleted = false;
 
   try {
     await mkdir(outputDir(), { recursive: true });
@@ -228,11 +234,18 @@ export async function renderWithFfmpeg(input: FfmpegRenderInput): Promise<{ outp
       "aac",
       "-movflags",
       "+faststart",
-      outputPath,
+      tempOutputPath,
     ], input.signal);
+
+    await rename(tempOutputPath, outputPath);
+    renderCompleted = true;
 
     return { outputFilename };
   } finally {
+    if (!renderCompleted) {
+      await unlink(tempOutputPath).catch(() => {});
+      await unlink(outputPath).catch(() => {});
+    }
     await rm(workDir, { recursive: true, force: true });
   }
 }

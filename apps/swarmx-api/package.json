@@ -1,6 +1,6 @@
 {
   "name": "@swarmx/api",
-  "version": "0.1.0",
+  "version": "2026.6.0",
   "private": true,
   "type": "module",
   "main": "dist/apps/swarmx-api/src/server.js",

@@ -906,9 +906,23 @@ export async function videoRoutes(
       const contentType =
         ext === "webm" ? "video/webm" : "video/mp4";
 
+      const stream = createReadStream(filePath);
+      stream.on("error", (error) => {
+        if (!reply.raw.headersSent) {
+          const code = "code" in (error as object) ? (error as { code?: string }).code : undefined;
+          if (code === "ENOENT") {
+            void reply.status(404).send({ error: "not_found" });
+            return;
+          }
+          void reply.status(500).send({ error: "stream_error" });
+          return;
+        }
+        reply.raw.destroy(error as Error);
+      });
+
       reply.header("Content-Type", contentType);
       reply.header("Cache-Control", "public, max-age=3600");
-      return reply.send(createReadStream(filePath));
+      return reply.send(stream);
     }
   );
 }

@@ -121,7 +121,8 @@ Operational note: the compiled Fastify entrypoint currently resolves to `apps/sw
 
 ## Migration & Compatibility
 
-Legacy `-scar` tags resolve automatically through `MODEL_ALIASES`:
+Canonical tags are preferred in all runtime config, scripts, and operator workflows.
+Legacy `-scar` tags still resolve automatically through `MODEL_ALIASES` during the migration window:
 
 ```
 phi4-fast-scar         → instruct-phi4-pro-q8-prod   (Pilot)
@@ -130,6 +131,8 @@ qwen-worker-scar       → code-qwen25-pro-q5km-prod   (Forge)
 ```
 
 Pre-scar tags (V5 and earlier) also resolve: `phi4-mini`, `deepseek-r1`, `qwen2.5-coder`, etc.
+
+On 8 GB hosts, `scripts/startup-enhanced.sh` now clamps inherited Ollama overrides back to the constrained profile automatically: `OLLAMA_NUM_PARALLEL=1`, `OLLAMA_MAX_LOADED_MODELS=1`, and `OLLAMA_KEEP_ALIVE=0`.
 
 ### Migrate to r7
 

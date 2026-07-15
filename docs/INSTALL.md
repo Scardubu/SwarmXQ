@@ -1,4 +1,4 @@
-# SwarmX Installation Guide
+# SwarmXQ Installation Guide
 
 ## System requirements
 
@@ -32,8 +32,8 @@ swarm doctor
 ### 1 — Clone and enter the repo
 
 ```bash
-git clone https://github.com/Scardubu/SwarmX.git
-cd SwarmX
+git clone https://github.com/Scardubu/SwarmXQ.git
+cd SwarmXQ
 ```
 
 ### 2 — Python side
@@ -72,35 +72,42 @@ brew services start redis
 
 ### 5 — Local LLM models (Ollama)
 
-Download the three GGUF files listed below and place them in `~/llm-local/gguf/`.
-The Modelfiles in `models/Modelfiles/` expect that exact directory path; edit the
-`FROM` line in each Modelfile if you store GGUFs elsewhere.
+Download the GGUF files referenced by the canonical Modelfiles and place them in
+`~/llm-local/gguf/`. The Modelfiles under `models/Modelfiles/` expect that exact
+directory path; edit the `FROM` line in each Modelfile if you store GGUFs elsewhere.
 
-| Role          | GGUF file                                      | Quant  | ~Size |
-|---------------|------------------------------------------------|--------|-------|
-| orchestrator  | `microsoft_Phi-4-mini-instruct-Q8_0.gguf`      | Q8_0   | ~4 GB |
-| reasoning     | `DeepSeek-R1-Distill-Qwen-7B-Q5_K_M.gguf`     | Q5_K_M | ~5 GB |
-| execution     | `Qwen2.5-Coder-7B-Instruct-Q5_K_M.gguf`       | Q5_K_M | ~5 GB |
+| Operator  | Canonical tag                        | GGUF family |
+|-----------|--------------------------------------|-------------|
+| Relay     | `route-phi4-lite-q4km-prod`         | Phi-4-mini |
+| Pilot     | `instruct-phi4-pro-q8-prod`         | Phi-4-mini |
+| Architect | `plan-phi4-pro-q8-prod`             | Phi-4-mini |
+| Architect | `plan-qwen25-pro-q5km-prod`         | Qwen2.5-7B |
+| Forge     | `code-qwen25-pro-q5km-prod`         | Qwen2.5-7B |
+| Oracle    | `reason-deepseekr1-pro-q5km-prod`   | DeepSeek-R1-7B |
+| Auditor   | `critique-deepseekr1-pro-q5km-prod` | DeepSeek-R1-7B |
 
-Role names match `models/registry.yaml`. The authoritative GGUF filenames are
-always in `registry.yaml` — the table above is for quick reference only.
+The authoritative GGUF filenames and all eleven canonical tags are defined by the
+Modelfiles and rebuild script, not by ad hoc `ollama create` commands.
 
 ```bash
 # Install Ollama
 curl -fsSL https://ollama.com/install.sh | sh
 
-# Register the V6 model triad from local GGUF files
-ollama create phi4-mini      -f models/Modelfiles/Modelfile.phi4-mini
-ollama create deepseek-r1:7b -f models/Modelfiles/Modelfile.deepseek-r1
-ollama create qwen2.5-coder  -f models/Modelfiles/Modelfile.qwen2.5-coder
+# Rebuild the canonical model set from Modelfiles
+bash scripts/rebuild-all-modelfiles.sh
 
-# Verify all three are registered
-ollama list
+# Verify canonical naming compliance
+bash scripts/rebuild-all-modelfiles.sh --validate
 ```
 
-To swap any model later: edit `models/registry.yaml`, update the corresponding
-Modelfile in `models/Modelfiles/`, run `ollama rm <old-tag>` then `ollama create`,
-then `swarm doctor`. See `models/README.md` for the full swap workflow.
+To remove legacy alias-era models after migration, run:
+
+```bash
+bash scripts/rebuild-all-modelfiles.sh --evict-legacy
+```
+
+To swap any model later: update the corresponding Modelfile, rebuild the canonical
+tag, then rerun the validation and doctor checks.
 
 ### 6 — Environment variables
 
@@ -123,9 +130,19 @@ Key environment variables:
 | `SWARMX_MAX_PTY_SESSIONS` | `8` | Max concurrent terminal sessions |
 | `SWARMX_PTY_SHELL` | `/bin/bash` | Shell for terminal sessions |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama API endpoint |
-| `SWARM_MODEL_FAST` | `phi4-mini` | Override orchestrator model |
-| `SWARM_MODEL_REASON` | `deepseek-r1:7b` | Override reasoning model |
-| `SWARM_MODEL_CODE` | `qwen2.5-coder` | Override execution model |
+| `SWARM_MODEL_FAST` | `instruct-phi4-pro-q8-prod` | Override fast fallback model |
+| `SWARM_MODEL_REASON` | `reason-deepseekr1-pro-q5km-prod` | Override reasoning model |
+| `SWARM_MODEL_CODE` | `code-qwen25-pro-q5km-prod` | Override execution model |
+
+For day-to-day local startup on 8 GB hosts, prefer:
+
+```bash
+bash scripts/startup-enhanced.sh --dashboard
+```
+
+That wrapper now clamps inherited unsafe Ollama values back to the constrained
+profile automatically: `OLLAMA_NUM_PARALLEL=1`, `OLLAMA_MAX_LOADED_MODELS=1`,
+and `OLLAMA_KEEP_ALIVE=0`.
 
 Secrets belong in a secrets manager. Never commit API keys or credentials to the repo.
 

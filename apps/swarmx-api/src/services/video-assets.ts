@@ -31,10 +31,6 @@ const ARTIFACT_DIR = resolve(
 
 const PUBLIC_URL_BASE = process.env.VIDEO_PUBLIC_URL_BASE ?? "/api/video/files";
 
-const STUB_DURATION_SECONDS = 30;
-const STUB_WIDTH = 720;
-const STUB_HEIGHT = 1280;
-const STUB_FPS = 24;
 const FFPROBE_TIMEOUT_MS = Math.min(
   60_000,
   Math.max(5_000, Number.parseInt(process.env["SWARMX_VIDEO_FFPROBE_TIMEOUT_MS"] ?? "15000", 10) || 15_000),
@@ -77,7 +73,6 @@ export function resolvePublicUrl(filename: string): string {
 /**
  * Build a VideoOutputMetadata record.
  * Production mode requires a real non-empty media file that ffprobe accepts.
- * Stub metadata is available only when SWARMX_VIDEO_ALLOW_STUB_RENDER=1.
  */
 export async function buildOutputMetadata(
   input: BuildMetadataInput
@@ -93,9 +88,6 @@ export async function buildOutputMetadata(
   }
 
   if (!existsSync(absolutePath)) {
-    if (process.env["SWARMX_VIDEO_ALLOW_STUB_RENDER"] === "1") {
-      return buildStubMetadata(input, absolutePath, publicUrl, relativePath);
-    }
     throw Object.assign(new Error(`Video artifact missing: ${absolutePath}`), {
       code: "ARTIFACT_MISSING",
     });
@@ -113,8 +105,9 @@ export async function buildOutputMetadata(
   const durationSeconds = probe.durationSeconds;
   const widthPx = probe.width;
   const heightPx = probe.height;
+  const fps = probe.fps;
 
-  if (durationSeconds <= 0 || widthPx <= 0 || heightPx <= 0) {
+  if (durationSeconds <= 0 || widthPx <= 0 || heightPx <= 0 || fps <= 0) {
     throw Object.assign(new Error(`Video artifact is invalid: ${absolutePath}`), {
       code: "ARTIFACT_INVALID",
     });
@@ -132,7 +125,7 @@ export async function buildOutputMetadata(
     durationSeconds,
     widthPx,
     heightPx,
-    fps: STUB_FPS,
+    fps,
     format,
     checksum,
     generatedAt: new Date().toISOString(),
@@ -150,33 +143,6 @@ function hashFile(path: string): Promise<string> {
     stream.on("error", reject);
     stream.on("end", () => resolveHash(hash.digest("hex")));
   });
-}
-
-function buildStubMetadata(
-  input: BuildMetadataInput,
-  absolutePath: string,
-  publicUrl: string,
-  relativePath: string,
-): VideoOutputMetadata {
-  const format: "mp4" | "webm" = input.outputFilename.endsWith(".webm")
-    ? "webm"
-    : "mp4";
-  return {
-    relativePath,
-    absolutePath,
-    publicUrl,
-    fileSizeBytes: 0,
-    durationSeconds: STUB_DURATION_SECONDS,
-    widthPx: STUB_WIDTH,
-    heightPx: STUB_HEIGHT,
-    fps: STUB_FPS,
-    format,
-    checksum: "stub",
-    generatedAt: new Date().toISOString(),
-    ...(input.scriptText !== undefined ? { scriptText: input.scriptText } : {}),
-    ...(input.storyboardFrames !== undefined ? { storyboardFrames: input.storyboardFrames } : {}),
-    modelsUsed: input.modelsUsed,
-  };
 }
 
 export async function importComfyOutput(filename: string): Promise<string> {
@@ -235,7 +201,7 @@ export async function deleteArtifact(filename: string): Promise<boolean> {
 
 async function probeMedia(
   filePath: string,
-): Promise<{ durationSeconds: number; width: number; height: number }> {
+): Promise<{ durationSeconds: number; width: number; height: number; fps: number }> {
   try {
     const { execFile } = await import("node:child_process");
     const { promisify } = await import("node:util");
@@ -246,7 +212,7 @@ async function probeMedia(
       [
         "-v", "error",
         "-show_entries",
-        "format=duration:stream=codec_type,width,height",
+        "format=duration:stream=codec_type,width,height,avg_frame_rate,r_frame_rate",
         "-of",
         "json",
         filePath,
@@ -256,17 +222,25 @@ async function probeMedia(
 
     const parsed = JSON.parse(stdout) as {
       format?: { duration?: string };
-      streams?: { width?: number; height?: number; codec_type?: string }[];
+      streams?: {
+        width?: number;
+        height?: number;
+        codec_type?: string;
+        avg_frame_rate?: string;
+        r_frame_rate?: string;
+      }[];
     };
     const dur = parseFloat(parsed.format?.duration ?? "0");
     const video = parsed.streams?.find((s) => s.codec_type === "video");
-    if (!video?.width || !video.height || !(dur > 0)) {
+    const fps = parseFrameRate(video?.avg_frame_rate) || parseFrameRate(video?.r_frame_rate);
+    if (!video?.width || !video.height || !(dur > 0) || !(fps > 0)) {
       throw new Error("ffprobe did not find a valid video stream");
     }
     return {
       durationSeconds: dur,
       width: video.width,
       height: video.height,
+      fps,
     };
   } catch (error) {
     throw Object.assign(
@@ -274,6 +248,22 @@ async function probeMedia(
       { code: "ARTIFACT_INVALID" },
     );
   }
+}
+
+function parseFrameRate(value: string | undefined): number {
+  if (!value) return 0;
+  if (!value.includes("/")) {
+    const numeric = Number.parseFloat(value);
+    return Number.isFinite(numeric) ? numeric : 0;
+  }
+
+  const [numeratorRaw, denominatorRaw] = value.split("/", 2);
+  const numerator = Number.parseFloat(numeratorRaw ?? "0");
+  const denominator = Number.parseFloat(denominatorRaw ?? "0");
+  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator === 0) {
+    return 0;
+  }
+  return numerator / denominator;
 }
 
 // ─── Manifest ─────────────────────────────────────────────────────────────────

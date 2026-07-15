@@ -19,8 +19,10 @@
 
 import { useEffect, useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Clapperboard, GripVertical, ListVideo, RotateCcw } from "lucide-react";
+import { AlertTriangle, Clapperboard, GripVertical, ListVideo, RotateCcw, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useApiHealth } from "@/hooks/useApiHealth";
+import { useEventsStore } from "@/stores/events";
 import { useVideoStore } from "../../../stores/video";
 import { VideoJobForm } from "../../../components/video/VideoJobForm";
 import { VideoJobCard } from "../../../components/video/VideoJobCard";
@@ -66,10 +68,55 @@ function QueueMetric({ label, value }: { label: string; value: number }) {
   );
 }
 
+function VideoRuntimeBanner({
+  pressureLevel,
+  availableMb,
+  apiOnline,
+  ollamaOnline,
+}: {
+  pressureLevel: string | undefined;
+  availableMb: number | null;
+  apiOnline: boolean | null;
+  ollamaOnline: boolean | null;
+}) {
+  const isOffline = apiOnline === false || ollamaOnline === false;
+  const isDegraded = pressureLevel === "high" || pressureLevel === "critical";
+
+  if (!isOffline && !isDegraded) {
+    return null;
+  }
+
+  const icon = isOffline ? WifiOff : AlertTriangle;
+  const Icon = icon;
+  const title = isOffline ? "Video pipeline connectivity degraded" : "Video pipeline running under memory pressure";
+  const detail = isOffline
+    ? "The API or Ollama health probe is failing. New jobs may queue without advancing until the runtime recovers."
+    : `The host is reporting ${pressureLevel} pressure${availableMb != null ? ` with ${availableMb} MB free` : ""}. Expect longer queue times and stricter single-model scheduling.`;
+
+  return (
+    <div
+      className="flex items-start gap-3 rounded border border-status-warning/35 bg-status-warning/10 px-3 py-3"
+      role={isOffline ? "alert" : "status"}
+      aria-live={isOffline ? "assertive" : "polite"}
+    >
+      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded border border-status-warning/35 bg-status-warning/12">
+        <Icon className="h-4 w-4 text-status-warning" aria-hidden="true" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs font-semibold text-status-warning">{title}</p>
+        <p className="mt-1 text-xs leading-5 text-text-secondary">{detail}</p>
+      </div>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function VideoPage() {
   const router = useRouter();
+  const governorState = useEventsStore((s) => s.governorState);
+  const startupSummary = useEventsStore((s) => s.startupSummary);
+  const apiHealth = useApiHealth();
   const { fetchJobs, listJobs, isLoading, listError, selectedJobId, reorderQueue, retryFromStage } =
     useVideoStore();
   const [draggedJobId, setDraggedJobId] = useState<string | null>(null);
@@ -89,6 +136,9 @@ export default function VideoPage() {
   const queuedCount = jobs.filter((j) => j.status === "queued").length;
   const doneCount = jobs.filter((j) => j.status === "completed").length;
   const failedCount = jobs.filter((j) => j.status === "failed").length;
+  const pressureLevel = governorState?.pressureLevel ?? startupSummary?.pressureLevel;
+  const availableMb = governorState?.availableMb ?? startupSummary?.availableMb ?? null;
+  const ollamaOnline = apiHealth.ollamaOnline ?? startupSummary?.ollamaReachable ?? null;
 
   const handleRetry = useCallback(
     async (jobId: string) => {
@@ -161,6 +211,13 @@ export default function VideoPage() {
       <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(360px,540px)_1fr]">
         <section className="flex min-h-0 flex-col gap-4 overflow-y-auto border-b border-border p-4 sm:p-5 xl:border-b-0 xl:border-r">
           <VideoJobForm onSubmitted={handleSubmitted} />
+
+          <VideoRuntimeBanner
+            pressureLevel={pressureLevel}
+            availableMb={availableMb}
+            apiOnline={apiHealth.apiOnline}
+            ollamaOnline={ollamaOnline}
+          />
 
           <div className="flex flex-col gap-2" aria-busy={isLoading}>
             <div className="flex items-center justify-between gap-3">

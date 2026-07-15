@@ -136,15 +136,27 @@ setup_ollama_runtime_tuning() {
   local avail_mb
   avail_mb=$(detect_available_mem_mb)
   local constrained=false
+  local inherited_max_models="${OLLAMA_MAX_LOADED_MODELS:-}"
+  local inherited_num_parallel="${OLLAMA_NUM_PARALLEL:-}"
+  local inherited_keep_alive="${OLLAMA_KEEP_ALIVE:-}"
   if [[ "$avail_mb" -gt 0 && "$avail_mb" -lt 2200 ]]; then
     constrained=true
   fi
 
   export OLLAMA_FLASH_ATTENTION="${OLLAMA_FLASH_ATTENTION:-1}"
   export OLLAMA_KV_CACHE_TYPE="${OLLAMA_KV_CACHE_TYPE:-q8_0}"
-  export OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-1}"
-  export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-1}"
-  export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-0}"
+  if [[ -n "$inherited_max_models" && "$inherited_max_models" != "1" ]]; then
+    log_warning "Overriding OLLAMA_MAX_LOADED_MODELS=$inherited_max_models to 1 for the 8 GB profile"
+  fi
+  if [[ -n "$inherited_num_parallel" && "$inherited_num_parallel" != "1" ]]; then
+    log_warning "Overriding OLLAMA_NUM_PARALLEL=$inherited_num_parallel to 1 for the 8 GB profile"
+  fi
+  if [[ -n "$inherited_keep_alive" && "$inherited_keep_alive" != "0" && "$inherited_keep_alive" != "0s" ]]; then
+    log_warning "Overriding OLLAMA_KEEP_ALIVE=$inherited_keep_alive to 0 so request-level lifecycle policy stays authoritative"
+  fi
+  export OLLAMA_MAX_LOADED_MODELS="1"
+  export OLLAMA_NUM_PARALLEL="1"
+  export OLLAMA_KEEP_ALIVE="0"
 
   if [[ "$constrained" == true ]]; then
     export SWARMX_COMPOSER_NUM_PREDICT="${SWARMX_COMPOSER_NUM_PREDICT:-96}"
@@ -608,16 +620,17 @@ main() {
   check_nodejs || { log_error "Node.js check failed"; exit 1; }
   check_ports || { log_error "Port check failed"; exit 1; }
   check_ollama || true  # Non-blocking
+
+  # Validate effective runtime env even in health-check mode so stale shell
+  # exports cannot hide unsafe low-RAM settings.
+  setup_environment
+  setup_ollama_runtime_tuning
   
   # If check-only flag, exit after health checks
   if [[ "$CHECK_ONLY" == true ]]; then
     log_success "Health checks passed"
     return 0
   fi
-  
-  # Setup environment
-  setup_environment
-  setup_ollama_runtime_tuning
   
   # Delegate to main startup script
   log_info "Delegating to swarm up command..."

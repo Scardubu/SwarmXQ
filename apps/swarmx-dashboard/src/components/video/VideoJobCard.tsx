@@ -12,7 +12,7 @@ import { useState, useEffect } from "react";
 import { Download, X } from "lucide-react";
 import { useVideoStore } from "../../stores/video";
 import { VideoJobTimeline } from "./VideoJobTimeline";
-import type { VideoJob } from "../../lib/video-dashboard";
+import { isTerminalVideoStatus, type VideoJob } from "../../lib/video-dashboard";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -156,6 +156,7 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
   const elapsed = job.startedAt
     ? Math.round((nowMs - Date.parse(job.startedAt)) / 1000)
     : null;
+  const statusAnnouncement = buildStatusAnnouncement(job);
 
   return (
     <article
@@ -168,6 +169,12 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
         }
       `}
     >
+      {statusAnnouncement && (
+        <p className="sr-only" aria-live="polite" aria-atomic="true">
+          {statusAnnouncement}
+        </p>
+      )}
+
       <div className="absolute right-3 top-3 z-10 flex items-center gap-1.5">
         {canCancel && (
           <button
@@ -261,4 +268,27 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
       </button>
     </article>
   );
+}
+
+function buildStatusAnnouncement(job: VideoJob): string | null {
+  if (!isTerminalVideoStatus(job.status)) {
+    return null;
+  }
+
+  const prompt = job.request.prompt.trim();
+  const subject = prompt.length > 72 ? `${prompt.slice(0, 69)}...` : prompt;
+
+  if (job.status === "completed" || job.status === "done") {
+    return `Video job completed: ${subject}`;
+  }
+
+  if (job.status === "failed") {
+    return `Video job failed: ${subject}${job.error?.message ? `. ${job.error.message}` : ""}`;
+  }
+
+  if (job.status === "cancelled") {
+    return `Video job cancelled: ${subject}`;
+  }
+
+  return null;
 }

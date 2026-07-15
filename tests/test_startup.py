@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
+import subprocess
 
 from swarmx.startup import StartupSummary, _warmup_models, format_startup_banner, load_startup_summary, run_startup_autopilot
 
@@ -103,3 +105,34 @@ def test_format_startup_banner_accepts_serialised_dict() -> None:
     assert "Booted with caution." in banner
     assert "900 MB free" in banner
     assert "Evolver staged" in banner
+
+
+def test_startup_enhanced_clamps_unsafe_ollama_env(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    startup_script = repo_root / "scripts" / "startup-enhanced.sh"
+    startup_log = tmp_path / "startup-enhanced.log"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "OLLAMA_MAX_LOADED_MODELS": "2",
+            "OLLAMA_KEEP_ALIVE": "3m",
+            "SWARMX_START_OLLAMA_IF_DOWN": "0",
+            "STARTUP_LOG": str(startup_log),
+        }
+    )
+
+    result = subprocess.run(
+        ["bash", str(startup_script), "--check-only"],
+        cwd=repo_root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    combined_output = f"{result.stdout}\n{result.stderr}"
+
+    assert "Overriding OLLAMA_MAX_LOADED_MODELS=2 to 1" in combined_output
+    assert "Overriding OLLAMA_KEEP_ALIVE=3m to 0" in combined_output
+    assert "MAX_MODELS=1 KEEP_ALIVE=0" in combined_output

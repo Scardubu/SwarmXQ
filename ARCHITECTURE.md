@@ -1,8 +1,13 @@
-# SwarmX V5.9 Architecture
+# SwarmX APEX-17 r8 Architecture
 
 SwarmX is a production-grade autonomous multi-agent swarm control plane combining
 a deterministic async orchestration core, specialist LLM agent roles, persistent
 layered memory, proposal-based bounded evolution, and a self-improving overlay.
+
+This document is a high-level architecture map. The authoritative low-RAM runtime
+profile, canonical model tags, and startup invariants live in [README.md](README.md),
+[scripts/rebuild-all-modelfiles.sh](scripts/rebuild-all-modelfiles.sh), and
+[setup/env.swarmx](setup/env.swarmx).
 
 ---
 
@@ -35,22 +40,29 @@ layered memory, proposal-based bounded evolution, and a self-improving overlay.
 
 ---
 
-## Model Topology (V5.9 — authoritative)
+## Model Topology (APEX-17 r8)
 
-| Role Key     | Ollama Tag          | GGUF File                                          | VRAM    |
-|--------------|---------------------|----------------------------------------------------|---------|
-| `fast`       | `phi4-fast`         | `microsoft_Phi-4-mini-instruct-Q8_0.gguf`          | 4.15 GB |
-| `worker`     | `phi4-worker`       | `microsoft_Phi-4-mini-instruct-Q8_0.gguf`          | 4.35 GB |
-| `executor`   | `qwen-worker`       | `Qwen2.5-7B-Instruct-Q5_K_M.gguf`                 | 5.50 GB |
-| `supervisor` | `qwen-supervisor`   | `Qwen2.5-7B-Instruct-Q5_K_M.gguf`                 | 6.10 GB |
-| `reasoner`   | `deepseek-reasoner` | `DeepSeek-R1-Distill-Qwen-7B-Q5_K_M.gguf`         | 6.00 GB |
-| `critic`     | `deepseek-critic`   | `DeepSeek-R1-Distill-Qwen-7B-Q5_K_M.gguf`         | 6.30 GB |
+| Operator   | Ollama Tag                          | Typical role |
+|------------|-------------------------------------|--------------|
+| Relay      | `route-phi4-lite-q4km-prod`         | ultra-light routing only |
+| Pilot      | `instruct-phi4-pro-q8-prod`         | fast chat and safe fallback |
+| Architect  | `plan-phi4-pro-q8-prod`             | light planning |
+| Architect  | `plan-qwen25-pro-q5km-prod`         | complex planning |
+| Architect  | `plan-deepseekr1-pro-q5km-prod`     | deep planning fallback |
+| Forge      | `code-qwen25-pro-q5km-prod`         | code generation |
+| Oracle     | `reason-deepseekr1-pro-q5km-prod`   | deep reasoning |
+| Auditor    | `critique-deepseekr1-pro-q5km-prod` | adversarial review |
+| Lab        | `synth-phi4-exp-q8-dev`             | evolution observe |
+| Lab        | `synth-qwen25-exp-q5km-dev`         | evolution mutate |
+| Lab        | `synth-deepseekr1-exp-q5km-dev`     | evolution critique/validate |
 
-GGUF files live under `~/llm-local/gguf/`. Modelfiles in `models/Modelfiles/primary/`.
+GGUF files live under `~/llm-local/gguf/`. Modelfiles resolve through the explicit
+tag-to-path map in [scripts/rebuild-all-modelfiles.sh](scripts/rebuild-all-modelfiles.sh).
 
-**Hardware target:** 8 GB RAM + 12 GB VRAM.
-**Strict single-model mode** (`co_load.strict_single_model: true`) is the default.
-Safe co-load pairs (phi4-fast + any other role) are defined in `swarmx_config.yaml`.
+**Hardware target:** 8 GB RAM, CPU-only, WSL-compatible.
+**Strict single-model mode** is the default on constrained hosts.
+Never load two 7B-class models simultaneously. Global Ollama residency is pinned to
+`OLLAMA_MAX_LOADED_MODELS=1` and `OLLAMA_KEEP_ALIVE=0` on the 8 GB profile.
 
 **Legacy tag normalisation** (`src/swarmx/config.py → _normalise_model_tag()`):
 
