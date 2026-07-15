@@ -69,6 +69,7 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
   const [style, setStyle] = useState<NonNullable<VideoJobRequest["style"]>>("faceless_broll");
   const [captionStyle, setCaptionStyle] = useState<NonNullable<VideoJobRequest["captionStyle"]>>("bold_center");
   const [voice, setVoice] = useState<NonNullable<VideoJobRequest["voice"]>>("default");
+  const [lastQueuedId, setLastQueuedId] = useState<string | null>(null);
 
   const trimmedPrompt = prompt.trim();
   const canSubmit = trimmedPrompt.length > 0 && !isSubmitting;
@@ -95,6 +96,7 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
 
     if (jobId) {
       setPrompt("");
+      setLastQueuedId(jobId);
       onSubmitted?.(jobId);
     }
   };
@@ -302,6 +304,12 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
         </div>
       )}
 
+      {/* Submission status region — live for screen readers */}
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {isSubmitting ? "Queuing video job…" : null}
+        {lastQueuedId && !isSubmitting && !submitError ? "Video job queued successfully. Track progress in the queue below." : null}
+      </div>
+
       {submitError && (
         <div
           className="rounded border border-status-error/35 bg-status-error/10 px-3 py-2 text-xs text-status-error"
@@ -309,6 +317,12 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
         >
           {submitError}
         </div>
+      )}
+
+      {lastQueuedId && !isSubmitting && !submitError && (
+        <p className="text-xs text-status-success font-mono" role="status">
+          Job queued — {lastQueuedId.slice(0, 8)}… Track progress in the queue.
+        </p>
       )}
 
       <div className="flex items-center justify-end">
@@ -322,7 +336,7 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
           {isSubmitting ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              Submitting
+              Queuing job…
             </>
           ) : (
             <>

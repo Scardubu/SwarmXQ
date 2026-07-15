@@ -191,36 +191,49 @@ function SystemdUnitsTable() {
   }
 
   return (
-    <div>
+    <div role="table" aria-label="systemd units">
+      <caption className="sr-only">
+        systemd service units — load state, active state, sub-state, and description.
+      </caption>
       <div
-        className="grid system-grid-systemd gap-3 px-4 py-1.5 border-b border-border bg-bg-surface"
+        role="rowgroup"
       >
-        {["Unit", "Load", "Active", "Sub", "Description"].map((h) => (
-          <span key={h} className="text-[9px] font-mono text-text-muted uppercase tracking-wide">
-            {h}
-          </span>
-        ))}
+        <div
+          role="row"
+          className="grid system-grid-systemd gap-3 px-4 py-1.5 border-b border-border bg-bg-surface"
+        >
+          {["Unit", "Load", "Active", "Sub", "Description"].map((h) => (
+            <span role="columnheader" key={h} className="text-[9px] font-mono text-text-muted uppercase tracking-wide">
+              {h}
+            </span>
+          ))}
+        </div>
       </div>
+      <div role="rowgroup">
       {units.map((unit) => (
         <div
           key={unit.name}
+          role="row"
           className="grid system-grid-systemd gap-3 px-4 py-1.5 border-b border-border/50 hover:bg-bg-elevated font-mono text-[11px]"
         >
-          <span className="text-text-secondary truncate">{unit.name}</span>
+          <span role="rowheader" className="text-text-secondary truncate">{unit.name}</span>
           <span
+            role="cell"
             className={cn("text-left", loadStateClass(unit.loadState))}
           >
             {unit.loadState}
           </span>
           <span
+            role="cell"
             className={unitStateClass(unit.activeState)}
           >
             {unit.activeState}
           </span>
-          <span className="text-text-muted">{unit.subState}</span>
-          <span className="text-text-muted truncate">{unit.description}</span>
+          <span role="cell" className="text-text-muted">{unit.subState}</span>
+          <span role="cell" className="text-text-muted truncate">{unit.description}</span>
         </div>
       ))}
+      </div>
     </div>
   );
 }

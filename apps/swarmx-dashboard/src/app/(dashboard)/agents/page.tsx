@@ -79,6 +79,7 @@ function AgentRow({
   return (
     <button
       onClick={() => onSelect(agent)}
+      role="row"
       className={cn(
         "w-full grid items-center gap-3 px-4 py-2.5 text-left",
         "hover:bg-bg-elevated transition-all duration-(--duration-micro) group",
@@ -460,36 +461,53 @@ function AgentsPageContent() {
         </div>
       </div>
 
-      {/* Table header */}
+      {/* Table header — ARIA grid semantics for screen-reader column header access */}
       <div
-        className="grid items-center gap-3 px-4 py-1.5 border-b border-border bg-bg-surface grid-cols-[1.5rem_1fr_5rem_5rem_5rem_7rem_4rem]"
+        role="table"
+        aria-label="Agent fleet"
+        className="flex flex-col flex-1 overflow-hidden"
       >
-        {["", "Agent", "Status", "CPU", "Mem", "Task", "Uptime"].map((h) => (
-          <span key={h} className="text-[9px] font-mono text-text-muted uppercase tracking-wide">
-            {h}
-          </span>
-        ))}
-      </div>
-
-      {/* Agent rows */}
-      <ScrollArea className="flex-1">
-        {filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-40 gap-2">
-            <span className="text-xs font-mono text-text-muted">
-              {agents.length === 0 ? "No agents have checked in yet — is the swarm running?" : "Nothing matches that filter — try broadening your search"}
-            </span>
+        <div
+          role="rowgroup"
+        >
+          <div
+            role="row"
+            className="grid items-center gap-3 px-4 py-1.5 border-b border-border bg-bg-surface grid-cols-[1.5rem_1fr_5rem_5rem_5rem_7rem_4rem]"
+          >
+            {["", "Agent", "Status", "CPU", "Memory", "Current task", "Uptime"].map((h) => (
+              <span
+                key={h}
+                role="columnheader"
+                className="text-[9px] font-mono text-text-muted uppercase tracking-wide"
+              >
+                {h}
+              </span>
+            ))}
           </div>
-        ) : (
-          filtered.map((agent) => (
-            <AgentRow
-              key={agent.id}
-              agent={agent}
-              nowMs={nowMs}
-              onSelect={handleSelectAgent}
-            />
-          ))
-        )}
-      </ScrollArea>
+        </div>
+
+        {/* Agent rows */}
+        <div role="rowgroup">
+        <ScrollArea className="flex-1">
+          {filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-40 gap-2">
+              <span className="text-xs font-mono text-text-muted">
+                {agents.length === 0 ? "No agents have checked in yet — is the swarm running?" : "Nothing matches that filter — try broadening your search"}
+              </span>
+            </div>
+          ) : (
+            filtered.map((agent) => (
+              <AgentRow
+                key={agent.id}
+                agent={agent}
+                nowMs={nowMs}
+                onSelect={handleSelectAgent}
+              />
+            ))
+          )}
+        </ScrollArea>
+        </div>
+      </div>
 
       {/* Agent detail sheet */}
       <AgentDetailSheet

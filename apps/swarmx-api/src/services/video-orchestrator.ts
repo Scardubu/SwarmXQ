@@ -108,6 +108,7 @@ import { scoreVirality } from "./virality-scorer.js";
 import { generateCaptionDraftWithValidation } from "./caption-generator.js";
 import { generateOllamaText } from "./ollama.js";
 import { renderWithFfmpeg } from "./ffmpeg-video-renderer.js";
+import { sanitizeReasoningOutput } from "./reasoning-sanitizer.js";
 import {
   resolveVideoModelTag,
   stageTimeoutMs,
@@ -405,7 +406,9 @@ async function stageIntentClassification(
 
   try {
     // [VOT-03] Pass overrides to ollamaGenerate
-    const raw = await ollamaGenerate(
+    // [VOT-13] Sanitize raw output before parsing so DeepSeek <think> blocks
+    //          never corrupt intent JSON. Safe no-op on phi4/qwen outputs.
+    const rawIntent = await ollamaGenerate(
       model,
       `Classify this video generation request in one sentence and rate complexity 0-1:\n"${ctx.job.request.prompt}"\n\nRespond as JSON: {"intent": "...", "complexity": 0.0}`,
       controller.signal,
@@ -413,6 +416,7 @@ async function stageIntentClassification(
       overrides,
       keepAlive,
     );
+    const { text: raw } = sanitizeReasoningOutput(rawIntent);
     try {
       const parsed = parseIntentClassification(raw);
       recordOperatorTrace(ctx, "intent_classification", model, startedAt, true);
@@ -445,7 +449,9 @@ async function stagePlanning(
   const controller = stageController(ctx, "planning");
 
   try {
-    const raw = await ollamaGenerate(
+    // [VOT-13] Sanitize output before parsing so <think> blocks never
+    //          produce hallucinated plan lines.
+    const rawPlan = await ollamaGenerate(
       model,
       buildPlanningPrompt(ctx.job.request, intent),
       controller.signal,
@@ -453,6 +459,7 @@ async function stagePlanning(
       overrides,
       keepAlive,
     );
+    const { text: raw } = sanitizeReasoningOutput(rawPlan);
     const lines = raw
       .split("\n")
       .map((l) => l.replace(/^\s*[\d.-]+[\s.)]*/, "").trim())
@@ -492,7 +499,9 @@ async function stageScripting(
   const controller = stageController(ctx, "scripting");
 
   try {
-    const scriptText = await ollamaGenerate(
+    // [VOT-13] Sanitize output so <think> artifacts never appear in the
+    //          generated script that feeds the storyboard and render stages.
+    const rawScript = await ollamaGenerate(
       model,
       buildScriptingPrompt(ctx.job.request, plan),
       controller.signal,
@@ -500,6 +509,7 @@ async function stageScripting(
       overrides,
       keepAlive,
     );
+    const { text: scriptText } = sanitizeReasoningOutput(rawScript);
     pushOperatorTrace(ctx.job, {
       stage: toPublicStatus("scripting"),
       operatorTag: model,
@@ -530,7 +540,9 @@ async function stageStoryboardGeneration(
   const controller = stageController(ctx, "storyboard_generation");
 
   try {
-    const raw = await ollamaGenerate(
+    // [VOT-13] Sanitize raw output before frame extraction so DeepSeek
+    //          <think> content never becomes a storyboard frame description.
+    const rawStoryboard = await ollamaGenerate(
       model,
       buildStoryboardPrompt(ctx.job.request, scriptText),
       controller.signal,
@@ -538,6 +550,7 @@ async function stageStoryboardGeneration(
       overrides,
       keepAlive,
     );
+    const { text: raw } = sanitizeReasoningOutput(rawStoryboard);
     const frames = raw
       .split("\n")
       .filter((l) => l.trim().startsWith("-") || /^\d+\./.test(l.trim()))

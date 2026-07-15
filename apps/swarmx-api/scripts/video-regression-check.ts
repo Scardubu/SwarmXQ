@@ -163,5 +163,61 @@ queue.failJob(first.id, {
 assert.equal(queue.getJob(first.id)?.status, "failed");
 assert.equal(queue.dequeueNext()?.id, second.id);
 
+// ── Video auth failthrough regression (Phase-1 fix) ───────────────────────────
+// Verify the auth middleware returns after sending 401 (no void discards the reply).
+const authSource = await readFile(new URL("../src/services/video-auth.ts", import.meta.url), "utf8");
+assert.ok(
+  authSource.includes("return reply.code(401).send("),
+  "video-auth must use 'return reply.code(401).send()' (not void) so the handler stops on auth failure",
+);
+assert.equal(
+  authSource.includes("void reply.code(401)"),
+  false,
+  "video-auth must not use 'void reply.code(401)' — execution would continue past auth failure",
+);
+
+// ── Sanitizer integration regression (Phase-1 fix) ────────────────────────────
+// All four text stages must pipe raw model output through sanitizeReasoningOutput.
+const orchestratorSourceV2 = await readFile(new URL("../src/services/video-orchestrator.ts", import.meta.url), "utf8");
+assert.ok(
+  orchestratorSourceV2.includes("sanitizeReasoningOutput"),
+  "video-orchestrator must import and use sanitizeReasoningOutput",
+);
+// Verify each stage calls it
+for (const stage of ["stageIntentClassification", "stagePlanning", "stageScripting", "stageStoryboardGeneration"]) {
+  const start = orchestratorSourceV2.indexOf(`async function ${stage}`);
+  assert.ok(start >= 0, `stage function ${stage} not found`);
+  const nextFn = orchestratorSourceV2.indexOf("async function stage", start + 1);
+  const end = nextFn > 0 ? nextFn : orchestratorSourceV2.length;
+  const body = orchestratorSourceV2.slice(start, end);
+  assert.ok(
+    body.includes("sanitizeReasoningOutput"),
+    `${stage} must call sanitizeReasoningOutput() on raw model output`,
+  );
+}
+
+// ── Preflight checks regression (Phase-2 fix) ─────────────────────────────────
+// The video route must check ffmpeg, ffprobe, and espeak-ng before enqueuing.
+const routesSourceV2 = await readFile(new URL("../src/routes/video.ts", import.meta.url), "utf8");
+assert.ok(
+  routesSourceV2.includes("ffmpeg_unavailable"),
+  "video route must return 503 ffmpeg_unavailable when ffmpeg is absent",
+);
+assert.ok(
+  routesSourceV2.includes("ffprobe_unavailable"),
+  "video route must return 503 ffprobe_unavailable when ffprobe is absent",
+);
+assert.ok(
+  routesSourceV2.includes("espeak_unavailable"),
+  "video route must return 503 espeak_unavailable when espeak-ng is absent",
+);
+// The preflight block must come before queue.enqueue() so jobs are not created on failure
+const preflightPos = routesSourceV2.indexOf("ffmpeg_unavailable");
+const enqueuePos = routesSourceV2.indexOf("queue.enqueue(request.body)");
+assert.ok(
+  preflightPos < enqueuePos,
+  "preflight checks must appear before queue.enqueue() in the route handler",
+);
+
 console.log("video regression checks passed");
 process.exit(0);

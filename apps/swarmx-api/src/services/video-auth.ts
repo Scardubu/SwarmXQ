@@ -29,7 +29,7 @@ export async function requireVideoWriteAuth(
   const candidate = bearerToken ?? apiKeyToken ?? "";
 
   if (candidate !== VIDEO_WRITE_TOKEN) {
-    void reply.code(401).send({
+    return reply.code(401).send({
       error: "unauthorized",
       message: "Missing or invalid video write token",
     });

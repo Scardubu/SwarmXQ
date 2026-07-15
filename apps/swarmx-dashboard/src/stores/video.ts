@@ -104,6 +104,17 @@ const API_BASE =
   "http://127.0.0.1:3001";
 const VIDEO_API_TOKEN = process.env.NEXT_PUBLIC_SWARMX_VIDEO_API_TOKEN?.trim() ?? "";
 
+/** Structured error thrown by apiFetch so callers can map error codes. Exported for testing. */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+  constructor(status: number, message: string, code: string | null) {
+    super(message);
+    this.status = status;
+    this.code = code;
+  }
+}
+
 async function apiFetch<T>(
   path: string,
   init?: RequestInit
@@ -122,10 +133,57 @@ async function apiFetch<T>(
     ...init,
   });
   if (!res.ok) {
-    const body = await res.text().catch(() => res.statusText);
-    throw new Error(`API ${path} → ${res.status}: ${body}`);
+    let code: string | null = null;
+    let message = res.statusText;
+    try {
+      const body = await res.json() as { error?: string; message?: string };
+      code = typeof body?.error === "string" ? body.error : null;
+      message = typeof body?.message === "string" ? body.message : message;
+    } catch {
+      // non-JSON body — use statusText
+    }
+    throw new ApiError(res.status, message, code);
   }
   return res.json() as Promise<T>;
+}
+
+/**
+ * Map a thrown API error to a calm, operator-safe user message.
+ * Never exposes raw paths, stack traces, or internal server details.
+ * Exported for testing.
+ */
+export function sanitizeApiError(err: unknown, fallback = "Something went wrong. Check that the API and Ollama are running."): string {
+  if (err instanceof ApiError) {
+    switch (err.code) {
+      case "insufficient_ram_for_video":
+        return "Not enough available RAM to start a video job right now. Free some memory or wait for the current workload to finish.";
+      case "queue_full":
+        return "The video queue is full. Wait for a job to complete before submitting another.";
+      case "ffmpeg_unavailable":
+        return "FFmpeg is not installed on this host. Install it with: sudo apt install ffmpeg";
+      case "ffprobe_unavailable":
+        return "FFprobe is not installed on this host. Install it with: sudo apt install ffmpeg";
+      case "espeak_unavailable":
+        return "espeak-ng is not installed and silent-audio mode is off. Install it with: sudo apt install espeak-ng";
+      case "unauthorized":
+        return "Video write access is not authorized. Check that NEXT_PUBLIC_SWARMX_VIDEO_API_TOKEN matches the API token.";
+      case "queue_error":
+      case "not_found":
+        return err.message.length > 0 && err.message.length < 160 ? err.message : fallback;
+      default:
+        if (err.status === 503) return "The API or a required service is temporarily unavailable. Retry in a moment.";
+        if (err.status === 429) return "Too many requests. Wait a moment before trying again.";
+        if (err.status === 409) return "This action cannot be performed on a job in its current state.";
+        // Safe to surface status-less generic messages short enough to not contain internals
+        if (err.message.length > 0 && err.message.length < 100 && !err.message.includes("/")) return err.message;
+        return fallback;
+    }
+  }
+  // Network-level or unknown errors
+  if (err instanceof TypeError && err.message.toLowerCase().includes("fetch")) {
+    return "Unable to reach the SwarmX API. Check that the API is running on port 3001.";
+  }
+  return fallback;
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -225,7 +283,7 @@ export const useVideoStore = create<VideoStore>()(
           set(
             {
               isSubmitting: false,
-              submitError: err instanceof Error ? err.message : "Failed to submit job",
+              submitError: sanitizeApiError(err, "Failed to submit video job. Check that the API is running."),
             },
             false,
             "video/submit/error"

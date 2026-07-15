@@ -13,6 +13,8 @@
 import type { FastifyInstance, FastifyPluginOptions, FastifyReply, FastifyRequest } from "fastify";
 import { createReadStream, existsSync } from "node:fs";
 import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { z } from "zod";
 import type { VideoJobRequest, VideoJobListQuery } from "../types/video.js";
 import * as queue from "../services/video-queue.js";
@@ -37,6 +39,17 @@ import type { PublishResult } from "@swarmx/types/video-types";
 import { recordVideoPerformance } from "../services/video-assets.js";
 import { resolveCanonicalTag } from "@swarmx/types/operator-map";
 import type { CaptionDraft } from "@swarmx/types/video-types";
+
+// ── Local helper: check a binary is on PATH without importing the renderer ────
+const execFileAsync = promisify(execFile);
+async function commandAvailable(cmd: string): Promise<boolean> {
+  try {
+    await execFileAsync(cmd, ["--version"], { timeout: 3_000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const PublishRequestSchema = {
   type: "object",
@@ -307,6 +320,38 @@ export async function videoRoutes(
           availableMb,
           minimumRequired,
         });
+      }
+
+      // ── Preflight: verify local render prerequisites before spending queue slot ──
+      // Check binaries only when a local render will actually be needed. ComfyUI
+      // backend skips this check; the render stage handles ComfyUI-specific failures.
+      const renderBackend = process.env["SWARMX_VIDEO_RENDER_BACKEND"] ?? "auto";
+      if (renderBackend !== "comfyui") {
+        const [hasFfmpeg, hasFfprobe] = await Promise.all([
+          commandAvailable("ffmpeg"),
+          commandAvailable("ffprobe"),
+        ]);
+        if (!hasFfmpeg) {
+          return reply.status(503).send({
+            error: "ffmpeg_unavailable",
+            message: "ffmpeg is required for local video rendering but was not found. Install it with: sudo apt install ffmpeg",
+          });
+        }
+        if (!hasFfprobe) {
+          return reply.status(503).send({
+            error: "ffprobe_unavailable",
+            message: "ffprobe is required for video artifact validation but was not found. Install it with: sudo apt install ffmpeg",
+          });
+        }
+        if (process.env["SWARMX_VIDEO_ALLOW_SILENT_AUDIO"] !== "1") {
+          const hasEspeak = await commandAvailable("espeak-ng");
+          if (!hasEspeak) {
+            return reply.status(503).send({
+              error: "espeak_unavailable",
+              message: "espeak-ng is required for voiced renders. Install it with: sudo apt install espeak-ng, or set SWARMX_VIDEO_ALLOW_SILENT_AUDIO=1 for silent test renders.",
+            });
+          }
+        }
       }
 
       let job;
