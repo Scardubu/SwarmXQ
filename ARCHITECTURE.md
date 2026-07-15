@@ -68,13 +68,16 @@ Never load two 7B-class models simultaneously. Global Ollama residency is pinned
 
 | Legacy tag       | Canonical tag       |
 |------------------|---------------------|
-| `phi4-mini`      | `phi4-fast`         |
-| `deepseek-r1:7b` | `deepseek-reasoner` |
-| `qwen2.5-coder`  | `qwen-worker`       |
+| `phi4-mini`            | `instruct-phi4-pro-q8-prod`         | Pilot  |
+| `deepseek-r1:7b`       | `reason-deepseekr1-pro-q5km-prod`   | Oracle |
+| `qwen2.5-coder`        | `code-qwen25-pro-q5km-prod`         | Forge  |
+| `phi4-fast-scar` (r6)  | `instruct-phi4-pro-q8-prod`         | Pilot  |
+| `deepseek-reasoner-scar` (r6) | `reason-deepseekr1-pro-q5km-prod` | Oracle |
+| `qwen-worker-scar` (r6) | `code-qwen25-pro-q5km-prod`       | Forge  |
 
 ---
 
-## Orchestration Flow (V5.9)
+## Orchestration Flow (Python brain layer)
 
 ```
 Task prompt
@@ -108,7 +111,7 @@ score_complexity()          ← phi4-fast  (30 s timeout; neutral 0.5 on timeout
 
 ---
 
-## Execution Policy Gate (V5.9 ENH-GATE-01)
+## Execution Policy Gate
 
 All execution paths now enforce policy assessment before `execute_plan()`:
 
@@ -121,7 +124,7 @@ This closes the prior safety gap where HTTP and background job execution could b
 
 ---
 
-## Runtime Governor (V5.9 ENH-05)
+## Runtime Governor
 
 SwarmX now includes a pressure-aware runtime governor designed for 8 GB RAM + ZRAM targets.
 
@@ -180,7 +183,7 @@ Execution path:
 3. The resulting `StartupSummary` is persisted to `~/.swarmx/state/startup_summary.json`.
 4. The Fastify SSE layer caches and replays `system:startup`, `system:governor`, and `system:scs` so late-joining dashboards hydrate immediately.
 
-### Python Event Bridge (V5.9 FIX-05)
+### Python Event Bridge
 
 SwarmX now separates historical lifecycle hydration from live SSE delivery.
 
@@ -214,7 +217,7 @@ Startup summary contract:
 
 ---
 
-## Tool Registry (V5.9 — 24 tools)
+## Tool Registry (24 tools)
 
 | Tool                 | Category      | Key safety feature                         |
 |----------------------|---------------|--------------------------------------------|
@@ -249,7 +252,7 @@ threshold, 60 s reset window), call logging (keys only — values never logged),
 
 ---
 
-## Memory Architecture (V5.9 — 4 Tiers)
+## Memory Architecture (4 Tiers)
 
 ```
 Query/Store request
@@ -274,7 +277,7 @@ All stores write to `$SWARM_HOME/memory/` (default `~/.swarmx/memory/`).
 
 ---
 
-## Evolution Cycle (V5.9 — APEX-17 Gate-Aware)
+## Evolution Cycle (APEX-17 Gate-Aware)
 
 ```
 observe()           collect runtime signals, recent runs, memory surface

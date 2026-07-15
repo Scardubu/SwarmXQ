@@ -560,7 +560,7 @@ export function startSwarmMonitor(
         if (snap.topology !== _lastTopology) {
           console.info(
             `[swarm-monitor] TOPOLOGY_CHANGE ${_lastTopology ?? "init"} → ${snap.topology}` +
-            (snap.degradeReasons.length ? ` reasons=[${snap.degradeReasons.join(", ")}]` : ""),
+            (snap.degraded && snap.degradeReasons.length ? ` reasons=[${snap.degradeReasons.join(", ")}]` : ""),
           );
           _lastTopology = snap.topology;
           broadcastFn?.("swarm:topology_change", {

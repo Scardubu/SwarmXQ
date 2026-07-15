@@ -2,6 +2,7 @@
   "name": "@swarmx/types",
   "version": "2026.6.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
