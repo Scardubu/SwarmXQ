@@ -97,9 +97,9 @@ services:
       OLLAMA_HOST: http://ollama:11434
       # Model triad
       SWARM_LLM_PROVIDER: "${SWARM_LLM_PROVIDER:-ollama}"
-      SWARM_MODEL_FAST:   "${SWARM_MODEL_FAST:-phi4-fast}"
-      SWARM_MODEL_CODE:   "${SWARM_MODEL_CODE:-qwen-worker}"
-      SWARM_MODEL_REASON: "${SWARM_MODEL_REASON:-deepseek-reasoner}"
+      SWARM_MODEL_FAST:   "${SWARM_MODEL_FAST:-instruct-phi4-pro-q8-prod}"
+      SWARM_MODEL_CODE:   "${SWARM_MODEL_CODE:-code-qwen25-pro-q5km-prod}"
+      SWARM_MODEL_REASON: "${SWARM_MODEL_REASON:-reason-deepseekr1-pro-q5km-prod}"
       # Runtime behaviour
       SWARM_AUTONOMOUS:      "${SWARM_AUTONOMOUS:-true}"
       SWARM_REVIEW_REQUIRED: "${SWARM_REVIEW_REQUIRED:-false}"
@@ -154,7 +154,7 @@ services:
       SWARMX_HOME: /data/swarmx
       # Ollama
       SWARMX_OLLAMA_BASE_URL: http://ollama:11434
-      SWARMX_COMPOSER_MODEL: "${SWARMX_COMPOSER_MODEL:-phi4-fast}"
+      SWARMX_COMPOSER_MODEL: "${SWARMX_COMPOSER_MODEL:-instruct-phi4-pro-q8-prod}"
       # Telemetry polling intervals
       SWARMX_TELEMETRY_INTERVAL_MS: "${SWARMX_TELEMETRY_INTERVAL_MS:-2000}"
       SWARMX_V5_POLL_INTERVAL_MS:   "${SWARMX_V5_POLL_INTERVAL_MS:-15000}"

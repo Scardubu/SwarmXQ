@@ -162,9 +162,9 @@ function getStaticModels(): string[] {
     firstConfiguredEnv(["SWARMX_MODEL_FAST", "SWARM_MODEL_FAST"]),
     firstConfiguredEnv(["SWARMX_MODEL_CODE", "SWARM_MODEL_CODE"]),
     firstConfiguredEnv(["SWARMX_MODEL_REASON", "SWARMX_MODEL_REASONER", "SWARM_MODEL_REASON"]),
-    "phi4-fast:latest",
-    "qwen-worker:latest",
-    "deepseek-reasoner:latest",
+    "instruct-phi4-pro-q8-prod",
+    "code-qwen25-pro-q5km-prod",
+    "reason-deepseekr1-pro-q5km-prod",
   ].filter(Boolean);
   return [...new Set(models)].sort();
 }

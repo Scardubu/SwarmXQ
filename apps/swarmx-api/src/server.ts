@@ -55,6 +55,7 @@ import { logsRouter } from "./routes/logs.js";
 import { configRouter } from "./routes/config.js";
 import { composerRouter } from "./routes/composer.js";
 import { metricsRouter } from "./routes/metrics.js";
+import { registerModelsRoutes } from "./routes/models.js";
 import { videoRoutes } from "./routes/video.js";
 
 import { startSystemInfoPoller } from "./services/systeminfo.js";
@@ -161,6 +162,7 @@ await server.register(configRouter,    { prefix: "/api/config" });
 await server.register(composerRouter,  { prefix: "/api/composer" });
 await server.register(metricsRouter,   { prefix: "/api/metrics" });
 await server.register(videoRoutes,     { prefix: "/api/video" });
+await registerModelsRoutes(server);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 // Probed by docker-compose healthcheck and Kubernetes liveness probes.

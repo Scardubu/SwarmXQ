@@ -18,16 +18,16 @@ function resolveModelAlias(alias: string): string {
     process.env["SWARMX_MODEL_FAST"] ??
     process.env["SWARM_MODEL_FAST"] ??
     process.env["SWARMX_COMPOSER_MODEL"] ??
-    "phi4-fast";
+    "instruct-phi4-pro-q8-prod";
   const modelCode =
     process.env["SWARMX_MODEL_CODE"] ??
     process.env["SWARM_MODEL_CODE"] ??
-    "qwen-worker";
+    "code-qwen25-pro-q5km-prod";
   const modelReason =
     process.env["SWARMX_MODEL_REASON"] ??
     process.env["SWARMX_MODEL_REASONER"] ??
     process.env["SWARM_MODEL_REASON"] ??
-    "deepseek-reasoner";
+    "reason-deepseekr1-pro-q5km-prod";
 
   switch (alias.toLowerCase()) {
     case "fast": return modelFast;

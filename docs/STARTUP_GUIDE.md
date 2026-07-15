@@ -86,7 +86,7 @@ python -m cli up --dashboard --host 127.0.0.1 --port 3002
 | `SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS` | `45000` | Cap used for short prompts (<=180 chars). Keeps interactive queries responsive without forcing premature 30s fallbacks. |
 | `SWARMX_COMPOSER_NUM_PREDICT` | `256` | Composer response token ceiling; lower values reduce latency on constrained hosts. |
 | `SWARMX_COMPOSER_KEEP_ALIVE` | unset | Optional override for Composer model keep-alive. Leave unset on 8 GB hosts so the request-level model policy remains authoritative. |
-| `SWARMX_COMPOSER_FAST_MODEL` | `phi4-fast` | Fast fallback model candidate used when configured composer model fails. |
+| `SWARMX_COMPOSER_FAST_MODEL` | `instruct-phi4-pro-q8-prod` | Fast fallback model candidate used when configured composer model fails. |
 | `SWARMX_COMPOSER_TIMEOUT_HISTO_LOG_EVERY` | `3` | Log compact composer timeout histogram every N timeout fallbacks (`0` or negative logs every timeout). |
 | `SWARMX_COMPOSER_RETRY_MAX_ATTEMPTS` | `2` | Max model call attempts per candidate before fallback. |
 | `SWARMX_COMPOSER_RETRY_BASE_DELAY_MS` | `250` | Exponential backoff base delay between retries. |
@@ -126,7 +126,7 @@ These Ollama variables are read by the Ollama daemon at startup. Export them bef
 
 ### Why the first Composer request may take 60-120 s
 
-phi4-fast (4.1 GB) is not kept resident when Ollama first starts — it is loaded
+instruct-phi4-pro-q8-prod (4.1 GB) is not kept resident when Ollama first starts — it is loaded
 on demand. On a CPU-only host without enough VRAM, cold loading takes 60-120 s.
 
 **Before V6.2-FIX-25/26**, the stack had a deadlock:

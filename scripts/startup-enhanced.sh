@@ -525,7 +525,7 @@ ${GREEN}${BOLD}✓ SwarmX Stack Ready${NC}
     
   ${BOLD}LLM Backend:${NC}
     🤖 Ollama at $OLLAMA_URL
-    📚 Models: phi4-fast, qwen-worker, deepseek-reasoner
+    📚 Models: instruct-phi4-pro-q8-prod, code-qwen25-pro-q5km-prod, reason-deepseekr1-pro-q5km-prod
     
   ${BOLD}Quick Commands:${NC}
     • View logs: tail -f ~/.swarmx/logs/swarmx-*.log
