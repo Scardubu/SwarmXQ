@@ -7,7 +7,7 @@
 | OS | Linux (Ubuntu 22.04+ recommended), macOS 13+, WSL2 |
 | Python | 3.11 or 3.12 |
 | Node.js | 22 LTS |
-| pnpm | 9.x (`npm install -g pnpm@9`) |
+| pnpm | 11.9.0 (`npm install -g pnpm@11.9.0`) |
 | Redis | 7.x |
 | Disk | 2 GB free (models need additional space — see Step 5) |
 | RAM | 8 GB minimum, 16 GB recommended |

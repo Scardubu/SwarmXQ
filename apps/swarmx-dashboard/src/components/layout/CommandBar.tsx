@@ -5,7 +5,8 @@ import { cn } from "@/lib/utils";
 import { useEventsStore } from "@/stores/events";
 import { useUIStore } from "@/stores/ui";
 import { Terminal, PanelRight } from "lucide-react";
-import { useApiHealth } from "@/hooks/useApiHealth";
+import type { ApiHealthState } from "@/hooks/useApiHealth";
+import { getRuntimeGuidance } from "@/lib/runtime-guidance";
 import type { PressureLevel, StartupSummary } from "@swarmx/types";
 
 /** Live WAT clock (UTC+1 / Africa/Lagos). */
@@ -111,16 +112,11 @@ function getStartupBadge(summary: StartupSummary): { label: string; cls: string 
 
 interface CommandBarProps {
   readonly breadcrumb?: string;
+  readonly apiHealth: ApiHealthState;
 }
 
-export function CommandBar({ breadcrumb = "Overview" }: CommandBarProps) {
-  const health = useSystemHealth();
-  let healthStatus: "active" | "queued" | "error" = "active";
-  if (health === "degraded") {
-    healthStatus = "queued";
-  } else if (health === "critical") {
-    healthStatus = "error";
-  }
+export function CommandBar({ breadcrumb = "Overview", apiHealth }: CommandBarProps) {
+  const derivedHealth = useSystemHealth();
   const isStale = useEventsStore((s) => s.isStale);
   const connectionStatus = useEventsStore((s) => s.connectionStatus);
   const openCommandPalette = useUIStore((s) => s.openCommandPalette);
@@ -131,12 +127,27 @@ export function CommandBar({ breadcrumb = "Overview" }: CommandBarProps) {
   const startupSummary = useEventsStore((s) => s.startupSummary);
   const sseReconnectAttempt = useEventsStore((s) => s.sseReconnectAttempt);
   const sseNextRetryMs = useEventsStore((s) => s.sseNextRetryMs);
-  const apiHealth = useApiHealth(15_000);
   const toggleTerminal = useUIStore((s) => s.toggleTerminal);
   const terminalVisible = useUIStore((s) => s.terminalVisible);
   const toggleTelemetryRail = useUIStore((s) => s.toggleTelemetryRail);
   const telemetryRailVisible = useUIStore((s) => s.telemetryRailVisible);
   const startupBadge = startupSummary ? getStartupBadge(startupSummary) : null;
+  const pressureLevel = governorState?.pressureLevel ?? startupSummary?.pressureLevel;
+  const availableMb = governorState?.availableMb ?? startupSummary?.availableMb;
+  const runtimeGuidance = getRuntimeGuidance({
+    apiOnline: apiHealth.apiOnline,
+    ollamaOnline: apiHealth.ollamaOnline,
+    pressureLevel,
+    availableMb,
+  });
+  const health =
+    apiHealth.apiOnline === false
+      ? "critical"
+      : apiHealth.ollamaOnline === false && derivedHealth === "healthy"
+        ? "degraded"
+        : derivedHealth;
+  const healthStatus: "active" | "queued" | "error" =
+    health === "critical" ? "error" : health === "degraded" ? "queued" : "active";
 
   const watTime = useWATClock();
   const watDateTitle = useWATDateTitle();
@@ -151,12 +162,15 @@ export function CommandBar({ breadcrumb = "Overview" }: CommandBarProps) {
   }
 
   // [V6.1-ENH-01] Enrich health title with startup narrative when available
-  const healthTitle =
+  const baseHealthTitle =
     startupSummary != null
       ? `${startupSummary.narrative} · SCS ${scsScore != null ? (scsScore * 100).toFixed(0) + "%" : "—"}`
       : scsScore === null
       ? `System ${health}`
       : `System ${health} · SCS ${(scsScore * 100).toFixed(0)}%`;
+  const healthTitle = runtimeGuidance
+    ? `${baseHealthTitle} · ${runtimeGuidance.title}`
+    : baseHealthTitle;
   const retrySeconds =
     sseNextRetryMs !== null ? Math.max(0, Math.ceil(sseNextRetryMs / 1000)) : null;
 
@@ -205,7 +219,7 @@ export function CommandBar({ breadcrumb = "Overview" }: CommandBarProps) {
         {apiHealth.apiOnline !== null && (
           <span
             className={cn(
-              "hidden xl:inline-flex items-center rounded-full border px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wide",
+              "inline-flex items-center rounded-full border px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wide",
               apiHealth.apiOnline
                 ? "border-status-success/35 bg-status-success/8 text-status-success"
                 : "border-status-error/35 bg-status-error/8 text-status-error"
@@ -213,14 +227,15 @@ export function CommandBar({ breadcrumb = "Overview" }: CommandBarProps) {
             title={`API health${apiHealth.latencyMs !== null ? ` · ${apiHealth.latencyMs} ms` : ""}`}
             aria-label={apiHealth.apiOnline ? "API online" : "API offline"}
           >
-            API {apiHealth.apiOnline ? (apiHealth.latencyMs !== null ? `${apiHealth.latencyMs}ms` : "UP") : "DOWN"}
+            <span className="sm:hidden">API</span>
+            <span className="hidden sm:inline">API {apiHealth.apiOnline ? (apiHealth.latencyMs !== null ? `${apiHealth.latencyMs}ms` : "UP") : "DOWN"}</span>
           </span>
         )}
 
         {apiHealth.ollamaOnline !== null && (
           <span
             className={cn(
-              "hidden xl:inline-flex items-center rounded-full border px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wide",
+              "inline-flex items-center rounded-full border px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wide",
               apiHealth.ollamaOnline
                 ? "border-status-success/35 bg-status-success/8 text-status-success"
                 : "border-status-warning/35 bg-status-warning/8 text-status-warning"
@@ -228,7 +243,8 @@ export function CommandBar({ breadcrumb = "Overview" }: CommandBarProps) {
             title={`Ollama backend ${apiHealth.ollamaOnline ? "reachable" : "unreachable"}`}
             aria-label={apiHealth.ollamaOnline ? "Ollama reachable" : "Ollama unreachable"}
           >
-            OLLAMA {apiHealth.ollamaOnline ? "UP" : "DOWN"}
+            <span className="sm:hidden">AI</span>
+            <span className="hidden sm:inline">OLLAMA {apiHealth.ollamaOnline ? "UP" : "DOWN"}</span>
           </span>
         )}
 

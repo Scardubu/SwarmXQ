@@ -96,7 +96,9 @@ python -m cli up --dashboard --host 127.0.0.1 --port 3002
 | `SWARMX_COMPOSER_DEEP_TIMEOUT_MS` | `90000` | Minimum timeout budget for deep/complex prompts. |
 | `SWARMX_COMPOSER_DEEP_TIMEOUT_MIN_MS` | Same as `SWARMX_COMPOSER_DEEP_TIMEOUT_MS` | Lower bound applied to deep-prompt timeout on constrained hosts — set this below `SWARMX_COMPOSER_DEEP_TIMEOUT_MS` to let complex prompts fail faster rather than waiting the full 90 s. |
 | `SWARMX_OLLAMA_CACHE_TTL_MS` | `15000` | Ollama service-discovery cache TTL in milliseconds. Lowering this causes more-frequent re-discovery; raising it reduces overhead on stable Ollama deployments. |
-| `SWARMX_OLLAMA_PROBE_TIMEOUT_MS` | `2000` | Timeout for fast Ollama health probes (`/api/version`, `/health`). Raise to `5000` on constrained hosts where the daemon takes 2-3 s to respond after a restart. |
+| `SWARMX_OLLAMA_PROBE_TIMEOUT_MS` | `5000` | Default timeout for general fast Ollama `/api/version` probes. Use this longer budget for cold or constrained hosts. |
+| `SWARMX_SYSTEM_HEALTH_PROBE_TIMEOUT_MS` | `1500` | Dashboard-facing Ollama liveness budget for `/api/system/health`, bounded to 250–10000 ms. A failed liveness check skips model discovery. |
+| `SWARMX_SYSTEM_HEALTH_MODEL_PROBE_TIMEOUT_MS` | `2500` | Model-readiness budget used only after Ollama is live, bounded to 250–10000 ms. |
 | `NEXT_PUBLIC_SWARMX_COMPOSER_CLIENT_TIMEOUT_MS` | `120000` | Dashboard client-side abort ceiling for composer requests. |
 | `SWARMX_START_OLLAMA_IF_DOWN` | `1` | Startup script attempts non-blocking `ollama serve` when endpoint is down. |
 | `SWARMX_V5_POLL_TIMEOUT_MS` | `25000` | Timeout for `python -m swarmx metrics` subprocess used by API poller. Increase on slow hosts to avoid SIGTERM skips. |
@@ -180,6 +182,25 @@ SWARMX_COMPOSER_TIMEOUT_MS=150000
 `startup-enhanced.sh` now applies this same constrained-host profile automatically
 when available RAM falls below roughly 2.2 GB, so restarts default to the safer
 single-model path even if these values are not exported manually.
+
+### Degraded health behavior
+
+`GET /api/system/health` always distinguishes the API being available from the
+Ollama backend being available. When Ollama is down, the API returns HTTP `200`
+with `status: "degraded"`, reports every canonical model as `error` with
+`"Ollama unreachable"`, and **does not** start `/api/tags` discovery. This keeps
+dashboard health feedback bounded by `SWARMX_SYSTEM_HEALTH_PROBE_TIMEOUT_MS`
+instead of waiting for a full model-list timeout.
+
+The dashboard surfaces three independent recovery states:
+
+- **SwarmX API unavailable:** restore the API on port `3001`, then refresh.
+- **Ollama backend unavailable:** run `ollama serve`, then wait for health to recover.
+- **Memory pressure high/critical:** finish or unload memory-heavy work before
+  starting another model-backed job.
+
+On the 8 GB profile, do not respond to a degraded state by prewarming multiple
+models. Restore at most one model only after physical memory headroom is safe.
 
 ### Manual opt-in prewarm before first use
 

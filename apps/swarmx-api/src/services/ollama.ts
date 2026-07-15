@@ -384,13 +384,14 @@ export function invalidateOllamaCache(): void {
 const FAST_PROBE_TIMEOUT_MS =
   Number.parseInt(process.env["SWARMX_OLLAMA_PROBE_TIMEOUT_MS"] ?? "5000", 10) || 5_000;
 
-export async function fastHealthProbe(): Promise<{
+export async function fastHealthProbe(timeoutMs = FAST_PROBE_TIMEOUT_MS): Promise<{
   reachable: boolean;
   endpoint: string;
   latencyMs: number;
 }> {
   const endpoints = getDefaultEndpoints().map((e) => normalizeEndpoint(e));
   const start = Date.now();
+  const boundedTimeoutMs = Math.min(10_000, Math.max(250, Math.round(timeoutMs)));
 
   if (endpoints.length === 0) {
     return { reachable: false, endpoint: "http://127.0.0.1:11434", latencyMs: 0 };
@@ -402,7 +403,7 @@ export async function fastHealthProbe(): Promise<{
   // localhost), which made the health endpoint report reachable:false and
   // triggered a permanent MODEL OFFLINE banner even when Ollama was running.
   const probes = endpoints.map(async (endpoint) => {
-    const ok = await probeVersion(endpoint, FAST_PROBE_TIMEOUT_MS);
+    const ok = await probeVersion(endpoint, boundedTimeoutMs);
     if (!ok) throw new Error("unreachable");
     return endpoint;
   });

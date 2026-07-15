@@ -4,6 +4,8 @@ import React, { useMemo } from "react";
 import { RefreshCw, WifiOff } from "lucide-react";
 import { useEventsStore } from "@/stores/events";
 import { Button } from "@/components/ui/button";
+import type { ApiHealthState } from "@/hooks/useApiHealth";
+import { getRuntimeGuidance } from "@/lib/runtime-guidance";
 
 function formatAge(lastEventAt: number | null): string {
   if (lastEventAt == null) {
@@ -20,13 +22,28 @@ function formatAge(lastEventAt: number | null): string {
   return `Last update ${Math.round(ageMs / 60_000)}m ago`;
 }
 
-export function ConnectionBanner() {
+interface ConnectionBannerProps {
+  readonly apiHealth: ApiHealthState;
+}
+
+export function ConnectionBanner({ apiHealth }: ConnectionBannerProps) {
   const isStale = useEventsStore((state) => state.isStale);
   const connectionStatus = useEventsStore((state) => state.connectionStatus);
   const lastEventAt = useEventsStore((state) => state.lastEventAt);
+  const governorState = useEventsStore((state) => state.governorState);
+  const startupSummary = useEventsStore((state) => state.startupSummary);
+  const pressureLevel = governorState?.pressureLevel ?? startupSummary?.pressureLevel;
+  const availableMb = governorState?.availableMb ?? startupSummary?.availableMb;
+  const runtimeGuidance = getRuntimeGuidance({
+    apiOnline: apiHealth.apiOnline,
+    ollamaOnline: apiHealth.ollamaOnline,
+    pressureLevel,
+    availableMb,
+  });
 
-  const visible = isStale || connectionStatus === "disconnected" || connectionStatus === "connecting";
-  const message = useMemo(() => {
+  const hasSseIssue = isStale || connectionStatus === "disconnected" || connectionStatus === "connecting";
+  const visible = hasSseIssue || runtimeGuidance !== null;
+  const sseMessage = useMemo(() => {
     if (connectionStatus === "disconnected") {
       return "Live telemetry stream disconnected. Operator metrics may be stale.";
     }
@@ -41,26 +58,44 @@ export function ConnectionBanner() {
   }
 
   const isConnecting = connectionStatus === "connecting";
+  const isAlert =
+    connectionStatus === "disconnected" ||
+    runtimeGuidance?.tone === "critical";
+  const showRetry = !isConnecting && (hasSseIssue || apiHealth.apiOnline === false);
 
   return (
     <div
       className="border-b border-status-warning/30 bg-status-warning/10 px-4 py-2 panel-enter"
-      role={connectionStatus === "disconnected" ? "alert" : "status"}
-      aria-live={connectionStatus === "disconnected" ? "assertive" : "polite"}
+      role={isAlert ? "alert" : "status"}
+      aria-live={isAlert ? "assertive" : "polite"}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-start gap-2">
-          {isConnecting ? (
+          {isConnecting && runtimeGuidance === null ? (
             <RefreshCw className="mt-0.5 h-3.5 w-3.5 shrink-0 text-status-warning animate-spin" aria-hidden="true" />
           ) : (
             <WifiOff className="mt-0.5 h-3.5 w-3.5 shrink-0 text-status-warning" aria-hidden="true" />
           )}
           <div className="min-w-0">
-            <p className="text-[11px] font-mono text-status-warning">{message}</p>
-            <p className="text-[10px] font-mono text-text-muted">{formatAge(lastEventAt)}</p>
+            <p className="text-[11px] font-mono text-status-warning">
+              {runtimeGuidance?.title ?? sseMessage}
+            </p>
+            <p className="text-[10px] font-mono text-text-muted">
+              {runtimeGuidance?.detail ?? formatAge(lastEventAt)}
+            </p>
+            {runtimeGuidance && (
+              <p className="mt-0.5 text-[10px] font-mono text-text-secondary">
+                {runtimeGuidance.recoveryHint}
+              </p>
+            )}
+            {runtimeGuidance && hasSseIssue && (
+              <p className="mt-0.5 text-[10px] font-mono text-text-muted">
+                {sseMessage} {formatAge(lastEventAt)}.
+              </p>
+            )}
           </div>
         </div>
-        {!isConnecting && (
+        {showRetry && (
           <Button
             type="button"
             size="sm"
@@ -69,7 +104,7 @@ export function ConnectionBanner() {
             onClick={() => globalThis.location.reload()}
           >
             <RefreshCw className="h-3 w-3" />
-            Refresh
+            Retry
           </Button>
         )}
       </div>

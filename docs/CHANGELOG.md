@@ -4,6 +4,37 @@
 
 ---
 
+## V6.2.7 — Degraded Runtime Health Integration (Unreleased)
+
+### Health and performance
+
+- Bounded `/api/system/health` Ollama liveness probes to a dedicated
+  `SWARMX_SYSTEM_HEALTH_PROBE_TIMEOUT_MS` budget (default: 1500 ms).
+- Stopped model-list discovery when Ollama liveness has already failed, so an
+  unavailable backend returns a bounded HTTP `200` degraded response instead of
+  waiting for readiness work that cannot succeed.
+- Added `SWARMX_SYSTEM_HEALTH_MODEL_PROBE_TIMEOUT_MS` (default: 2500 ms) for
+  bounded readiness checks after Ollama is confirmed live.
+
+### Dashboard UX
+
+- Centralized dashboard API/Ollama/RAM recovery guidance through a shared
+  runtime policy and React Query health cache.
+- Deduplicated health polling across the dashboard shell, Composer, and video
+  workspace with a 12-second shared cadence, three-second client budget, and no
+  automatic retry storm.
+- Made API and Ollama health badges visible at compact widths and clarified
+  recovery instructions in the global banner and video workspace.
+
+### Tests and documentation
+
+- Added pure runtime-guidance coverage and an API system-health regression
+  script that validates bounded configuration and explicit offline model state.
+- Updated the environment template, startup/config references, installation
+  pnpm version, and canonical architecture terminology.
+
+---
+
 ## V6.2.6 — Low-RAM Runtime Finalization & Video Render Hardening (2026-07-14)
 
 ### Runtime

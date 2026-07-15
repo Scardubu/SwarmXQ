@@ -10,6 +10,7 @@ import { TerminalStrip } from "@/components/layout/TerminalStrip";
 import { CommandPalette } from "@/components/command-palette/CommandPalette";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useSwarmXEvents } from "@/hooks/useSwarmXEvents";
+import { useApiHealth } from "@/hooks/useApiHealth";
 import { useKeyboard } from "@/hooks/useKeyboard";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { usePathname } from "next/navigation";
@@ -41,11 +42,12 @@ function DashboardShell({ children }: { readonly children: React.ReactNode }) {
   useKeyboard();
 
   const breadcrumb = useBreadcrumb();
+  const apiHealth = useApiHealth();
 
   return (
     <AppShell>
       {/* Row 1, Col 1-3 */}
-      <CommandBar breadcrumb={breadcrumb} />
+      <CommandBar breadcrumb={breadcrumb} apiHealth={apiHealth} />
 
       {/* Row 2, Col 1 */}
       <NavRail />
@@ -56,7 +58,7 @@ function DashboardShell({ children }: { readonly children: React.ReactNode }) {
         id="main-content"
         tabIndex={-1}
       >
-        <ConnectionBanner />
+        <ConnectionBanner apiHealth={apiHealth} />
         <ScrollArea className="flex-1 h-full">
           <div className="min-h-full">
             {children}

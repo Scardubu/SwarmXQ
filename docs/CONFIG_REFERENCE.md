@@ -28,6 +28,9 @@ Set these before starting Ollama or the SwarmX stack on an 8 GB CPU-only host:
 | `SWARMX_MODEL_STARTUP_PREWARM` | `0` | Set `1` to explicitly prewarm Relay during API startup. |
 | `SWARMX_MODEL_PREDICTIVE_PREWARM` | `0` | Set `1` to explicitly allow speculative specialist prewarm after routing. |
 | `SWARMX_OLLAMA_URL` | `http://127.0.0.1:11434` | Canonical Ollama API URL for SwarmX. |
+| `SWARMX_OLLAMA_PROBE_TIMEOUT_MS` | `5000` | General `/api/version` probe budget for startup and discovery paths. |
+| `SWARMX_SYSTEM_HEALTH_PROBE_TIMEOUT_MS` | `1500` | Liveness budget for `/api/system/health`; bounded to 250–10000 ms. When liveness fails, the route returns degraded health without model discovery. |
+| `SWARMX_SYSTEM_HEALTH_MODEL_PROBE_TIMEOUT_MS` | `2500` | Readiness budget for model listing after liveness succeeds; bounded to 250–10000 ms. |
 
 ZRAM is compressed swap capacity, not free physical RAM. Runtime pressure
 decisions use physical `MemAvailable` and report ZRAM separately.

@@ -44,12 +44,46 @@ function getCanonicalModelTriad() {
 
 type ModelStatus = "ready" | "missing" | "error";
 
-interface ModelReadiness {
+export interface ModelReadiness {
   role: string;
   tag: string;
   gguf: string;
   status: ModelStatus;
   error?: string;
+}
+
+const DEFAULT_SYSTEM_HEALTH_LIVENESS_TIMEOUT_MS = 1_500;
+const DEFAULT_SYSTEM_HEALTH_MODEL_TIMEOUT_MS = 2_500;
+
+function readBoundedTimeoutMs(
+  value: string | undefined,
+  fallback: number,
+): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(10_000, Math.max(250, parsed));
+}
+
+export function getSystemHealthLivenessTimeoutMs(): number {
+  return readBoundedTimeoutMs(
+    process.env["SWARMX_SYSTEM_HEALTH_PROBE_TIMEOUT_MS"],
+    DEFAULT_SYSTEM_HEALTH_LIVENESS_TIMEOUT_MS,
+  );
+}
+
+export function getSystemHealthModelTimeoutMs(): number {
+  return readBoundedTimeoutMs(
+    process.env["SWARMX_SYSTEM_HEALTH_MODEL_PROBE_TIMEOUT_MS"],
+    DEFAULT_SYSTEM_HEALTH_MODEL_TIMEOUT_MS,
+  );
+}
+
+export function unavailableModelReadiness(): ModelReadiness[] {
+  return getCanonicalModelTriad().map((model) => ({
+    ...model,
+    status: "error" as ModelStatus,
+    error: "Ollama unreachable",
+  }));
 }
 
 async function probeOllamaModels(): Promise<ModelReadiness[]> {
@@ -72,6 +106,28 @@ async function probeOllamaModels(): Promise<ModelReadiness[]> {
   return results;
 }
 
+async function probeModelsWithin(
+  timeoutMs: number,
+): Promise<ModelReadiness[]> {
+  const timeoutResult = getCanonicalModelTriad().map((model) => ({
+    ...model,
+    status: "error" as ModelStatus,
+    error: "model readiness probe timeout",
+  }));
+
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      probeOllamaModels(),
+      new Promise<ModelReadiness[]>((resolve) => {
+        timeoutId = setTimeout(() => resolve(timeoutResult), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  }
+}
+
 export async function systemRouter(server: FastifyInstance): Promise<void> {
   // ── GET /api/system/health ──────────────────────────────────────────────────
   // [V5.9-ENH-01] Structured health check: Ollama liveness, model triad readiness,
@@ -79,23 +135,20 @@ export async function systemRouter(server: FastifyInstance): Promise<void> {
   // [V6.1-FIX-18] Uses fastHealthProbe() for liveness so /health never blocks on
   // the full multi-endpoint discovery cycle (which can exceed 10 s under pressure).
   server.get("/health", async (_req: FastifyRequest, reply: FastifyReply) => {
-    const MODEL_PROBE_TIMEOUT_MS = 5_000;
-    const canonicalModelTriad = getCanonicalModelTriad();
+    const livenessTimeoutMs = getSystemHealthLivenessTimeoutMs();
+    const modelProbeTimeoutMs = getSystemHealthModelTimeoutMs();
 
-    // Run fast liveness probe + system mem in parallel; cap model probe independently.
-    const [ollamaHealth, mem, models] = await Promise.all([
-      fastHealthProbe(),
+    // System health is polled by every active dashboard. First establish whether
+    // Ollama is reachable, then only inspect installed models when it is. This
+    // keeps a down Ollama daemon from triggering redundant `/api/tags` discovery
+    // and preserves a bounded response time during degraded startup.
+    const [ollamaHealth, mem] = await Promise.all([
+      fastHealthProbe(livenessTimeoutMs),
       si.mem(),
-      Promise.race([
-        probeOllamaModels(),
-        new Promise<ModelReadiness[]>((resolve) =>
-          setTimeout(
-            () => resolve(canonicalModelTriad.map((m) => ({ ...m, status: "error" as ModelStatus, error: "probe timeout" }))),
-            MODEL_PROBE_TIMEOUT_MS,
-          ),
-        ),
-      ]),
     ]);
+    const models = ollamaHealth.reachable
+      ? await probeModelsWithin(modelProbeTimeoutMs)
+      : unavailableModelReadiness();
     const ollamaUrl = ollamaHealth.endpoint;
 
     const allReady = models.every((m) => m.status === "ready");
@@ -136,6 +189,8 @@ export async function systemRouter(server: FastifyInstance): Promise<void> {
       memory: memGb,
       ...(vramWarning ? { warnings: [vramWarning] } : {}),
       config: {
+        healthProbeTimeoutMs: livenessTimeoutMs,
+        healthModelProbeTimeoutMs: modelProbeTimeoutMs,
         modelRouter:
           process.env["SWARMX_MODEL_ULTRA_ROUTER"] ??
           process.env["SWARM_MODEL_ULTRA_ROUTER"] ??

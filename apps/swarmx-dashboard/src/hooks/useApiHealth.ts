@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import { useQuery } from "@tanstack/react-query";
 
 export interface ApiHealthState {
   apiOnline: boolean | null;
@@ -15,73 +15,74 @@ function resolveDirectApiBaseUrl(): string {
   return "http://127.0.0.1:3001";
 }
 
-/**
- * Polls /api/system/health to surface API and Ollama liveness.
- * Shared across header and composer so health semantics stay aligned.
- */
-export function useApiHealth(pollIntervalMs = 12_000): ApiHealthState {
-  const [health, setHealth] = React.useState<ApiHealthState>({
-    apiOnline: null,
-    ollamaOnline: null,
-    latencyMs: null,
-    lastChecked: null,
-  });
+const API_HEALTH_QUERY_KEY = ["swarmx", "api-health"] as const;
+const API_HEALTH_POLL_INTERVAL_MS = 12_000;
+const API_HEALTH_REQUEST_TIMEOUT_MS = 3_000;
 
-  React.useEffect(() => {
-    const baseUrl = resolveDirectApiBaseUrl();
-    let cancelled = false;
+const INITIAL_HEALTH: ApiHealthState = {
+  apiOnline: null,
+  ollamaOnline: null,
+  latencyMs: null,
+  lastChecked: null,
+};
 
-    async function probe() {
-      if (cancelled) return;
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8_000);
-        const t0 = Date.now();
-        const res = await fetch(`${baseUrl}/api/system/health`, {
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-        const latencyMs = Date.now() - t0;
-        if (cancelled) return;
+async function fetchApiHealth(): Promise<ApiHealthState> {
+  const controller = new AbortController();
+  const timeoutId = globalThis.setTimeout(
+    () => controller.abort(),
+    API_HEALTH_REQUEST_TIMEOUT_MS,
+  );
+  const startedAt = Date.now();
 
-        if (res.ok || res.status === 503) {
-          const data = (await res.json()) as { ollama?: { reachable?: boolean } };
-          setHealth({
-            apiOnline: true,
-            ollamaOnline: data?.ollama?.reachable ?? null,
-            latencyMs,
-            lastChecked: Date.now(),
-          });
-          return;
-        }
+  try {
+    const response = await fetch(`${resolveDirectApiBaseUrl()}/api/system/health`, {
+      signal: controller.signal,
+    });
+    const latencyMs = Date.now() - startedAt;
 
-        setHealth((prev) => ({
-          ...prev,
-          apiOnline: false,
-          latencyMs,
-          lastChecked: Date.now(),
-        }));
-      } catch {
-        if (!cancelled) {
-          setHealth((prev) => ({
-            ...prev,
-            apiOnline: false,
-            latencyMs: null,
-            lastChecked: Date.now(),
-          }));
-        }
-      }
+    if (!response.ok) {
+      return {
+        apiOnline: false,
+        ollamaOnline: null,
+        latencyMs,
+        lastChecked: Date.now(),
+      };
     }
 
-    void probe();
-    const id = setInterval(() => {
-      void probe();
-    }, pollIntervalMs);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
+    const data = (await response.json()) as { ollama?: { reachable?: boolean } };
+    return {
+      apiOnline: true,
+      ollamaOnline: data.ollama?.reachable ?? null,
+      latencyMs,
+      lastChecked: Date.now(),
     };
-  }, [pollIntervalMs]);
+  } catch {
+    return {
+      apiOnline: false,
+      ollamaOnline: null,
+      latencyMs: null,
+      lastChecked: Date.now(),
+    };
+  } finally {
+    globalThis.clearTimeout(timeoutId);
+  }
+}
 
-  return health;
+/**
+ * Polls `/api/system/health` through a single React Query cache entry. All
+ * mounted consumers share both the in-flight request and the twelve-second
+ * cache cadence, preventing each dashboard surface from multiplying probes.
+ */
+export function useApiHealth(): ApiHealthState {
+  const { data } = useQuery({
+    queryKey: API_HEALTH_QUERY_KEY,
+    queryFn: fetchApiHealth,
+    refetchInterval: API_HEALTH_POLL_INTERVAL_MS,
+    refetchIntervalInBackground: false,
+    staleTime: API_HEALTH_POLL_INTERVAL_MS,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+
+  return data ?? INITIAL_HEALTH;
 }

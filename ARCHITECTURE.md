@@ -66,14 +66,14 @@ Never load two 7B-class models simultaneously. Global Ollama residency is pinned
 
 **Legacy tag normalisation** (`src/swarmx/config.py → _normalise_model_tag()`):
 
-| Legacy tag       | Canonical tag       |
-|------------------|---------------------|
-| `phi4-mini`            | `instruct-phi4-pro-q8-prod`         | Pilot  |
-| `deepseek-r1:7b`       | `reason-deepseekr1-pro-q5km-prod`   | Oracle |
-| `qwen2.5-coder`        | `code-qwen25-pro-q5km-prod`         | Forge  |
-| `phi4-fast-scar` (r6)  | `instruct-phi4-pro-q8-prod`         | Pilot  |
+| Legacy tag | Canonical tag | Operator |
+|------------|---------------|----------|
+| `phi4-mini` | `instruct-phi4-pro-q8-prod` | Pilot |
+| `deepseek-r1:7b` | `reason-deepseekr1-pro-q5km-prod` | Oracle |
+| `qwen2.5-coder` | `code-qwen25-pro-q5km-prod` | Forge |
+| `phi4-fast-scar` (r6) | `instruct-phi4-pro-q8-prod` | Pilot |
 | `deepseek-reasoner-scar` (r6) | `reason-deepseekr1-pro-q5km-prod` | Oracle |
-| `qwen-worker-scar` (r6) | `code-qwen25-pro-q5km-prod`       | Forge  |
+| `qwen-worker-scar` (r6) | `code-qwen25-pro-q5km-prod` | Forge |
 
 ---
 
@@ -83,10 +83,10 @@ Never load two 7B-class models simultaneously. Global Ollama residency is pinned
 Task prompt
     │
     ▼
-score_complexity()          ← phi4-fast  (30 s timeout; neutral 0.5 on timeout)
+score_complexity()          ← Pilot (`instruct-phi4-pro-q8-prod`)
     │
-    ├─ complexity < 0.65 ──► Supervisor plans  (qwen-supervisor)
-    └─ complexity ≥ 0.65 ──► Reasoner plans   (deepseek-reasoner)
+        ├─ complexity < 0.65 ──► Architect plans  (`plan-qwen25-pro-q5km-prod`)
+        └─ complexity ≥ 0.65 ──► Oracle plans     (`reason-deepseekr1-pro-q5km-prod`)
                                 │
                                 ▼
                         Plan normalisation
@@ -102,9 +102,9 @@ score_complexity()          ← phi4-fast  (30 s timeout; neutral 0.5 on timeout
                         Memory compression
                         (triggered at 70% context threshold)
                                 │
-                        Final answer synthesis  (Supervisor)
+                        Final answer synthesis  (Architect)
                                 │
-                        Background critic audit (deepseek-critic)
+                        Background critic audit (Auditor: `critique-deepseekr1-pro-q5km-prod`)
                                 │
                         TaskTrace → disk  (atomic .tmp→rename, V5.8 ENH-02)
 ```

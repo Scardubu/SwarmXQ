@@ -22,6 +22,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, Clapperboard, GripVertical, ListVideo, RotateCcw, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useApiHealth } from "@/hooks/useApiHealth";
+import { getRuntimeGuidance } from "@/lib/runtime-guidance";
 import { useEventsStore } from "@/stores/events";
 import { useVideoStore } from "../../../stores/video";
 import { VideoJobForm } from "../../../components/video/VideoJobForm";
@@ -79,32 +80,36 @@ function VideoRuntimeBanner({
   apiOnline: boolean | null;
   ollamaOnline: boolean | null;
 }) {
-  const isOffline = apiOnline === false || ollamaOnline === false;
-  const isDegraded = pressureLevel === "high" || pressureLevel === "critical";
+  const guidance = getRuntimeGuidance({
+    apiOnline,
+    ollamaOnline,
+    pressureLevel,
+    availableMb,
+  });
 
-  if (!isOffline && !isDegraded) {
+  if (!guidance) {
     return null;
   }
 
-  const icon = isOffline ? WifiOff : AlertTriangle;
-  const Icon = icon;
-  const title = isOffline ? "Video pipeline connectivity degraded" : "Video pipeline running under memory pressure";
-  const detail = isOffline
-    ? "The API or Ollama health probe is failing. New jobs may queue without advancing until the runtime recovers."
-    : `The host is reporting ${pressureLevel} pressure${availableMb != null ? ` with ${availableMb} MB free` : ""}. Expect longer queue times and stricter single-model scheduling.`;
+  const Icon = guidance.tone === "critical" ? WifiOff : AlertTriangle;
 
   return (
     <div
-      className="flex items-start gap-3 rounded border border-status-warning/35 bg-status-warning/10 px-3 py-3"
-      role={isOffline ? "alert" : "status"}
-      aria-live={isOffline ? "assertive" : "polite"}
+      className={
+        guidance.tone === "critical"
+          ? "flex items-start gap-3 rounded border border-status-error/35 bg-status-error/10 px-3 py-3"
+          : "flex items-start gap-3 rounded border border-status-warning/35 bg-status-warning/10 px-3 py-3"
+      }
+      role={guidance.tone === "critical" ? "alert" : "status"}
+      aria-live={guidance.tone === "critical" ? "assertive" : "polite"}
     >
       <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded border border-status-warning/35 bg-status-warning/12">
         <Icon className="h-4 w-4 text-status-warning" aria-hidden="true" />
       </div>
       <div className="min-w-0">
-        <p className="text-xs font-semibold text-status-warning">{title}</p>
-        <p className="mt-1 text-xs leading-5 text-text-secondary">{detail}</p>
+        <p className="text-xs font-semibold text-status-warning">{guidance.title}</p>
+        <p className="mt-1 text-xs leading-5 text-text-secondary">{guidance.detail}</p>
+        <p className="mt-1 text-xs leading-5 text-text-muted">{guidance.recoveryHint}</p>
       </div>
     </div>
   );
