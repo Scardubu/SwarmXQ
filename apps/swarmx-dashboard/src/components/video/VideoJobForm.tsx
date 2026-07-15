@@ -155,7 +155,7 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <Select
           id={`${formId}-platform`}
           label="Platform"
@@ -312,7 +312,13 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
       )}
 
       <div className="flex items-center justify-end">
-        <Button type="submit" variant="accent" size="lg" disabled={!canSubmit}>
+        <Button
+          type="submit"
+          variant="accent"
+          size="lg"
+          disabled={!canSubmit}
+          aria-busy={isSubmitting}
+        >
           {isSubmitting ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />

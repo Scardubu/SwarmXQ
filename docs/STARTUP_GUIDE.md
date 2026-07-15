@@ -148,6 +148,9 @@ on demand. On a CPU-only host without enough VRAM, cold loading takes 60-120 s.
   loop. If nothing is loaded, it starts an async preload (`/api/generate` with no
   `AbortSignal`) and immediately returns a `mode=fallback` "warming up" response.
   The dashboard shows a blue banner and auto-retries after 90 s.
+  The preload uses a bounded 30-second keep-alive so a completed cold load is
+  available for the retry without pinning a multi-gigabyte model for minutes on
+  the 8 GB profile.
 - **Enhanced startup shell** (`startup-enhanced.sh`): if Ollama is unresponsive but
   still owns the configured port, startup now kills the deadlocked listener before
   non-blocking autostart. This avoids "autostart succeeded=false" loops caused by
@@ -245,6 +248,20 @@ bash scripts/startup-enhanced.sh --dashboard
 ```
 
 `.env.local` is ignored by git and safe for machine-specific local overrides.
+
+## Validation Commands
+
+Run project checks through `make` from the repository root. When `.venv/bin/python`
+exists, the Makefile uses it automatically; this ensures optional development tools
+such as `pytest-timeout`, Ruff, and mypy are available instead of accidentally using
+an incomplete system Python installation.
+
+```bash
+make test
+make typecheck-py
+make typecheck-ts
+make check-phase1
+```
 
 ## Troubleshooting
 

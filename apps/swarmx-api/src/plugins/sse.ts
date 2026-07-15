@@ -23,6 +23,13 @@ function writeEvent(reply: FastifyReply, event: SwarmXEvent): void {
   reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
 }
 
+function removeSubscriber(reply: FastifyReply): void {
+  subscribers.delete(reply);
+  if (!reply.raw.destroyed) {
+    reply.raw.destroy();
+  }
+}
+
 function rememberStickyEvent(event: SwarmXEvent): void {
   if (STICKY_EVENT_TYPES.includes(event.type)) {
     stickyEvents.set(event.type, event);
@@ -55,7 +62,7 @@ export function broadcastEvent(event: SwarmXEvent): void {
     try {
       writeEvent(reply, event);
     } catch {
-      subscribers.delete(reply);
+      removeSubscriber(reply);
     }
   }
 }
@@ -93,7 +100,7 @@ export async function ssePlugin(server: FastifyInstance): Promise<void> {
         reply.raw.write(`: heartbeat ${Date.now()}\n\n`);
       } catch {
         clearInterval(heartbeat);
-        subscribers.delete(reply);
+        removeSubscriber(reply);
       }
     }, 15_000);
 

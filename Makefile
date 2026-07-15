@@ -18,7 +18,7 @@
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 COMPOSE        := docker compose
-PYTHON         := python3
+PYTHON         ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 PIP            := $(PYTHON) -m pip
 SWARM_HOME     ?= $(HOME)/.swarmx
 OLLAMA_HOST    ?= http://localhost:11434
@@ -195,7 +195,7 @@ check-v58: check-env validate-imports test-brain test-memory test-agents ## Full
 
 check-phase1: ## Verify Phase 1 canonical runtime boundary invariants (no pytest required)
 	@echo "$(YELLOW)Running Phase 1 invariant checks...$(RESET)"
-	@bash scripts/ci_phase1_check.sh
+	@PYTHON="$(PYTHON)" bash scripts/ci_phase1_check.sh
 	@echo "$(GREEN)Phase 1 check complete$(RESET)"
 
 dry-run: ## Show resolved dispatch target and dependency readiness without launching

@@ -117,7 +117,10 @@ ignore = [
 [tool.mypy]
 python_version       = "3.11"
 warn_return_any      = true
-warn_unused_ignores  = true
+# Optional runtime adapters retain import guards that are only required on
+# minimal dependency installations; Python 3.12+ can resolve some guards and
+# make their compatibility comments appear unused during static analysis.
+warn_unused_ignores  = false
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

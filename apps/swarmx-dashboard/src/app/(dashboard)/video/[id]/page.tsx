@@ -50,13 +50,21 @@ export default function VideoJobDetailPage() {
   );
 
   if (!job) {
-    return <VideoJobDetailLoading />;
+    return (
+      <main
+        aria-busy="true"
+        aria-label="Loading video job details"
+        className="h-full min-h-0"
+      >
+        <VideoJobDetailLoading />
+      </main>
+    );
   }
 
   const selectedPlatform: VideoExportPlatform = getVideoPublishPlatform(job);
 
   return (
-    <div className="h-full min-h-0 flex flex-col">
+    <main className="h-full min-h-0 flex flex-col" aria-label="Video job details">
       <header className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-bg-surface/95 px-4 py-3 sm:px-6">
         <div className="flex min-w-0 items-center gap-3 text-sm">
           <Button
@@ -218,6 +226,6 @@ export default function VideoJobDetailPage() {
           )}
         </section>
       </div>
-    </div>
+    </main>
   );
 }

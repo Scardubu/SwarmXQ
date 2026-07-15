@@ -308,7 +308,10 @@ async function getLoadedModelState(ollamaBase: string): Promise<LoadedModelState
  * Fire-and-forget model preload via /api/generate.
  * Intentionally has NO AbortSignal: we want the request to complete naturally
  * so Ollama can finish loading without a mid-load client disconnect (which
- * deadlocks the Ollama HTTP handler until the model finishes or Ollama restarts).
+ * deadlocks the Ollama HTTP handler until the model finishes or Ollama restarts.
+ * Keep the warmed model resident only briefly: the normal Composer request
+ * receives its lifecycle policy from ModelOrchestrator, and the constrained
+ * 8 GB profile must not pin a multi-gigabyte model for ten minutes.
  */
 function startModelPreload(ollamaBase: string, modelTag: string): void {
   const existing = _preloadState.get(modelTag);
@@ -327,7 +330,7 @@ function startModelPreload(ollamaBase: string, modelTag: string): void {
       model: modelTag,
       prompt: "Hi",
       stream: false,
-      keep_alive: "10m",
+      keep_alive: "30s",
       options: { num_predict: 1, temperature: 0, num_ctx: 256 },
     }),
     // NO AbortSignal — let the model load complete without client abort

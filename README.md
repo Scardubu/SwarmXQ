@@ -162,6 +162,22 @@ Operational note: on 8 GB hosts, `scripts/swarm-healthcheck-apex17.sh` may repor
 when free RAM falls below 800 MB or Ollama probe latency pushes Relay/model checks past their timeout.
 That result indicates runtime pressure, not necessarily a build or type-safety regression.
 
+### Validate Before Release
+
+Use the repository Make targets after activating or creating `.venv`. The Makefile
+automatically prefers `.venv/bin/python` when present, keeping Python tests and
+quality tools aligned with the development dependency set.
+
+```bash
+make test
+make typecheck-py
+make typecheck-ts
+make check-phase1
+pnpm --filter @swarmx/api run test:video
+pnpm --filter @swarmx/dashboard lint
+pnpm --filter @swarmx/dashboard build
+```
+
 ---
 
 ## CLI Entry Points

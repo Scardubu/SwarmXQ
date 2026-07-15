@@ -78,7 +78,7 @@ def _swarmconfig_model(swarm_env_key: str, legacy_env_key: str, cfg_getter: str)
             m = importlib.import_module(mod_path)
             cfg = m.SwarmConfig()
             result = getattr(cfg, cfg_getter, None)
-            if result:
+            if isinstance(result, str) and result:
                 return result
         except Exception:
             continue

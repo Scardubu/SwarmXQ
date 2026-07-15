@@ -96,7 +96,7 @@ function DimensionBar({ label, value, reasoning, compact = false }: DimensionBar
         <div
           className={`flex flex-col gap-1 cursor-default ${compact ? "min-w-[4rem]" : ""}`}
           tabIndex={0}
-          aria-label={`${label}: ${pct}/100 — ${reasoning}`}
+          aria-label={`${label}: ${pct} out of 100. ${reasoning}`}
         >
           <div className="flex items-center justify-between gap-1">
             <span className="text-[10px] uppercase tracking-wider text-text-muted font-mono">
@@ -111,6 +111,7 @@ function DimensionBar({ label, value, reasoning, compact = false }: DimensionBar
               className={`h-full rounded transition-all duration-700 ease-out ${fill}`}
               style={{ width: `${pct}%` }}
               role="progressbar"
+              aria-label={`${label} engagement heuristic`}
               aria-valuenow={pct}
               aria-valuemin={0}
               aria-valuemax={100}
@@ -165,7 +166,7 @@ export function ViralityMeter({ signal, isScoring = false, compact = false, onIm
   if (compact) {
     const fill = barColour(overallNorm);
     return (
-      <div className="flex items-center gap-2 w-full" aria-label={`Engagement heuristic score: ${overallPct}/100`}>
+      <div className="flex items-center gap-2 w-full" aria-label={`Engagement heuristic score: ${overallPct} out of 100`}>
         <div className="h-1.5 rounded bg-bg-surface border border-border overflow-hidden flex-1">
           <div
             className={`h-full rounded transition-all duration-700 ease-out ${fill}`}
@@ -174,7 +175,7 @@ export function ViralityMeter({ signal, isScoring = false, compact = false, onIm
             aria-valuenow={overallPct}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label={`Engagement heuristic: ${overallPct}/100`}
+            aria-label={`Engagement heuristic: ${overallPct} out of 100`}
           />
         </div>
         <span className={`text-[10px] font-mono ${overallColour}`}>{overallPct}</span>

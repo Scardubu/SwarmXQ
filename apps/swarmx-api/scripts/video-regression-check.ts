@@ -64,6 +64,18 @@ const routesSource = await readFile(new URL("../src/routes/video.ts", import.met
 assert.ok(routesSource.includes('"/files/:filename"'));
 assert.equal(routesSource.includes('"/api/video/files/:filename"'), false);
 
+const composerSource = await readFile(new URL("../src/routes/composer.ts", import.meta.url), "utf8");
+const preloadStart = composerSource.indexOf("function startModelPreload");
+const preloadEnd = composerSource.indexOf("function timeoutBucketFor");
+assert.ok(preloadStart > 0 && preloadEnd > preloadStart);
+const preloadBody = composerSource.slice(preloadStart, preloadEnd);
+assert.ok(preloadBody.includes('keep_alive: "30s"'));
+assert.equal(preloadBody.includes('keep_alive: "10m"'), false);
+
+const sseSource = await readFile(new URL("../src/plugins/sse.ts", import.meta.url), "utf8");
+assert.ok(sseSource.includes("function removeSubscriber"));
+assert.ok(sseSource.includes("reply.raw.destroy()"));
+
 const typesSource = await readFile(new URL("../src/types/video.ts", import.meta.url), "utf8");
 for (const errorCode of [
   "ARTIFACT_MISSING",

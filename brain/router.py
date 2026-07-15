@@ -220,13 +220,16 @@ def detect_intent(prompt: str) -> str:
 def _resolve_model(role: str) -> str:
     """Resolve a role key to an Ollama model tag (config → env → static fallback)."""
     cfg = _load_config()
-    tag = cfg.get("models", {}).get(role)
-    if tag:
+    models = cfg.get("models")
+    tag = models.get(role) if isinstance(models, dict) else None
+    if isinstance(tag, str) and tag:
         return _V5_MODEL_REMAP.get(tag, tag)
 
     try:
         from brain.roles import role_model
-        return role_model(role)
+        resolved = role_model(role)
+        if isinstance(resolved, str):
+            return resolved
     except Exception:
         pass
 
@@ -257,7 +260,14 @@ async def run_model(role: str, prompt: str, timeout: int = 120) -> str:
             timeout=timeout,
         )
         resp.raise_for_status()
-        return resp.json().get("message", {}).get("content", "")
+        payload: object = resp.json()
+        if not isinstance(payload, dict):
+            return ""
+        message = payload.get("message")
+        if not isinstance(message, dict):
+            return ""
+        content = message.get("content")
+        return content if isinstance(content, str) else ""
     except httpx.HTTPStatusError as e:
         return json.dumps({"error": f"Ollama HTTP {e.response.status_code}", "model": model})
     except Exception as e:

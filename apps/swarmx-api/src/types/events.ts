@@ -178,6 +178,12 @@ export type VideoEvent =
 
 export type SwarmXEvent = SharedSwarmXEvent | VideoEvent;
 
+// Workflow events, including the `workflow:cancelled` terminal transition,
+// are defined in the shared contract and re-exported through SwarmXEvent.
+// Keep this explicit marker at the API boundary so route and SSE consumers do
+// not need to reach into a package-private union to discover cancellation.
+export const WORKFLOW_CANCELLED_EVENT_TYPE = "workflow:cancelled" as const;
+
 export function isVideoEvent(event: SwarmXEvent): event is VideoEvent {
   return event.type.startsWith("video:");
 }

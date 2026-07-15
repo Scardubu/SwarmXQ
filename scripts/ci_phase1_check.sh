@@ -16,7 +16,15 @@
 
 set -Eeuo pipefail
 
-ROOT="${SWARM_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}"
+SCRIPT_ROOT="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+# A user-level SWARM_ROOT may point at a legacy checkout or be malformed by a
+# shell profile. Use it only when it identifies a SwarmX repository; otherwise
+# validate the repository that contains this script.
+if [[ -n "${SWARM_ROOT:-}" && -d "${SWARM_ROOT}" && -f "${SWARM_ROOT}/swarm.sh" ]]; then
+    ROOT="$(CDPATH= cd -- "${SWARM_ROOT}" && pwd -P)"
+else
+    ROOT="${SCRIPT_ROOT}"
+fi
 
 PASS=0
 FAIL=0

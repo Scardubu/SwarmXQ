@@ -51,7 +51,7 @@ import os
 import sys
 import warnings
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 try:
     import structlog
@@ -226,7 +226,7 @@ async def run_task(prompt: str) -> dict[str, Any]:
             pass
 
     log.info("run_task_done", status=result.get("task_status", "?"), confidence=result.get("confidence", "?"))
-    return result
+    return cast(dict[str, Any], result)
 
 
 def run_task_sync(prompt: str) -> dict[str, Any]:

@@ -23,10 +23,19 @@ Tier 4 — bare prompt passthrough        (always available)
 from __future__ import annotations
 
 import os
+from typing import Protocol, cast
+
+
+class _FaissSearchStore(Protocol):
+    def search(self, query: str, k: int = 3) -> list[str]: ...
+
+
+class _TfidfSearchStore(Protocol):
+    def search(self, query: str, top_k: int = 3) -> list[str]: ...
 
 # ── Singleton store references — instantiated once at first use ────────────────
-_faiss_store: object | None  = None
-_tfidf_store: object | None  = None
+_faiss_store: _FaissSearchStore | None  = None
+_tfidf_store: _TfidfSearchStore | None  = None
 _faiss_ready: bool | None    = None   # None = not yet checked
 _tfidf_ready: bool | None    = None
 
@@ -39,14 +48,14 @@ def _max_chars() -> int:
     return int(os.environ.get("SWARM_RAG_MAX_CHARS", "300"))
 
 
-def _get_faiss_store() -> object | None:
+def _get_faiss_store() -> _FaissSearchStore | None:
     """[FIX-01] Lazy singleton — never re-loads the model after first init."""
     global _faiss_store, _faiss_ready
     if _faiss_ready is not None:
         return _faiss_store if _faiss_ready else None
     try:
         from memory.faiss_store import FAISSStore  # type: ignore[import]
-        _faiss_store = FAISSStore()
+        _faiss_store = cast(_FaissSearchStore, FAISSStore())
         # FAISSStore() returns _FallbackStore when FAISS is unavailable;
         # treat that as tfidf-tier, not faiss-tier.
         _faiss_ready = hasattr(_faiss_store, "_index")  # True only for _FAISSStoreImpl
@@ -58,14 +67,14 @@ def _get_faiss_store() -> object | None:
     return _faiss_store
 
 
-def _get_tfidf_store() -> object | None:
+def _get_tfidf_store() -> _TfidfSearchStore | None:
     """[FIX-01] Lazy singleton — VectorStore is cheap but still worth caching."""
     global _tfidf_store, _tfidf_ready
     if _tfidf_ready is not None:
         return _tfidf_store if _tfidf_ready else None
     try:
         from memory.vector_store import VectorStore  # type: ignore[import]
-        _tfidf_store = VectorStore()
+        _tfidf_store = cast(_TfidfSearchStore, VectorStore())
         _tfidf_ready = True
     except Exception:
         _tfidf_store = None
