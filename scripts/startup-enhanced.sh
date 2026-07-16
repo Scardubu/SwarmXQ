@@ -100,6 +100,47 @@ detect_available_mem_mb() {
   echo $((avail_kb / 1024))
 }
 
+detect_total_mem_mb() {
+  local total_kb
+  total_kb=$(awk '/MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo "0")
+  if [[ -z "$total_kb" || "$total_kb" == "0" ]]; then
+    echo "0"
+    return 0
+  fi
+  echo $((total_kb / 1024))
+}
+
+resolve_host_profile() {
+  local requested="${SWARMX_HOST_PROFILE:-auto}"
+  local normalized="${requested,,}"
+  local total_mb
+  total_mb=$(detect_total_mem_mb)
+
+  case "$normalized" in
+    ""|auto)
+      if [[ "$total_mb" -ge 12288 ]]; then
+        echo "16gb"
+      else
+        echo "8gb"
+      fi
+      ;;
+    8gb|8g|constrained)
+      echo "8gb"
+      ;;
+    16gb|16g|standard)
+      echo "16gb"
+      ;;
+    *)
+      log_warning "Unknown SWARMX_HOST_PROFILE=$requested; falling back to auto detection"
+      if [[ "$total_mb" -ge 12288 ]]; then
+        echo "16gb"
+      else
+        echo "8gb"
+      fi
+      ;;
+  esac
+}
+
 probe_ollama_url() {
   local url="$1"
   curl -s --connect-timeout 2 --max-time 3 "$url/api/version" >/dev/null 2>&1
@@ -131,32 +172,66 @@ discover_working_ollama_url() {
 }
 
 setup_ollama_runtime_tuning() {
-  # [V6.2-ENH-03] Hardware-aware Ollama defaults for constrained hosts.
-  # Keep these fail-open and env-overridable so operators can tune explicitly.
+  # [V6.2-ENH-03] Hardware-aware Ollama defaults with an auto-detected host profile.
+  # 8 GB remains the safe baseline; 16 GB unlocks a warmer reuse profile unless
+  # current free RAM is already low, in which case we fall back to constrained safeguards.
   local avail_mb
   avail_mb=$(detect_available_mem_mb)
+  local total_mb
+  total_mb=$(detect_total_mem_mb)
   local constrained=false
+  local requested_profile
+  requested_profile=$(resolve_host_profile)
+  local effective_profile="$requested_profile"
   local inherited_max_models="${OLLAMA_MAX_LOADED_MODELS:-}"
   local inherited_num_parallel="${OLLAMA_NUM_PARALLEL:-}"
   local inherited_keep_alive="${OLLAMA_KEEP_ALIVE:-}"
   if [[ "$avail_mb" -gt 0 && "$avail_mb" -lt 2200 ]]; then
     constrained=true
+    if [[ "$requested_profile" == "16gb" ]]; then
+      effective_profile="8gb"
+    fi
   fi
 
   export OLLAMA_FLASH_ATTENTION="${OLLAMA_FLASH_ATTENTION:-1}"
   export OLLAMA_KV_CACHE_TYPE="${OLLAMA_KV_CACHE_TYPE:-q8_0}"
-  if [[ -n "$inherited_max_models" && "$inherited_max_models" != "1" ]]; then
-    log_warning "Overriding OLLAMA_MAX_LOADED_MODELS=$inherited_max_models to 1 for the 8 GB profile"
+  export SWARMX_HOST_PROFILE="$requested_profile"
+  export SWARMX_EFFECTIVE_HOST_PROFILE="$effective_profile"
+
+  if [[ "$effective_profile" == "16gb" ]]; then
+    if [[ -n "$inherited_max_models" && "$inherited_max_models" != "2" ]]; then
+      log_warning "Overriding OLLAMA_MAX_LOADED_MODELS=$inherited_max_models to 2 for the 16 GB profile"
+    fi
+    if [[ -n "$inherited_num_parallel" && "$inherited_num_parallel" != "1" ]]; then
+      log_warning "Overriding OLLAMA_NUM_PARALLEL=$inherited_num_parallel to 1 for the 16 GB profile"
+    fi
+    if [[ -n "$inherited_keep_alive" && "$inherited_keep_alive" != "2m" ]]; then
+      log_warning "Overriding OLLAMA_KEEP_ALIVE=$inherited_keep_alive to 2m for the 16 GB profile"
+    fi
+    export OLLAMA_MAX_LOADED_MODELS="2"
+    export OLLAMA_NUM_PARALLEL="1"
+    export OLLAMA_KEEP_ALIVE="2m"
+    export SWARMX_MODEL_STARTUP_PREWARM="${SWARMX_MODEL_STARTUP_PREWARM:-1}"
+    export SWARMX_MODEL_PREDICTIVE_PREWARM="${SWARMX_MODEL_PREDICTIVE_PREWARM:-1}"
+  else
+    if [[ "$requested_profile" == "16gb" && "$constrained" == true ]]; then
+      log_warning "Low available RAM detected (${avail_mb} MB). Temporarily falling back to constrained safeguards despite 16 GB host profile."
+    fi
+    if [[ -n "$inherited_max_models" && "$inherited_max_models" != "1" ]]; then
+      log_warning "Overriding OLLAMA_MAX_LOADED_MODELS=$inherited_max_models to 1 for the 8 GB profile"
+    fi
+    if [[ -n "$inherited_num_parallel" && "$inherited_num_parallel" != "1" ]]; then
+      log_warning "Overriding OLLAMA_NUM_PARALLEL=$inherited_num_parallel to 1 for the 8 GB profile"
+    fi
+    if [[ -n "$inherited_keep_alive" && "$inherited_keep_alive" != "0" && "$inherited_keep_alive" != "0s" ]]; then
+      log_warning "Overriding OLLAMA_KEEP_ALIVE=$inherited_keep_alive to 0 so request-level lifecycle policy stays authoritative"
+    fi
+    export OLLAMA_MAX_LOADED_MODELS="1"
+    export OLLAMA_NUM_PARALLEL="1"
+    export OLLAMA_KEEP_ALIVE="0"
+    export SWARMX_MODEL_STARTUP_PREWARM="${SWARMX_MODEL_STARTUP_PREWARM:-0}"
+    export SWARMX_MODEL_PREDICTIVE_PREWARM="${SWARMX_MODEL_PREDICTIVE_PREWARM:-0}"
   fi
-  if [[ -n "$inherited_num_parallel" && "$inherited_num_parallel" != "1" ]]; then
-    log_warning "Overriding OLLAMA_NUM_PARALLEL=$inherited_num_parallel to 1 for the 8 GB profile"
-  fi
-  if [[ -n "$inherited_keep_alive" && "$inherited_keep_alive" != "0" && "$inherited_keep_alive" != "0s" ]]; then
-    log_warning "Overriding OLLAMA_KEEP_ALIVE=$inherited_keep_alive to 0 so request-level lifecycle policy stays authoritative"
-  fi
-  export OLLAMA_MAX_LOADED_MODELS="1"
-  export OLLAMA_NUM_PARALLEL="1"
-  export OLLAMA_KEEP_ALIVE="0"
 
   if [[ "$constrained" == true ]]; then
     export SWARMX_COMPOSER_NUM_PREDICT="${SWARMX_COMPOSER_NUM_PREDICT:-96}"
@@ -170,10 +245,7 @@ setup_ollama_runtime_tuning() {
     export SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS="${SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS:-45000}"
   fi
 
-  export SWARMX_MODEL_STARTUP_PREWARM="${SWARMX_MODEL_STARTUP_PREWARM:-0}"
-  export SWARMX_MODEL_PREDICTIVE_PREWARM="${SWARMX_MODEL_PREDICTIVE_PREWARM:-0}"
-
-  log_info "Ollama tuning: FLASH_ATTENTION=$OLLAMA_FLASH_ATTENTION KV_CACHE=$OLLAMA_KV_CACHE_TYPE PARALLEL=$OLLAMA_NUM_PARALLEL MAX_MODELS=$OLLAMA_MAX_LOADED_MODELS KEEP_ALIVE=$OLLAMA_KEEP_ALIVE STARTUP_PREWARM=$SWARMX_MODEL_STARTUP_PREWARM PREDICTIVE_PREWARM=$SWARMX_MODEL_PREDICTIVE_PREWARM"
+  log_info "Ollama tuning: HOST_PROFILE=$SWARMX_HOST_PROFILE EFFECTIVE_PROFILE=$SWARMX_EFFECTIVE_HOST_PROFILE TOTAL_MB=$total_mb AVAILABLE_MB=$avail_mb FLASH_ATTENTION=$OLLAMA_FLASH_ATTENTION KV_CACHE=$OLLAMA_KV_CACHE_TYPE PARALLEL=$OLLAMA_NUM_PARALLEL MAX_MODELS=$OLLAMA_MAX_LOADED_MODELS KEEP_ALIVE=$OLLAMA_KEEP_ALIVE STARTUP_PREWARM=$SWARMX_MODEL_STARTUP_PREWARM PREDICTIVE_PREWARM=$SWARMX_MODEL_PREDICTIVE_PREWARM"
 }
 
 # ─── Helper: Port Availability Check ──────────────────────────────────────────

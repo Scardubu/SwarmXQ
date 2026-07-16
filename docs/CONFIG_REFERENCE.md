@@ -16,17 +16,18 @@
 - `routing.workflow_preference` — preferred workflow override
 - `routing.framework_preference` — optional orchestration backends
 
-## Ollama And Low-RAM Runtime
+## Ollama And Host Runtime Profiles
 
-Set these before starting Ollama or the SwarmX stack on an 8 GB CPU-only host:
+Set these before starting Ollama or the SwarmX stack. The startup script auto-detects `8gb` vs `16gb` by total RAM, but you can pin the behavior explicitly.
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `OLLAMA_MAX_LOADED_MODELS` | `1` | Required single-model residency. Do not raise this on the 8 GB profile. |
+| `SWARMX_HOST_PROFILE` | `auto` | Auto-detects `8gb` or `16gb`; pin one explicitly when you need stable behavior across restarts. |
+| `OLLAMA_MAX_LOADED_MODELS` | profile-managed | `1` on `8gb`, `2` on `16gb`. Low free RAM forces constrained safeguards even on a 16 GB host. |
 | `OLLAMA_NUM_PARALLEL` | `1` | One inference slot prevents duplicate heavyweight loads. |
-| `OLLAMA_KEEP_ALIVE` | `0` | Global keep-alive disabled; SwarmX sends request-level `keep_alive`. |
-| `SWARMX_MODEL_STARTUP_PREWARM` | `0` | Set `1` to explicitly prewarm Relay during API startup. |
-| `SWARMX_MODEL_PREDICTIVE_PREWARM` | `0` | Set `1` to explicitly allow speculative specialist prewarm after routing. |
+| `OLLAMA_KEEP_ALIVE` | profile-managed | `0` on `8gb`, `2m` on `16gb`; SwarmX still sends request-level `keep_alive`. |
+| `SWARMX_MODEL_STARTUP_PREWARM` | profile-managed | Defaults `0` on `8gb`, `1` on `16gb`. |
+| `SWARMX_MODEL_PREDICTIVE_PREWARM` | profile-managed | Defaults `0` on `8gb`, `1` on `16gb`. |
 | `SWARMX_OLLAMA_URL` | `http://127.0.0.1:11434` | Canonical Ollama API URL for SwarmX. |
 | `SWARMX_OLLAMA_PROBE_TIMEOUT_MS` | `5000` | General `/api/version` probe budget for startup and discovery paths. |
 | `SWARMX_SYSTEM_HEALTH_PROBE_TIMEOUT_MS` | `1500` | Liveness budget for `/api/system/health`; bounded to 250–10000 ms. When liveness fails, the route returns degraded health without model discovery. |

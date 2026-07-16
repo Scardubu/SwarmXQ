@@ -4,6 +4,30 @@
 
 ---
 
+## V6.2.9 — Host Profile Auto-Detection And Startup Tuning (2026-07-15)
+
+### Runtime
+
+- Added `SWARMX_HOST_PROFILE` with `auto`, `8gb`, and `16gb` modes to
+  `scripts/startup-enhanced.sh`.
+- Auto-detect hosts with roughly 12 GB or more total RAM as `16gb`, while
+  preserving the constrained `8gb` profile everywhere else.
+- Kept low-free-memory protection authoritative: even a `16gb` host falls back
+  to constrained startup safeguards when available RAM is already below roughly
+  2.2 GB.
+- Raised the `16gb` startup profile to `OLLAMA_MAX_LOADED_MODELS=2`,
+  `OLLAMA_KEEP_ALIVE=2m`, and default startup/predictive prewarm opt-in.
+
+### Documentation
+
+- Updated the README, startup guide, config reference, and example environment
+  file to describe auto-detected host profiles and the explicit override path.
+
+### Validation
+
+- Verified `scripts/startup-enhanced.sh --check-only --verbose` under default,
+  forced `8gb`, and forced `16gb` host profiles.
+
 ## V6.2.8 — Final Runtime and Dashboard Polish (2026-07-15)
 
 ### Dashboard reliability and accessibility

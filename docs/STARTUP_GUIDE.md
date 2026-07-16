@@ -107,20 +107,23 @@ python -m cli up --dashboard --host 127.0.0.1 --port 3002
 | `SWARMX_STARTUP_CURL_MAX_TIME` | `8` | Hard max-time (seconds) for startup script curl probes (Ollama/API/dashboard). Prevents hangs on half-open sockets. |
 | `SWARMX_MODEL_STARTUP_PREWARM` | `0` | Set to `1` only when you explicitly want startup Relay prewarm. |
 | `SWARMX_MODEL_PREDICTIVE_PREWARM` | `0` | Set to `1` only when you explicitly want speculative specialist prewarm after routing. |
+| `SWARMX_HOST_PROFILE` | `auto` | Auto-detect `8gb` vs `16gb`, or pin one explicitly in `.env.local`. |
 | `VERBOSE` | (not set) | Enable verbose logging in startup script |
 
-### Ollama Tuning (constrained-host)
+### Ollama Tuning By Host Profile
 
 These Ollama variables are read by the Ollama daemon at startup. Export them before launching the stack, or pin them in `.env.local` (auto-loaded by `startup-enhanced.sh`).
 
-| Variable | Recommended (≤8 GB) | Purpose |
+| Variable | `8gb` profile | `16gb` profile | Purpose |
 |----------|---------------------|--------|
-| `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama base URL; must point to the daemon that holds model blobs. |
-| `OLLAMA_NUM_PARALLEL` | `1` | Concurrent model inference slots. `1` prevents dual-slot VRAM splits on single-GPU hosts. |
-| `OLLAMA_MAX_LOADED_MODELS` | `1` | Maximum resident models. `1` enforces strict single-model mode on 8 GB CPU-only hosts. |
-| `OLLAMA_FLASH_ATTENTION` | `1` | Enable flash-attention kernel; reduces KV-cache VRAM usage ~30% on supported hardware with no quality loss. |
-| `OLLAMA_KV_CACHE_TYPE` | `q8_0` | Quantize KV-cache to INT8. Saves ~40% KV-cache VRAM at minimal accuracy cost; safe for reasoning and coding workloads. |
-| `OLLAMA_KEEP_ALIVE` | `0` | Global keep-alive off. SwarmX passes explicit request-level `keep_alive` values per model and pressure tier. |
+| `OLLAMA_HOST` | `http://127.0.0.1:11434` | `http://127.0.0.1:11434` | Ollama base URL; must point to the daemon that holds model blobs. |
+| `OLLAMA_NUM_PARALLEL` | `1` | `1` | Concurrent model inference slots. `1` remains safest on CPU-only hosts. |
+| `OLLAMA_MAX_LOADED_MODELS` | `1` | `2` | Maximum resident models. `1` preserves strict constrained mode; `2` enables warmer reuse on 16 GB hosts. |
+| `OLLAMA_FLASH_ATTENTION` | `1` | `1` | Enable flash-attention kernel; reduces KV-cache usage on supported hardware with no quality loss. |
+| `OLLAMA_KV_CACHE_TYPE` | `q8_0` | `q8_0` | Quantize KV-cache to INT8 with minimal accuracy cost. |
+| `OLLAMA_KEEP_ALIVE` | `0` | `2m` | Global keep-alive. Constrained hosts unload aggressively; 16 GB hosts can keep a short reuse window. |
+
+`startup-enhanced.sh` chooses the profile automatically from total RAM: hosts with at least roughly 12 GB total memory resolve to `16gb`, otherwise `8gb`. When current free RAM drops below roughly 2.2 GB, the startup script temporarily falls back to constrained safeguards even on a `16gb` host.
 
 ### Setting Environment Variables
 
@@ -179,9 +182,10 @@ SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS=120000
 SWARMX_COMPOSER_TIMEOUT_MS=150000
 ```
 
-`startup-enhanced.sh` now applies this same constrained-host profile automatically
-when available RAM falls below roughly 2.2 GB, so restarts default to the safer
-single-model path even if these values are not exported manually.
+`startup-enhanced.sh` now auto-detects the host profile and applies the matching
+defaults automatically. The constrained `8gb` profile remains the safety floor,
+and any host with low current free RAM still falls back to that single-model
+path even when `SWARMX_HOST_PROFILE=16gb` is requested.
 
 ### Degraded health behavior
 
@@ -240,7 +244,10 @@ OLLAMA_HOST=http://127.0.0.1:11434
 SWARMX_OLLAMA_URL=http://127.0.0.1:11434
 SWARMX_OLLAMA_BASE_URL=http://127.0.0.1:11434
 
-# Ollama constrained-host tuning
+# Host profile: auto-detect, or pin to 8gb / 16gb explicitly
+SWARMX_HOST_PROFILE=auto
+
+# Ollama defaults for the constrained 8gb profile
 OLLAMA_NUM_PARALLEL=1
 OLLAMA_MAX_LOADED_MODELS=1
 OLLAMA_KEEP_ALIVE=0

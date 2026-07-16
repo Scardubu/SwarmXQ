@@ -322,25 +322,25 @@ export async function videoRoutes(
         });
       }
 
-      // ── Preflight: verify local render prerequisites before spending queue slot ──
-      // Check binaries only when a local render will actually be needed. ComfyUI
-      // backend skips this check; the render stage handles ComfyUI-specific failures.
+      // ── Preflight: verify render/finalization prerequisites before queueing ──
+      // ffprobe is required for every successful artifact, including ComfyUI
+      // outputs. ffmpeg and narration are only required when the local renderer
+      // may run (local or automatic fallback).
       const renderBackend = process.env["SWARMX_VIDEO_RENDER_BACKEND"] ?? "auto";
+      const hasFfprobe = await commandAvailable("ffprobe");
+      if (!hasFfprobe) {
+        return reply.status(503).send({
+          error: "ffprobe_unavailable",
+          message: "ffprobe is required for video artifact validation but was not found. Install it with: sudo apt install ffmpeg",
+        });
+      }
+
       if (renderBackend !== "comfyui") {
-        const [hasFfmpeg, hasFfprobe] = await Promise.all([
-          commandAvailable("ffmpeg"),
-          commandAvailable("ffprobe"),
-        ]);
+        const hasFfmpeg = await commandAvailable("ffmpeg");
         if (!hasFfmpeg) {
           return reply.status(503).send({
             error: "ffmpeg_unavailable",
             message: "ffmpeg is required for local video rendering but was not found. Install it with: sudo apt install ffmpeg",
-          });
-        }
-        if (!hasFfprobe) {
-          return reply.status(503).send({
-            error: "ffprobe_unavailable",
-            message: "ffprobe is required for video artifact validation but was not found. Install it with: sudo apt install ffmpeg",
           });
         }
         if (process.env["SWARMX_VIDEO_ALLOW_SILENT_AUDIO"] !== "1") {
@@ -445,15 +445,21 @@ export async function videoRoutes(
       });
 
       let closed = false;
+      const jobEvents = queue.subscribeToJob(request.params.id)[Symbol.asyncIterator]();
 
       const sseForwarder = (async () => {
-        for await (const event of queue.subscribeToJob(request.params.id)) {
-          if (closed) break;
-          try {
+        try {
+          while (!closed) {
+            const next = await jobEvents.next();
+            if (next.done) break;
+            const event = next.value;
+            if (!event) continue;
             writeSseEvent(reply, event);
-          } catch {
-            break;
           }
+        } catch {
+          // The socket can close while the iterator is waiting for an event.
+        } finally {
+          await jobEvents.return?.();
         }
       })();
 
@@ -469,6 +475,7 @@ export async function videoRoutes(
       request.raw.on("close", () => {
         closed = true;
         clearInterval(heartbeat);
+        void jobEvents.return?.();
       });
 
       void sseForwarder;

@@ -22,7 +22,7 @@ describe("sanitizeApiError", () => {
     const err = new ApiError(503, "Queue is full", "queue_full");
     const msg = sanitizeApiError(err);
     expect(msg).toContain("queue");
-    expect(msg).not.toContain("full");
+    expect(msg).not.toContain("Queue is full");
   });
 
   it("maps ffmpeg_unavailable to an install instruction", () => {

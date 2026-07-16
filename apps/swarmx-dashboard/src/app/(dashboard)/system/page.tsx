@@ -191,49 +191,32 @@ function SystemdUnitsTable() {
   }
 
   return (
-    <div role="table" aria-label="systemd units">
-      <caption className="sr-only">
-        systemd service units — load state, active state, sub-state, and description.
-      </caption>
-      <div
-        role="rowgroup"
-      >
-        <div
-          role="row"
-          className="grid system-grid-systemd gap-3 px-4 py-1.5 border-b border-border bg-bg-surface"
-        >
-          {["Unit", "Load", "Active", "Sub", "Description"].map((h) => (
-            <span role="columnheader" key={h} className="text-[9px] font-mono text-text-muted uppercase tracking-wide">
-              {h}
-            </span>
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[42rem] border-collapse" aria-label="systemd units">
+        <caption className="sr-only">
+          systemd service units — load state, active state, sub-state, and description.
+        </caption>
+        <thead className="border-b border-border bg-bg-surface">
+          <tr className="font-mono text-[9px] uppercase tracking-wide text-text-muted">
+            <th scope="col" className="px-4 py-1.5 text-left">Unit</th>
+            <th scope="col" className="px-4 py-1.5 text-left">Load</th>
+            <th scope="col" className="px-4 py-1.5 text-left">Active</th>
+            <th scope="col" className="px-4 py-1.5 text-left">Sub</th>
+            <th scope="col" className="px-4 py-1.5 text-left">Description</th>
+          </tr>
+        </thead>
+        <tbody className="font-mono text-[11px]">
+          {units.map((unit) => (
+            <tr key={unit.name} className="border-b border-border/50 hover:bg-bg-elevated">
+              <th scope="row" className="max-w-52 truncate px-4 py-1.5 text-left font-normal text-text-secondary">{unit.name}</th>
+              <td className={cn("px-4 py-1.5", loadStateClass(unit.loadState))}>{unit.loadState}</td>
+              <td className={cn("px-4 py-1.5", unitStateClass(unit.activeState))}>{unit.activeState}</td>
+              <td className="px-4 py-1.5 text-text-muted">{unit.subState}</td>
+              <td className="max-w-96 truncate px-4 py-1.5 text-text-muted">{unit.description}</td>
+            </tr>
           ))}
-        </div>
-      </div>
-      <div role="rowgroup">
-      {units.map((unit) => (
-        <div
-          key={unit.name}
-          role="row"
-          className="grid system-grid-systemd gap-3 px-4 py-1.5 border-b border-border/50 hover:bg-bg-elevated font-mono text-[11px]"
-        >
-          <span role="rowheader" className="text-text-secondary truncate">{unit.name}</span>
-          <span
-            role="cell"
-            className={cn("text-left", loadStateClass(unit.loadState))}
-          >
-            {unit.loadState}
-          </span>
-          <span
-            role="cell"
-            className={unitStateClass(unit.activeState)}
-          >
-            {unit.activeState}
-          </span>
-          <span role="cell" className="text-text-muted">{unit.subState}</span>
-          <span role="cell" className="text-text-muted truncate">{unit.description}</span>
-        </div>
-      ))}
-      </div>
+        </tbody>
+      </table>
     </div>
   );
 }

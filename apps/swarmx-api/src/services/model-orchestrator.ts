@@ -3,7 +3,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * SwarmX Runtime Model Orchestrator — Architecture Review §2 Implementation
  * Version : v2026.6.28-apex17-r8
- * Hardware : HP EliteBook 850 G3 · 8 GB RAM · CPU-only · 4 cores · WSL2
+ * Hardware : HP EliteBook 850 G3 · 16 GB RAM · CPU-only · 4 cores · WSL2 (auto-detected host profile)
  *
  * Responsibilities:
  *   - Track active Ollama models via /api/ps
@@ -38,7 +38,9 @@
  *   Only the keep-alive policy (which operator-map.ts does not carry) is
  *   defined locally, in KEEP_ALIVE_POLICY, sourced from configs/routing.yaml
  *   and models/registry.yaml. Startup and predictive prewarm are off by
- *   default on 8 GB hosts. Callers may still pass a legacy alias tag —
+ *   default on constrained (8 GB) hosts; startup-enhanced.sh enables both on
+ *   16 GB hosts unless free RAM is below the safety threshold. Callers may
+ *   still pass a legacy alias tag —
  *   requestModel() and
  *   evictIncompatible() resolve through resolveCanonicalTag() first — but
  *   the registry itself, and everything logged or returned, is canonical.
@@ -101,7 +103,7 @@ const RAM_NORMAL_MB   = 2500;  // available_mb >= this → normal
 const RAM_LOW_MB      = 1500;  // available_mb < this → high pressure
 const RAM_CRITICAL_MB = 800;   // available_mb < this → degraded — DO NOT LOWER (Hard Constraint #4)
 
-/** Relay tag. It is opt-in warm, not automatically resident on 8 GB hosts. */
+/** Relay tag. Opt-in warm on constrained hosts; startup-enhanced.sh enables it by default on 16 GB hosts. */
 const RELAY_PREWARM_TAG = "route-phi4-lite-q4km-prod"; // Relay
 const MODEL_HEADROOM_RESERVE_MB = 800;
 
@@ -272,7 +274,7 @@ export class ModelOrchestrator {
 
   /**
    * Initialize orchestrator state from live Ollama residency. Relay prewarm is
-   * opt-in via SWARMX_MODEL_STARTUP_PREWARM=1 on the 8 GB profile.
+   * opt-in via SWARMX_MODEL_STARTUP_PREWARM=1; defaulted on by startup-enhanced.sh on 16 GB hosts.
    * Safe to call multiple times.
    */
   async init(): Promise<void> {
@@ -602,7 +604,7 @@ export class ModelOrchestrator {
     if (!profile) return false;
 
     // Speculative warm-up must not consume the reserve needed for foreground
-    // requests and health probes on 8 GB CPU-only hosts.
+    // requests and health probes on constrained CPU-only hosts.
     return this.state.availableRamMb >= profile.estimatedRamMb + RAM_CRITICAL_MB;
   }
 }

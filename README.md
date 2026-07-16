@@ -1,6 +1,6 @@
 # SwarmXQ — Autonomous Multi-Agent Orchestration Platform
 
-**Version:** APEX-17 r8 runtime profile · Optimized for 8 GB RAM · CPU-only · WSL2
+**Version:** APEX-17 r8 runtime profile · Auto-detected 8 GB / 16 GB host tuning · CPU-only · WSL2
 
 SwarmXQ is a self-improving, pressure-aware multi-agent system that runs a fleet of specialized local LLMs through Ollama. It observes, critiques, mutates, validates, and deploys improvements autonomously — bounded by memory constraints, safety guardrails, and a deterministic governance layer.
 
@@ -22,7 +22,7 @@ SwarmXQ organizes its model fleet through a **dual-layer naming system** — mem
 
 **Usage rules:** Code, configs, and Ollama commands use canonical tags. Docs, dashboards, logs, and UI use Operator names. Both layers are synchronized through `MODEL_OPERATOR_MAP` — the single source of truth (defined in `packages/swarmx-types/src/operator-map.ts` and mirrored in `src/swarmx/operator_map.py`).
 
-**8 GB startup behavior:** no model is loaded by default. Relay loads on the first eligible request, or only when `SWARMX_MODEL_STARTUP_PREWARM=1` is set deliberately. Predictive specialist warmup is also off by default. This avoids reserving 2.5–5.4 GB before an operator needs it.
+**Startup behavior by host profile:** the startup script now auto-detects total system RAM and selects either the constrained `8gb` profile or the warmer `16gb` profile. On the `8gb` profile no model is loaded by default, Relay loads on the first eligible request unless `SWARMX_MODEL_STARTUP_PREWARM=1` is set deliberately, and predictive specialist warmup stays off. On the `16gb` profile the startup script allows two resident models, enables a short global reuse window, and opt-in warmups default on. Override auto-detection with `SWARMX_HOST_PROFILE=8gb` or `SWARMX_HOST_PROFILE=16gb` when you need to pin behavior explicitly.
 
 ---
 
@@ -68,18 +68,19 @@ Dashboard: **http://localhost:3000** · API: **http://localhost:3001/health**
 | `SWARM_MODEL_CODE` | `code-qwen25-pro-q5km-prod` | Forge model override |
 | `SWARM_MODEL_REASON` | `reason-deepseekr1-pro-q5km-prod` | Oracle model override |
 | `SWARM_MODEL_ULTRA_ROUTER` | `route-phi4-lite-q4km-prod` | Relay model override |
-| `OLLAMA_MAX_LOADED_MODELS` | `1` | One resident model at a time on 8 GB hosts |
+| `SWARMX_HOST_PROFILE` | `auto` | Auto-detect `8gb` vs `16gb`; can be pinned explicitly |
+| `OLLAMA_MAX_LOADED_MODELS` | profile-managed | `1` on `8gb`, `2` on `16gb` unless low free RAM forces constrained safeguards |
 | `OLLAMA_NUM_PARALLEL` | `1` | One inference slot at a time |
-| `OLLAMA_KEEP_ALIVE` | `0` | Global keep-alive off; request-level lifecycle policy is authoritative |
-| `SWARMX_MODEL_STARTUP_PREWARM` | `0` | Set to `1` only when you explicitly want startup Relay prewarm |
-| `SWARMX_MODEL_PREDICTIVE_PREWARM` | `0` | Set to `1` only when you explicitly want speculative specialist prewarm |
+| `OLLAMA_KEEP_ALIVE` | profile-managed | `0` on `8gb`, `2m` on `16gb` unless low free RAM forces constrained safeguards |
+| `SWARMX_MODEL_STARTUP_PREWARM` | profile-managed | Defaults `0` on `8gb`, `1` on `16gb` |
+| `SWARMX_MODEL_PREDICTIVE_PREWARM` | profile-managed | Defaults `0` on `8gb`, `1` on `16gb` |
 | `SWARMX_VIDEO_ALLOW_SILENT_AUDIO` | unset | Set to `1` only to permit silent local renders when `espeak-ng` is unavailable |
 
 ---
 
 ## Architecture
 
-The `ModelOrchestrator` singleton enforces memory safety on 8 GB systems through five mechanisms working in concert. The **single-model residency policy** ensures only one heavyweight model resides in memory at any time. **Request-level keep-alive** controls unload behavior per inference. **Opt-in warmup** avoids silently pinning 2.5-5.4 GB models at startup. A **serialization mutex** prevents concurrent heavyweight races that cause OOM. Under critical pressure (<800 MB available), **degraded mode** halves context windows and token budgets.
+The `ModelOrchestrator` singleton enforces memory safety across constrained and standard CPU-only hosts through five mechanisms working in concert. The **single-7B lock** prevents heavyweight co-loads that would overrun physical RAM. **Profile-aware residency policy** keeps the `8gb` profile at strict single-model mode while allowing a short two-model reuse window on the `16gb` profile. **Request-level keep-alive** controls unload behavior per inference. **Warmup controls** avoid silently pinning multi-gigabyte models on constrained hosts. A **serialization mutex** prevents concurrent heavyweight races that cause OOM. Under critical pressure (<800 MB available), **degraded mode** halves context windows and token budgets.
 
 ### Pressure Tiers
 
@@ -134,7 +135,7 @@ qwen-worker-scar       → code-qwen25-pro-q5km-prod   (Forge)
 
 Pre-scar tags (V5 and earlier) also resolve: `phi4-mini`, `deepseek-r1`, `qwen2.5-coder`, etc.
 
-On 8 GB hosts, `scripts/startup-enhanced.sh` now clamps inherited Ollama overrides back to the constrained profile automatically: `OLLAMA_NUM_PARALLEL=1`, `OLLAMA_MAX_LOADED_MODELS=1`, and `OLLAMA_KEEP_ALIVE=0`.
+`scripts/startup-enhanced.sh` now auto-detects the host profile from total RAM and applies the matching Ollama defaults automatically. The constrained `8gb` profile clamps `OLLAMA_NUM_PARALLEL=1`, `OLLAMA_MAX_LOADED_MODELS=1`, and `OLLAMA_KEEP_ALIVE=0`; the `16gb` profile keeps `OLLAMA_NUM_PARALLEL=1` but raises `OLLAMA_MAX_LOADED_MODELS=2`, sets `OLLAMA_KEEP_ALIVE=2m`, and enables startup and predictive prewarm by default. Set `SWARMX_HOST_PROFILE=8gb` or `SWARMX_HOST_PROFILE=16gb` in `.env.local` to pin the profile explicitly.
 
 ### Legacy r7 migration
 

@@ -723,20 +723,39 @@ pipeline selector.
 Do not submit a real job merely because `POST /api/video/jobs` is reachable.
 Before the first render, verify API and Ollama liveness, ensure `ffmpeg`,
 `ffprobe`, and `espeak-ng` are installed (or explicitly choose silent testing),
-and compare available physical RAM with the selected profile requirement. On
-the supported 8 GB host, use `SWARMX_VIDEO_LOW_RAM_MODE=1` only when at least
-3300 MB is available and no model is resident. Do not preload Relay or a
-specialist before that measurement.
+and compare available physical RAM with the selected profile requirement.
+
+**RAM requirements by profile:**
+
+| Profile | Minimum available RAM | When to use |
+| ------- | --------------------- | ----------- |
+| Low-RAM / Pilot-lite (`SWARMX_VIDEO_LOW_RAM_MODE=1`) | 3300 MB | Constrained 8 GB hosts; no model resident |
+| Full 7B planning (default) | 6170 MB | Standard; available on 16 GB hosts with headroom |
+| reasoner tier (`modelTier=reasoner`) | 6170 MB | Requires the same headroom as the full 7B planning profile |
+
+On **constrained 8 GB hosts**, use `SWARMX_VIDEO_LOW_RAM_MODE=1` only when at
+least 3300 MB is available and no model is currently resident. Do not preload
+Relay or a specialist before that measurement.
+
+On **16 GB hosts** (auto-detected by `startup-enhanced.sh` when total RAM ≥ 12 GB,
+or pinned via `SWARMX_HOST_PROFILE=16gb`), the full 7B planning profile (6170 MB
+minimum) is typically available with comfortable headroom. `SWARMX_VIDEO_LOW_RAM_MODE`
+is not needed on these hosts unless free RAM is unexpectedly constrained at the
+time of submission; the admission gate will block the job and report the deficit if
+so.
 
 The dashboard video form defaults to **Auto** model routing, which intentionally
 omits `modelTier` from `POST /api/video/jobs`. Operators can still choose an
 explicit model tier from the form, but that should be reserved for hosts with
 measured memory headroom for the selected profile.
 
-Startup prewarm and predictive prewarm are disabled by default with
+On constrained hosts, startup prewarm and predictive prewarm default to
 `SWARMX_MODEL_STARTUP_PREWARM=0` and `SWARMX_MODEL_PREDICTIVE_PREWARM=0`. Keep
 those defaults on low-RAM video runs so Relay or a specialist is not
-speculatively loaded before the foreground text model.
+speculatively loaded before the foreground text model. On 16 GB hosts these
+prewarm defaults are raised to `1` by `startup-enhanced.sh`, which is safe
+because Relay (phi4-lite, ~2.5 GB, not is7B) can co-reside with the planning
+model without triggering the SINGLE-7B LOCK.
 
 Stage timeouts are bounded through:
 

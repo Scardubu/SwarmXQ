@@ -77,66 +77,49 @@ function AgentRow({
   }
 
   return (
-    <button
-      onClick={() => onSelect(agent)}
-      role="row"
-      className={cn(
-        "w-full grid items-center gap-3 px-4 py-2.5 text-left",
-        "hover:bg-bg-elevated transition-all duration-(--duration-micro) group",
-        "focus-visible:outline-none focus-visible:ring-inset focus-visible:ring-1 focus-visible:ring-accent",
-        "border-b border-border last:border-0",
-        "grid-cols-[1.5rem_1fr_5rem_5rem_5rem_7rem_4rem]"
-      )}
-      aria-label={`View details for ${agent.name ?? agent.id}`}
-    >
-      {/* Status dot */}
-      <span
-        className="status-dot h-2 w-2 shrink-0"
-        data-status={agentDataStatus(agent.status)}
-      />
-
-      {/* Name + role */}
-      <div className="min-w-0">
-        <div className="text-xs font-mono text-text-primary truncate">
-          {agent.name ?? agent.id}
-          {oomEvents > 0 && (
-            <span className="ml-1.5 text-[9px] text-status-error">OOM×{oomEvents}</span>
-          )}
-        </div>
-        <div className="text-[10px] font-mono text-text-muted truncate">{agent.role}</div>
-      </div>
-
-      {/* Status badge */}
-      <Badge variant={agentStatusVariant(agent.status)} className="w-fit text-[9px]">
-        {agent.status}
-      </Badge>
-
-      {/* CPU */}
-      <span
-        className={cn("text-xs font-mono tabular-nums text-right", cpuClassName)}
-        data-metric
-      >
+    <tr className="border-b border-border last:border-0 transition-colors duration-(--duration-micro) hover:bg-bg-elevated">
+      <td className="w-10 px-4 py-2.5">
+        <span
+          className="status-dot h-2 w-2 shrink-0"
+          data-status={agentDataStatus(agent.status)}
+          aria-hidden="true"
+        />
+      </td>
+      <th scope="row" className="min-w-48 px-2 py-2.5 text-left font-normal">
+        <button
+          type="button"
+          onClick={() => onSelect(agent)}
+          className="block max-w-full rounded text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+          aria-label={`View details for ${agent.name ?? agent.id}`}
+        >
+          <span className="block truncate text-xs font-mono text-text-primary">
+            {agent.name ?? agent.id}
+            {oomEvents > 0 && (
+              <span className="ml-1.5 text-[9px] text-status-error">OOM×{oomEvents}</span>
+            )}
+          </span>
+          <span className="block truncate text-[10px] font-mono text-text-muted">{agent.role}</span>
+        </button>
+      </th>
+      <td className="px-3 py-2.5">
+        <Badge variant={agentStatusVariant(agent.status)} className="w-fit text-[9px]">
+          {agent.status}
+        </Badge>
+      </td>
+      <td className={cn("px-3 py-2.5 text-right text-xs font-mono tabular-nums", cpuClassName)} data-metric>
         {formatPct(cpuPct)}
-        {throttled && <span className="text-[9px] text-status-warning ml-0.5">↓</span>}
-      </span>
-
-      {/* Memory */}
-      <span className="text-xs font-mono tabular-nums text-right text-text-secondary" data-metric>
+        {throttled && <span className="ml-0.5 text-[9px] text-status-warning">↓</span>}
+      </td>
+      <td className="px-3 py-2.5 text-right text-xs font-mono tabular-nums text-text-secondary" data-metric>
         {formatBytes(memMb * 1024 * 1024)}
-      </span>
-
-      {/* Current task */}
-      <span className="text-[10px] font-mono text-text-muted truncate">
+      </td>
+      <td className="max-w-56 truncate px-3 py-2.5 text-[10px] font-mono text-text-muted">
         {agent.currentTask ?? "—"}
-      </span>
-
-      {/* Duration */}
-      <span className="text-[10px] font-mono text-text-muted text-right">
-        {agent.startedAt
-          ? formatDuration(nowMs - new Date(agent.startedAt).getTime())
-          : "—"}
-      </span>
-    </button>
+      </td>
+      <td className="px-4 py-2.5 text-right text-[10px] font-mono text-text-muted">
+        {agent.startedAt ? formatDuration(nowMs - new Date(agent.startedAt).getTime()) : "—"}
+      </td>
+    </tr>
   );
 }
 
@@ -241,9 +224,9 @@ function AgentDetailSheet({
                     <h4 className="text-[10px] font-mono text-status-error uppercase tracking-widest mb-2">
                       Last Error
                     </h4>
-                    <pre className="text-[10px] font-mono text-status-error bg-status-error/5 rounded p-2 overflow-x-auto whitespace-pre-wrap">
-                      {agent.lastError}
-                    </pre>
+                    <p className="rounded bg-status-error/5 p-2 text-[10px] font-mono text-status-error">
+                      This agent reported an error. Review the structured server logs using this agent ID for details.
+                    </p>
                   </section>
                 )}
 
@@ -461,53 +444,44 @@ function AgentsPageContent() {
         </div>
       </div>
 
-      {/* Table header — ARIA grid semantics for screen-reader column header access */}
-      <div
-        role="table"
-        aria-label="Agent fleet"
-        className="flex flex-col flex-1 overflow-hidden"
-      >
-        <div
-          role="rowgroup"
-        >
-          <div
-            role="row"
-            className="grid items-center gap-3 px-4 py-1.5 border-b border-border bg-bg-surface grid-cols-[1.5rem_1fr_5rem_5rem_5rem_7rem_4rem]"
-          >
-            {["", "Agent", "Status", "CPU", "Memory", "Current task", "Uptime"].map((h) => (
-              <span
-                key={h}
-                role="columnheader"
-                className="text-[9px] font-mono text-text-muted uppercase tracking-wide"
-              >
-                {h}
-              </span>
-            ))}
-          </div>
+      <ScrollArea className="flex-1">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[46rem] border-collapse" aria-label="Agent fleet">
+            <caption className="sr-only">
+              Live agent status, resource use, active work, and uptime. Select an agent name for details.
+            </caption>
+            <thead className="border-b border-border bg-bg-surface">
+              <tr className="text-[9px] font-mono uppercase tracking-wide text-text-muted">
+                <th scope="col" className="w-10 px-4 py-1.5"><span className="sr-only">Health</span></th>
+                <th scope="col" className="px-2 py-1.5 text-left">Agent</th>
+                <th scope="col" className="px-3 py-1.5 text-left">Status</th>
+                <th scope="col" className="px-3 py-1.5 text-right">CPU</th>
+                <th scope="col" className="px-3 py-1.5 text-right">Memory</th>
+                <th scope="col" className="px-3 py-1.5 text-left">Current task</th>
+                <th scope="col" className="px-4 py-1.5 text-right">Uptime</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="h-40 px-4 text-center text-xs font-mono text-text-muted">
+                    {agents.length === 0 ? "No agents have checked in yet — is the swarm running?" : "Nothing matches that filter — try broadening your search"}
+                  </td>
+                </tr>
+              ) : (
+                filtered.map((agent) => (
+                  <AgentRow
+                    key={agent.id}
+                    agent={agent}
+                    nowMs={nowMs}
+                    onSelect={handleSelectAgent}
+                  />
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
-
-        {/* Agent rows */}
-        <div role="rowgroup">
-        <ScrollArea className="flex-1">
-          {filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-40 gap-2">
-              <span className="text-xs font-mono text-text-muted">
-                {agents.length === 0 ? "No agents have checked in yet — is the swarm running?" : "Nothing matches that filter — try broadening your search"}
-              </span>
-            </div>
-          ) : (
-            filtered.map((agent) => (
-              <AgentRow
-                key={agent.id}
-                agent={agent}
-                nowMs={nowMs}
-                onSelect={handleSelectAgent}
-              />
-            ))
-          )}
-        </ScrollArea>
-        </div>
-      </div>
+      </ScrollArea>
 
       {/* Agent detail sheet */}
       <AgentDetailSheet

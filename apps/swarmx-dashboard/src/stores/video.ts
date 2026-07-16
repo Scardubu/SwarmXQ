@@ -168,14 +168,13 @@ export function sanitizeApiError(err: unknown, fallback = "Something went wrong.
       case "unauthorized":
         return "Video write access is not authorized. Check that NEXT_PUBLIC_SWARMX_VIDEO_API_TOKEN matches the API token.";
       case "queue_error":
+        return "The video queue could not accept this job. Wait a moment and try again.";
       case "not_found":
-        return err.message.length > 0 && err.message.length < 160 ? err.message : fallback;
+        return "That video job is no longer available. Refresh the queue and try again.";
       default:
         if (err.status === 503) return "The API or a required service is temporarily unavailable. Retry in a moment.";
         if (err.status === 429) return "Too many requests. Wait a moment before trying again.";
         if (err.status === 409) return "This action cannot be performed on a job in its current state.";
-        // Safe to surface status-less generic messages short enough to not contain internals
-        if (err.message.length > 0 && err.message.length < 100 && !err.message.includes("/")) return err.message;
         return fallback;
     }
   }
@@ -214,7 +213,7 @@ export const useVideoStore = create<VideoStore>()(
           set(
             {
               isLoading: false,
-              listError: err instanceof Error ? err.message : "Failed to fetch jobs",
+              listError: sanitizeApiError(err, "Unable to load video jobs. Check that the API is running."),
             },
             false,
             "video/fetchJobs/error"
