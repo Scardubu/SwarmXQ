@@ -37,10 +37,14 @@ const STAGE_TIMEOUT_DEFAULTS: Record<VideoJobStage, number> = {
 };
 
 const STAGE_TIMEOUT_BOUNDS: Record<VideoJobStage, { min: number; max: number }> = {
-  intent_classification: { min: 1_000, max: 30_000 },
-  planning: { min: 5_000, max: 120_000 },
-  scripting: { min: 10_000, max: 180_000 },
-  storyboard_generation: { min: 10_000, max: 240_000 },
+  // Upper bounds sized for CPU-only inference on constrained laptops. A 3.8B
+  // Q4_K_M model at ~5 tokens/sec needs headroom for structured-output stages
+  // where the model may emit 100+ tokens. Operators on GPU-backed hosts can
+  // still set lower per-env timeouts; the bounds only clamp the ceiling.
+  intent_classification: { min: 1_000, max: 90_000 },
+  planning: { min: 5_000, max: 180_000 },
+  scripting: { min: 10_000, max: 240_000 },
+  storyboard_generation: { min: 10_000, max: 300_000 },
   render_assembly: { min: 30_000, max: 900_000 },
   finalizing: { min: 5_000, max: 60_000 },
 };

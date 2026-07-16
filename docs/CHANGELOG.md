@@ -4,6 +4,26 @@
 
 ---
 
+## V6.2.11 — Video Preflight Fix And CPU-Realistic Stage Timeouts (2026-07-16)
+
+### Video pipeline
+
+- Fixed `commandAvailable()` in both `src/routes/video.ts` and
+  `src/services/ffmpeg-video-renderer.ts`: FFmpeg 6.x rejects `--version` for
+  `ffmpeg` and `ffprobe` (exit 1: `Missing argument for option '-version'`),
+  which caused all video submissions on modern Ubuntu builds to fail the
+  preflight with `ffprobe_unavailable` even when the tools were installed.
+  Both helpers now accept a per-tool version flag; call sites pass
+  `-version` for ffmpeg/ffprobe and `--version` for espeak-ng.
+- Raised the upper bounds of `STAGE_TIMEOUT_BOUNDS` in
+  `src/services/video-runtime-config.ts` so operators on CPU-only hosts
+  (~5 tokens/sec for a 3.8B Q4_K_M model) can budget for realistic
+  structured-output stages: intent_classification 30_000 → 90_000,
+  planning 120_000 → 180_000, scripting 180_000 → 240_000,
+  storyboard_generation 240_000 → 300_000. The defaults are unchanged; only
+  the ceiling for explicit `VIDEO_*_TIMEOUT_MS` overrides is expanded.
+- Updated the `video-regression-check.ts` clamp assertion accordingly.
+
 ## V6.2.10 — Shared Error Sanitization Helper (2026-07-16)
 
 ### Dashboard reliability

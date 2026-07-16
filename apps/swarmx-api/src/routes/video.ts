@@ -41,10 +41,14 @@ import { resolveCanonicalTag } from "@swarmx/types/operator-map";
 import type { CaptionDraft } from "@swarmx/types/video-types";
 
 // ── Local helper: check a binary is on PATH without importing the renderer ────
+// Different tools use different version flags: ffmpeg/ffprobe require the
+// legacy single-dash `-version` (FFmpeg 6+ builds reject `--version`), while
+// espeak-ng and most GNU tools accept `--version`. Pass the correct flag per
+// command instead of assuming a single convention works for all.
 const execFileAsync = promisify(execFile);
-async function commandAvailable(cmd: string): Promise<boolean> {
+async function commandAvailable(cmd: string, versionFlag = "--version"): Promise<boolean> {
   try {
-    await execFileAsync(cmd, ["--version"], { timeout: 3_000 });
+    await execFileAsync(cmd, [versionFlag], { timeout: 3_000 });
     return true;
   } catch {
     return false;
@@ -327,7 +331,7 @@ export async function videoRoutes(
       // outputs. ffmpeg and narration are only required when the local renderer
       // may run (local or automatic fallback).
       const renderBackend = process.env["SWARMX_VIDEO_RENDER_BACKEND"] ?? "auto";
-      const hasFfprobe = await commandAvailable("ffprobe");
+      const hasFfprobe = await commandAvailable("ffprobe", "-version");
       if (!hasFfprobe) {
         return reply.status(503).send({
           error: "ffprobe_unavailable",
@@ -336,7 +340,7 @@ export async function videoRoutes(
       }
 
       if (renderBackend !== "comfyui") {
-        const hasFfmpeg = await commandAvailable("ffmpeg");
+        const hasFfmpeg = await commandAvailable("ffmpeg", "-version");
         if (!hasFfmpeg) {
           return reply.status(503).send({
             error: "ffmpeg_unavailable",
@@ -344,7 +348,7 @@ export async function videoRoutes(
           });
         }
         if (process.env["SWARMX_VIDEO_ALLOW_SILENT_AUDIO"] !== "1") {
-          const hasEspeak = await commandAvailable("espeak-ng");
+          const hasEspeak = await commandAvailable("espeak-ng", "--version");
           if (!hasEspeak) {
             return reply.status(503).send({
               error: "espeak_unavailable",

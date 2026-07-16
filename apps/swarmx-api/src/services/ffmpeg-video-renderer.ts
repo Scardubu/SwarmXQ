@@ -49,9 +49,11 @@ function execFileChecked(
   });
 }
 
-async function commandAvailable(command: string): Promise<boolean> {
+// ffmpeg/ffprobe reject `--version` on 6.x builds; espeak-ng rejects
+// `-version`. Pass the correct flag per tool instead of one-size-fits-all.
+async function commandAvailable(command: string, versionFlag = "-version"): Promise<boolean> {
   try {
-    await execFileChecked(command, ["-version"]);
+    await execFileChecked(command, [versionFlag]);
     return true;
   } catch {
     return false;
@@ -186,7 +188,7 @@ export async function renderWithFfmpeg(input: FfmpegRenderInput): Promise<{ outp
     }
 
     const narrationPath = join(workDir, "narration.wav");
-    const hasEspeak = await commandAvailable("espeak-ng");
+    const hasEspeak = await commandAvailable("espeak-ng", "--version");
     if (!hasEspeak && process.env["SWARMX_VIDEO_ALLOW_SILENT_AUDIO"] !== "1") {
       throw Object.assign(new Error("espeak-ng is not available"), {
         code: "ESPEAK_UNAVAILABLE",

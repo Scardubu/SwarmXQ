@@ -47,7 +47,7 @@ assert.ok(
 );
 
 process.env["VIDEO_PLANNING_TIMEOUT_MS"] = "999999";
-assert.equal(stageTimeoutMs("planning"), 120000);
+assert.equal(stageTimeoutMs("planning"), 180000);
 delete process.env["VIDEO_PLANNING_TIMEOUT_MS"];
 
 const body = buildOllamaGenerateBody({
