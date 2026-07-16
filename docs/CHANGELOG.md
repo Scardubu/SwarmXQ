@@ -4,6 +4,27 @@
 
 ---
 
+## V6.2.10 — Shared Error Sanitization Helper (2026-07-16)
+
+### Dashboard reliability
+
+- Added a shared `safeErrorMessage()` helper in `src/lib/utils.ts` that guards
+  against leaking absolute paths, oversized internals, or non-Error thrown
+  values into the UI when a store-level sanitizer is not available.
+- Sanitized the workflows page `Run failed:` and `Cancel failed:` inline
+  alerts and the settings page `Save failed:` alert; all three surfaces now
+  fall back to a calm generic message when the underlying error looks
+  path-bearing or oversized, and expose `role="alert"` for assistive tech.
+- Updated the `model-orchestrator.ts` header and `VIDEO-GENERATION.md`
+  first-job admission checklist to describe the 16 GB profile alongside the
+  constrained 8 GB profile.
+
+### Tests
+
+- Added seven `safeErrorMessage()` unit tests covering short messages, path
+  redaction (POSIX and Windows), oversized-message redaction, empty
+  fallback, and non-Error thrown values. Dashboard test count: 49.
+
 ## V6.2.9 — Host Profile Auto-Detection And Startup Tuning (2026-07-15)
 
 ### Runtime

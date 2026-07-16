@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { cn, formatRelativeTime } from "@/lib/utils";
+import { cn, formatRelativeTime, safeErrorMessage } from "@/lib/utils";
 import { useEventsStore } from "@/stores/events";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -426,13 +426,13 @@ function WorkflowDetail({ workflowId }: { readonly workflowId: string }) {
             {runMutation.isPending ? "Launching…" : "Run"}
           </Button>
           {runMutation.isError && (
-            <span className="text-[10px] font-mono text-status-error">
-              Run failed: {String(runMutation.error)}
+            <span role="alert" className="text-[10px] font-mono text-status-error">
+              Run failed: {safeErrorMessage(runMutation.error, "check the API logs for details.")}
             </span>
           )}
           {cancelMutation.isError && (
-            <span className="text-[10px] font-mono text-status-error">
-              Cancel failed: {String(cancelMutation.error)}
+            <span role="alert" className="text-[10px] font-mono text-status-error">
+              Cancel failed: {safeErrorMessage(cancelMutation.error, "check the API logs for details.")}
             </span>
           )}
         </div>

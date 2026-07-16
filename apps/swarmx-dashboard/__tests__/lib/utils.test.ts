@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cn, formatBytes, formatBps, formatPct, resourceColor } from "@/lib/utils";
+import { cn, formatBytes, formatBps, formatPct, resourceColor, safeErrorMessage } from "@/lib/utils";
 
 const disabledClass = 0;
 
@@ -74,5 +74,41 @@ describe("resourceColor", () => {
   it("returns critical color at 85%+", () => {
     expect(resourceColor(85)).toBe("var(--color-resource-critical)");
     expect(resourceColor(100)).toBe("var(--color-resource-critical)");
+  });
+});
+
+describe("safeErrorMessage", () => {
+  const fallback = "check the API logs for details.";
+
+  it("returns short Error messages unchanged", () => {
+    expect(safeErrorMessage(new Error("Workflow not found"), fallback)).toBe("Workflow not found");
+  });
+
+  it("returns short string errors unchanged", () => {
+    expect(safeErrorMessage("Cancel denied", fallback)).toBe("Cancel denied");
+  });
+
+  it("redacts messages containing filesystem paths", () => {
+    expect(safeErrorMessage(new Error("ENOENT: /var/lib/swarmx/db.sqlite locked"), fallback)).toBe(fallback);
+  });
+
+  it("redacts messages containing Windows-style paths", () => {
+    expect(safeErrorMessage(new Error("failure at C:\\swarmx\\logs\\a.log"), fallback)).toBe(fallback);
+  });
+
+  it("redacts oversized messages", () => {
+    const long = "x".repeat(200);
+    expect(safeErrorMessage(new Error(long), fallback)).toBe(fallback);
+  });
+
+  it("falls back for empty or whitespace messages", () => {
+    expect(safeErrorMessage(new Error("   "), fallback)).toBe(fallback);
+    expect(safeErrorMessage("", fallback)).toBe(fallback);
+  });
+
+  it("falls back for non-Error, non-string thrown values", () => {
+    expect(safeErrorMessage({ code: 500 }, fallback)).toBe(fallback);
+    expect(safeErrorMessage(null, fallback)).toBe(fallback);
+    expect(safeErrorMessage(undefined, fallback)).toBe(fallback);
   });
 });

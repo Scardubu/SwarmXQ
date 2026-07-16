@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Save, ExternalLink, AlertCircle } from "lucide-react";
 import { useEventsStore } from "@/stores/events";
+import { safeErrorMessage } from "@/lib/utils";
 import type { PressureLevel } from "@swarmx/types";
 
 // ─── [APEX17-r8] Model Topology types ────────────────────────────────────────
@@ -350,15 +351,13 @@ export default function SettingsPage() {
             </Button>
           </div>
         )}
-        {/* [V6.2-ENH-08] Show inline error when save fails. */}
+        {/* [V6.2-ENH-08] Show inline error when save fails. Sanitized via safeErrorMessage to avoid path/internals leak. */}
         {saveMutation.isError && (
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-red-500/40 bg-red-500/10 text-[10px] font-mono text-red-200">
+          <div role="alert" className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-red-500/40 bg-red-500/10 text-[10px] font-mono text-red-200">
             <AlertCircle className="h-3 w-3 shrink-0" />
             <span>
               Save failed:{" "}
-              {saveMutation.error instanceof Error
-                ? saveMutation.error.message
-                : "Unknown error"}
+              {safeErrorMessage(saveMutation.error, "check the API logs for details.")}
             </span>
           </div>
         )}

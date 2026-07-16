@@ -115,3 +115,26 @@ export function statusColor(status: string): string {
 export function generateSessionId(): string {
   return `pty-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
+
+/**
+ * Extract a user-safe message from an unknown error. Guards against leaking
+ * absolute paths, oversized internals, or non-Error thrown values into the UI.
+ * Structured API error handling should still go through the dedicated
+ * ApiError sanitizers in each store; this is the last-resort fallback.
+ */
+export function safeErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error) {
+    const message = err.message?.trim();
+    if (!message) return fallback;
+    if (message.length > 160) return fallback;
+    if (message.includes("/") || message.includes("\\")) return fallback;
+    return message;
+  }
+  if (typeof err === "string") {
+    const trimmed = err.trim();
+    if (!trimmed || trimmed.length > 160) return fallback;
+    if (trimmed.includes("/") || trimmed.includes("\\")) return fallback;
+    return trimmed;
+  }
+  return fallback;
+}
