@@ -61,7 +61,7 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
 
   const [prompt, setPrompt] = useState("");
   const [platform, setPlatform] = useState<NonNullable<VideoJobRequest["platform"]>>("tiktok");
-  const [niche, setNiche] = useState<NonNullable<VideoJobRequest["niche"]>>("tech");
+  const [niche, setNiche] = useState<NonNullable<VideoJobRequest["niche"]>>("motivational");
   const [targetDuration, setTargetDuration] = useState("30");
   const [modelRoute, setModelRoute] = useState<ModelRoute>("auto");
   const [audience, setAudience] = useState("");
@@ -155,6 +155,17 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
             {prompt.length}/2000
           </span>
         </div>
+        <p className="text-[10px] leading-4 text-text-muted">
+          High-signal prompts specify: (1){" "}
+          <strong className="text-text-secondary">hook angle</strong> — the contrarian or
+          surprising claim that opens the video; (2){" "}
+          <strong className="text-text-secondary">emotional arc</strong> — what the viewer
+          moves through from start to close; (3){" "}
+          <strong className="text-text-secondary">concrete takeaway</strong> — the one
+          actionable thing they leave with; (4){" "}
+          <strong className="text-text-secondary">CTA intent</strong> — the behavior or save
+          desired. Generic topic-only prompts produce flat scripts.
+        </p>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -198,6 +209,7 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
             { value: "60", label: "60s" },
             { value: "90", label: "90s" },
             { value: "120", label: "2 min" },
+            { value: "180", label: "3 min" },
           ]}
         />
         <Select

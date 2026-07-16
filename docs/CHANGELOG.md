@@ -4,6 +4,50 @@
 
 ---
 
+## V6.2.12 — Dashboard Polling Compliance, Prompt Guidance, Virality Notice, Docs Sync (2026-07-16)
+
+### Dashboard
+
+- **Agents fallback polling** (`agents/page.tsx`): Reduced SSE-disconnected poll
+  interval from 30 s to 8 s to comply with the §4 ≤10 s ceiling. Added a cap of 12
+  polling attempts before the loop pauses (prevents indefinite low-priority traffic
+  during prolonged API outages), ±10 % per-tick jitter to prevent thundering-herd
+  on reconnect, and a `document.hidden` guard that skips ticks while the tab is
+  not visible. Updated the status label from "polling every 30 s" to "polling every 8 s".
+
+- **VideoJobForm** (`components/video/VideoJobForm.tsx`):
+  - Default `niche` corrected from `"tech"` to `"motivational"` per the §5a spec.
+  - Added `180 s (3 min)` duration option to complete the 15–180 s range required
+    by the API schema (`minimum: 15, maximum: 180`).
+  - Added inline prompt quality guidance below the character counter describing the
+    four high-signal prompt dimensions: hook angle, emotional arc, concrete takeaway,
+    and CTA intent.
+
+- **Video job detail** (`app/(dashboard)/video/[id]/page.tsx`): When a completed job
+  has no `viralitySignal` (circuit-breaker or LOW\_RAM\_MODE suppressed the Oracle
+  call), the UI now shows an explicit operator note — "Virality scoring unavailable
+  in low-RAM mode" — rather than silently hiding the section. Never displays a score
+  of 0 or "N/A" as if scoring ran.
+
+- **VideoJobCard** (`components/video/VideoJobCard.tsx`): Added a "Loading Model"
+  notice that appears when a job has been in `classifying` or `running` status for
+  more than 30 seconds. This covers the 100–140 s cold-model-load window on
+  CPU-only hosts and prevents operators from cancelling during normal cold start.
+
+### Documentation
+
+- **VIDEO-GENERATION.md**: Added:
+  - Manual prewarm section with the exact `curl` command for `instruct-phi4-lite-q4km-prod`
+    and explanation of the cold-start window.
+  - Internal LLM stage output formats section documenting the structured contracts
+    for intent (HOOK/ARC/TAKEAWAY), planning (5-beat), scripting ([HOOK]/[BODY]/
+    [RESOLUTION]/[CTA]), and storyboard (per-scene) stages.
+  - Caption generator tone note: receives `tone: req.tone`, not `niche`; corrected
+    in 8ab025a.
+  - Virality oracle unavailability note for LOW\_RAM\_MODE.
+
+---
+
 ## V6.2.11 — Video Preflight Fix And CPU-Realistic Stage Timeouts (2026-07-16)
 
 ### Video pipeline

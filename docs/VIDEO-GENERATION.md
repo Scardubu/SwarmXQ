@@ -246,6 +246,28 @@ or:
 
 If `SWARMX_VIDEO_API_TOKEN` is unset, the write routes remain open for local development.
 
+### Prewarm the Pilot text model (CPU-only hosts)
+
+On a CPU-only 16 GB host the startup script prewarms the Relay model automatically,
+but the Pilot text model (`instruct-phi4-lite-q4km-prod`) used by `LOW_RAM_MODE` is
+not prewarmed at startup. Cold model load takes **100–140 seconds** and will consume
+most of the `intent_classification` timeout window.
+
+Prewarm before submitting the first job:
+
+```bash
+curl -sS http://127.0.0.1:11434/api/generate \
+  -d '{"model":"instruct-phi4-lite-q4km-prod","prompt":"warm","stream":false,"keep_alive":"5m","options":{"num_predict":8,"num_ctx":2048}}'
+```
+
+Wait for the JSON response before opening the video form. With a warm model, intent
+classification completes in ~14 s. Without it, the stage may hit the 90 s timeout
+ceiling on the first attempt (then auto-retry with a warm model succeeds normally).
+
+The dashboard video page shows a **"Loading Model"** notice when a running or
+classifying job has been active for more than 30 seconds — this is the expected
+cold-start indicator, not a failure.
+
 ---
 
 ## API reference
@@ -781,6 +803,70 @@ Context windows are scaled down under pressure (`adaptive-timeout-config.ts`):
 | `normal` | 100% | 100% |
 | `high` | 75% | 65% |
 | `critical` | 50% | 50% |
+
+### Internal LLM stage output formats (V6.2.12)
+
+The orchestrator uses structured output contracts at each text stage. Preserve these
+formats — downstream parsing depends on them.
+
+**Intent stage** — packed into the `intent` string field:
+
+```text
+HOOK: [one-sentence contrarian or surprising angle] | ARC: [viewer journey start→middle→end] | TAKEAWAY: [specific actionable conclusion]
+```
+
+`parseIntentClassification` validates `{ intent: string, complexity: number }`. Extra
+fields are silently ignored; the richness is in the `intent` string value.
+
+**Planning stage** — exactly 5 named beats in order:
+
+```text
+HOOK (0–4 s)          — the scroll-stopping opener
+CONTEXT (~25% mark)   — familiar pain or premise
+INSIGHT (~65% mark)   — the reframe or unexpected truth
+PROOF (to −7 s)       — concrete illustration
+CTA (last 7 s)        — specific behavior, not generic
+```
+
+Beat timing is derived from `targetDurationSeconds`.
+
+**Scripting stage** — section markers that `extractHookLine()` and downstream
+renderers depend on:
+
+```text
+[HOOK]
+(12–18 words, pattern-interrupting, no preamble)
+
+[BODY]
+(3–4 sentences, escalating stakes, [VISUAL: ...] cues inline)
+
+[RESOLUTION]
+(1–2 concrete, actionable sentences)
+
+[CTA]
+(5–8 words, specific)
+```
+
+`extractHookLine(scriptText)` finds the first non-empty line after `[HOOK]` for
+virality scoring. If the `[HOOK]` marker is absent it falls back to `lines[0]`.
+
+**Storyboard stage** — per-scene format:
+
+```text
+- [SCENE N | BEAT] [Text: "..."] | Motion: ... | Color: ... | Pacing: ...
+```
+
+Color palettes are tone-mapped: `contrarian` → high-contrast B&W + accent;
+`urgent` → warm red/amber; `educational` → cool blue/green; etc.
+
+**Caption generator** receives `tone: req.tone` (not `niche`). This was corrected in
+8ab025a. The `CAPTION_RULES` validation enforces: `firstLine ≤ 40 chars`, 3–5
+hashtags, no URLs in `soundSuggestion`.
+
+**Virality oracle** (`reason-deepseekr1-pro-q5km-prod`) is unavailable in
+`LOW_RAM_MODE` — the circuit breaker returns `undefined`. The dashboard surfaces this
+as "Virality scoring unavailable in low-RAM mode" on the job detail page; it never
+shows a score of 0 or "N/A" as if scoring ran.
 
 ---
 

@@ -198,6 +198,26 @@ export default function VideoJobDetailPage() {
             </div>
           )}
 
+          {job.status === "completed" && !job.viralitySignal && (
+            <div
+              className="rounded border border-border bg-bg-elevated p-4"
+              role="status"
+              aria-live="polite"
+            >
+              <p className="text-[10px] font-mono uppercase tracking-wider text-text-muted mb-1">
+                Virality Score
+              </p>
+              <p className="text-xs text-text-secondary">
+                Virality scoring unavailable in low-RAM mode.
+              </p>
+              <p className="mt-1 text-xs text-text-muted">
+                The Oracle model (DeepSeek-R1) requires more RAM than is available on this
+                host profile. No score was computed — this is expected on CPU-only 16 GB
+                hosts. A score will appear once a full-RAM profile is active.
+              </p>
+            </div>
+          )}
+
           {job.viralitySignal?.captionDraft && (
             <div className="rounded border border-border bg-bg-elevated p-4">
               <CaptionEditor

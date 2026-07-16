@@ -242,6 +242,18 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
 
         <PublishSummary job={job} />
 
+        {/* Loading Model hint — shown when model cold-start is likely (>30 s at first stage) */}
+        {elapsed != null && elapsed > 30 &&
+          (job.status === "classifying" || job.status === "running") && (
+            <p
+              className="rounded border border-status-warning/30 bg-status-warning/8 px-2.5 py-1.5 text-[10px] leading-4 text-status-warning"
+              role="status"
+              aria-live="polite"
+            >
+              Loading Model — first inference takes 100–140 s on cold Ollama. Wait; do not cancel.
+            </p>
+          )}
+
         {/* Footer metadata */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[10px] text-text-muted">
           <span title="Job ID" className="max-w-[8rem] truncate">

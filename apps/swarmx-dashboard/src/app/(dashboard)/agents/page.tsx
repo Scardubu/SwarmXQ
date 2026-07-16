@@ -330,11 +330,25 @@ function AgentsPageContent() {
   React.useEffect(() => {
     if (connectionStatus !== "disconnected") return;
 
+    // §4: ≤10 s interval, max 12 attempts, jitter, pause when hidden, abort on SSE reconnect
+    const POLL_INTERVAL_MS = 8_000;
+    const MAX_POLL_ATTEMPTS = 12;
+
     const controller = new AbortController();
+    let attempts = 0;
+
     void refreshAgents(controller.signal);
+
     const intervalId = window.setInterval(() => {
-      void refreshAgents(controller.signal);
-    }, 30_000);
+      if (document.hidden) return;
+      if (attempts >= MAX_POLL_ATTEMPTS) {
+        window.clearInterval(intervalId);
+        return;
+      }
+      const jitter = (Math.random() * 2 - 1) * POLL_INTERVAL_MS * 0.1;
+      window.setTimeout(() => void refreshAgents(controller.signal), Math.round(jitter));
+      attempts++;
+    }, POLL_INTERVAL_MS);
 
     return () => {
       controller.abort();
@@ -399,7 +413,7 @@ function AgentsPageContent() {
           <div className="flex items-center gap-2">
             {(connectionStatus === "disconnected" || connectionStatus === "connecting") && (
               <span className="text-[9px] font-mono text-status-warning uppercase tracking-wide" role="status">
-                {connectionStatus === "connecting" ? "reconnecting…" : "live feed unavailable · polling every 30 s"}
+                {connectionStatus === "connecting" ? "reconnecting…" : "live feed unavailable · polling every 8 s"}
               </span>
             )}
             <span className="text-xs font-mono text-text-muted tabular-nums" data-metric>
