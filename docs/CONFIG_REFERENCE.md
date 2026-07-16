@@ -50,6 +50,17 @@ decisions use physical `MemAvailable` and report ZRAM separately.
 | `SWARMX_VIDEO_LOW_RAM_MODE` | unset | Set `1` to force all video text stages through the 2.5 GB Pilot-lite profile; requires at least 3300 MB available RAM. |
 | `SWARMX_VIDEO_API_TOKEN` | unset | Optional bearer/API-key token for video write routes. |
 
+**Stage timeouts** — defaults are calibrated for GPU inference. On a CPU-only host, set each to its ceiling value:
+
+| Variable | GPU default | CPU-only ceiling |
+| --- | --- | --- |
+| `VIDEO_INTENT_CLASSIFY_TIMEOUT_MS` | `4000` | `90000` |
+| `VIDEO_PLANNING_TIMEOUT_MS` | `15000` | `180000` |
+| `VIDEO_SCRIPTING_TIMEOUT_MS` | `35000` | `240000` |
+| `VIDEO_STORYBOARD_TIMEOUT_MS` | `60000` | `300000` |
+
+Add these to `apps/swarmx-api/.env.local` (gitignored) for a persistent CPU host configuration. All values are bounded by `STAGE_TIMEOUT_BOUNDS` in `video-runtime-config.ts` and accept overrides via env without any code change.
+
 Required local binaries for production local renders:
 
 ```bash

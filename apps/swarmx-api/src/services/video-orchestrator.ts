@@ -231,12 +231,27 @@ function parseIntentClassification(raw: string): { intent: string; complexity: n
   if (!parsed || typeof parsed !== "object") {
     throw new Error("intent classification is not an object");
   }
-  const candidate = parsed as { intent?: unknown; complexity?: unknown };
-  const intent = typeof candidate.intent === "string" ? candidate.intent.trim() : "";
-  const complexity = typeof candidate.complexity === "number" ? candidate.complexity : Number.NaN;
-  if (!intent || !Number.isFinite(complexity) || complexity < 0 || complexity > 1) {
-    throw new Error("intent classification failed schema validation");
+  const candidate = parsed as Record<string, unknown>;
+
+  // Base intent from the "intent" key.
+  let intent = typeof candidate["intent"] === "string" ? candidate["intent"].trim() : "";
+
+  // The 3.8B model often outputs ARC and TAKEAWAY as separate top-level keys
+  // instead of packing them into the intent string. Repack them when they appear.
+  if (intent && !intent.includes("| ARC:") && !intent.includes("| TAKEAWAY:")) {
+    const arc      = typeof candidate["ARC"]      === "string" ? candidate["ARC"].trim()      : "";
+    const takeaway = typeof candidate["TAKEAWAY"] === "string" ? candidate["TAKEAWAY"].trim() : "";
+    if (arc)      intent += ` | ARC: ${arc}`;
+    if (takeaway) intent += ` | TAKEAWAY: ${takeaway}`;
   }
+
+  if (!intent) throw new Error("intent classification failed schema validation");
+
+  // complexity is optional — model frequently omits it; default to 0.5.
+  const rawC = candidate["complexity"];
+  const complexity =
+    typeof rawC === "number" && Number.isFinite(rawC) && rawC >= 0 && rawC <= 1 ? rawC : 0.5;
+
   return { intent, complexity };
 }
 
