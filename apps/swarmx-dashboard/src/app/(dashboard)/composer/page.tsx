@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { cn } from "@/lib/utils";
+import { cn, safeErrorMessage } from "@/lib/utils";
 import { useEventsStore } from "@/stores/events";
 import { useApiHealth, type ApiHealthState } from "@/hooks/useApiHealth";
 import { Button } from "@/components/ui/button";
@@ -541,12 +541,12 @@ export default function ComposerPage() {
         errorText =
           "Rate limit reached (429). Too many requests in a short window. Wait a few seconds and try again.";
       } else if (err instanceof Error && /HTTP 4\d\d/.test(err.message)) {
-        errorText = `Request rejected by API: ${err.message}.\n\nCheck that the session payload is valid and the API version matches the dashboard.`;
+        errorText = `Request rejected by API: ${safeErrorMessage(err, "check the API logs for details")}.\n\nCheck that the session payload is valid and the API version matches the dashboard.`;
       } else if (err instanceof TypeError && /fetch|network/i.test(err.message)) {
         errorText =
           "Could not reach the SwarmX API.\n\nConfirm the API is running at port 3001:\n  curl http://127.0.0.1:3001/health";
       } else {
-        errorText = `Swarm brain error: ${err instanceof Error ? err.message : "unknown error"}.\n\nCheck API logs for details.`;
+        errorText = `Swarm brain error: ${safeErrorMessage(err, "unknown error")}.\n\nCheck API logs for details.`;
       }
 
       setState((prev) => ({

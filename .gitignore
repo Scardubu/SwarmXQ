@@ -28,8 +28,12 @@ htmlcov/
 # Turborepo
 .turbo/
 
-# Runtime video artifacts and render workspaces
+# Runtime video artifacts and render workspaces (repo root and nested under apps/)
 /.swarmx/video/
+apps/**/.swarmx/video/
+
+# Runtime evolution state — written by the orchestrator on every cycle
+/.swarmx/evolution-layer/
 
 # Editor
 .vscode/settings.json

@@ -145,7 +145,7 @@ await server.register(fastifyCors, {
   origin: buildAllowedOrigins(),
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Accept", "Authorization"],
+  allowedHeaders: ["Content-Type", "Accept", "Authorization", "x-video-api-key"],
 });
 
 // ── WebSocket and SSE plugins ────────────────────────────────────────────────

@@ -18,21 +18,12 @@ export default function VideoJobDetailPage() {
   const router = useRouter();
   const id = params?.id ?? "";
 
-  const {
-    getJob,
-    fetchJobDetail,
-    selectJob,
-    publishJob,
-    recordJobSseStream,
-  } = useVideoStore((s) => ({
-    getJob: s.getJob,
-    fetchJobDetail: s.fetchJobDetail,
-    selectJob: s.selectJob,
-    publishJob: s.publishJob,
-    recordJobSseStream: s.recordJobSseStream,
-  }));
-
-  const job = getJob(id);
+  // Scalar selectors: React 19's useSyncExternalStore calls getSnapshot multiple times per pass; object literals always differ → tearing → #185.
+  const job = useVideoStore((s) => s.jobs.get(id));
+  const fetchJobDetail = useVideoStore((s) => s.fetchJobDetail);
+  const selectJob = useVideoStore((s) => s.selectJob);
+  const publishJob = useVideoStore((s) => s.publishJob);
+  const recordJobSseStream = useVideoStore((s) => s.recordJobSseStream);
 
   useEffect(() => {
     if (!id) return;
