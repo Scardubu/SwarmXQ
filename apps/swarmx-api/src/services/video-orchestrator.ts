@@ -410,9 +410,16 @@ async function stageIntentClassification(
     //          never corrupt intent JSON. Safe no-op on phi4/qwen outputs.
     const rawIntent = await ollamaGenerate(
       model,
-      `Classify this video generation request in one sentence and rate complexity 0-1:\n"${ctx.job.request.prompt}"\n\nRespond as JSON: {"intent": "...", "complexity": 0.0}`,
+      `Analyze this video generation brief and extract its creative strategy.
+
+Brief: "${ctx.job.request.prompt}"
+
+Respond as strict JSON only, no other text:
+{"intent": "HOOK: [one-sentence contrarian or surprising angle] | ARC: [what viewer feels start→middle→end] | TAKEAWAY: [specific actionable conclusion]", "complexity": 0.0}
+
+complexity: 0.0 = simple topic, minimal narrative arc; 1.0 = nuanced multi-beat storytelling with strong identity challenge required.`,
       controller.signal,
-      128,
+      192,
       overrides,
       keepAlive,
     );
@@ -736,8 +743,8 @@ async function stageViralityAndCaption(ctx: OrchestratorContext): Promise<void> 
     topic: ctx.job.request.prompt,
     platform: targetPlatform,
     durationSec: ctx.job.request.targetDurationSeconds ?? 30,
-    ...(ctx.scriptText?.split("\n")[0]
-      ? { hook: ctx.scriptText.split("\n")[0] }
+    ...(extractHookLine(ctx.scriptText)
+      ? { hook: extractHookLine(ctx.scriptText) as string }
       : {}),
   });
 
@@ -748,7 +755,7 @@ async function stageViralityAndCaption(ctx: OrchestratorContext): Promise<void> 
   try {
     const captionResult = await generateCaptionDraftWithValidation({
       topic: ctx.job.request.prompt,
-      tone: ctx.job.request.niche ?? "engaging",
+      tone: ctx.job.request.tone ?? "educational",
       platform: targetPlatform,
       viralitySummary,
     });
@@ -1156,6 +1163,16 @@ async function isComfyAvailable(signal: AbortSignal): Promise<boolean> {
 
 // ─── Prompt Builders ──────────────────────────────────────────────────────────
 
+function extractHookLine(scriptText: string | undefined): string | undefined {
+  if (!scriptText) return undefined;
+  const lines = scriptText.split("\n");
+  const hookIdx = lines.findIndex((l) => l.trim().startsWith("[HOOK]"));
+  if (hookIdx >= 0) {
+    return lines.slice(hookIdx + 1).find((l) => l.trim().length > 0)?.trim();
+  }
+  return lines[0]?.trim() || undefined;
+}
+
 function creativeBriefLines(req: VideoJobRequest): string {
   return [
     `Audience: ${req.audience ?? "general viewers"}`,
@@ -1167,38 +1184,95 @@ function creativeBriefLines(req: VideoJobRequest): string {
 }
 
 function buildPlanningPrompt(req: VideoJobRequest, intent: string): string {
-  return `You are a video production planner for a faceless short-form video.
-Platform: ${req.platform ?? "generic"}
-Niche: ${req.niche ?? "general"}
-${creativeBriefLines(req)}
-Intent: ${intent}
-Prompt: "${req.prompt}"
-Target duration: ${req.targetDurationSeconds ?? 60}s
+  const dur = req.targetDurationSeconds ?? 60;
+  const hookEnd = Math.min(4, Math.round(dur * 0.07));
+  const contextEnd = Math.round(dur * 0.25);
+  const insightEnd = Math.round(dur * 0.65);
+  const proofEnd = dur - 7;
+  return `You are a short-form video production planner. Plan this ${dur}-second faceless video as 5 precise production beats.
 
-List 4-6 concise production steps needed to create this video. One per line, numbered.`;
+Platform: ${req.platform ?? "tiktok"} | Niche: ${req.niche ?? "general"} | Tone: ${req.tone ?? "educational"} | Style: ${req.style ?? "faceless_broll"}
+Audience: ${req.audience ?? "general viewers"}
+Intent: ${intent}
+Creative brief: "${req.prompt}"
+
+Write exactly 5 numbered beats — not generic labels, but specific production instructions for this topic:
+1. HOOK (0-${hookEnd}s): The scroll-stopping opener. What specific claim, question, or visual contrast starts the video?
+2. CONTEXT (${hookEnd}-${contextEnd}s): The familiar pain or premise the viewer already feels. How is it framed?
+3. INSIGHT (${contextEnd}-${insightEnd}s): The reframe, data point, or unexpected truth. What specifically is revealed?
+4. PROOF (${insightEnd}-${proofEnd}s): The concrete illustration — example, stat, or micro-story beat.
+5. CTA (last 7s): The specific next action. Not generic — a genuine behavior change or save-worthy moment tied to this topic.
+
+One line per beat.`;
 }
 
+const TONE_RULES: Record<string, string> = {
+  contrarian: 'Open with "Everyone says X, but..." or a direct inversion of conventional wisdom. Name the belief, then refute it.',
+  urgent: "Use present-tense immediacy: 'right now', 'today', 'before it's too late'. Create time pressure without hyperbole.",
+  educational: "Open with a curiosity gap: 'Here's why...', 'The reason is...', 'What most people miss...'. Teach, don't preach.",
+  cinematic: "Slower pacing. Declarative, atmospheric sentences. Build mood before information. Pauses implied.",
+  warm: "Conversational and personal. Speak to one person, not a crowd. Use 'you' and 'your'. No jargon.",
+  minimal: "Maximum impact per word. Short sentences. One idea per sentence. Cut every filler word.",
+};
+
 function buildScriptingPrompt(req: VideoJobRequest, plan: string[]): string {
-  return `You are a faceless short-form video scriptwriter.
-Platform: ${req.platform ?? "generic"} | Niche: ${req.niche ?? "general"}
-${creativeBriefLines(req)}
-Original prompt: "${req.prompt}"
+  const dur = req.targetDurationSeconds ?? 60;
+  const toneInstruction = TONE_RULES[req.tone ?? "educational"] ?? TONE_RULES["educational"];
+  return `You are an expert short-form video scriptwriter for ${req.platform ?? "tiktok"}.
+Niche: ${req.niche ?? "general"} | Tone: ${req.tone ?? "educational"} | Style: ${req.style ?? "faceless_broll"} | Voice: ${req.voice ?? "default"}
+Audience: ${req.audience ?? "general viewers"}
+Original brief: "${req.prompt}"
+
 Production plan:
 ${plan.map((p, i) => `${i + 1}. ${p}`).join("\n")}
 
-Write a ${req.targetDurationSeconds ?? 60}-second narration script.
-Include [VISUAL: description] cues inline. Strong 3-second hook. Retention-oriented pacing. End with CTA.`;
+Tone instruction: ${toneInstruction}
+
+Write a ${dur}-second narration script using EXACTLY this structure with section markers:
+
+[HOOK]
+(12-18 words maximum. The single most pattern-interrupting sentence. No preamble. Start with the contrast, claim, or question.)
+
+[BODY]
+(${Math.round(dur * 0.6)}-second section. 3-4 sentences. Each increases stakes or deepens understanding. Insert [VISUAL: abstract description] cues after sentences needing visual emphasis.)
+
+[RESOLUTION]
+(8-10 seconds. Land the specific takeaway in 1-2 concrete, actionable sentences.)
+
+[CTA]
+(5-8 words. Direct and specific. Avoid 'like and subscribe'.)
+
+Output the full script with section markers intact. No other text.`;
 }
 
 function buildStoryboardPrompt(req: VideoJobRequest, scriptText: string): string {
-  return `You are a visual director for faceless short-form content.
-Extract 4-8 distinct visual scene descriptions from this script.
-Each should describe an abstract, cinematic, text-overlay scene for ${req.platform ?? "generic"}.
-${creativeBriefLines(req)}
-Script:
-${scriptText.slice(0, 1200)}
+  const isKinetic = req.style === "kinetic_text";
+  const styleNote = isKinetic
+    ? "Bold typography on dark or high-contrast backgrounds. Text appears in sync with narration. Minimal motion blur."
+    : "Abstract b-roll: particles, flowing light, slow-motion textures, data visualizations. No faces, no people.";
+  const colorMoods: Record<string, string> = {
+    contrarian: "high-contrast black and white with one sharp accent color (red or electric blue)",
+    urgent: "warm reds and amber, high saturation, strong vignette",
+    educational: "cool blues and greens, clean gradients, trustworthy palette",
+    cinematic: "desaturated with warm golden undertone, subtle film grain feel",
+    warm: "soft warm tones, gentle gradients, pastel highlights",
+    minimal: "pure black or white background, single color accent",
+  };
+  const colorMood = colorMoods[req.tone ?? "educational"] ?? colorMoods["educational"];
+  return `You are a visual director for ${isKinetic ? "kinetic typography" : "faceless b-roll"} short-form video.
+Platform: ${req.platform ?? "tiktok"} | Tone: ${req.tone ?? "educational"}
+Visual style: ${styleNote}
+Color palette direction: ${colorMood}
 
-List each scene on a new line starting with "- ".`;
+Script:
+${scriptText.slice(0, 1400)}
+
+Extract 5-7 visual scenes that map in sequence to the script's beats: HOOK → CONTEXT → INSIGHT → PROOF → CTA.
+
+For each scene, output on one line:
+- [SCENE N | BEAT] ${isKinetic ? 'Text: "exact words on screen" | ' : ""}Motion: [what moves and how] | Color: [dominant palette note] | Pacing: [fast cut / hold / slow fade]
+
+Be specific to this script's content. No generic descriptions.`;
 }
 
 function buildComfyWorkflow(
