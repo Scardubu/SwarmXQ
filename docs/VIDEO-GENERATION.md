@@ -262,16 +262,22 @@ Video pipeline runtime mode resolved
 ```
 
 If you want to prewarm manually (e.g. after a `killall ollama` while the API
-stays up), the exact curl is still supported:
+stays up), the exact curl is still supported. **Set `keep_alive` longer than
+the full pipeline wall time — ~8 min on CPU-only 16 GB hosts — so the model
+does not unload between stages:**
 
 ```bash
 curl -sS http://127.0.0.1:11434/api/generate \
-  -d '{"model":"instruct-phi4-lite-q4km-prod","prompt":"warm","stream":false,"keep_alive":"5m","options":{"num_predict":8,"num_ctx":2048}}'
+  -d '{"model":"instruct-phi4-lite-q4km-prod","prompt":"warm","stream":false,"keep_alive":"20m","options":{"num_predict":8,"num_ctx":2048}}'
 ```
 
 With a warm model, intent classification completes in ~14 s. Without it, the
-first request eats the cold-load window (V6.2.15 CPU-safe defaults now cover
-this: 30 s intent / 60 s planning / 90 s scripting / 120 s storyboard).
+first request eats the cold-load window and will exceed the 90 s ceiling for
+intent classification even at the CEILING value (default is 30 s; V6.2.15
+raised the ceiling to 90 s). Symptom: `TIMEOUT` in the intent stage on the
+first attempt; retry succeeds because the previous cold-load left the model
+partially cached — but only if the retry happens before Ollama's `KEEP_ALIVE`
+window expires (2 min default). Prefer explicit prewarm over relying on retry.
 
 The dashboard video page shows a **"Loading Model"** notice when a running or
 classifying job has been active for more than 30 seconds — this is the expected
