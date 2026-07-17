@@ -4,6 +4,44 @@
 
 ---
 
+## V6.2.20 — Backend Production Hardening (2026-07-17)
+
+### API — reliability and observability
+
+- **Global process error handlers** (`apps/swarmx-api/src/server.ts`): registered
+  `process.on("unhandledRejection")` and `process.on("uncaughtException")` before
+  the SIGTERM/SIGINT handlers. Both log at Pino `fatal` level and exit with code 1,
+  so unhandled promise rejections produce a structured trace rather than a silent
+  crash. Without these, the Node.js process terminated with no log entry and the
+  container log tail showed only an exit code.
+
+- **Rate-limit bucket eviction** (`apps/swarmx-api/src/routes/video.ts`): added
+  an unref'd `setInterval` (2 h period) that deletes Map keys whose entire
+  timestamp array has aged past the respective rate-limit window. Previously,
+  `captionScoreBuckets` and `jobSubmitBuckets` accumulated one key per unique
+  (or spoofed) IP address indefinitely — a slow in-process memory growth vector.
+
+- **Structured logging in adaptive-timeout** (`apps/swarmx-api/src/services/adaptive-timeout-config.ts`):
+  replaced 7 `console.warn / console.error / console.info / console.debug` calls
+  with structured Pino log calls via the new shared logger. Circuit-breaker trip
+  events now log at `error` level with indexed fields (`op`, `modelTag`, `failures`,
+  `windowMs`) so log aggregators can alert on repeated model failures. Soft-timeout
+  warnings and stream-guard timeouts log at `warn`.
+
+- **Shared logger module** (`apps/swarmx-api/src/lib/logger.ts`): new file
+  exporting a zero-dependency, Pino-compatible structured JSON logger for service
+  modules that do not have access to the Fastify `server.log` instance. Emits
+  NDJSON to stderr with the same `{level, time, pid, name, ...bindings, msg}`
+  schema Fastify's Pino uses, so log aggregators ingest both streams uniformly.
+  Interface matches `pino.Logger`, enabling a drop-in swap to real Pino later
+  without call-site changes.
+
+### Verification
+
+Quality gates: API tsc ✓ | adaptive-timeout-regression ✓ | workspace typecheck ✓ | dashboard build ✓ | `git diff --check` ✓.
+
+---
+
 ## V6.2.19 — Render Failed State (2026-07-17)
 
 ### Dashboard — 12th named runtime state

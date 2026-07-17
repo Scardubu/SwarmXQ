@@ -52,6 +52,7 @@ import type {
   OperationKey,
   TimeoutPressureLevel as PressureLevel,
 } from "@swarmx/types/operation-types";
+import { log } from "../lib/logger.js";
 
 export type { OperationKey, PressureLevel };
 
@@ -135,7 +136,7 @@ export async function withTimeout<T>(
     const softTimer = setTimeout(() => {
       softFired = true;
       onSoftWarning?.(label, softAt);
-      console.warn(`[adaptive-timeout] SOFT_WARNING op=${label} elapsed=${softAt}ms limit=${timeoutMs}ms`);
+      log.warn({ op: label, elapsedMs: softAt, limitMs: timeoutMs }, "adaptive-timeout soft-warning");
     }, softAt);
 
     const hardTimer = setTimeout(() => {
@@ -148,7 +149,7 @@ export async function withTimeout<T>(
         clearTimeout(softTimer);
         clearTimeout(hardTimer);
         if (!softFired && (label.includes("classify") || label.includes("routing"))) {
-          console.debug(`[adaptive-timeout] OK op=${label} within=${timeoutMs}ms`);
+          log.debug({ op: label, limitMs: timeoutMs }, "adaptive-timeout ok");
         }
         resolve(result);
       },
@@ -172,7 +173,7 @@ export function createStreamGuard(
   const reset = () => {
     clearTimeout(timerId);
     timerId = setTimeout(() => {
-      console.warn(`[stream-guard] STREAM_TIMEOUT op=${label} inactivity=${timeoutMs}ms`);
+      log.warn({ op: label, inactivityMs: timeoutMs }, "stream-guard timeout");
       onTimeout(label);
     }, timeoutMs);
   };
@@ -221,7 +222,7 @@ export function circuitState(modelKey: string): CircuitState {
     c.state = "half-open";
     c.successAfterHalfOpen = 0;
     const operator = resolveOperatorName(modelKey);
-    console.info(`[circuit-breaker] HALF_OPEN ${operator} (${resolveCanonicalTag(modelKey)})`);
+    log.info({ op: operator, modelTag: resolveCanonicalTag(modelKey) }, "circuit-breaker half-open");
   }
   return c.state;
 }
@@ -234,7 +235,7 @@ export function recordSuccess(modelKey: string): void {
       c.state = "closed";
       c.failures = 0;
       const operator = resolveOperatorName(modelKey);
-      console.info(`[circuit-breaker] CLOSED ${operator} (${resolveCanonicalTag(modelKey)}) recovered`);
+      log.info({ op: operator, modelTag: resolveCanonicalTag(modelKey) }, "circuit-breaker closed");
     }
   } else if (c.state === "closed") {
     c.failures = 0;
@@ -251,15 +252,15 @@ export function recordFailure(modelKey: string): void {
     c.state = "open";
     c.tripTs = now;
     const operator = resolveOperatorName(modelKey);
-    console.error(
-      `[circuit-breaker] TRIPPED ${operator} (${resolveCanonicalTag(modelKey)}) ` +
-      `failures=${c.failures} window=${CIRCUIT_WINDOW_MS}ms → fallback`
+    log.error(
+      { op: operator, modelTag: resolveCanonicalTag(modelKey), failures: c.failures, windowMs: CIRCUIT_WINDOW_MS },
+      "circuit-breaker tripped — fallback engaged",
     );
   } else if (c.state === "half-open") {
     c.state = "open";
     c.tripTs = now;
     const operator = resolveOperatorName(modelKey);
-    console.warn(`[circuit-breaker] RE_TRIPPED ${operator} failed in half-open state`);
+    log.warn({ op: operator }, "circuit-breaker re-tripped in half-open state");
   }
 }
 

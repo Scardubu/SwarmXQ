@@ -132,6 +132,19 @@ const jobSubmitRateLimit = Number.parseInt(
 ) || 10;
 const jobSubmitBuckets = new Map<string, number[]>();
 
+// Evict stale IP keys every 2 h so the Maps do not grow unbounded.
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, events] of captionScoreBuckets) {
+    if (events.length === 0 || events.every((ts) => now - ts > captionScoreRateWindowMs))
+      captionScoreBuckets.delete(key);
+  }
+  for (const [key, events] of jobSubmitBuckets) {
+    if (events.length === 0 || events.every((ts) => now - ts > jobSubmitRateWindowMs))
+      jobSubmitBuckets.delete(key);
+  }
+}, 2 * 60 * 60 * 1000).unref();
+
 function getConnectionKey(request: FastifyRequest): string {
   const forwarded = request.headers["x-forwarded-for"];
   if (typeof forwarded === "string" && forwarded.trim().length > 0) {
