@@ -107,6 +107,7 @@ import { generateLTXWorkflow } from "./video-workflows.js";
 import { scoreVirality } from "./virality-scorer.js";
 import { generateCaptionDraftWithValidation } from "./caption-generator.js";
 import { generateOllamaText } from "./ollama.js";
+import { log } from "../lib/logger.js";
 import { renderWithFfmpeg } from "./ffmpeg-video-renderer.js";
 import { sanitizeReasoningOutput } from "./reasoning-sanitizer.js";
 import {
@@ -861,9 +862,9 @@ export async function runOrchestration(
     // After the delay, re-check: if escalated to critical, fail fast.
     // If still high or recovered to normal, proceed (graceful degradation).
     if (pressure.pressureLevel === "high") {
-      console.warn(
-        `[video-orchestrator] Job ${jobId}: system pressure is HIGH — ` +
-        `delaying ${HIGH_PRESSURE_DELAY_MS}ms before pipeline start`
+      log.warn(
+        { jobId, delayMs: HIGH_PRESSURE_DELAY_MS },
+        "video-orchestrator system pressure HIGH — delaying pipeline start",
       );
       await new Promise<void>((resolve) => setTimeout(resolve, HIGH_PRESSURE_DELAY_MS));
 
@@ -876,8 +877,9 @@ export async function runOrchestration(
         );
       }
       // Still "high" or recovered to "normal" — proceed with degraded awareness
-      console.warn(
-        `[video-orchestrator] Job ${jobId}: pressure re-check → "${recheck.pressureLevel}", proceeding`
+      log.warn(
+        { jobId, pressureLevel: recheck.pressureLevel },
+        "video-orchestrator pressure re-check — proceeding",
       );
     }
 

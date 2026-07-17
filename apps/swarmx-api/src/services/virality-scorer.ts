@@ -9,6 +9,7 @@ import type {
   ViralitySignal,
 } from "@swarmx/types/video-types";
 import { ModelOrchestrator } from "./model-orchestrator.js";
+import { log } from "../lib/logger.js";
 import {
   getAdaptiveCallConfig,
   recordFailure,
@@ -177,7 +178,7 @@ async function parseOracleOutput(rawText: string): Promise<ViralitySignal | unde
 
 export async function scoreVirality(input: ViralityInput): Promise<ViralitySignal | undefined> {
   if (getAdaptiveCallConfig(ORACLE_TAG, "deep_reasoning").circuitOpen) {
-    console.warn("virality_oracle_circuit_open", { modelTag: ORACLE_TAG });
+    log.warn({ modelTag: ORACLE_TAG }, "virality-oracle circuit open — skipping scoring");
     return undefined;
   }
 

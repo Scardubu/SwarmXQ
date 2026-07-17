@@ -62,6 +62,7 @@
 
 import { readFileSync }        from "node:fs";
 import { readFile as readFileAsync } from "node:fs/promises";
+import { log } from "../lib/logger.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -558,9 +559,14 @@ export function startSwarmMonitor(
 
         // Broadcast topology changes immediately
         if (snap.topology !== _lastTopology) {
-          console.info(
-            `[swarm-monitor] TOPOLOGY_CHANGE ${_lastTopology ?? "init"} → ${snap.topology}` +
-            (snap.degraded && snap.degradeReasons.length ? ` reasons=[${snap.degradeReasons.join(", ")}]` : ""),
+          log.info(
+            {
+              from: _lastTopology ?? "init",
+              to: snap.topology,
+              degraded: snap.degraded,
+              reasons: snap.degradeReasons,
+            },
+            "swarm-monitor topology change",
           );
           _lastTopology = snap.topology;
           broadcastFn?.("swarm:topology_change", {
@@ -592,7 +598,7 @@ export function startSwarmMonitor(
           activeModel:    snap.metrics.activeModel,
         });
       } catch (err) {
-        console.error("[swarm-monitor] poll error:", err);
+        log.error({ err }, "swarm-monitor poll error");
       }
     })();
   }, pollIntervalMs);

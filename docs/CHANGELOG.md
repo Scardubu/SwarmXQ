@@ -4,6 +4,50 @@
 
 ---
 
+## V6.2.21 — Observability & Env Fail-Fast (2026-07-17)
+
+### API — structured logging sweep
+
+- **10 additional `console.*` calls migrated to shared logger** across six
+  service files:
+  - `virality-scorer.ts` (1): oracle circuit-open event now emits
+    `{modelTag}` at `warn` level.
+  - `swarm-pressure-monitor.ts` (2): topology change events emit
+    `{from, to, degraded, reasons}` at `info`; poll errors emit `{err}` at
+    `error` with full stack.
+  - `video-orchestrator.ts` (2): HIGH pressure backoff and re-check events
+    emit `{jobId, delayMs / pressureLevel}` at `warn`.
+  - `publishers/base-publisher.ts` (3): platform log helper now routes
+    every call through the shared logger with `{publisher, …sanitized}`
+    bindings; token/secret redaction is preserved.
+  - `video-workflows.ts` (1): SINGLE-14b lock enforcement emits at `info`.
+  - `video-queue.ts` (1): SINGLE-VIDEO LOCK override warning emits
+    `{configured}` at `warn`.
+- **Net result**: `grep -rn 'console\\.' apps/swarmx-api/src` returns zero
+  hits in `services/` and `routes/` (browser-side console usage in the
+  dashboard's error boundaries is unchanged and correct).
+
+### API — env fail-fast
+
+- **`src/lib/env.ts`** (new file): centralized Zod schema for the top ~15
+  API env vars (`SWARMX_API_PORT`, `SWARMX_API_HOST`, `NODE_ENV`,
+  `LOG_LEVEL`, `REDIS_URL`, `OLLAMA_*`, video-queue toggles, rate limits,
+  cleanup interval). Coerces string env values to typed numbers /
+  enums and applies sensible defaults.
+- **`server.ts`** now calls `loadEnv()` at startup before any other module
+  reads `process.env`. On invalid input (e.g. `SWARMX_API_PORT=abc`,
+  malformed URL), the process prints a formatted error listing every
+  invalid key path and exits with code 1 — no more silent misconfiguration
+  or crashes on first request.
+- Ad-hoc `process.env["…"] ?? default` reads at existing call sites are
+  left in place; new code should import from `./lib/env.js`.
+
+### Verification
+
+Quality gates: api tsc | types tsc | dashboard tsc | vitest (52 passed) | 4 API regressions | dashboard next build — all pass.
+
+---
+
 ## V6.2.20 — Backend Production Hardening (2026-07-17)
 
 ### API — reliability and observability

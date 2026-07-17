@@ -5,6 +5,7 @@
 
 import type { ComfyNode, ComfyWorkflow, FrameMath, VideoMode, VideoResolution } from "@swarmx/types/video-types";
 import { ModelOrchestrator } from "./model-orchestrator.js";
+import { log } from "../lib/logger.js";
 
 export interface WorkflowParams {
   seed: number;
@@ -192,7 +193,7 @@ export function generateWanT2VWorkflow(params: WorkflowParams): ComfyWorkflow {
 
 export function generateWanI2VWorkflow(params: WorkflowParams): ComfyWorkflow {
   void ModelOrchestrator.getInstance().evictIncompatible("synth-wan-i2v-14b").catch(() => undefined);
-  console.info("video_single_14b_lock_enforced");
+  log.info("video single-14b lock enforced");
 
   const frameMath = buildFrameMath(params);
   const nodes = baseNodes(params, "i2v");

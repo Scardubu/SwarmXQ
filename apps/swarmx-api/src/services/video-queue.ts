@@ -12,6 +12,7 @@
 import { randomUUID } from "node:crypto";
 import { Queue } from "bullmq";
 import { readdir } from "node:fs/promises";
+import { log } from "../lib/logger.js";
 import { resolve } from "node:path";
 import type {
   VideoJob,
@@ -178,8 +179,9 @@ export function startJob(id: string): VideoJob | null {
   ).length;
 
   if (CONFIGURED_CONCURRENCY > 1) {
-    console.warn(
-      `[video-queue] ignoring VIDEO_MAX_CONCURRENT_JOBS=${CONFIGURED_CONCURRENCY}; SINGLE-VIDEO LOCK enforced`,
+    log.warn(
+      { configured: CONFIGURED_CONCURRENCY },
+      "video-queue ignoring VIDEO_MAX_CONCURRENT_JOBS — SINGLE-VIDEO LOCK enforced",
     );
   }
 

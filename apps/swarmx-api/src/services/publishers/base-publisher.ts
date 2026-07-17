@@ -10,6 +10,7 @@ import type {
   VideoExportPlatform,
 } from "@swarmx/types/video-types";
 import type { VideoJob } from "../../types/video.js";
+import { log as sharedLog } from "../../lib/logger.js";
 
 export interface PublisherProfile {
   accountLabel: string;
@@ -84,16 +85,17 @@ export abstract class BaseVideoPublisher implements PlatformPublisher {
       Object.entries(ctx).filter(([key]) => !/token|secret|authorization/i.test(key)),
     );
 
+    const bindings = { publisher: this.platform, ...sanitized };
     switch (level) {
       case "error":
-        console.error(`[video-publisher:${this.platform}] ${msg}`, sanitized);
+        sharedLog.error(bindings, msg);
         break;
       case "warn":
-        console.warn(`[video-publisher:${this.platform}] ${msg}`, sanitized);
+        sharedLog.warn(bindings, msg);
         break;
       case "info":
       default:
-        console.info(`[video-publisher:${this.platform}] ${msg}`, sanitized);
+        sharedLog.info(bindings, msg);
         break;
     }
   }

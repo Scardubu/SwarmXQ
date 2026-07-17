@@ -76,6 +76,16 @@ import {
   isLowRamVideoMode,
   shouldAutoEnableLowRamMode,
 } from "./services/video-runtime-config.js";
+import { loadEnv } from "./lib/env.js";
+
+// Fail-fast on invalid env before any other module reads process.env.
+// Errors are formatted with the invalid key path so operators can fix quickly.
+try {
+  loadEnv();
+} catch (err) {
+  process.stderr.write(`[startup] ${(err as Error).message}\n`);
+  process.exit(1);
+}
 
 const PORT = Number.parseInt(process.env["SWARMX_API_PORT"] ?? "3001", 10);
 const HOST = process.env["SWARMX_API_HOST"] ?? "127.0.0.1";
