@@ -4,6 +4,43 @@
 
 ---
 
+## V6.2.18 — Video Review UX Polish (2026-07-17)
+
+### Dashboard — creative review surface
+
+- **Cold-start ETA countdown** (`components/video/VideoJobCard.tsx`): the
+  "Loading Model" hint now shows `~Ns remaining` derived from `elapsed`
+  (140 s cold-load target), then falls back to "warmup exceeded typical range"
+  once past 140 s. Reduces the cancel-during-cold-load anti-pattern that used to
+  waste the entire pipeline warm-up.
+
+- **Script section rendering** (`app/(dashboard)/video/[id]/page.tsx`): script
+  output now parses `[HOOK] / [BODY] / [RESOLUTION] / [CTA]` markers and renders
+  each block with a distinct left-accent color (warning / accent / success /
+  throttled). Raw script text without markers falls back to the previous
+  monospace block. Makes the four viral-structure beats scannable in a glance
+  during creative review.
+
+- **Full-caption char counter** (`components/video/CaptionEditor.tsx`): a badge
+  next to "Caption Draft" reports total length (`firstLine + body + CTA +
+  hashtags`) against the platform hard cap (2 200 chars for TikTok/Reels), with
+  amber styling once the 280-char in-feed soft cap is exceeded and red beyond
+  the hard cap. Helps creators avoid silent truncation before publish.
+
+- **Model tier reference** (`components/video/VideoJobForm.tsx`): the Model
+  selector now labels each option with its parameter count (`Auto (recommended)`,
+  `Fast (3.8B)`, `Worker/Supervisor/Reasoner (7B)`), and a collapsible reference
+  panel explains RAM requirements, cold-load timing, and the
+  "silently-ignored-in-LOW_RAM_MODE" fallback so tier selection is no longer
+  guesswork. Auto stays the default.
+
+### Verification
+
+Quality gates: dashboard tsc ✓ | lint ✓ | test 52/52 ✓ | API tsc ✓ |
+regression-check ✓ | production build 11/11 routes ✓ | `git diff --check` ✓.
+
+---
+
 ## V6.2.16 — Video Seeking, Rate Limiting, Tone Palette, Cleanup (2026-07-17)
 
 ### API — video serving and submission hardening

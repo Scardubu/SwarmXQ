@@ -13,6 +13,85 @@ import type { VideoExportPlatform } from "@swarmx/types/video-types";
 import { getVideoPublishPlatform } from "../../../../lib/video-dashboard";
 import VideoJobDetailLoading from "./loading";
 
+type ScriptSectionKey = "HOOK" | "BODY" | "RESOLUTION" | "CTA";
+
+const SCRIPT_SECTION_STYLES: Record<ScriptSectionKey, { label: string; className: string; accent: string }> = {
+  HOOK: {
+    label: "Hook",
+    className: "border-l-2 border-status-warning/60 bg-status-warning/8",
+    accent: "text-status-warning",
+  },
+  BODY: {
+    label: "Body",
+    className: "border-l-2 border-accent/60 bg-accent/8",
+    accent: "text-accent",
+  },
+  RESOLUTION: {
+    label: "Resolution",
+    className: "border-l-2 border-status-success/60 bg-status-success/8",
+    accent: "text-status-success",
+  },
+  CTA: {
+    label: "CTA",
+    className: "border-l-2 border-status-throttled/60 bg-status-throttled/8",
+    accent: "text-status-throttled",
+  },
+};
+
+/**
+ * Parse [HOOK]/[BODY]/[RESOLUTION]/[CTA] markers from raw script text.
+ * Returns null when no markers are present so the caller can fall back to
+ * showing the raw script — the pipeline always emits markers, but this
+ * keeps the UI safe for historical or partial outputs.
+ */
+function parseScriptSections(text: string): Array<{ key: ScriptSectionKey; content: string }> | null {
+  const pattern = /\[(HOOK|BODY|RESOLUTION|CTA)\]/g;
+  const matches: Array<{ key: ScriptSectionKey; index: number; endOfTag: number }> = [];
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text)) !== null) {
+    matches.push({ key: match[1] as ScriptSectionKey, index: match.index, endOfTag: match.index + match[0].length });
+  }
+  if (matches.length === 0) return null;
+
+  return matches.map((m, i) => {
+    const end = i + 1 < matches.length ? matches[i + 1]!.index : text.length;
+    return { key: m.key, content: text.slice(m.endOfTag, end).trim() };
+  });
+}
+
+function ScriptSectionView({ text }: { text: string }) {
+  const sections = useMemo(() => parseScriptSections(text), [text]);
+
+  if (!sections) {
+    return (
+      <p className="mt-1 whitespace-pre-wrap rounded border border-border bg-bg-surface p-3 text-xs leading-5 text-text-secondary">
+        {text}
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-1 space-y-2">
+      {sections.map((section, index) => {
+        const style = SCRIPT_SECTION_STYLES[section.key];
+        return (
+          <div
+            key={`${section.key}-${index}`}
+            className={`rounded-r border border-border/60 ${style.className} px-3 py-2`}
+          >
+            <p className={`text-[10px] font-mono uppercase tracking-wider ${style.accent}`}>
+              {style.label}
+            </p>
+            <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-text-secondary">
+              {section.content}
+            </p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function VideoJobDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -123,9 +202,7 @@ export default function VideoJobDetailPage() {
               {job.output.scriptText && (
                 <div className="mt-3">
                   <p className="text-xs font-medium text-text-secondary">Script</p>
-                  <p className="mt-1 whitespace-pre-wrap rounded border border-border bg-bg-surface p-3 text-xs leading-5 text-text-secondary">
-                    {job.output.scriptText}
-                  </p>
+                  <ScriptSectionView text={job.output.scriptText} />
                 </div>
               )}
               {job.output.storyboardFrames && job.output.storyboardFrames.length > 0 && (

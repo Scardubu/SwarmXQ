@@ -253,7 +253,8 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
 
         <PublishSummary job={job} />
 
-        {/* Loading Model hint — shown when model cold-start is likely (>30 s at first stage) */}
+        {/* Loading Model hint — shown when model cold-start is likely (>30 s at first stage).
+            Includes a live ETA countdown so operators don't cancel during the expected 100–140 s cold load. */}
         {elapsed != null && elapsed > 30 &&
           (job.status === "classifying" || job.status === "running") && (
             <p
@@ -261,7 +262,10 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
               role="status"
               aria-live="polite"
             >
-              Loading Model — first inference takes 100–140 s on cold Ollama. Wait; do not cancel.
+              Loading Model — cold Ollama load takes 100–140 s.{" "}
+              {elapsed < 140
+                ? <>~<span className="font-mono tabular-nums">{Math.max(0, 140 - elapsed)}s</span> remaining. Wait; do not cancel.</>
+                : <>Warmup exceeded typical range — first inference should complete shortly.</>}
             </p>
           )}
 

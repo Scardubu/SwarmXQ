@@ -219,14 +219,26 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
           onChange={setModelRoute}
           disabled={isSubmitting}
           options={[
-            { value: "auto", label: "Auto" },
-            { value: "fast", label: "Fast" },
-            { value: "worker", label: "Worker" },
-            { value: "supervisor", label: "Supervisor" },
-            { value: "reasoner", label: "Reasoner" },
+            { value: "auto", label: "Auto (recommended)" },
+            { value: "fast", label: "Fast (3.8B)" },
+            { value: "worker", label: "Worker (7B)" },
+            { value: "supervisor", label: "Supervisor (7B)" },
+            { value: "reasoner", label: "Reasoner (7B)" },
           ]}
         />
       </div>
+
+      <details className="group rounded border border-border/60 bg-bg-surface/40 px-3 py-2">
+        <summary className="flex cursor-pointer list-none items-center justify-between text-[10px] font-mono uppercase tracking-wider text-text-muted transition-colors hover:text-text-secondary">
+          <span>Model tier reference</span>
+          <span className="text-[10px] text-text-muted transition-transform group-open:rotate-180" aria-hidden="true">▾</span>
+        </summary>
+        <ul className="mt-2 space-y-1 text-[10px] leading-4 text-text-muted">
+          <li><strong className="text-text-secondary">Auto</strong> — pipeline picks the safe model for current RAM. On LOW_RAM hosts (&lt;6.2 GB free), all four text stages use Pilot-lite (3.8 B Q4). Cold load ~120 s, warm ~8 min end-to-end.</li>
+          <li><strong className="text-text-secondary">Fast</strong> — Pilot-lite for every stage. Needs ~3.3 GB. Best latency; simpler narrative.</li>
+          <li><strong className="text-text-secondary">Worker / Supervisor / Reasoner</strong> — 7 B tiers for richer planning &amp; scripting. Need ≥ 6.2 GB free. <em>Silently ignored in LOW_RAM_MODE</em>: the pipeline falls back to Pilot-lite instead of failing admission.</li>
+        </ul>
+      </details>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="flex min-w-0 flex-col gap-1.5">

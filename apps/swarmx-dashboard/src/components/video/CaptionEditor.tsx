@@ -9,7 +9,7 @@
 
 "use client";
 
-import { useState, useCallback, useRef, useTransition } from "react";
+import { useState, useCallback, useMemo, useRef, useTransition } from "react";
 import type { CaptionDraft, ViralitySignal, VideoExportPlatform } from "@swarmx/types/video-types";
 import { useVideoStore } from "../../stores/video";
 
@@ -218,15 +218,48 @@ export function CaptionEditor({
     draft.firstLine.trimStart().toLowerCase().startsWith(opener),
   );
 
+  // Platform-effective total: hook + body + CTA + hashtags (with "#" prefix + spaces).
+  // TikTok caps captions at ~2 200 chars but truncates ~150 in-feed; Reels ~2 200; YT Shorts ~100 for title.
+  const totalCaptionLen = useMemo(() => {
+    const hashtagText = [
+      ...draft.hashtags.broad,
+      ...draft.hashtags.niche,
+      ...draft.hashtags.trending,
+    ]
+      .map((t) => `#${t.replace(/^#/, "")}`)
+      .join(" ");
+    return countChars([draft.firstLine, draft.body, draft.cta, hashtagText].filter(Boolean).join("\n\n"));
+  }, [draft]);
+
+  const platformLimit = platform === "tiktok" ? 2200 : platform === "reels" ? 2200 : 2200;
+  const platformSoftLimit = 280;
+  const isOverSoft = totalCaptionLen > platformSoftLimit;
+  const isOverHard = totalCaptionLen > platformLimit;
+
   return (
     <section
       aria-label="Caption editor"
       className="rounded border border-border bg-bg-elevated p-4"
     >
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-xs font-mono text-text-secondary uppercase tracking-wider">
-          Caption Draft
-        </h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-xs font-mono text-text-secondary uppercase tracking-wider">
+            Caption Draft
+          </h3>
+          <span
+            className={`text-[10px] font-mono tabular-nums px-1.5 py-0.5 rounded border ${
+              isOverHard
+                ? "border-red-500/40 bg-red-500/10 text-red-400"
+                : isOverSoft
+                ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
+                : "border-border bg-bg-surface text-text-muted"
+            }`}
+            title={`Full caption length (hook + body + CTA + hashtags). Soft cap ${platformSoftLimit} (in-feed visibility); platform hard cap ${platformLimit}.`}
+            aria-label={`Full caption is ${totalCaptionLen} characters, platform limit ${platformLimit}`}
+          >
+            {totalCaptionLen}/{platformLimit}
+          </span>
+        </div>
         <div className="flex items-center gap-2">
           <button
             type="button"
