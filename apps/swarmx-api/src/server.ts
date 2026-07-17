@@ -68,6 +68,7 @@ import {
 import { startPyEventsPoller } from "./services/pyevents.js";
 import { startAgentSeedService } from "./services/agentSeed.js";
 import { startSwarmMonitor } from "./services/swarm-pressure-monitor.js";
+import { startVideoCleanup, stopVideoCleanup } from "./services/video-cleanup.js";
 import { ModelOrchestrator } from "./services/model-orchestrator.js";
 import {
   LOW_RAM_VIDEO_MODEL,
@@ -249,6 +250,7 @@ startV5MetricsPoller(server);
 startPyEventsPoller(server);       // [V5.9-FIX-05] bridge Python journal events to SSE
 startAgentSeedService(server);     // [V6.1-FIX-15] Seed idle agents from catalog on API boot.
 broadcastStartupSummary(server);   // [V6.1-ENH-01] Broadcast the Python startup summary to SSE clients after boot
+startVideoCleanup();               // Best-effort periodic removal of exports/artifacts older than TTL
 await startJournaldStream(server);
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
@@ -287,7 +289,10 @@ const shutdown = async (signal: string): Promise<void> => {
     server.log.error({ err }, "Error while closing server");
   }
 
-  // Step 3 — [APEX17-MOT-02] destroy orchestrator AFTER requests are drained
+  // Step 3 — stop cleanup timers (unref'd; won't block exit, but stop cleanly)
+  stopVideoCleanup();
+
+  // Step 4 — [APEX17-MOT-02] destroy orchestrator AFTER requests are drained
   // Uses getInstance() directly: the singleton already exists from init() above.
   // This avoids relying on closure-over-const temporal ordering (see [API-FIX-04]).
   try {
@@ -297,7 +302,7 @@ const shutdown = async (signal: string): Promise<void> => {
     server.log.warn({ err }, "ModelOrchestrator destroy failed — continuing shutdown");
   }
 
-  // Step 4 — exit cleanly
+  // Step 5 — exit cleanly
   process.exit(0);
 };
 

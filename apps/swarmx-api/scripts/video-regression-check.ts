@@ -252,5 +252,94 @@ assert.ok(
   "preflight checks must appear before queue.enqueue() in the route handler",
 );
 
+// ── V6.2.16 — Rate limiting on POST /jobs ─────────────────────────────────────
+assert.ok(
+  routesSourceV2.includes("exceedsJobSubmitLimit"),
+  "video route must rate-limit POST /jobs via exceedsJobSubmitLimit()",
+);
+assert.ok(
+  routesSourceV2.includes("jobSubmitRateLimit"),
+  "video route must define a configurable jobSubmitRateLimit",
+);
+// Rate-limit check must precede both RAM check and preflight so we never
+// charge a submission slot for a request we'd reject anyway on RAM/preflight.
+const rateLimitPos = routesSourceV2.indexOf("exceedsJobSubmitLimit");
+const ramCheckPos  = routesSourceV2.indexOf("insufficient_ram_for_video");
+assert.ok(
+  rateLimitPos < ramCheckPos,
+  "rate-limit check must come before RAM check in the POST /jobs handler",
+);
+
+// ── V6.2.16 — Range request support in GET /files/:filename ──────────────────
+assert.ok(
+  routesSourceV2.includes("Content-Range"),
+  "video file route must emit Content-Range header for partial content",
+);
+assert.ok(
+  routesSourceV2.includes("Accept-Ranges"),
+  "video file route must advertise Accept-Ranges: bytes",
+);
+assert.ok(
+  routesSourceV2.includes("reply.status(206)"),
+  "video file route must respond 206 Partial Content for range requests",
+);
+assert.ok(
+  routesSourceV2.includes("range_not_satisfiable"),
+  "video file route must return 416 Range Not Satisfiable for invalid ranges",
+);
+
+// ── V6.2.16 — FFmpeg renderer: tone palette and script-section extraction ────
+const rendererSource = await readFile(new URL("../src/services/ffmpeg-video-renderer.ts", import.meta.url), "utf8");
+assert.ok(
+  rendererSource.includes("TONE_BACKGROUNDS"),
+  "renderer must define tone-based background palette",
+);
+assert.ok(
+  rendererSource.includes("TONE_ACCENTS"),
+  "renderer must define tone-based accent colors for progress bar",
+);
+assert.ok(
+  rendererSource.includes("CAPTION_STYLE_CONFIGS"),
+  "renderer must define per-captionStyle layout configs",
+);
+assert.ok(
+  rendererSource.includes("extractScriptSections"),
+  "renderer must extract [HOOK]/[BODY]/[RESOLUTION]/[CTA] from script text",
+);
+assert.ok(
+  rendererSource.includes("fontSizeForText"),
+  "renderer must scale font size based on card text length",
+);
+// Progress bar drawn via drawbox with time-varying width expression.
+assert.ok(
+  rendererSource.includes("drawbox=x=0:y=ih-8"),
+  "renderer must emit an animated progress bar via drawbox",
+);
+
+// ── V6.2.16 — Export cleanup service ─────────────────────────────────────────
+const cleanupSource = await readFile(new URL("../src/services/video-cleanup.ts", import.meta.url), "utf8");
+assert.ok(
+  cleanupSource.includes("startVideoCleanup"),
+  "cleanup service must export startVideoCleanup()",
+);
+assert.ok(
+  cleanupSource.includes("stopVideoCleanup"),
+  "cleanup service must export stopVideoCleanup()",
+);
+assert.ok(
+  cleanupSource.includes("SWARMX_VIDEO_EXPORT_TTL_DAYS"),
+  "cleanup service TTL must be configurable via SWARMX_VIDEO_EXPORT_TTL_DAYS",
+);
+// Server must import and call the cleanup service.
+const serverSource2 = await readFile(new URL("../src/server.ts", import.meta.url), "utf8");
+assert.ok(
+  serverSource2.includes("startVideoCleanup()"),
+  "server must call startVideoCleanup() after pollers are started",
+);
+assert.ok(
+  serverSource2.includes("stopVideoCleanup()"),
+  "server must call stopVideoCleanup() during graceful shutdown",
+);
+
 console.log("video regression checks passed");
 process.exit(0);

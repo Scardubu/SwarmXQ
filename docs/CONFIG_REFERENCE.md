@@ -49,6 +49,9 @@ decisions use physical `MemAvailable` and report ZRAM separately.
 | `SWARMX_VIDEO_ALLOW_UNSTRUCTURED_INTENT` | unset | Set `1` only to continue when intent classification is not valid structured output. |
 | `SWARMX_VIDEO_LOW_RAM_MODE` | unset | Set `1` to force all video text stages through the 2.5 GB Pilot-lite profile; requires at least 3300 MB available RAM. |
 | `SWARMX_VIDEO_API_TOKEN` | unset | Optional bearer/API-key token for video write routes. |
+| `SWARMX_VIDEO_JOB_LIMIT_PER_HOUR` | `10` | Max video job submissions per connection per hour (sliding window). Returns 429 when exceeded. |
+| `SWARMX_VIDEO_EXPORT_TTL_DAYS` | `7` | Days after which rendered exports and artifacts are eligible for cleanup. Minimum 1. |
+| `SWARMX_VIDEO_CLEANUP_INTERVAL_MS` | `21600000` | How often the cleanup service scans for stale exports (ms). Minimum 60000. First run fires 30 s after startup. |
 
 **Stage timeouts** — since V6.2.15 the defaults are CPU-safe (they cover both cold-load latency on GPU and warm 3.8B Q4_K_M inference on CPU), so most operators do not need to override anything. Bounds still allow tightening for latency-sensitive GPU hosts or raising for very slow CPUs.
 

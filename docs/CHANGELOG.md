@@ -4,6 +4,80 @@
 
 ---
 
+## V6.2.16 — Video Seeking, Rate Limiting, Tone Palette, Cleanup (2026-07-17)
+
+### API — video serving and submission hardening
+
+- **HTTP Range request support** (`routes/video.ts`): `GET /api/video/files/:filename`
+  now handles `Range: bytes=N-M` requests and responds with `206 Partial Content` +
+  `Content-Range` / `Accept-Ranges: bytes`. Without this, the browser `<video
+  controls>` element could not seek — it reloaded from byte 0 on every scrub.
+  Invalid ranges return `416 Range Not Satisfiable`. Full-file requests also now
+  send `Accept-Ranges: bytes` and `Content-Length` so the browser can pre-compute
+  the seek bar.
+
+- **POST /jobs rate limiting** (`routes/video.ts`): sliding-window limiter
+  (default 10 submissions per connection per hour) applied before the RAM check
+  and preflight. Returns `429 rate_limited` when exceeded. Configurable via
+  `SWARMX_VIDEO_JOB_LIMIT_PER_HOUR`. Follows the same pattern as the existing
+  caption-score limiter. Queue capacity (`VIDEO_QUEUE_MAX_SIZE`) remains the
+  concurrency ceiling; the per-connection rate limit caps how fast a single
+  client can fill it.
+
+### API — FFmpeg renderer visual quality
+
+- **Tone-based visual palette** (`services/ffmpeg-video-renderer.ts`): background
+  color is now selected from `TONE_BACKGROUNDS` keyed by the job's `tone` field
+  (contrarian → near-black `0x0a0a0a`; educational → deep navy `0x070e1a`;
+  cinematic → charcoal; warm → dark brown; etc.). Replaces the single hardcoded
+  `0x111827` that applied regardless of creative direction.
+
+- **Animated progress bar**: a `drawbox` filter writes an accent-colored bar at
+  `y=ih-8` whose width grows linearly with video time (`w=trunc(iw*t/${duration})`).
+  Accent color comes from `TONE_ACCENTS` (e.g. educational → `3399ff`,
+  contrarian → `ff2222`). Gives viewers a passive sense of how much content remains.
+
+- **Caption style modes** (`CAPTION_STYLE_CONFIGS`): `bold_center` (default) keeps
+  text centered at middle; `lower_third` moves text to `y=h*0.72` with a higher box
+  opacity (0.78) for overlay readability; `minimal` uses a smaller font (38px) and
+  nearly transparent box (0.20). Font sizes also scale down automatically for long
+  card text (> 60 / 100 / 150 chars) so no card overflows the frame.
+
+- **Script-section-aware card extraction** (`extractScriptSections`): the renderer
+  now parses `[HOOK]`, `[BODY]`, `[RESOLUTION]`, `[CTA]` markers from the
+  orchestrator's script output and uses them as discrete cards. Inline `[VISUAL:…]`
+  cues are stripped before writing card text files. Previously all cards fell back
+  to generic fallback strings regardless of script content.
+
+- **FFmpeg output quality**: switched `-preset fast` + `-crf 23` + `-b:a 128k`
+  (was default preset, no CRF, no audio bitrate). Produces slightly smaller files
+  at equivalent perceptual quality. Frame rate raised from 24 to 30 fps.
+
+### API — operations
+
+- **Export and artifact cleanup** (`services/video-cleanup.ts`): new service
+  scans `SWARMX_VIDEO_EXPORT_DIR` and `SWARMX_VIDEO_ARTIFACT_DIR` on a
+  configurable interval (default 6 h) and removes entries older than
+  `SWARMX_VIDEO_EXPORT_TTL_DAYS` (default 7 days). First run fires 30 s after
+  API startup. Timers are `unref()`d so they never block process exit.
+  `startVideoCleanup()` / `stopVideoCleanup()` wired into `server.ts`.
+
+### Dashboard — UX
+
+- **Pipeline progress bar** (`components/video/VideoJobCard.tsx`): thin
+  `status-active`-colored bar under the status badge showing `overallProgress %`
+  with a smooth `transition-[width] duration-700` CSS animation. Visible only
+  while the job is `running` and progress > 0; includes ARIA `role=progressbar`
+  with `aria-valuenow/min/max` attributes.
+
+### Tests
+
+- `video-regression-check.ts` extended: rate-limit position check (before RAM
+  check), Range / Accept-Ranges / 206 / 416 source assertions, renderer palette
+  and progress-bar assertions, cleanup export assertions, server wiring assertions.
+
+---
+
 ## V6.2.15 — Zero-Config Video Pipeline, SSE Terminal Close, UX Polish (2026-07-17)
 
 ### API — video pipeline zero-config on any host

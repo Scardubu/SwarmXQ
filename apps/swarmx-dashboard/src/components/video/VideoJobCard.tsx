@@ -237,6 +237,16 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
           </div>
         </div>
 
+        {/* Progress bar — visible while running, animates smoothly */}
+        {job.status === "running" && job.overallProgress != null && job.overallProgress > 0 && (
+          <div className="relative h-1 w-full overflow-hidden rounded-full bg-border/60" role="progressbar" aria-valuenow={job.overallProgress} aria-valuemin={0} aria-valuemax={100} aria-label="Overall pipeline progress">
+            <div
+              className="h-full rounded-full bg-status-active transition-[width] duration-700 ease-out"
+              style={{ width: `${job.overallProgress}%` }}
+            />
+          </div>
+        )}
+
         {/* Timeline — uses VideoJobTimeline (compact mode) */}
         {/* FIX: No more duplicated inline stage rendering logic here */}
         <VideoJobTimeline job={job} compact />

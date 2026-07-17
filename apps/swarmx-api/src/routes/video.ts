@@ -12,6 +12,7 @@
 
 import type { FastifyInstance, FastifyPluginOptions, FastifyReply, FastifyRequest } from "fastify";
 import { createReadStream, existsSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -124,6 +125,13 @@ const captionScoreRateLimit = Number.parseInt(
 ) || 10;
 const captionScoreBuckets = new Map<string, number[]>();
 
+const jobSubmitRateWindowMs = 60_000 * 60; // 1 hour sliding window
+const jobSubmitRateLimit = Number.parseInt(
+  process.env["SWARMX_VIDEO_JOB_LIMIT_PER_HOUR"] ?? "10",
+  10,
+) || 10;
+const jobSubmitBuckets = new Map<string, number[]>();
+
 function getConnectionKey(request: FastifyRequest): string {
   const forwarded = request.headers["x-forwarded-for"];
   if (typeof forwarded === "string" && forwarded.trim().length > 0) {
@@ -141,6 +149,18 @@ function exceedsCaptionScoreLimit(connectionKey: string, nowMs: number): boolean
   }
   inWindow.push(nowMs);
   captionScoreBuckets.set(connectionKey, inWindow);
+  return false;
+}
+
+function exceedsJobSubmitLimit(connectionKey: string, nowMs: number): boolean {
+  const events = jobSubmitBuckets.get(connectionKey) ?? [];
+  const inWindow = events.filter((ts) => nowMs - ts <= jobSubmitRateWindowMs);
+  if (inWindow.length >= jobSubmitRateLimit) {
+    jobSubmitBuckets.set(connectionKey, inWindow);
+    return true;
+  }
+  inWindow.push(nowMs);
+  jobSubmitBuckets.set(connectionKey, inWindow);
   return false;
 }
 
@@ -316,6 +336,15 @@ export async function videoRoutes(
       },
     },
     async (request, reply) => {
+      const nowMs = Date.now();
+      const connectionKey = getConnectionKey(request);
+      if (exceedsJobSubmitLimit(connectionKey, nowMs)) {
+        return reply.status(429).send({
+          error: "rate_limited",
+          message: `Video job submissions are limited to ${jobSubmitRateLimit} per hour per connection`,
+        });
+      }
+
       const availableMb = getAvailableRamMb();
       const minimumRequired = minimumRamRequiredForVideoRequest(request.body);
       if (availableMb < minimumRequired) {
@@ -978,8 +1007,54 @@ export async function videoRoutes(
       }
 
       const ext = filename.split(".").pop()?.toLowerCase();
-      const contentType =
-        ext === "webm" ? "video/webm" : "video/mp4";
+      const contentType = ext === "webm" ? "video/webm" : "video/mp4";
+
+      let fileSize: number;
+      try {
+        const fileStat = await stat(filePath);
+        fileSize = fileStat.size;
+      } catch {
+        return reply.status(404).send({ error: "not_found" });
+      }
+
+      // Range request support — browsers require 206 Partial Content for
+      // video seeking. Without it, the <video> element loads from the start
+      // on every seek, making scrubbing unresponsive.
+      const rangeHeader = request.headers.range;
+      if (rangeHeader) {
+        const match = /bytes=(\d*)-(\d*)/.exec(rangeHeader);
+        const rawStart = match?.[1] ? Number.parseInt(match[1], 10) : 0;
+        const rawEnd = match?.[2] ? Number.parseInt(match[2], 10) : fileSize - 1;
+        const start = Math.max(0, rawStart);
+        const end = Math.min(fileSize - 1, rawEnd);
+
+        if (start > end || start >= fileSize) {
+          reply.header("Content-Range", `bytes */${fileSize}`);
+          return reply.status(416).send({ error: "range_not_satisfiable" });
+        }
+
+        reply.header("Content-Range", `bytes ${start}-${end}/${fileSize}`);
+        reply.header("Content-Length", String(end - start + 1));
+        reply.header("Accept-Ranges", "bytes");
+        reply.header("Content-Type", contentType);
+        reply.header("Cache-Control", "public, max-age=3600");
+
+        const stream = createReadStream(filePath, { start, end });
+        stream.on("error", (error) => {
+          if (!reply.raw.headersSent) {
+            void reply.status(500).send({ error: "stream_error" });
+            return;
+          }
+          reply.raw.destroy(error as Error);
+        });
+        return reply.status(206).send(stream);
+      }
+
+      // No Range header — serve the full file.
+      reply.header("Content-Length", String(fileSize));
+      reply.header("Accept-Ranges", "bytes");
+      reply.header("Content-Type", contentType);
+      reply.header("Cache-Control", "public, max-age=3600");
 
       const stream = createReadStream(filePath);
       stream.on("error", (error) => {
@@ -994,9 +1069,6 @@ export async function videoRoutes(
         }
         reply.raw.destroy(error as Error);
       });
-
-      reply.header("Content-Type", contentType);
-      reply.header("Cache-Control", "public, max-age=3600");
       return reply.send(stream);
     }
   );
