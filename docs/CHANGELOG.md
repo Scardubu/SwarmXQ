@@ -4,6 +4,104 @@
 
 ---
 
+## V6.2.15 — Zero-Config Video Pipeline, SSE Terminal Close, UX Polish (2026-07-17)
+
+### API — video pipeline zero-config on any host
+
+- **CPU-safe stage timeout defaults** (`services/video-runtime-config.ts`):
+  raised `STAGE_TIMEOUT_DEFAULTS` from GPU-tuned values (4/15/35/60 s) to values
+  that clear both cold-load latency on GPU (5–15 s) and warm CPU inference on
+  a 3.8B Q4_K_M model (14/60/110/150 s):
+  - `intent_classification`: 4 000 → 30 000 ms
+  - `planning`: 15 000 → 60 000 ms
+  - `scripting`: 35 000 → 90 000 ms
+  - `storyboard_generation`: 60 000 → 120 000 ms
+  Env overrides via `VIDEO_*_TIMEOUT_MS` still work and are clamped by the same
+  `STAGE_TIMEOUT_BOUNDS`. This removes the "job times out at 4 s on the first
+  stage" failure mode that every CPU-only host hit on first-run.
+
+- **LOW_RAM_MODE auto-detection** (`services/video-runtime-config.ts`,
+  `server.ts`): new exports `detectAvailableMemoryMb()` +
+  `shouldAutoEnableLowRamMode()` + `FULL_PIPELINE_MIN_AVAILABLE_MB` (6170).
+  Server startup sets `SWARMX_VIDEO_LOW_RAM_MODE=1` automatically when
+  `MemAvailable < 6170 MB` and the operator has not set an explicit value.
+  Explicit env value always wins.
+
+- **Boot-time model prewarm** (`server.ts`): when `LOW_RAM_MODE` is active,
+  the API fires a fire-and-forget `/api/generate` warmup for
+  `instruct-phi4-lite-q4km-prod` right after `ModelOrchestrator.init()`. Moves
+  the 100–140 s CPU cold-load off the first user submission.
+
+- **Runtime mode log** (`server.ts`): one-line startup log
+  (`{ lowRamMode, availableMb, videoModel }`) makes cold-start audits and
+  incident response trivial — no more guessing which pipeline is active.
+
+- **SSE terminal-state close** (`routes/video.ts`): the `/jobs/:id/sse`
+  handler now closes cleanly when a job is already terminal at subscription
+  time, and auto-closes when it forwards a `video:completed`/`failed`/
+  `cancelled` event. Prevents leaked sockets and idle load-balancer
+  connections when clients tail a finished job.
+
+### Dashboard — error hygiene + a11y
+
+- **safeErrorMessage adoption** (`components/video/VideoJobCard.tsx`,
+  `components/video/VideoJobTimeline.tsx`): raw `job.error.message` reads
+  routed through `safeErrorMessage()` — same path leak / oversized-internal
+  guards used elsewhere.
+
+- **sanitizeApiError TypeError hardening** (`stores/video.ts`): guard
+  `err.message` access with `typeof err.message === "string"` to avoid a
+  runtime crash on TypeError subclasses that omit `message`.
+
+- **Composer ThinkingIndicator** (`app/(dashboard)/composer/page.tsx`):
+  added `aria-label` that includes elapsed seconds so screen readers
+  announce meaningful progress; marked the pulsing dots and bot icon
+  `aria-hidden` so they aren't announced separately.
+
+- **Video queue skeleton** (`app/(dashboard)/video/page.tsx`): added a
+  visible "Loading video jobs…" label above the skeleton stack so sighted
+  users get the same context as screen-reader users.
+
+### Tests
+
+- `video-regression-check.ts` extended: locks in the new CPU-safe stage
+  timeout defaults, asserts `shouldAutoEnableLowRamMode()` never overrides
+  an explicit env value, asserts the SSE handler references `isTerminalStatus`
+  and terminal event strings, and asserts `server.ts` wires the auto-detect
+  helper. Dashboard: 49 tests still green.
+
+---
+
+## V6.2.14 — Intent parser tolerates split ARC/TAKEAWAY keys; CPU timeout docs (2026-07-16)
+
+- **`parseIntentClassification`** (`services/video-orchestrator.ts`): the
+  3.8B Q4_K_M model consistently emits `ARC` and `TAKEAWAY` as separate
+  top-level JSON keys and omits `complexity`, tripping schema validation
+  on every first-video attempt. Parser now repacks split keys into the
+  `intent` string and defaults `complexity` to `0.5` when absent.
+- **CONFIG_REFERENCE.md**: documented `VIDEO_*_TIMEOUT_MS` stage timeout
+  table with GPU vs CPU-only ceiling values.
+- First video generated end-to-end on the 16 GB CPU host: `h264 720×1280`,
+  30.00 s, AAC audio, 361 KB, 8.2 min wall time.
+
+---
+
+## V6.2.13 — React #185, CORS preflight, error sanitization, runtime gitignore (2026-07-16)
+
+- **VideoJobDetail React #185 crash**: object-literal Zustand selector
+  `(s) => ({...})` triggered React 19's `useSyncExternalStore` tearing
+  detection → infinite re-render. Replaced with five stable scalar
+  selectors.
+- **CORS `allowedHeaders`** now includes `x-video-api-key` — preflight
+  on authenticated POST /api/video/jobs no longer fails when the token is
+  set.
+- **`safeErrorMessage` adoption in composer**: two raw `err.message`
+  exposures replaced.
+- **Runtime state gitignore**: `.swarmx/evolution-layer/` and
+  `apps/**/.swarmx/video/` excluded; untracked `latest.json`.
+
+---
+
 ## V6.2.12 — Dashboard Polling Compliance, Prompt Guidance, Virality Notice, Docs Sync (2026-07-16)
 
 ### Dashboard

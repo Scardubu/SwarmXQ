@@ -69,10 +69,22 @@ import { startPyEventsPoller } from "./services/pyevents.js";
 import { startAgentSeedService } from "./services/agentSeed.js";
 import { startSwarmMonitor } from "./services/swarm-pressure-monitor.js";
 import { ModelOrchestrator } from "./services/model-orchestrator.js";
+import {
+  LOW_RAM_VIDEO_MODEL,
+  detectAvailableMemoryMb,
+  isLowRamVideoMode,
+  shouldAutoEnableLowRamMode,
+} from "./services/video-runtime-config.js";
 
 const PORT = Number.parseInt(process.env["SWARMX_API_PORT"] ?? "3001", 10);
 const HOST = process.env["SWARMX_API_HOST"] ?? "127.0.0.1";
 const IS_PRODUCTION = (process.env["NODE_ENV"] ?? "production") === "production";
+
+// Auto-enable LOW_RAM_MODE when physical RAM is below the full-7B threshold.
+// Runs at boot before any video job is admitted; explicit env value wins.
+if (shouldAutoEnableLowRamMode()) {
+  process.env["SWARMX_VIDEO_LOW_RAM_MODE"] = "1";
+}
 
 // ── [API-FIX-03] Build CORS origin list from environment only ───────────────
 //
@@ -188,6 +200,36 @@ try {
     { ultraRouter: process.env["SWARM_MODEL_ULTRA_ROUTER"] ?? "route-phi4-lite-q4km-prod" },
     "ModelOrchestrator initialized — SINGLE-7B LOCK active",
   );
+
+  // Video runtime mode summary — one line, actionable on cold-start audits.
+  server.log.info(
+    {
+      lowRamMode: isLowRamVideoMode(),
+      availableMb: detectAvailableMemoryMb(),
+      videoModel: isLowRamVideoMode() ? LOW_RAM_VIDEO_MODEL : "default (7B planning path)",
+    },
+    "Video pipeline runtime mode resolved",
+  );
+
+  // Fire-and-forget prewarm of the Pilot text model when low-RAM mode is
+  // active. Cold model load on CPU takes 100–140 s and blocks the first job's
+  // intent stage; warming during boot moves that latency off the user path.
+  if (isLowRamVideoMode()) {
+    const ollamaUrl = process.env["SWARMX_OLLAMA_URL"] ?? "http://127.0.0.1:11434";
+    void fetch(`${ollamaUrl}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: LOW_RAM_VIDEO_MODEL,
+        prompt: "warm",
+        stream: false,
+        keep_alive: "10m",
+        options: { num_predict: 8, num_ctx: 2048 },
+      }),
+    })
+      .then(() => server.log.info({ model: LOW_RAM_VIDEO_MODEL }, "video model prewarm complete"))
+      .catch((err: unknown) => server.log.warn({ err, model: LOW_RAM_VIDEO_MODEL }, "video model prewarm skipped"));
+  }
 } catch (err) {
   server.log.warn({ err }, "ModelOrchestrator init failed — video pipeline may degrade");
 }

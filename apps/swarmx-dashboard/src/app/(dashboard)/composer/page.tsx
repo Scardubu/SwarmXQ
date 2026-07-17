@@ -268,15 +268,20 @@ function ThinkingIndicator({ startedAt }: { readonly startedAt: number }) {
   const elapsedSec = Math.floor(elapsedMs / 1000);
 
   return (
-    <div className="flex items-start gap-3 px-4 py-3 panel-enter" role="status" aria-live="polite">
+    <div
+      className="flex items-start gap-3 px-4 py-3 panel-enter"
+      role="status"
+      aria-live="polite"
+      aria-label={`Composer model thinking${elapsedSec > 2 ? `, ${elapsedSec} seconds elapsed` : ""}`}
+    >
       <div className="h-6 w-6 rounded-full bg-(--color-accent-dim) flex items-center justify-center shrink-0 mt-0.5">
-        <Bot className="h-3 w-3 text-accent animate-pulse" />
+        <Bot className="h-3 w-3 text-accent animate-pulse" aria-hidden="true" />
       </div>
       <div className="space-y-2">
         <div className="flex items-center gap-1.5 bg-bg-elevated border border-border rounded-lg px-3 py-2">
-          <div className="think-dot" />
-          <div className="think-dot" />
-          <div className="think-dot" />
+          <div className="think-dot" aria-hidden="true" />
+          <div className="think-dot" aria-hidden="true" />
+          <div className="think-dot" aria-hidden="true" />
           <span className="text-[10px] font-mono text-text-muted ml-1">
             thinking{elapsedSec > 2 ? ` · ${elapsedSec}s` : "…"}
           </span>

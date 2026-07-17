@@ -11,6 +11,7 @@
 import { CheckCircle2, XCircle } from "lucide-react";
 import type { VideoJob, VideoJobStage } from "../../lib/video-dashboard";
 import { VIDEO_JOB_STAGE_ORDER, VIDEO_JOB_STAGE_LABELS } from "../../lib/video-dashboard";
+import { safeErrorMessage } from "@/lib/utils";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -191,7 +192,7 @@ export function VideoJobTimeline({ job, compact = false }: VideoJobTimelineProps
       {job.status === "failed" && job.error && (
         <div className="mt-1 rounded border border-status-error/35 bg-status-error/10 px-2.5 py-1.5">
           <p className="font-mono text-xs leading-snug text-status-error">
-            {job.error.code}: {job.error.message}
+            {job.error.code}: {safeErrorMessage(job.error.message, "See operator trace for details.")}
           </p>
           {job.error.retryable && (
             <p className="mt-0.5 text-[10px] text-status-error/75">Will retry automatically</p>

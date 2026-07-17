@@ -50,16 +50,20 @@ decisions use physical `MemAvailable` and report ZRAM separately.
 | `SWARMX_VIDEO_LOW_RAM_MODE` | unset | Set `1` to force all video text stages through the 2.5 GB Pilot-lite profile; requires at least 3300 MB available RAM. |
 | `SWARMX_VIDEO_API_TOKEN` | unset | Optional bearer/API-key token for video write routes. |
 
-**Stage timeouts** — defaults are calibrated for GPU inference. On a CPU-only host, set each to its ceiling value:
+**Stage timeouts** — since V6.2.15 the defaults are CPU-safe (they cover both cold-load latency on GPU and warm 3.8B Q4_K_M inference on CPU), so most operators do not need to override anything. Bounds still allow tightening for latency-sensitive GPU hosts or raising for very slow CPUs.
 
-| Variable | GPU default | CPU-only ceiling |
-| --- | --- | --- |
-| `VIDEO_INTENT_CLASSIFY_TIMEOUT_MS` | `4000` | `90000` |
-| `VIDEO_PLANNING_TIMEOUT_MS` | `15000` | `180000` |
-| `VIDEO_SCRIPTING_TIMEOUT_MS` | `35000` | `240000` |
-| `VIDEO_STORYBOARD_TIMEOUT_MS` | `60000` | `300000` |
+| Variable | V6.2.15 default | Ceiling (max) | Floor (min) |
+| --- | --- | --- | --- |
+| `VIDEO_INTENT_CLASSIFY_TIMEOUT_MS` | `30000` | `90000` | `1000` |
+| `VIDEO_PLANNING_TIMEOUT_MS` | `60000` | `180000` | `5000` |
+| `VIDEO_SCRIPTING_TIMEOUT_MS` | `90000` | `240000` | `10000` |
+| `VIDEO_STORYBOARD_TIMEOUT_MS` | `120000` | `300000` | `10000` |
+| `VIDEO_RENDER_TIMEOUT_MS` | `240000` | `900000` | `30000` |
+| `VIDEO_FINALIZING_TIMEOUT_MS` | `15000` | `60000` | `5000` |
 
-Add these to `apps/swarmx-api/.env.local` (gitignored) for a persistent CPU host configuration. All values are bounded by `STAGE_TIMEOUT_BOUNDS` in `video-runtime-config.ts` and accept overrides via env without any code change.
+**LOW_RAM_MODE auto-detection (V6.2.15)** — `SWARMX_VIDEO_LOW_RAM_MODE` is auto-enabled at API startup when `MemAvailable < 6170 MB` and the operator has not set an explicit value. Explicit `SWARMX_VIDEO_LOW_RAM_MODE=1` or `=0` always wins. When auto-enabled, the API also fires a fire-and-forget prewarm of `instruct-phi4-lite-q4km-prod` so the first user submission finds a warm model. A one-line startup log summarises the resolved mode: `{ lowRamMode, availableMb, videoModel }`.
+
+For persistent per-host overrides, use `apps/swarmx-api/.env.local` (gitignored).
 
 Required local binaries for production local renders:
 

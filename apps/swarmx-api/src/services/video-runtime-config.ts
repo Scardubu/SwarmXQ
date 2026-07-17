@@ -1,8 +1,12 @@
+import { readFileSync } from "node:fs";
 import { MODEL_OPERATOR_MAP, resolveCanonicalTag } from "@swarmx/types/operator-map";
 import type { VideoJobRequest, VideoJobStage } from "../types/video.js";
 
 export const LOW_RAM_VIDEO_MODEL = "instruct-phi4-lite-q4km-prod";
 export const VIDEO_RAM_RESERVE_MB = 800;
+
+/** Threshold below which the full 7B planning path cannot start safely. */
+export const FULL_PIPELINE_MIN_AVAILABLE_MB = 6170;
 
 export type TextVideoJobStage = Exclude<VideoJobStage, "render_assembly" | "finalizing">;
 
@@ -27,11 +31,14 @@ const TEXT_STAGE_MODEL_ENV: Record<TextVideoJobStage, string> = {
   storyboard_generation: "SWARMX_VIDEO_STORYBOARD_MODEL",
 };
 
+// Defaults sized so BOTH GPU (cold model load takes 5–15s) and CPU (warm 3.8B
+// Q4_K_M at ~5 tok/s) can complete each text stage without env overrides. GPU
+// hosts wanting tighter bounds can still override via VIDEO_*_TIMEOUT_MS.
 const STAGE_TIMEOUT_DEFAULTS: Record<VideoJobStage, number> = {
-  intent_classification: 4_000,
-  planning: 15_000,
-  scripting: 35_000,
-  storyboard_generation: 60_000,
+  intent_classification: 30_000,
+  planning: 60_000,
+  scripting: 90_000,
+  storyboard_generation: 120_000,
   render_assembly: 240_000,
   finalizing: 15_000,
 };
@@ -64,6 +71,29 @@ export function isTextVideoStage(stage: VideoJobStage): stage is TextVideoJobSta
 
 export function isLowRamVideoMode(): boolean {
   return process.env["SWARMX_VIDEO_LOW_RAM_MODE"] === "1";
+}
+
+/** Read /proc/meminfo once and return current physical RAM in MB, or null on non-Linux hosts. */
+export function detectAvailableMemoryMb(): number | null {
+  try {
+    const raw = readFileSync("/proc/meminfo", "utf8");
+    const availKb = Number(raw.match(/MemAvailable:\s+(\d+)\s+kB/)?.[1] ?? 0);
+    return availKb > 0 ? Math.floor(availKb / 1024) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Recommend LOW_RAM_MODE when the operator has NOT explicitly opted in or out
+ * and physical MemAvailable is below the full-7B admission threshold. Used by
+ * server startup to auto-configure CPU-constrained hosts; never overrides an
+ * explicit env value.
+ */
+export function shouldAutoEnableLowRamMode(): boolean {
+  if (process.env["SWARMX_VIDEO_LOW_RAM_MODE"]) return false;
+  const available = detectAvailableMemoryMb();
+  return available !== null && available < FULL_PIPELINE_MIN_AVAILABLE_MB;
 }
 
 export function readBoundedEnvInt(

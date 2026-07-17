@@ -3,9 +3,12 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
+  FULL_PIPELINE_MIN_AVAILABLE_MB,
   LOW_RAM_VIDEO_MODEL,
+  detectAvailableMemoryMb,
   minimumRamRequiredForVideoRequest,
   resolveVideoModelTag,
+  shouldAutoEnableLowRamMode,
   stageTimeoutMs,
 } from "../src/services/video-runtime-config.js";
 import { buildOllamaGenerateBody } from "../src/services/ollama.js";
@@ -50,6 +53,28 @@ process.env["VIDEO_PLANNING_TIMEOUT_MS"] = "999999";
 assert.equal(stageTimeoutMs("planning"), 180000);
 delete process.env["VIDEO_PLANNING_TIMEOUT_MS"];
 
+// V6.2.15 — new defaults are CPU-safe (cover cold-load latency on any host).
+delete process.env["VIDEO_INTENT_CLASSIFY_TIMEOUT_MS"];
+delete process.env["VIDEO_PLANNING_TIMEOUT_MS"];
+delete process.env["VIDEO_SCRIPTING_TIMEOUT_MS"];
+delete process.env["VIDEO_STORYBOARD_TIMEOUT_MS"];
+assert.equal(stageTimeoutMs("intent_classification"), 30_000);
+assert.equal(stageTimeoutMs("planning"), 60_000);
+assert.equal(stageTimeoutMs("scripting"), 90_000);
+assert.equal(stageTimeoutMs("storyboard_generation"), 120_000);
+
+// V6.2.15 — shouldAutoEnableLowRamMode never overrides an explicit env value.
+process.env["SWARMX_VIDEO_LOW_RAM_MODE"] = "0";
+assert.equal(shouldAutoEnableLowRamMode(), false, "explicit=0 must block auto-enable");
+process.env["SWARMX_VIDEO_LOW_RAM_MODE"] = "1";
+assert.equal(shouldAutoEnableLowRamMode(), false, "explicit=1 must block auto-enable (already forced)");
+delete process.env["SWARMX_VIDEO_LOW_RAM_MODE"];
+// Threshold constant is stable and referenced by docs.
+assert.equal(FULL_PIPELINE_MIN_AVAILABLE_MB, 6170);
+// detectAvailableMemoryMb returns a positive number on Linux, null elsewhere.
+const detected = detectAvailableMemoryMb();
+assert.ok(detected === null || (typeof detected === "number" && detected > 0));
+
 const body = buildOllamaGenerateBody({
   model: LOW_RAM_VIDEO_MODEL,
   prompt: "hello",
@@ -71,6 +96,14 @@ assert.equal(renderBody.includes('ctx.modelsUsed["render_assembly"]'), false);
 const routesSource = await readFile(new URL("../src/routes/video.ts", import.meta.url), "utf8");
 assert.ok(routesSource.includes('"/files/:filename"'));
 assert.equal(routesSource.includes('"/api/video/files/:filename"'), false);
+// V6.2.15 — SSE handler must close cleanly on terminal jobs, not hang forever.
+assert.ok(routesSource.includes("isTerminalStatus(job.status)"), "SSE must short-circuit on already-terminal jobs");
+assert.ok(routesSource.includes('event.type === "video:completed"'), "SSE must close on terminal lifecycle events");
+
+// V6.2.15 — server auto-configures LOW_RAM_MODE and prewarms video model on constrained hosts.
+const serverSource = await readFile(new URL("../src/server.ts", import.meta.url), "utf8");
+assert.ok(serverSource.includes("shouldAutoEnableLowRamMode()"), "server must auto-enable low-RAM mode");
+assert.ok(serverSource.includes("LOW_RAM_VIDEO_MODEL"), "server must reference the video prewarm model");
 
 const composerSource = await readFile(new URL("../src/routes/composer.ts", import.meta.url), "utf8");
 const preloadStart = composerSource.indexOf("function startModelPreload");

@@ -239,6 +239,9 @@ export default function VideoPage() {
 
             {isLoading && (
               <>
+                <p className="text-[10px] font-mono uppercase tracking-wider text-text-muted">
+                  Loading video jobs…
+                </p>
                 <JobSkeleton />
                 <JobSkeleton />
                 <JobSkeleton />

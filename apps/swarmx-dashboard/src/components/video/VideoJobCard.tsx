@@ -13,6 +13,7 @@ import { Download, X } from "lucide-react";
 import { useVideoStore } from "../../stores/video";
 import { VideoJobTimeline } from "./VideoJobTimeline";
 import { isTerminalVideoStatus, type VideoJob } from "../../lib/video-dashboard";
+import { safeErrorMessage } from "@/lib/utils";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -295,7 +296,8 @@ function buildStatusAnnouncement(job: VideoJob): string | null {
   }
 
   if (job.status === "failed") {
-    return `Video job failed: ${subject}${job.error?.message ? `. ${job.error.message}` : ""}`;
+    const detail = job.error ? safeErrorMessage(job.error.message, "") : "";
+    return `Video job failed: ${subject}${detail ? `. ${detail}` : ""}`;
   }
 
   if (job.status === "cancelled") {

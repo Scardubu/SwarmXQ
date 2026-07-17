@@ -17,6 +17,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
 import type { VideoJobRequest, VideoJobListQuery } from "../types/video.js";
+import { isTerminalStatus } from "../types/video.js";
 import * as queue from "../services/video-queue.js";
 import * as assets from "../services/video-assets.js";
 import { runOrchestration } from "../services/video-orchestrator.js";
@@ -449,7 +450,24 @@ export async function videoRoutes(
       });
 
       let closed = false;
+      let heartbeat: NodeJS.Timeout | undefined;
+
+      // Explicit terminate helper: close socket, iterator, and heartbeat exactly once.
       const jobEvents = queue.subscribeToJob(request.params.id)[Symbol.asyncIterator]();
+      const terminate = () => {
+        if (closed) return;
+        closed = true;
+        if (heartbeat) clearInterval(heartbeat);
+        void jobEvents.return?.();
+        try { reply.raw.end(); } catch { /* socket already gone */ }
+      };
+
+      // If the job is already terminal at subscription time, snapshot + close. No
+      // future events will fire, so keeping the stream open would leak the socket.
+      if (isTerminalStatus(job.status)) {
+        terminate();
+        return;
+      }
 
       const sseForwarder = (async () => {
         try {
@@ -459,6 +477,12 @@ export async function videoRoutes(
             const event = next.value;
             if (!event) continue;
             writeSseEvent(reply, event);
+            // Auto-close when we forward the terminal lifecycle event so clients
+            // (and load balancers) don't hold an idle connection open forever.
+            if (event.type === "video:completed" || event.type === "video:failed" || event.type === "video:cancelled") {
+              terminate();
+              break;
+            }
           }
         } catch {
           // The socket can close while the iterator is waiting for an event.
@@ -467,20 +491,15 @@ export async function videoRoutes(
         }
       })();
 
-      const heartbeat = setInterval(() => {
+      heartbeat = setInterval(() => {
         try {
           reply.raw.write(`: heartbeat ${Date.now()}\n\n`);
         } catch {
-          clearInterval(heartbeat);
-          closed = true;
+          terminate();
         }
       }, 15_000);
 
-      request.raw.on("close", () => {
-        closed = true;
-        clearInterval(heartbeat);
-        void jobEvents.return?.();
-      });
+      request.raw.on("close", terminate);
 
       void sseForwarder;
       await new Promise<void>((resolve) => {

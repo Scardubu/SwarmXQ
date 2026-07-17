@@ -248,21 +248,30 @@ If `SWARMX_VIDEO_API_TOKEN` is unset, the write routes remain open for local dev
 
 ### Prewarm the Pilot text model (CPU-only hosts)
 
-On a CPU-only 16 GB host the startup script prewarms the Relay model automatically,
-but the Pilot text model (`instruct-phi4-lite-q4km-prod`) used by `LOW_RAM_MODE` is
-not prewarmed at startup. Cold model load takes **100–140 seconds** and will consume
-most of the `intent_classification` timeout window.
+**V6.2.15**: automatic. When `SWARMX_VIDEO_LOW_RAM_MODE=1` is active — either
+explicitly or auto-detected on hosts where `MemAvailable < 6170 MB` — the API
+fires a fire-and-forget prewarm of `instruct-phi4-lite-q4km-prod` at startup
+right after `ModelOrchestrator.init()`. The 100–140 s cold load happens off
+the user path; the first video submission finds a warm model.
 
-Prewarm before submitting the first job:
+Auto-detection at boot logs one line so you can confirm the resolved mode:
+
+```text
+Video pipeline runtime mode resolved
+  { lowRamMode: true, availableMb: 8527, videoModel: "instruct-phi4-lite-q4km-prod" }
+```
+
+If you want to prewarm manually (e.g. after a `killall ollama` while the API
+stays up), the exact curl is still supported:
 
 ```bash
 curl -sS http://127.0.0.1:11434/api/generate \
   -d '{"model":"instruct-phi4-lite-q4km-prod","prompt":"warm","stream":false,"keep_alive":"5m","options":{"num_predict":8,"num_ctx":2048}}'
 ```
 
-Wait for the JSON response before opening the video form. With a warm model, intent
-classification completes in ~14 s. Without it, the stage may hit the 90 s timeout
-ceiling on the first attempt (then auto-retry with a warm model succeeds normally).
+With a warm model, intent classification completes in ~14 s. Without it, the
+first request eats the cold-load window (V6.2.15 CPU-safe defaults now cover
+this: 30 s intent / 60 s planning / 90 s scripting / 120 s storyboard).
 
 The dashboard video page shows a **"Loading Model"** notice when a running or
 classifying job has been active for more than 30 seconds — this is the expected
