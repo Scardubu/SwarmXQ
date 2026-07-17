@@ -60,7 +60,7 @@ export interface VideoActions {
   cancelJob: (jobId: string) => Promise<void>;
   publishJob: (jobId: string, input: { platform: "tiktok" | "reels" | "shorts" | "generic"; scheduledAt?: string }) => Promise<PublishResult | null>;
   recordJobSseStream: (jobId: string) => (() => void) | void;
-  retryFromStage: (jobId: string, stage: string) => Promise<void>;
+  retryFromStage: (jobId: string, stage: string) => Promise<boolean>;
   reorderQueue: (orderedIds: string[]) => Promise<void>;
   scoreCaption: (draft: CaptionDraft, platform: VideoExportPlatform) => Promise<ViralitySignal | null>;
 
@@ -375,8 +375,10 @@ export const useVideoStore = create<VideoStore>()(
             body: JSON.stringify({ fromStage: stage }),
           });
           await get().fetchJobDetail(jobId);
+          return true;
         } catch (err) {
           console.error("[VideoStore] retryFromStage failed:", err);
+          return false;
         }
       },
 

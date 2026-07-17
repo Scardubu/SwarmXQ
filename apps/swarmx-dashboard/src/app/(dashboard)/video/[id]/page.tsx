@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Clapperboard } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Clapperboard, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useVideoStore } from "../../../../stores/video";
 import { VideoJobTimeline } from "../../../../components/video/VideoJobTimeline";
@@ -10,7 +10,7 @@ import { ViralityMeter } from "../../../../components/video/ViralityMeter";
 import { CaptionEditor } from "../../../../components/video/CaptionEditor";
 import { PlatformPublishPanel } from "../../../../components/video/PlatformPublishPanel";
 import type { VideoExportPlatform } from "@swarmx/types/video-types";
-import { getVideoPublishPlatform } from "../../../../lib/video-dashboard";
+import { errorCodeHint, getVideoPublishPlatform } from "../../../../lib/video-dashboard";
 import VideoJobDetailLoading from "./loading";
 
 type ScriptSectionKey = "HOOK" | "BODY" | "RESOLUTION" | "CTA";
@@ -103,6 +103,7 @@ export default function VideoJobDetailPage() {
   const selectJob = useVideoStore((s) => s.selectJob);
   const publishJob = useVideoStore((s) => s.publishJob);
   const recordJobSseStream = useVideoStore((s) => s.recordJobSseStream);
+  const retryFromStage = useVideoStore((s) => s.retryFromStage);
 
   useEffect(() => {
     if (!id) return;
@@ -118,6 +119,9 @@ export default function VideoJobDetailPage() {
     () => job?.publishHistory ?? job?.outputArtifacts?.publishHistory ?? [],
     [job],
   );
+
+  const [retryError, setRetryError] = useState<string | null>(null);
+  const [retryInProgress, setRetryInProgress] = useState(false);
 
   if (!job) {
     return (
@@ -260,6 +264,73 @@ export default function VideoJobDetailPage() {
         </section>
 
         <section className="space-y-4">
+          {job.status === "failed" && (
+            <div
+              className="rounded border border-status-error/35 bg-status-error/10 p-4"
+              role="alert"
+              aria-label="Render failed"
+            >
+              <div className="flex items-start gap-2">
+                <AlertTriangle
+                  className="mt-0.5 h-4 w-4 shrink-0 text-status-error"
+                  aria-hidden="true"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-status-error">Render Failed</p>
+                  {job.error && (
+                    <>
+                      <p className="mt-1 font-mono text-xs text-status-error">{job.error.code}</p>
+                      <p className="mt-0.5 text-xs text-text-secondary">
+                        {errorCodeHint(job.error.code)}
+                      </p>
+                    </>
+                  )}
+                  {retryError && (
+                    <p className="mt-2 text-xs text-status-error" role="alert">{retryError}</p>
+                  )}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {job.error?.retryable && (
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        disabled={retryInProgress}
+                        onClick={async () => {
+                          setRetryError(null);
+                          setRetryInProgress(true);
+                          const stage = job.error?.stage ?? job.currentStage ?? "scripting";
+                          const ok = await retryFromStage(job.id, stage);
+                          if (!ok) {
+                            setRetryError(
+                              "Resume failed — use Resubmit to create a new job with the same settings."
+                            );
+                          }
+                          setRetryInProgress(false);
+                        }}
+                        aria-label="Retry job from the failed stage"
+                      >
+                        <RefreshCw
+                          className={`mr-1.5 h-3.5 w-3.5 ${retryInProgress ? "animate-spin" : ""}`}
+                          aria-hidden="true"
+                        />
+                        {retryInProgress ? "Retrying…" : "Retry from Stage"}
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => router.push("/video")}
+                      aria-label="Go back to queue and resubmit"
+                    >
+                      Resubmit
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {job.viralitySignal && (
             <div className="rounded border border-border bg-bg-elevated p-4">
               <ViralityMeter signal={job.viralitySignal} />

@@ -9,7 +9,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Download, X } from "lucide-react";
+import { Download, RefreshCw, X } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useVideoStore } from "../../stores/video";
 import { VideoJobTimeline } from "./VideoJobTimeline";
 import { isTerminalVideoStatus, type VideoJob } from "../../lib/video-dashboard";
@@ -71,7 +72,7 @@ const STATUS_MAP: Record<VideoJob["status"], { label: string; className: string 
     label: "Done",
     className: "border-status-success/35 bg-status-success/10 text-status-success",
   },
-  failed: { label: "Failed", className: "border-status-error/35 bg-status-error/10 text-status-error" },
+  failed: { label: "Render Failed", className: "border-status-error/35 bg-status-error/10 text-status-error" },
   cancelled: {
     label: "Cancelled",
     className: "border-border bg-bg-surface text-text-muted",
@@ -137,6 +138,7 @@ function PublishSummary({ job }: { job: VideoJob }) {
 
 export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
   const cancelJob = useVideoStore((s) => s.cancelJob);
+  const router = useRouter();
 
   const canCancel = job.status === "queued" || job.status === "running";
   const isComplete = job.status === "completed";
@@ -207,6 +209,24 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
           >
             <Download className="h-3.5 w-3.5" aria-hidden="true" />
           </a>
+        )}
+        {job.status === "failed" && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              router.push(`/video/${job.id}`);
+            }}
+            className="
+              rounded p-1 text-text-muted hover:bg-status-error/10 hover:text-status-error
+              transition-colors duration-150 opacity-0 group-hover:opacity-100 focus-visible:opacity-100
+              focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-status-error
+            "
+            title="View error and retry options"
+            aria-label={`View error and retry options for: ${job.request.prompt.slice(0, 40)}`}
+          >
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
         )}
       </div>
 
@@ -310,8 +330,9 @@ function buildStatusAnnouncement(job: VideoJob): string | null {
   }
 
   if (job.status === "failed") {
+    const code = job.error?.code ? ` [${job.error.code}]` : "";
     const detail = job.error ? safeErrorMessage(job.error.message, "") : "";
-    return `Video job failed: ${subject}${detail ? `. ${detail}` : ""}`;
+    return `Video job failed: ${subject}${code}${detail ? `. ${detail}` : ""}`;
   }
 
   if (job.status === "cancelled") {

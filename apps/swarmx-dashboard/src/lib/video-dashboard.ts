@@ -342,3 +342,24 @@ export function getVideoPublishPlatform(job: Pick<VideoJob, "request">): VideoEx
     ? "shorts"
     : job.request.platform ?? "generic";
 }
+
+export function errorCodeHint(code: string): string {
+  switch (code) {
+    case "RENDER_FAILED":             return "Render assembly stage failed. Check ffmpeg logs.";
+    case "TIMEOUT":                   return "Pipeline exceeded the allowed time limit.";
+    case "OLLAMA_UNAVAILABLE":        return "Ollama is not reachable. Ensure it is running on port 11434.";
+    case "SCRIPTING_FAILED":          return "Script generation failed. Check Ollama model availability.";
+    case "STORYBOARD_FAILED":         return "Storyboard generation failed. Check model state.";
+    case "FFMPEG_UNAVAILABLE":        return "ffmpeg not found. Install with: sudo apt install ffmpeg";
+    case "FFPROBE_UNAVAILABLE":       return "ffprobe not found. Install with: sudo apt install ffmpeg";
+    case "ESPEAK_UNAVAILABLE":        return "espeak-ng not found. Install with: sudo apt install espeak-ng";
+    case "ARTIFACT_MISSING":
+    case "ARTIFACT_EMPTY":
+    case "ARTIFACT_INVALID":          return "A required output file is missing or corrupt. Resubmit the job.";
+    case "FRAME_BUDGET_EXCEEDED":     return "Frame count exceeded the per-job budget. Reduce target duration.";
+    case "PRESSURE_CRITICAL":         return "System memory was critically low at failure time. Free RAM and retry.";
+    case "INTENT_VALIDATION_FAILED":  return "Prompt could not be classified. Try rephrasing it.";
+    case "CANCELLED_BY_USER":         return "Job was cancelled before completion.";
+    default:                          return "An unexpected error stopped the pipeline. Check operator trace.";
+  }
+}

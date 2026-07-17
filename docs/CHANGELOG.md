@@ -4,6 +4,44 @@
 
 ---
 
+## V6.2.19 — Render Failed State (2026-07-17)
+
+### Dashboard — 12th named runtime state
+
+- **"Render Failed" status label** (`components/video/VideoJobCard.tsx`): the
+  `STATUS_MAP` `failed` entry now uses the operator-language label "Render
+  Failed" instead of the generic "Failed", completing all 12 named runtime
+  states required by the definition of done.
+
+- **Error code display and retry icon in card** (`components/video/VideoJobCard.tsx`):
+  hovering or focusing a failed job card reveals a `RefreshCw` icon button that
+  navigates to the detail page where error code and retry options are surfaced.
+  The ARIA announcement (`buildStatusAnnouncement`) now includes the error code
+  token (e.g. `[RENDER_FAILED]`) alongside the safe error message.
+
+- **"Render Failed" panel in detail view**
+  (`app/(dashboard)/video/[id]/page.tsx`): failed jobs now render an explicit
+  `role="alert"` panel at the top of the right column showing the error code in
+  monospace, a one-line human-readable context hint (`errorCodeHint`), and
+  action buttons. "Retry from Stage" appears only when `job.error.retryable` is
+  true and calls `POST /api/video/jobs/:id/resume`; on API error it surfaces an
+  inline message directing the operator to Resubmit. "Resubmit" always appears
+  and navigates to `/video`.
+
+- **`errorCodeHint` helper** (`lib/video-dashboard.ts`): new exported pure
+  function mapping every known `VideoErrorCode` to a one-line operator-language
+  context string.
+
+- **`retryFromStage` return type** (`stores/video.ts`): changed from
+  `Promise<void>` to `Promise<boolean>` so the detail panel can detect API
+  failures without adding global error state.
+
+### Verification
+
+Quality gates: dashboard tsc ✓ | lint ✓ | test ✓ | API tsc ✓ | workspace typecheck ✓ | production build ✓ | regression-check ✓ | `git diff --check` ✓.
+
+---
+
 ## V6.2.18 — Video Review UX Polish (2026-07-17)
 
 ### Dashboard — creative review surface
