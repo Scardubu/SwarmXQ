@@ -9,6 +9,8 @@ import { Save, ExternalLink, AlertCircle } from "lucide-react";
 import { useEventsStore } from "@/stores/events";
 import { safeErrorMessage } from "@/lib/utils";
 import type { PressureLevel } from "@swarmx/types";
+import { useApiHealth } from "@/hooks/useApiHealth";
+import { RouteDegradedBanner } from "@/components/layout/RouteDegradedBanner";
 
 // ─── [APEX17-r8] Model Topology types ────────────────────────────────────────
 
@@ -284,6 +286,12 @@ function SettingsRow({
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
+  const governorState = useEventsStore((s) => s.governorState);
+  const startupSummary = useEventsStore((s) => s.startupSummary);
+  const apiHealth = useApiHealth();
+  const pressureLevel = governorState?.pressureLevel ?? startupSummary?.pressureLevel;
+  const availableMb = governorState?.availableMb ?? startupSummary?.availableMb ?? null;
+  const ollamaOnline = apiHealth.ollamaOnline ?? startupSummary?.ollamaReachable ?? null;
 
   const { data: config, isLoading } = useQuery<SwarmXConfig>({
     queryKey: ["swarmx-config"],
@@ -361,6 +369,16 @@ export default function SettingsPage() {
             </span>
           </div>
         )}
+      </div>
+
+      {/* Degraded state: shown when runtime pressure is high/critical or model runtime is offline */}
+      <div className="px-4 pt-3">
+        <RouteDegradedBanner
+          pressureLevel={pressureLevel}
+          availableMb={availableMb}
+          apiOnline={apiHealth.apiOnline}
+          ollamaOnline={ollamaOnline}
+        />
       </div>
 
       <ScrollArea className="flex-1">

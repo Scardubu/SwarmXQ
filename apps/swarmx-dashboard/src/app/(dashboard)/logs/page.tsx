@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Search, Download, ChevronDown } from "lucide-react";
 import type { LogEntry, LogLevel } from "@swarmx/types";
+import { useApiHealth } from "@/hooks/useApiHealth";
+import { RouteDegradedBanner } from "@/components/layout/RouteDegradedBanner";
 
 // ── Log level config ──────────────────────────────────────────────────────────
 
@@ -85,6 +87,12 @@ function passesLevelFilter(level: LogLevel, filter: LevelFilter): boolean {
 
 export default function LogsPage() {
   const logs = useEventsStore((s) => s.logs);
+  const governorState = useEventsStore((s) => s.governorState);
+  const startupSummary = useEventsStore((s) => s.startupSummary);
+  const apiHealth = useApiHealth();
+  const pressureLevel = governorState?.pressureLevel ?? startupSummary?.pressureLevel;
+  const availableMb = governorState?.availableMb ?? startupSummary?.availableMb ?? null;
+  const ollamaOnline = apiHealth.ollamaOnline ?? startupSummary?.ollamaReachable ?? null;
   const [search, setSearch] = useState("");
   const [levelFilter, setLevelFilter] = useState<LevelFilter>("all");
   const [follow, setFollow] = useState(true);
@@ -141,6 +149,15 @@ export default function LogsPage() {
 
   return (
     <div className="flex flex-col h-full">
+      <div className="px-4 pt-4">
+        <RouteDegradedBanner
+          pressureLevel={pressureLevel}
+          availableMb={availableMb}
+          apiOnline={apiHealth.apiOnline}
+          ollamaOnline={ollamaOnline}
+        />
+      </div>
+
       {/* Toolbar */}
       <div className="px-4 pt-4 pb-2 space-y-3 border-b border-border shrink-0">
         <div className="flex items-center justify-between">

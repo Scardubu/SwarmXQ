@@ -8,6 +8,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Server, MemoryStick, Cpu, HardDrive } from "lucide-react";
 import type { CgroupScopeMetrics } from "@swarmx/types";
+import { useApiHealth } from "@/hooks/useApiHealth";
+import { RouteDegradedBanner } from "@/components/layout/RouteDegradedBanner";
 
 const SYSTEMD_SKELETON_KEYS = ["sd-1", "sd-2", "sd-3", "sd-4", "sd-5", "sd-6", "sd-7", "sd-8"] as const;
 const SYSTEM_CARD_SKELETON_KEYS = ["card-1", "card-2", "card-3", "card-4", "card-5", "card-6"] as const;
@@ -480,10 +482,23 @@ function V5MetricsPanel() {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function SystemPage() {
+  const governorState = useEventsStore((s) => s.governorState);
+  const startupSummary = useEventsStore((s) => s.startupSummary);
+  const apiHealth = useApiHealth();
+  const pressureLevel = governorState?.pressureLevel ?? startupSummary?.pressureLevel;
+  const availableMb = governorState?.availableMb ?? startupSummary?.availableMb ?? null;
+  const ollamaOnline = apiHealth.ollamaOnline ?? startupSummary?.ollamaReachable ?? null;
+
   return (
     <div className="flex flex-col h-full">
-      <div className="px-4 pt-4 pb-2 border-b border-border">
+      <div className="px-4 pt-4 pb-2 border-b border-border space-y-2">
         <h1 className="text-sm font-mono font-semibold text-text-primary">Linux Substrate</h1>
+        <RouteDegradedBanner
+          pressureLevel={pressureLevel}
+          availableMb={availableMb}
+          apiOnline={apiHealth.apiOnline}
+          ollamaOnline={ollamaOnline}
+        />
       </div>
 
       <div className="flex-1 overflow-hidden">

@@ -10,39 +10,63 @@ import { describe, expect, it } from "vitest";
 import { sanitizeApiError, ApiError } from "@/stores/video";
 
 describe("sanitizeApiError", () => {
-  it("maps insufficient_ram_for_video to a calm memory guidance message", () => {
+  it("maps rate_limited to a Too Many Submissions message with hourly context", () => {
+    const err = new ApiError(429, "Rate limited", "rate_limited");
+    const msg = sanitizeApiError(err);
+    expect(msg).toContain("Too Many Submissions");
+    expect(msg).toContain("1 hour");
+    expect(msg).not.toContain("Rate limited");
+  });
+
+  it("maps generic 429 (unknown code) to a Too Many Submissions message", () => {
+    const err = new ApiError(429, "Too many requests", null);
+    const msg = sanitizeApiError(err);
+    expect(msg).toContain("Too Many Submissions");
+  });
+
+  it("maps insufficient_ram_for_video to an Admission Denied RAM message", () => {
     const err = new ApiError(503, "Insufficient RAM", "insufficient_ram_for_video");
     const msg = sanitizeApiError(err);
+    expect(msg).toContain("Admission Denied");
     expect(msg).toContain("RAM");
     expect(msg).not.toContain("503");
     expect(msg).not.toContain("Insufficient RAM");
   });
 
-  it("maps queue_full to a queue guidance message", () => {
+  it("maps admission_denied to an Admission Denied generic message", () => {
+    const err = new ApiError(422, "Admission denied", "admission_denied");
+    const msg = sanitizeApiError(err);
+    expect(msg).toContain("Admission Denied");
+    expect(msg).not.toContain("422");
+  });
+
+  it("maps queue_full to an Admission Denied queue message", () => {
     const err = new ApiError(503, "Queue is full", "queue_full");
     const msg = sanitizeApiError(err);
+    expect(msg).toContain("Admission Denied");
     expect(msg).toContain("queue");
     expect(msg).not.toContain("Queue is full");
   });
 
-  it("maps ffmpeg_unavailable to an install instruction", () => {
+  it("maps ffmpeg_unavailable to a Missing: ffmpeg message with install command", () => {
     const err = new ApiError(503, "ffmpeg not found", "ffmpeg_unavailable");
     const msg = sanitizeApiError(err);
-    expect(msg.toLowerCase()).toContain("ffmpeg");
+    expect(msg).toContain("Missing: ffmpeg");
     expect(msg).toContain("apt install");
   });
 
-  it("maps ffprobe_unavailable to an install instruction", () => {
+  it("maps ffprobe_unavailable to a Missing: ffprobe message with install command", () => {
     const err = new ApiError(503, "ffprobe not found", "ffprobe_unavailable");
     const msg = sanitizeApiError(err);
-    expect(msg.toLowerCase()).toContain("ffprobe");
+    expect(msg).toContain("Missing: ffprobe");
     expect(msg).toContain("apt install");
   });
 
-  it("maps espeak_unavailable to an install instruction", () => {
+  it("maps espeak_unavailable to a Missing: espeak-ng message with install command", () => {
     const err = new ApiError(503, "espeak not found", "espeak_unavailable");
     const msg = sanitizeApiError(err);
-    expect(msg).toContain("espeak-ng");
+    expect(msg).toContain("Missing: espeak-ng");
+    expect(msg).toContain("apt install");
   });
 
   it("maps unauthorized to a token guidance message", () => {

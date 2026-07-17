@@ -155,16 +155,20 @@ async function apiFetch<T>(
 export function sanitizeApiError(err: unknown, fallback = "Something went wrong. Check that the API and Ollama are running."): string {
   if (err instanceof ApiError) {
     switch (err.code) {
+      case "rate_limited":
+        return "Too Many Submissions — the hourly limit is reached. Wait ~1 hour before submitting again.";
       case "insufficient_ram_for_video":
-        return "Not enough available RAM to start a video job right now. Free some memory or wait for the current workload to finish.";
+        return "Admission Denied — not enough available RAM to start a video job. Free memory or wait for the current workload to finish.";
+      case "admission_denied":
+        return "Admission Denied — the job was rejected before queuing. Check RAM, queue depth, and binary availability.";
       case "queue_full":
-        return "The video queue is full. Wait for a job to complete before submitting another.";
+        return "Admission Denied — the video queue is full. Wait for a running job to complete before submitting another.";
       case "ffmpeg_unavailable":
-        return "FFmpeg is not installed on this host. Install it with: sudo apt install ffmpeg";
+        return "Missing: ffmpeg — install with: sudo apt install ffmpeg";
       case "ffprobe_unavailable":
-        return "FFprobe is not installed on this host. Install it with: sudo apt install ffmpeg";
+        return "Missing: ffprobe — install with: sudo apt install ffmpeg";
       case "espeak_unavailable":
-        return "espeak-ng is not installed and silent-audio mode is off. Install it with: sudo apt install espeak-ng";
+        return "Missing: espeak-ng — install with: sudo apt install espeak-ng";
       case "unauthorized":
         return "Video write access is not authorized. Check that NEXT_PUBLIC_SWARMX_VIDEO_API_TOKEN matches the API token.";
       case "queue_error":
@@ -173,7 +177,7 @@ export function sanitizeApiError(err: unknown, fallback = "Something went wrong.
         return "That video job is no longer available. Refresh the queue and try again.";
       default:
         if (err.status === 503) return "The API or a required service is temporarily unavailable. Retry in a moment.";
-        if (err.status === 429) return "Too many requests. Wait a moment before trying again.";
+        if (err.status === 429) return "Too Many Submissions — wait before retrying.";
         if (err.status === 409) return "This action cannot be performed on a job in its current state.";
         return fallback;
     }

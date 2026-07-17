@@ -12,6 +12,8 @@ import {
 } from "recharts";
 import { cn, formatPct, formatBps } from "@/lib/utils";
 import { useEventsStore } from "@/stores/events";
+import { useApiHealth } from "@/hooks/useApiHealth";
+import { RouteDegradedBanner } from "@/components/layout/RouteDegradedBanner";
 import type { AgentState, LogEntry } from "@swarmx/types";
 import { Zap, TrendingUp, TrendingDown, Minus, AlertTriangle, CheckCircle2, Brain } from "lucide-react";
 
@@ -896,8 +898,22 @@ function OOMPanel() {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function OverviewPage() {
+  const governorState = useEventsStore((s) => s.governorState);
+  const startupSummary = useEventsStore((s) => s.startupSummary);
+  const apiHealth = useApiHealth();
+  const pressureLevel = governorState?.pressureLevel ?? startupSummary?.pressureLevel;
+  const availableMb = governorState?.availableMb ?? startupSummary?.availableMb ?? null;
+  const ollamaOnline = apiHealth.ollamaOnline ?? startupSummary?.ollamaReachable ?? null;
+
   return (
     <div className="p-4 space-y-4">
+      <RouteDegradedBanner
+        pressureLevel={pressureLevel}
+        availableMb={availableMb}
+        apiOnline={apiHealth.apiOnline}
+        ollamaOnline={ollamaOnline}
+      />
+
       {/* AI Insight strip */}
       <InsightStrip />
 

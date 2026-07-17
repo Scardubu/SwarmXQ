@@ -10,6 +10,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Play, Square, GitBranch, ChevronRight, Activity, Hash, Clock3 } from "lucide-react";
 import type { BadgeProps } from "@/components/ui/badge";
 import type { WorkflowDefinition, WorkflowRunState } from "@swarmx/types";
+import { useApiHealth } from "@/hooks/useApiHealth";
+import { RouteDegradedBanner } from "@/components/layout/RouteDegradedBanner";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -527,9 +529,25 @@ function WorkflowDetail({ workflowId }: { readonly workflowId: string }) {
 export default function WorkflowsPage() {
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
   const handleSelect = React.useCallback((id: string) => setSelectedWorkflowId(id), []);
+  const governorState = useEventsStore((s) => s.governorState);
+  const startupSummary = useEventsStore((s) => s.startupSummary);
+  const apiHealth = useApiHealth();
+  const pressureLevel = governorState?.pressureLevel ?? startupSummary?.pressureLevel;
+  const availableMb = governorState?.availableMb ?? startupSummary?.availableMb ?? null;
+  const ollamaOnline = apiHealth.ollamaOnline ?? startupSummary?.ollamaReachable ?? null;
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full flex-col">
+      <div className="px-4 pt-4">
+        <RouteDegradedBanner
+          pressureLevel={pressureLevel}
+          availableMb={availableMb}
+          apiOnline={apiHealth.apiOnline}
+          ollamaOnline={ollamaOnline}
+        />
+      </div>
+
+      <div className="flex flex-1 overflow-hidden">
       {/* Sidebar */}
       <aside className="w-64 shrink-0 border-r border-border flex flex-col">
         <div className="px-4 py-3 border-b border-border flex items-center justify-between">
@@ -559,6 +577,7 @@ export default function WorkflowsPage() {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

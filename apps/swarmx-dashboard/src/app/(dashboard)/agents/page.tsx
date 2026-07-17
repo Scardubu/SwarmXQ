@@ -19,6 +19,8 @@ import {
 import { RefreshCw, Search, Terminal as TerminalIcon } from "lucide-react";
 import type { AgentState } from "@swarmx/types";
 import { useUIStore } from "@/stores/ui";
+import { useApiHealth } from "@/hooks/useApiHealth";
+import { RouteDegradedBanner } from "@/components/layout/RouteDegradedBanner";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -282,6 +284,12 @@ function AgentsPageContent() {
   const replaceAgents = useEventsStore((s) => s.replaceAgents);
   const agents = useMemo(() => [...agentsMap.values()], [agentsMap]);
   const searchParams = useSearchParams();
+  const governorState = useEventsStore((s) => s.governorState);
+  const startupSummary = useEventsStore((s) => s.startupSummary);
+  const apiHealth = useApiHealth();
+  const pressureLevel = governorState?.pressureLevel ?? startupSummary?.pressureLevel;
+  const availableMb = governorState?.availableMb ?? startupSummary?.availableMb ?? null;
+  const ollamaOnline = apiHealth.ollamaOnline ?? startupSummary?.ollamaReachable ?? null;
   // [V6.1-FIX-10] Local client state for uptime rendering.
   const [nowMs, setNowMs] = useState(() => Date.now());
 
@@ -406,6 +414,15 @@ function AgentsPageContent() {
 
   return (
     <div className="flex flex-col h-full">
+      <div className="px-4 pt-4">
+        <RouteDegradedBanner
+          pressureLevel={pressureLevel}
+          availableMb={availableMb}
+          apiOnline={apiHealth.apiOnline}
+          ollamaOnline={ollamaOnline}
+        />
+      </div>
+
       {/* Toolbar */}
       <div className="px-4 pt-4 pb-2 space-y-3 border-b border-border">
         <div className="flex items-center justify-between">
