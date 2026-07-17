@@ -409,15 +409,18 @@ export async function videoRoutes(
         return reply.status(503).send({ error: "queue_full", message });
       }
 
-      // Kick off orchestration asynchronously — do not await.
-      setImmediate(() => {
-        const started = queue.startJob(job.id);
-        if (started) {
-          void runOrchestration(job.id, broadcast).catch((err) => {
-            fastify.log.error({ err, jobId: job.id }, "video orchestration crashed");
-          });
-        }
-      });
+      // Kick off orchestration asynchronously (in-memory path only).
+      // When BullMQ is enabled the Worker handles dispatch instead.
+      if (!queue.isBullMQEnabled()) {
+        setImmediate(() => {
+          const started = queue.startJob(job.id);
+          if (started) {
+            void runOrchestration(job.id, broadcast).catch((err) => {
+              fastify.log.error({ err, jobId: job.id }, "video orchestration crashed");
+            });
+          }
+        });
+      }
 
       return reply.status(201).send({
         jobId: job.id,

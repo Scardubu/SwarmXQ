@@ -40,6 +40,7 @@
  *                 relying on closure-over-const temporal ordering.
  */
 
+import { createConnection } from "node:net";
 import Fastify from "fastify";
 import fastifyCors from "@fastify/cors";
 import fastifyHelmet from "@fastify/helmet";
@@ -69,6 +70,8 @@ import { startPyEventsPoller } from "./services/pyevents.js";
 import { startAgentSeedService } from "./services/agentSeed.js";
 import { startSwarmMonitor } from "./services/swarm-pressure-monitor.js";
 import { startVideoCleanup, stopVideoCleanup } from "./services/video-cleanup.js";
+import { setBullMQRuntimeEnabled } from "./services/video-queue.js";
+import { startVideoWorker, stopVideoWorker } from "./workers/video-worker.js";
 import { ModelOrchestrator } from "./services/model-orchestrator.js";
 import {
   LOW_RAM_VIDEO_MODEL,
@@ -263,6 +266,35 @@ broadcastStartupSummary(server);   // [V6.1-ENH-01] Broadcast the Python startup
 startVideoCleanup();               // Best-effort periodic removal of exports/artifacts older than TTL
 await startJournaldStream(server);
 
+// ── BullMQ Worker ─────────────────────────────────────────────────────────────
+// Probe Redis via TCP before starting the Worker. On failure: warn + fall back
+// to in-memory queue; never crash startup. The env default is "1" (enabled).
+{
+  const { SWARMX_VIDEO_USE_BULLMQ, REDIS_URL: probeUrl } = loadEnv();
+  if (SWARMX_VIDEO_USE_BULLMQ === "1") {
+    const redisReachable = await new Promise<boolean>((resolve) => {
+      const parsed = new URL(probeUrl);
+      const host = parsed.hostname;
+      const port = parseInt(parsed.port || "6379", 10);
+      const socket = createConnection({ host, port });
+      const timer = setTimeout(() => { socket.destroy(); resolve(false); }, 3_000);
+      socket.on("connect", () => { clearTimeout(timer); socket.destroy(); resolve(true); });
+      socket.on("error", () => { clearTimeout(timer); resolve(false); });
+    });
+
+    if (redisReachable) {
+      startVideoWorker();
+      server.log.info({ redis: probeUrl }, "bullmq: Redis reachable — Worker started");
+    } else {
+      setBullMQRuntimeEnabled(false);
+      server.log.warn(
+        { redis: probeUrl },
+        "bullmq: Redis unreachable — falling back to in-memory queue",
+      );
+    }
+  }
+}
+
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
 // tini (PID 1 in the container) forwards SIGTERM here. Fastify.close() drains
 // all in-flight requests before the process exits.
@@ -301,6 +333,13 @@ const shutdown = async (signal: string): Promise<void> => {
 
   // Step 3 — stop cleanup timers (unref'd; won't block exit, but stop cleanly)
   stopVideoCleanup();
+
+  // Step 3.5 — drain BullMQ Worker (waits for in-flight job to finish)
+  try {
+    await stopVideoWorker();
+  } catch (err) {
+    server.log.warn({ err }, "BullMQ Worker stop failed — continuing shutdown");
+  }
 
   // Step 4 — [APEX17-MOT-02] destroy orchestrator AFTER requests are drained
   // Uses getInstance() directly: the singleton already exists from init() above.

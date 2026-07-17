@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import { Queue } from "bullmq";
 import { readdir } from "node:fs/promises";
 import { log } from "../lib/logger.js";
+import { loadEnv } from "../lib/env.js";
 import { resolve } from "node:path";
 import type {
   VideoJob,
@@ -41,9 +42,25 @@ const JOB_TTL_MS = parseInt(
   process.env.VIDEO_JOB_TTL_MS ?? String(4 * 60 * 60 * 1000), // 4 h
   10
 );
-const VIDEO_QUEUE_NAME = process.env.SWARMX_VIDEO_QUEUE_NAME ?? "swarmx:video";
-const BULLMQ_ENABLED = process.env.SWARMX_VIDEO_USE_BULLMQ === "1";
+export const VIDEO_QUEUE_NAME = process.env.SWARMX_VIDEO_QUEUE_NAME ?? "swarmx-video";
 const REDIS_URL = process.env.REDIS_URL ?? "redis://127.0.0.1:6379";
+
+// Runtime override — set by server.ts after Redis health check.
+// null = not overridden; read from env schema. false = Redis unavailable fallback.
+let _bullmqOverride: boolean | null = null;
+
+export function setBullMQRuntimeEnabled(enabled: boolean): void {
+  _bullmqOverride = enabled;
+}
+
+export function isBullMQEnabled(): boolean {
+  if (_bullmqOverride !== null) return _bullmqOverride;
+  try {
+    return loadEnv().SWARMX_VIDEO_USE_BULLMQ === "1";
+  } catch {
+    return false;
+  }
+}
 const ARTIFACT_DIR = resolve(
   process.env.SWARMX_VIDEO_ARTIFACT_DIR ??
     resolve(process.cwd(), ".swarmx", "video", "artifacts"),
@@ -126,7 +143,7 @@ export function enqueue(request: VideoJobRequest): VideoJob {
 
   registry.set(job.id, job);
 
-  if (BULLMQ_ENABLED) {
+  if (isBullMQEnabled()) {
     void getBullQueue().add("video-job", request, {
       jobId: job.id,
       priority: 5,
@@ -345,10 +362,6 @@ export function queuedCount(): number {
   return [...registry.values()].filter((j) => j.status === "queued").length;
 }
 
-export function isBullMQEnabled(): boolean {
-  return BULLMQ_ENABLED;
-}
-
 export async function reprioritizeQueue(orderedIds: string[]): Promise<void> {
   const queuedJobs = [...registry.values()].filter((job) => job.status === "queued");
   const indexed = new Map(orderedIds.map((id, idx) => [id, idx]));
@@ -369,7 +382,7 @@ export async function reprioritizeQueue(orderedIds: string[]): Promise<void> {
     registry.set(job.id, job);
   }
 
-  if (BULLMQ_ENABLED) {
+  if (isBullMQEnabled()) {
     const q = getBullQueue();
     for (let i = 0; i < sorted.length; i += 1) {
       const jobAtIndex = sorted[i];
@@ -404,6 +417,32 @@ export async function resumeJob(id: string, fromStage: VideoJobStatus): Promise<
   job.updatedAt = now();
   delete job.error;
   delete job.completedAt;
+  return job;
+}
+
+/**
+ * Restore a BullMQ job into the in-memory registry after an API restart.
+ * Called by the Worker when it picks up a job with no registry entry.
+ */
+export function restoreJobFromBullMQ(
+  id: string,
+  request: VideoJobRequest,
+): VideoJob {
+  const job: VideoJob = {
+    id,
+    status: "queued",
+    request,
+    stages: {},
+    overallProgress: 0,
+    retryCount: 0,
+    createdAt: now(),
+    updatedAt: now(),
+    ...(request.clientRequestId !== undefined
+      ? { clientRequestId: request.clientRequestId }
+      : {}),
+  };
+  registry.set(id, job);
+  scheduleCleanup(id);
   return job;
 }
 

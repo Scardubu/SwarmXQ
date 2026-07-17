@@ -37,7 +37,7 @@ const schema = z.object({
 
   REDIS_URL: z.string().url().default("redis://127.0.0.1:6379"),
 
-  SWARMX_VIDEO_USE_BULLMQ: z.enum(["0", "1"]).default("0"),
+  SWARMX_VIDEO_USE_BULLMQ: z.enum(["0", "1"]).default("1"),
   SWARMX_VIDEO_LOW_RAM_MODE: z.enum(["0", "1"]).default("0"),
   SWARMX_VIDEO_JOB_LIMIT_PER_HOUR: positiveInt.default(10),
   SWARMX_VIDEO_CAPTION_SCORE_LIMIT_PER_MIN: positiveInt.default(10),
