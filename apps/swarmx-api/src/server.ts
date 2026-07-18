@@ -77,6 +77,7 @@ import { startVideoWorker, stopVideoWorker } from "./workers/video-worker.js";
 import { ModelOrchestrator } from "./services/model-orchestrator.js";
 import {
   LOW_RAM_VIDEO_MODEL,
+  PILOT_VIDEO_MODEL,
   detectAvailableMemoryMb,
   isLowRamVideoMode,
   shouldAutoEnableLowRamMode,
@@ -228,24 +229,37 @@ try {
     "Video pipeline runtime mode resolved",
   );
 
-  // Fire-and-forget prewarm of the Pilot text model when low-RAM mode is
-  // active. Cold model load on CPU takes 100–140 s and blocks the first job's
-  // intent stage; warming during boot moves that latency off the user path.
-  if (isLowRamVideoMode()) {
-    const ollamaUrl = process.env["SWARMX_OLLAMA_URL"] ?? "http://127.0.0.1:11434";
+  // Fire-and-forget prewarm of the Pilot text model at startup. Cold model
+  // load on CPU takes 100–140 s; warming during boot moves that latency off
+  // the user path. On 16 GB, prewarms the full Pilot; on 8 GB (low-RAM mode),
+  // prewarms the lite Pilot. Both paths write the warmup status marker so the
+  // dashboard shows a dynamic cold-start ETA via /api/system/health → warmup.
+  if (loadEnv().SWARMX_MODEL_STARTUP_PREWARM === "1") {
+    const prewarmTag = isLowRamVideoMode() ? LOW_RAM_VIDEO_MODEL : PILOT_VIDEO_MODEL;
+    const keepAliveSecs = loadEnv().OLLAMA_KEEP_ALIVE_PILOT_S;
+    const ollamaUrl = loadEnv().OLLAMA_HOST ?? loadEnv().SWARMX_OLLAMA_URL ?? "http://127.0.0.1:11434";
     void fetch(`${ollamaUrl}/api/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: LOW_RAM_VIDEO_MODEL,
+        model: prewarmTag,
         prompt: "warm",
         stream: false,
-        keep_alive: "10m",
+        keep_alive: `${keepAliveSecs}s`,
         options: { num_predict: 8, num_ctx: 2048 },
       }),
     })
-      .then(() => server.log.info({ model: LOW_RAM_VIDEO_MODEL }, "video model prewarm complete"))
-      .catch((err: unknown) => server.log.warn({ err, model: LOW_RAM_VIDEO_MODEL }, "video model prewarm skipped"));
+      .then(async () => {
+        server.log.info({ model: prewarmTag, keepAliveSecs }, "video model prewarm complete");
+        const warmupFile = loadEnv().SWARMX_WARMUP_STATUS_FILE;
+        const { writeFile } = await import("node:fs/promises");
+        await writeFile(
+          warmupFile,
+          JSON.stringify({ done: true, completedAt: new Date().toISOString() }),
+          "utf8",
+        ).catch(() => {});
+      })
+      .catch((err: unknown) => server.log.warn({ err, model: prewarmTag }, "video model prewarm skipped"));
   }
 } catch (err) {
   server.log.warn({ err }, "ModelOrchestrator init failed — video pipeline may degrade");

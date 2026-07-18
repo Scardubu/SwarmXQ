@@ -40,6 +40,9 @@ const schema = z.object({
   SWARMX_OLLAMA_PROBE_TIMEOUT_MS: positiveInt.default(5000),
   SWARMX_OLLAMA_CACHE_TTL_MS: nonNegativeInt.default(15_000),
   OLLAMA_MAX_LOADED_MODELS: z.coerce.number().int().min(1).default(1),
+  // Pilot keep-alive in seconds. startup-enhanced.sh exports 300 (5 min) on 16 GB hosts
+  // so the model stays resident between the intent stage and the post-pipeline virality call.
+  OLLAMA_KEEP_ALIVE_PILOT_S: z.coerce.number().int().min(0).default(300),
 
   // ── Redis ─────────────────────────────────────────────────────────────────
   REDIS_URL: z.string().url().default("redis://127.0.0.1:6379"),

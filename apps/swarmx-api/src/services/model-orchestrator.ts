@@ -515,6 +515,14 @@ export class ModelOrchestrator {
   private _keepAliveFor(tag: string): string {
     const p = MODEL_REGISTRY[tag];
     if (!p) return "2m";
+    // Pilot models honor OLLAMA_KEEP_ALIVE_PILOT_S — keeps them resident between the
+    // intent_classification stage and the post-pipeline virality call on 16 GB hosts.
+    if (
+      (tag === "instruct-phi4-pro-q8-prod" || tag === "instruct-phi4-lite-q4km-prod") &&
+      this.state.currentMode !== "degraded"
+    ) {
+      return `${loadEnv().OLLAMA_KEEP_ALIVE_PILOT_S}s`;
+    }
     switch (this.state.currentMode) {
       case "normal":   return p.keepAliveNormal;
       case "low-ram":  return p.keepAliveLowRam;

@@ -195,6 +195,12 @@ setup_ollama_runtime_tuning() {
 
   export OLLAMA_FLASH_ATTENTION="${OLLAMA_FLASH_ATTENTION:-1}"
   export OLLAMA_KV_CACHE_TYPE="${OLLAMA_KV_CACHE_TYPE:-q8_0}"
+  # [V6.2-ENH-05] Leave 1 core for WSL2 hypervisor + OS; bare-metal Linux uses all cores.
+  if grep -qi microsoft /proc/version 2>/dev/null; then
+    export OLLAMA_NUM_THREADS="${OLLAMA_NUM_THREADS:-3}"
+  else
+    export OLLAMA_NUM_THREADS="${OLLAMA_NUM_THREADS:-4}"
+  fi
   export SWARMX_HOST_PROFILE="$requested_profile"
   export SWARMX_EFFECTIVE_HOST_PROFILE="$effective_profile"
 
@@ -205,12 +211,13 @@ setup_ollama_runtime_tuning() {
     if [[ -n "$inherited_num_parallel" && "$inherited_num_parallel" != "1" ]]; then
       log_warning "Overriding OLLAMA_NUM_PARALLEL=$inherited_num_parallel to 1 for the 16 GB profile"
     fi
-    if [[ -n "$inherited_keep_alive" && "$inherited_keep_alive" != "2m" ]]; then
-      log_warning "Overriding OLLAMA_KEEP_ALIVE=$inherited_keep_alive to 2m for the 16 GB profile"
+    if [[ -n "$inherited_keep_alive" && "$inherited_keep_alive" != "0" && "$inherited_keep_alive" != "0s" ]]; then
+      log_warning "Overriding OLLAMA_KEEP_ALIVE=$inherited_keep_alive to 0 — request-level keep_alive policy (PILOT_S=300) stays authoritative"
     fi
     export OLLAMA_MAX_LOADED_MODELS="2"
     export OLLAMA_NUM_PARALLEL="1"
-    export OLLAMA_KEEP_ALIVE="2m"
+    export OLLAMA_KEEP_ALIVE="0"
+    export OLLAMA_KEEP_ALIVE_PILOT_S="${OLLAMA_KEEP_ALIVE_PILOT_S:-300}"
     export SWARMX_MODEL_STARTUP_PREWARM="${SWARMX_MODEL_STARTUP_PREWARM:-1}"
     export SWARMX_MODEL_PREDICTIVE_PREWARM="${SWARMX_MODEL_PREDICTIVE_PREWARM:-1}"
   else
@@ -245,7 +252,7 @@ setup_ollama_runtime_tuning() {
     export SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS="${SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS:-45000}"
   fi
 
-  log_info "Ollama tuning: HOST_PROFILE=$SWARMX_HOST_PROFILE EFFECTIVE_PROFILE=$SWARMX_EFFECTIVE_HOST_PROFILE TOTAL_MB=$total_mb AVAILABLE_MB=$avail_mb FLASH_ATTENTION=$OLLAMA_FLASH_ATTENTION KV_CACHE=$OLLAMA_KV_CACHE_TYPE PARALLEL=$OLLAMA_NUM_PARALLEL MAX_MODELS=$OLLAMA_MAX_LOADED_MODELS KEEP_ALIVE=$OLLAMA_KEEP_ALIVE STARTUP_PREWARM=$SWARMX_MODEL_STARTUP_PREWARM PREDICTIVE_PREWARM=$SWARMX_MODEL_PREDICTIVE_PREWARM"
+  log_info "Ollama tuning: HOST_PROFILE=$SWARMX_HOST_PROFILE EFFECTIVE_PROFILE=$SWARMX_EFFECTIVE_HOST_PROFILE TOTAL_MB=$total_mb AVAILABLE_MB=$avail_mb FLASH_ATTENTION=$OLLAMA_FLASH_ATTENTION KV_CACHE=$OLLAMA_KV_CACHE_TYPE THREADS=$OLLAMA_NUM_THREADS PARALLEL=$OLLAMA_NUM_PARALLEL MAX_MODELS=$OLLAMA_MAX_LOADED_MODELS KEEP_ALIVE=$OLLAMA_KEEP_ALIVE PILOT_KEEP_ALIVE_S=${OLLAMA_KEEP_ALIVE_PILOT_S:-0} STARTUP_PREWARM=$SWARMX_MODEL_STARTUP_PREWARM PREDICTIVE_PREWARM=$SWARMX_MODEL_PREDICTIVE_PREWARM"
 }
 
 # ─── Helper: Port Availability Check ──────────────────────────────────────────
@@ -697,18 +704,40 @@ main() {
   # exports cannot hide unsafe low-RAM settings.
   setup_environment
   setup_ollama_runtime_tuning
-  
+
+  # Write warmup status marker — API reads this via readWarmupStatus() in src/routes/system.ts
+  # to serve a dynamic cold-start ETA to the dashboard instead of the hardcoded 140 s default.
+  # Server.ts overwrites it with {"done":true,...} when Pilot prewarm completes.
+  local _warmup_file="${SWARMX_WARMUP_STATUS_FILE:-/tmp/swarmxq-warmup.json}"
+  mkdir -p "$(dirname "$_warmup_file")" 2>/dev/null || true
+  printf '{"done":false,"startedAt":"%s","coldStartEtaSecs":140}\n' \
+    "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$_warmup_file"
+  log_info "Warmup status marker written: $_warmup_file"
+
   # If check-only flag, exit after health checks
   if [[ "$CHECK_ONLY" == true ]]; then
     log_success "Health checks passed"
     return 0
   fi
   
+  # Full-pipeline RAM gate: only enforced on the 16 GB path. Low-RAM mode (8 GB
+  # effective profile) intentionally runs below this threshold.
+  if [[ "${SWARMX_EFFECTIVE_HOST_PROFILE:-}" == "16gb" && "${SWARMX_VIDEO_LOW_RAM_MODE:-0}" != "1" ]]; then
+    local _avail_mb_gate
+    _avail_mb_gate=$(detect_available_mem_mb)
+    if [[ "$_avail_mb_gate" -gt 0 && "$_avail_mb_gate" -lt 6170 ]]; then
+      log_error "Pre-launch RAM check FAILED: ${_avail_mb_gate} MB available (minimum 6170 MB for 16 GB profile)."
+      log_error "Options: free RAM, set SWARMX_VIDEO_LOW_RAM_MODE=1, or set SWARMX_EFFECTIVE_HOST_PROFILE=8gb."
+      exit 1
+    fi
+    log_info "Pre-launch RAM check passed: ${_avail_mb_gate} MB available (≥6170 MB required)"
+  fi
+
   # Delegate to main startup script
   log_info "Delegating to swarm up command..."
   log_info "Startup log: $STARTUP_LOG"
   echo >&2
-  
+
   cd "$ROOT_DIR"
   bash "$ROOT_DIR/swarm-up.sh" "${@:1}"
   

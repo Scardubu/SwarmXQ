@@ -4,6 +4,8 @@ import type { VideoJobRequest, VideoJobStage } from "../types/video.js";
 import { loadEnv } from "../lib/env.js";
 
 export const LOW_RAM_VIDEO_MODEL = "instruct-phi4-lite-q4km-prod";
+/** Full Pilot model tag used for intent_classification and prewarm on 16 GB hosts. */
+export const PILOT_VIDEO_MODEL = "instruct-phi4-pro-q8-prod";
 export const VIDEO_RAM_RESERVE_MB = 800;
 
 /** Threshold below which the full 7B planning path cannot start safely. */
