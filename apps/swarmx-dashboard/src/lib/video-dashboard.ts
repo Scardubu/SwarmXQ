@@ -125,7 +125,7 @@ export interface VideoJob {
   startedAt?: string;
   completedAt?: string;
   retryCount: number;
-  resumeFromStage?: CanonicalVideoJobStatus;
+  resumeFromStage?: VideoJobStage;
   pressureTierAtStart?: "normal" | "high" | "critical";
   clientRequestId?: string;
   operatorTrace?: OperatorTraceEntry[];

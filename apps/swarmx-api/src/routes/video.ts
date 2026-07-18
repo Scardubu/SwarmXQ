@@ -17,8 +17,8 @@ import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
-import type { VideoJobRequest, VideoJobListQuery } from "../types/video.js";
-import { isTerminalStatus } from "../types/video.js";
+import type { VideoJobRequest, VideoJobListQuery, VideoJobStage } from "../types/video.js";
+import { isTerminalStatus, VIDEO_JOB_STAGE_ORDER } from "../types/video.js";
 import * as queue from "../services/video-queue.js";
 import * as assets from "../services/video-assets.js";
 import { runOrchestration } from "../services/video-orchestrator.js";
@@ -112,7 +112,7 @@ const CaptionScoreDraftSchema = z.object({
 });
 
 const ResumeBodySchema = z.object({
-  fromStage: z.string().min(1).max(64),
+  fromStage: z.enum(VIDEO_JOB_STAGE_ORDER as [VideoJobStage, ...VideoJobStage[]]),
 });
 
 const ReprioritizeBodySchema = z.object({
@@ -588,7 +588,7 @@ export async function videoRoutes(
       }
 
       try {
-        const resumed = await queue.resumeJob(request.params.id, parsed.data.fromStage as never);
+        const resumed = queue.resumeJob(request.params.id, parsed.data.fromStage);
         return reply.send({
           jobId: resumed.id,
           status: resumed.status,
@@ -597,9 +597,9 @@ export async function videoRoutes(
         });
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "resume_failed";
-        if (message === "no_partial_artifacts") {
-          return reply.status(409).send({
-            error: "no_partial_artifacts",
+        if (message.startsWith("invalid_stage:") || message.startsWith("prerequisite_stage_incomplete:")) {
+          return reply.status(422).send({
+            error: "invalid_resume_stage",
             message,
           });
         }

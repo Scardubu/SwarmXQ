@@ -11,6 +11,7 @@
 import { readdir, rm, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { loadEnv } from "../lib/env.js";
+import { log } from "../lib/logger.js";
 
 const _clenv = loadEnv();
 const EXPORT_DIR = resolve(_clenv.SWARMX_VIDEO_EXPORT_DIR);
@@ -44,9 +45,7 @@ async function cleanDirectory(dir: string, ttlMs: number, tag: string): Promise<
   }
 
   if (removed > 0) {
-    process.stderr.write(
-      `[video-cleanup] ${tag}: removed ${removed} file(s) older than ${TTL_DAYS}d\n`,
-    );
+    log.info({ dir: tag, removed, ttlDays: TTL_DAYS }, "video-cleanup: expired files removed");
   }
 }
 
@@ -63,17 +62,22 @@ let cleanupTimer: NodeJS.Timeout | undefined;
 export function startVideoCleanup(): void {
   if (cleanupTimer) return;
 
+  log.info(
+    { ttlDays: TTL_DAYS, intervalMs: CLEANUP_INTERVAL_MS },
+    "video-cleanup: service started — first run in 30s",
+  );
+
   // Run once shortly after startup, then on the configured interval.
   const firstRun = setTimeout(() => {
     void runCleanup().catch((err: unknown) => {
-      process.stderr.write(`[video-cleanup] startup run failed: ${err instanceof Error ? err.message : String(err)}\n`);
+      log.warn({ err: err instanceof Error ? err.message : String(err) }, "video-cleanup: startup run failed");
     });
   }, 30_000);
   firstRun.unref();
 
   cleanupTimer = setInterval(() => {
     void runCleanup().catch((err: unknown) => {
-      process.stderr.write(`[video-cleanup] interval run failed: ${err instanceof Error ? err.message : String(err)}\n`);
+      log.warn({ err: err instanceof Error ? err.message : String(err) }, "video-cleanup: interval run failed");
     });
   }, CLEANUP_INTERVAL_MS);
   cleanupTimer.unref();

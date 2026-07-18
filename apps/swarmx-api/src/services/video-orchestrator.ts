@@ -108,6 +108,7 @@ import { scoreVirality } from "./virality-scorer.js";
 import { generateCaptionDraftWithValidation } from "./caption-generator.js";
 import { generateOllamaText } from "./ollama.js";
 import { log } from "../lib/logger.js";
+import { tracer, SpanStatusCode, trace } from "../lib/tracer.js";
 import { renderWithFfmpeg } from "./ffmpeg-video-renderer.js";
 import { sanitizeReasoningOutput } from "./reasoning-sanitizer.js";
 import {
@@ -419,6 +420,7 @@ async function stageIntentClassification(
   const startedAt = new Date().toISOString();
   // [VOT-10] Record actual resolved tag immediately — not re-derived later
   ctx.modelsUsed["intent_classification"] = model;
+  trace.getActiveSpan()?.setAttribute("swarmx.model.tag", model);
   const controller = stageController(ctx, "intent_classification");
 
   try {
@@ -470,6 +472,7 @@ async function stagePlanning(
   const startedAt = new Date().toISOString();
   // [VOT-10] Record actual resolved tag immediately — not re-derived later
   ctx.modelsUsed["planning"] = model;
+  trace.getActiveSpan()?.setAttribute("swarmx.model.tag", model);
   const controller = stageController(ctx, "planning");
 
   try {
@@ -520,6 +523,7 @@ async function stageScripting(
   const startedAt = new Date().toISOString();
   // [VOT-10] Record actual resolved tag immediately — not re-derived later
   ctx.modelsUsed["scripting"] = model;
+  trace.getActiveSpan()?.setAttribute("swarmx.model.tag", model);
   const controller = stageController(ctx, "scripting");
 
   try {
@@ -561,6 +565,7 @@ async function stageStoryboardGeneration(
   const startedAt = new Date().toISOString();
   // [VOT-10] Record actual resolved tag immediately — not re-derived later
   ctx.modelsUsed["storyboard_generation"] = model;
+  trace.getActiveSpan()?.setAttribute("swarmx.model.tag", model);
   const controller = stageController(ctx, "storyboard_generation");
 
   try {
@@ -825,8 +830,16 @@ export async function runOrchestration(
   jobId:     string,
   broadcast: BroadcastFn
 ): Promise<void> {
+  return tracer.startActiveSpan(
+    "video.orchestration",
+    { attributes: { "swarmx.job.id": jobId } },
+    async (rootSpan) => {
   const job = queue.getJob(jobId);
-  if (!job) throw new Error(`Orchestrator: job ${jobId} not found`);
+  if (!job) {
+    rootSpan.setStatus({ code: SpanStatusCode.ERROR, message: "job_not_found" });
+    rootSpan.end();
+    throw new Error(`Orchestrator: job ${jobId} not found`);
+  }
 
   const jobAbortController = new AbortController();
 
@@ -849,6 +862,7 @@ export async function runOrchestration(
 
   try {
     const pressure = await readPressure();
+    rootSpan.setAttribute("swarmx.pressure.initial", pressure.pressureLevel);
 
     if (pressure.pressureLevel === "critical") {
       throw makeError(
@@ -871,6 +885,7 @@ export async function runOrchestration(
       await new Promise<void>((resolve) => setTimeout(resolve, HIGH_PRESSURE_DELAY_MS));
 
       const recheck = await readPressure();
+      rootSpan.setAttribute("swarmx.pressure.after_backoff", recheck.pressureLevel);
       if (recheck.pressureLevel === "critical") {
         throw makeError(
           "PRESSURE_CRITICAL",
@@ -891,6 +906,9 @@ export async function runOrchestration(
     await ModelOrchestrator.getInstance().syncFromOllama();
 
     job.pressureTierAtStart = pressure.pressureLevel;
+    rootSpan.setAttribute("swarmx.job.pressure_tier", pressure.pressureLevel);
+    if (job.request.tone) rootSpan.setAttribute("swarmx.job.tone", job.request.tone);
+    if (job.request.platform) rootSpan.setAttribute("swarmx.job.platform", job.request.platform);
 
     let intent = ctx.job.request.prompt;
     await runStage(ctx, "intent_classification", 0, 15, async () => {
@@ -941,6 +959,10 @@ export async function runOrchestration(
     ctx.job.outputArtifacts.outputPath = output.absolutePath;
     ctx.job.outputArtifacts.outputPublicUrl = output.publicUrl;
 
+    rootSpan.setAttribute("swarmx.job.total_duration_ms", Date.now() - ctx.startedAt);
+    rootSpan.setAttribute("swarmx.job.output_size_bytes", output.fileSizeBytes ?? 0);
+    rootSpan.setStatus({ code: SpanStatusCode.OK });
+
     const completedJob = queue.completeJob(jobId, output);
     broadcast(makeVideoCompletedEvent(jobId, {
       outputPublicUrl: output.publicUrl,
@@ -954,9 +976,16 @@ export async function runOrchestration(
   } catch (err: unknown) {
     clearInterval(cancelWatcher);
     const current = queue.getJob(jobId);
-    if (current?.status === "cancelled") return;
+    if (current?.status === "cancelled") {
+      rootSpan.setStatus({ code: SpanStatusCode.OK, message: "cancelled" });
+      return;
+    }
 
     const videoError = toVideoError(err);
+    rootSpan.recordException(err instanceof Error ? err : new Error(String(err)));
+    rootSpan.setAttribute("swarmx.job.error_code", videoError.code);
+    rootSpan.setStatus({ code: SpanStatusCode.ERROR, message: videoError.code });
+
     const failedJob  = queue.failJob(jobId, videoError);
 
     broadcast(makeVideoFailedEvent(
@@ -987,10 +1016,12 @@ export async function runOrchestration(
   } finally {
     clearInterval(cancelWatcher);
     jobAbortController.abort();
+    rootSpan.end();
     if (!retryScheduled) {
       scheduleNextQueuedJob(broadcast);
     }
   }
+  }); // tracer.startActiveSpan("video.orchestration")
 }
 
 function scheduleNextQueuedJob(broadcast: BroadcastFn): void {
@@ -1034,7 +1065,21 @@ async function runStage(
   progressEnd:   number,
   fn:            () => Promise<void>
 ): Promise<void> {
+  return tracer.startActiveSpan(
+    `video.stage.${stage}`,
+    {
+      attributes: {
+        "swarmx.job.id":              ctx.job.id,
+        "swarmx.stage":               stage,
+        "swarmx.stage.progress_start": progressStart,
+        "swarmx.stage.progress_end":   progressEnd,
+        "swarmx.stage.timeout_ms":     STAGE_TIMEOUT_MS[stage],
+      },
+    },
+    async (span) => {
   if (ctx.jobAbortSignal.aborted) {
+    span.setStatus({ code: SpanStatusCode.ERROR, message: "aborted" });
+    span.end();
     throw new DOMException("Job aborted before stage start", "AbortError");
   }
 
@@ -1051,14 +1096,24 @@ async function runStage(
   queue.recordStageProgress(ctx.job.id, stage, startProgress);
   ctx.broadcast(makeVideoProgressEvent(ctx.job.id, stage, startProgress, progressStart));
 
-  await withTimeout(fn(), stageTimeoutMs, `Stage ${stage} timed out after ${stageTimeoutMs}ms`);
+  try {
+    await withTimeout(fn(), stageTimeoutMs, `Stage ${stage} timed out after ${stageTimeoutMs}ms`);
+  } catch (err) {
+    const durationMs = Date.now() - stageStart;
+    span.setAttribute("swarmx.stage.duration_ms", durationMs);
+    span.recordException(err instanceof Error ? err : new Error(String(err)));
+    span.setStatus({ code: SpanStatusCode.ERROR, message: err instanceof Error ? err.message : String(err) });
+    span.end();
+    throw err;
+  }
 
+  const durationMs = Date.now() - stageStart;
   const completedProgress: VideoStageProgress = {
     stage,
     stageProgress:   100,
     overallProgress: progressEnd,
     completedAt:     new Date().toISOString(),
-    durationMs:      Date.now() - stageStart,
+    durationMs,
     ...(startProgress.startedAt !== undefined
       ? { startedAt: startProgress.startedAt }
       : {}),
@@ -1066,8 +1121,12 @@ async function runStage(
   queue.recordStageProgress(ctx.job.id, stage, completedProgress);
   ctx.broadcast(makeVideoProgressEvent(ctx.job.id, stage, completedProgress, progressEnd));
 
+  span.setAttribute("swarmx.stage.duration_ms", durationMs);
+  span.setStatus({ code: SpanStatusCode.OK });
+  span.end();
   // [VOT-10] modelsUsed[stage] is now set inside each stage fn after acquireModel(),
   // not re-derived here. See individual stage implementations above.
+  }); // tracer.startActiveSpan(`video.stage.${stage}`)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

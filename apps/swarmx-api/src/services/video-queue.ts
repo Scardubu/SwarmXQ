@@ -11,7 +11,6 @@
 
 import { randomUUID } from "node:crypto";
 import { Queue } from "bullmq";
-import { readdir } from "node:fs/promises";
 import { log } from "../lib/logger.js";
 import { loadEnv } from "../lib/env.js";
 import { resolve } from "node:path";
@@ -61,11 +60,6 @@ export function isBullMQEnabled(): boolean {
     return false;
   }
 }
-const ARTIFACT_DIR = resolve(
-  process.env.SWARMX_VIDEO_ARTIFACT_DIR ??
-    resolve(process.cwd(), ".swarmx", "video", "artifacts"),
-);
-
 // ─── Internal ─────────────────────────────────────────────────────────────────
 
 const registry = new Map<string, VideoJob>();
@@ -396,7 +390,7 @@ export async function reprioritizeQueue(orderedIds: string[]): Promise<void> {
   }
 }
 
-export async function resumeJob(id: string, fromStage: VideoJobStatus): Promise<VideoJob> {
+export function resumeJob(id: string, fromStage: VideoJobStage): VideoJob {
   const job = registry.get(id);
   if (!job) {
     throw new Error(`VideoQueue: job ${id} not found`);
@@ -405,10 +399,20 @@ export async function resumeJob(id: string, fromStage: VideoJobStatus): Promise<
     throw new Error(`VideoQueue: job ${id} is not terminal and cannot be resumed`);
   }
 
-  const artifactEntries = await readdir(ARTIFACT_DIR).catch(() => [] as string[]);
-  const hasPartialArtifacts = artifactEntries.some((entry) => entry.startsWith(job.id));
-  if (!hasPartialArtifacts) {
-    throw new Error("no_partial_artifacts");
+  // Validate that fromStage is a known pipeline stage.
+  const stageIdx = VIDEO_JOB_STAGE_ORDER.indexOf(fromStage);
+  if (stageIdx === -1) {
+    throw new Error(`invalid_stage:${fromStage}`);
+  }
+
+  // Validate that the immediately preceding stage completed before this one.
+  // Resuming from a stage whose prerequisite never ran is always wrong — the
+  // orchestrator would silently start from scratch and produce incorrect output.
+  if (stageIdx > 0) {
+    const precedingStage = VIDEO_JOB_STAGE_ORDER[stageIdx - 1]!;
+    if (!job.stages[precedingStage]?.completedAt) {
+      throw new Error(`prerequisite_stage_incomplete:${precedingStage}`);
+    }
   }
 
   job.status = "queued";
