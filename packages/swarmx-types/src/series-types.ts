@@ -194,6 +194,7 @@ export interface AudioPlan {
   soundEffects: string[];
   silenceCues: string[];
   seriesSonicSignature: string;
+  dialogueNotes?: string[];  // V6.2.25 — per-character emotion/delivery cues
 }
 
 export interface PlatformPublishingAsset {

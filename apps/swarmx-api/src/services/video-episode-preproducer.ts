@@ -1,6 +1,8 @@
 /**
  * apps/swarmx-api/src/services/video-episode-preproducer.ts
  * SwarmXQ Series Engine V2.0 — Episode Pre-Production Pipeline
+ * V6.2.25 — Series Director spec injected: hook-position rules (Pass A),
+ *            full camera/lighting vocabulary (Pass B), dialogue direction (Pass C).
  *
  * Four-pass LLM pipeline per episode:
  *   Pass A (Architect) — 5-part episode script
@@ -123,6 +125,7 @@ const AudioPlanSchema = z.object({
   soundEffects: z.array(z.string()).default([]),
   silenceCues: z.array(z.string()).default([]),
   seriesSonicSignature: z.string().min(1),
+  dialogueNotes: z.array(z.string()).optional(),
 });
 
 const PlatformAssetSchema = z.object({
@@ -164,7 +167,7 @@ function buildPassAPrompt(series: SeriesJob, episodeNumber: number): string {
   const cliffhangerTypes = "REVELATION | JEOPARDY | MYSTERY | IDENTITY | CHOICE";
   const bridgeTypes = "VISUAL_MATCH | AUDIO_THREAD | QUESTION_ECHO | SMASH_CUT_TEASE";
 
-  return `You are a series script writer. Write the five-part script for Episode ${episodeNumber} of this series.
+  return `You are a series director. Write the five-part script for Episode ${episodeNumber} of ${series.brief.seriesLength}.
 
 SERIES BRIEF:
 Theme: ${series.brief.storyTheme}
@@ -184,7 +187,8 @@ Previous episode summaries: ${prev || "none (this is episode 1)"}
 
 MANDATORY SCRIPT RULES:
 - hook: ≤ ${hookMaxWords} words; NEVER starts with: "In today's video", "Welcome", "Hi everyone", "Today we", "I", "My", "This video", "Let's", "We're going to"
-- body: every sentence escalates stakes or deepens understanding; active voice only
+- hook position: Ep1 → PREMISE HOOK: one line stating the universe's central promise; Ep2–${series.brief.seriesLength - 1} → CONTINUATION HOOK: drop viewer INTO action, assume they know the world; Ep${series.brief.seriesLength} → PAYOFF HOOK: the hook IS the resolution — earned, not explained
+- body: escalate stakes or deepen understanding; tag visual moments as [VISUAL: subject · motion · setting · mood · quality]; reference prior episodes via visual echo only — never narrate what happened; body advances, never recaps
 - emotionalPeak: ONE dominant emotion moment (tension OR revelation OR humour OR inspiration OR grief OR wonder) — pick one and commit
 - cliffhanger type must be one of: ${cliffhangerTypes} — end on the unresolved state, NEVER say "find out next time"
 - transitionBridge type must be one of: ${bridgeTypes}
@@ -244,8 +248,8 @@ PROMPT RULES:
 - master: ≤ 150 words; complete self-contained scene; include subject, action, environment, lighting, camera, motion, quality
 - character: copy AI seed verbatim + scene-specific expression/costume delta only
 - environment: location + time-of-day + weather + atmosphere
-- camera: shot type (ECU/CU/MCU/MS/WS/EWS) + movement + lens + framing
-- lighting: key light + colour temp + contrast + motivation
+- camera: shot type (ECU/CU/MCU/MS/MWS/WS/EWS/aerial/POV/OTS) + movement (static|push-in|pull-back|pan-L/R|tilt-U/D|dolly|crane|handheld|Steadicam|whip-pan|Dutch-angle) + lens (16mm-wide|35mm-std|50mm-natural|85mm-portrait|telephoto-compressed|macro) + depth-of-field (shallow|deep|rack-focus) + framing (rule-of-thirds|centred-symmetry|negative-space|leading-lines)
+- lighting: key light + colour-temp (2700K-warm|4000K-neutral|6500K-cool|split-gel) + contrast + motivation
 - motion: all movement in frame — camera, subject, elements
 - style: aesthetic — cinematic grain | clean digital | graphic novel | documentary
 - animation: frame rate, physics, particle effects if applicable; else "static scene — no keyframe animation"
@@ -296,6 +300,7 @@ AUDIO PLAN RULES:
 - musicDescription: genre + tempo + instrumentation + emotional function
 - soundEffects: list specific timed effects (not generic)
 - silenceCues: list specific moments where silence is the audio design
+- dialogueNotes: optional; per-character emotion + subtext + delivery cue (e.g. "Character — drop to near-whisper on the pivotal word"); include audio transition type: J-cut | L-cut | musical-bridge | silence-as-tension | hard-cut
 - seriesSonicSignature: the recurring audio element that appears every episode
 
 PLATFORM ASSET RULES:
@@ -316,7 +321,8 @@ Respond with STRICT JSON only:
     "musicDescription": "...",
     "soundEffects": ["..."],
     "silenceCues": ["..."],
-    "seriesSonicSignature": "${sonicSig}"
+    "seriesSonicSignature": "${sonicSig}",
+    "dialogueNotes": ["optional: Character — emotion (subtext) — delivery cue + transition type"]
   },
   "platformAssets": [
     {

@@ -1,6 +1,9 @@
 /**
  * apps/swarmx-api/src/services/video-series-planner.ts
  * SwarmXQ Series Engine — AI Planning Pipeline
+ * V6.2.25 — Series Director spec injected: stronger persona (Pass 1),
+ *            algorithm signal + recency loop + 600 tok (Pass 3),
+ *            full shot vocabulary hint (Pass 4).
  *
  * Four-pass LLM pipeline that converts a SeriesBrief into a full series plan:
  *   Pass 1 (Pilot)     — character bible + world guide (JSON)
@@ -139,7 +142,7 @@ function buildPass1Prompt(
   arcStructure: string,
   recurringSymbols?: string,
 ): string {
-  return `You are a series bible writer. Generate a character bible and world guide for this video series.
+  return `You are a series director building the foundational bible. Lock character and world to enforce visual and emotional consistency across all ${seriesLength} episodes.
 
 SERIES BRIEF:
 Story/Theme: ${storyTheme}
@@ -250,12 +253,14 @@ Tone: ${tone}
 Platform: ${platformPrimary}
 Episode titles: ${episodeTitles.map((t, i) => `${i + 1}. ${t}`).join(" | ")}
 
-Write 150–200 words describing:
+Write 150–250 words describing:
 1. The series-level curiosity gap (planted in Ep1, resolved in Ep${seriesLength})
 2. The micro-reward cadence (small revelations every 2–3 episodes)
 3. The loyalty signal (something only returning viewers catch)
 4. The community trigger episode (one episode that sparks debate/comments)
 5. The loop ending (why Ep${seriesLength}'s final frame makes you want to rewatch Ep1)
+6. The algorithm signal: Ep1 must engineer maximum completion rate — it is the unlock for the rest of the series; it should be the most self-contained episode with the deepest curiosity gap
+7. The recency loop: each episode ends at a point where waiting feels costly; the release cadence is itself a narrative tool
 
 Plain text only. No headers. No bullet points. Write as a creative brief paragraph.`;
 }
@@ -285,7 +290,7 @@ Respond with STRICT JSON only:
     "saturation": "one of: desaturated cinematic | vibrant social | muted editorial | punchy pop",
     "filmEmulation": "one of: none | S-Log2 | LOG-C | Kodak 2383 | Fuji 3513"
   },
-  "cinematicShotGrammar": "2–3 shot rules that define the series grammar, e.g. ECU on tension moments, WS on revelation, OTS for intimacy"
+  "cinematicShotGrammar": "2–3 rules using: shot-type (ECU/CU/MCU/MS/MWS/WS/EWS/aerial/POV/OTS) + movement (push-in/crane/Steadicam/handheld) + lens. e.g. ECU+push-in+85mm on tension; WS+crane+16mm on revelation; OTS+Steadicam+50mm for intimacy"
 }`;
 }
 
@@ -383,7 +388,7 @@ export async function planSeries(seriesId: string): Promise<void> {
           brief.platformPrimary,
           episodeRoadmap.map((e) => e.title),
         ),
-        400,
+        600,
         ac.signal,
       );
       const { text: viralityArc } = sanitizeReasoningOutput(pass3Raw);
