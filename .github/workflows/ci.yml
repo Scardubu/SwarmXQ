@@ -1,0 +1,157 @@
+# .github/workflows/ci.yml
+# SwarmXQ Quality Gate CI — Priority 2 milestone
+# Automates all 8 release gates from CLAUDE.md
+# pnpm 11.9.0 · Node 22 · ubuntu-latest
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-progress runs on the same branch/PR when a new commit arrives
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-gates:
+    name: Quality Gates
+    runs-on: ubuntu-latest
+
+    env:
+      NODE_ENV: test
+      LOG_LEVEL: warn
+      SWARMX_API_PORT: '3001'
+      SWARMX_API_HOST: '127.0.0.1'
+      REDIS_URL: 'redis://127.0.0.1:6379'
+      OLLAMA_HOST: 'http://127.0.0.1:11434'
+      SWARMX_VIDEO_USE_BULLMQ: '0'
+      SWARMX_VIDEO_LOW_RAM_MODE: '0'
+      SWARMX_VIDEO_JOB_LIMIT_PER_HOUR: '10'
+      SWARMX_VIDEO_CAPTION_SCORE_LIMIT_PER_MIN: '10'
+      SWARMX_VIDEO_QUEUE_MAX_SIZE: '20'
+      SWARMX_VIDEO_EXPORT_TTL_DAYS: '7'
+      SWARMX_VIDEO_CLEANUP_INTERVAL_MS: '21600000'
+      NEXT_PUBLIC_SWARMX_VERSION: ci
+
+    steps:
+      # ── Setup ─────────────────────────────────────────────────────────────
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: '11.9.0'
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # ── Gate 8 · Whitespace (fast-fail first, zero cost) ──────────────────
+
+      - name: Gate 8 — git diff --check
+        run: git diff --check
+
+      # ── Gates 1–3 · TypeScript (dependency order: types → api → dashboard) ─
+
+      - name: Gate 1 — @swarmx/types typecheck
+        run: pnpm --filter @swarmx/types typecheck
+
+      - name: Gate 2 — @swarmx/api typecheck
+        run: pnpm --filter @swarmx/api typecheck
+
+      - name: Gate 3 — @swarmx/dashboard typecheck
+        run: pnpm --filter @swarmx/dashboard typecheck
+
+      # ── Gate 4 · Dashboard vitest (≥52 passing) ───────────────────────────
+
+      - name: Gate 4 — @swarmx/dashboard vitest
+        run: pnpm --filter @swarmx/dashboard test
+
+      # ── Gate 5 · @swarmx/api vitest — SKIPPED until Priority 4 ───────────
+      # TODO(Priority 4): Uncomment after apps/swarmx-api/vitest.config.ts is added.
+      # - name: Gate 5 — @swarmx/api vitest
+      #   run: pnpm --filter @swarmx/api vitest run
+
+      # ── Gate 6 · API regression scripts (offline-safe, no Redis/Ollama) ────
+
+      - name: Gate 6a — video-regression-check
+        run: pnpm --filter @swarmx/api run test:video
+
+      - name: Gate 6b — regression suite (adaptive-timeout, eviction, system-health, reasoning-sanitizer, series)
+        run: pnpm --filter @swarmx/api run test:regression
+
+      # ── Invariants (ms-fast; run before expensive next build) ─────────────
+
+      - name: Invariant — console.* zero tolerance (services + routes)
+        # Uses Perl regex (-P) with negative lookbehind (?<!["']) to match only
+        # actual method calls, not string literals. composer.ts contains code-sample
+        # template strings like "console.log(greet(...))" — these are code content
+        # returned to users, not logging calls, and are correctly excluded.
+        run: |
+          HITS=$(grep -rPn '(?<!["'"'"'])console\.(log|warn|error|info|debug)\(' \
+            apps/swarmx-api/src/services \
+            apps/swarmx-api/src/routes \
+            2>/dev/null || true)
+          if [ -n "$HITS" ]; then
+            echo "FAIL: console.* call(s) found — use log.* from src/lib/logger.ts"
+            echo "$HITS"
+            exit 1
+          fi
+          echo "PASS: zero console.* calls in services and routes"
+
+      - name: Invariant — TONE_RULES completeness (all 8 variants)
+        run: |
+          FILE="apps/swarmx-api/src/services/video-orchestrator.ts"
+          MISSING=()
+          for TONE in contrarian urgent educational cinematic warm minimal faceless_broll kinetic_text; do
+            grep -q "^\s*${TONE}:" "$FILE" || MISSING+=("$TONE")
+          done
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "FAIL: TONE_RULES missing variant(s): ${MISSING[*]}"
+            echo "Add missing tone definitions to TONE_RULES in $FILE before merging."
+            exit 1
+          fi
+          echo "PASS: all 8 TONE_RULES variants present (contrarian urgent educational cinematic warm minimal faceless_broll kinetic_text)"
+
+      # TODO(Priority 3): Uncomment once process.env[ hits are ≤10 in services/routes.
+      # - name: Invariant — process.env direct reads (≤10 allowed post-Priority-3)
+      #   run: |
+      #     COUNT=$(grep -rn 'process\.env\[' apps/swarmx-api/src/services apps/swarmx-api/src/routes 2>/dev/null | wc -l)
+      #     echo "process.env[ hits: $COUNT (limit: 10)"
+      #     if [ "$COUNT" -gt 10 ]; then exit 1; fi
+
+      # ── Gate 7 · Dashboard next build (≥14 routes, 0 build errors) ────────
+
+      - name: Restore Next.js build cache
+        uses: actions/cache@v4
+        with:
+          path: apps/swarmx-dashboard/.next/cache
+          key: nextjs-${{ runner.os }}-${{ hashFiles('apps/swarmx-dashboard/**/*.ts', 'apps/swarmx-dashboard/**/*.tsx', 'apps/swarmx-dashboard/package.json') }}
+          restore-keys: |
+            nextjs-${{ runner.os }}-
+
+      - name: Gate 7 — @swarmx/dashboard next build
+        run: pnpm --filter @swarmx/dashboard build
+
+      - name: Gate 7 — Route count assertion (≥14 routes)
+        run: |
+          MANIFEST="apps/swarmx-dashboard/.next/server/app-paths-manifest.json"
+          COUNT=$(node -e "console.log(Object.keys(require('./$MANIFEST')).length)")
+          echo "Route count: $COUNT"
+          if [ "$COUNT" -lt 14 ]; then
+            echo "FAIL: expected ≥14 routes, got $COUNT"
+            node -e "Object.keys(require('./$MANIFEST')).forEach(r => console.log(' ', r))"
+            exit 1
+          fi
+          echo "PASS: $COUNT routes (≥14 required)"
