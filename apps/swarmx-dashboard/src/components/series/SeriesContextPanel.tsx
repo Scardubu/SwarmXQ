@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, User, Globe, Palette } from "lucide-react";
+import { ChevronDown, ChevronRight, User, Globe, Palette, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SeriesJob } from "@swarmx/types/series-types";
 
@@ -142,6 +142,36 @@ export function SeriesContextPanel({ series }: SeriesContextPanelProps) {
               </span>
             </div>
           )}
+          {/* Color Grade Contract (Pass 4 cinematic lock — optional) */}
+          {world.colorGradeContract && (
+            <div className="mt-3 space-y-1">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-text-muted">Color Grade</p>
+              <dl className="grid grid-cols-[max-content,1fr] gap-x-3 gap-y-1 text-[11px]">
+                {([
+                  ["Shadow",     world.colorGradeContract.shadowTone],
+                  ["Highlight",  world.colorGradeContract.highlight],
+                  ["Saturation", world.colorGradeContract.saturation],
+                  ["Film",       world.colorGradeContract.filmEmulation],
+                ] as const).map(([label, value]) => (
+                  <>
+                    <dt key={`grade-${label}-dt`} className="text-text-muted">{label}</dt>
+                    <dd key={`grade-${label}-dd`} className="font-mono text-text-secondary">{value}</dd>
+                  </>
+                ))}
+              </dl>
+            </div>
+          )}
+
+          {/* Cinematic Shot Grammar (Pass 4 cinematic lock — optional) */}
+          {world.cinematicShotGrammar && (
+            <div className="mt-2">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-text-muted">Shot Grammar</p>
+              <p className="mt-1 font-mono text-[11px] leading-relaxed text-text-secondary">
+                {world.cinematicShotGrammar}
+              </p>
+            </div>
+          )}
+
           {world.keyLocations.length > 0 && (
             <div className="mt-3 space-y-1.5">
               <p className="text-[10px] font-medium uppercase tracking-wide text-text-muted">Key Locations</p>
@@ -156,10 +186,29 @@ export function SeriesContextPanel({ series }: SeriesContextPanelProps) {
         </CollapseSection>
       )}
 
-      {/* Virality Arc */}
-      {viralityArc && (
-        <CollapseSection title="Virality Arc" icon={Globe}>
-          <p className="text-[11px] leading-relaxed text-text-secondary">{viralityArc}</p>
+      {/* Virality Arc — structured (V6.2.30+) or prose fallback */}
+      {(series.viralityArcData ?? viralityArc) && (
+        <CollapseSection title="Virality Arc" icon={TrendingUp}>
+          {series.viralityArcData ? (
+            <dl className="space-y-2.5">
+              {([
+                ["Curiosity Gap",    series.viralityArcData.curiosityGap],
+                ["Micro-reward",     series.viralityArcData.microRewardCadence],
+                ["Loyalty Signal",   series.viralityArcData.loyaltySignal],
+                ["Social Hook",      series.viralityArcData.socialProofHook],
+                ["Loop Ending",      series.viralityArcData.loopEnding],
+                ["Algorithm Signal", series.viralityArcData.algorithmSignal],
+                ["Recency Loop",     series.viralityArcData.recencyLoop],
+              ] as const).map(([label, value]) => (
+                <div key={label} className="grid grid-cols-[7rem,1fr] gap-x-3 text-[11px]">
+                  <dt className="shrink-0 text-text-muted pt-px">{label}</dt>
+                  <dd className="text-text-secondary leading-relaxed">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : (
+            <p className="text-[11px] leading-relaxed text-text-secondary">{viralityArc}</p>
+          )}
         </CollapseSection>
       )}
     </div>

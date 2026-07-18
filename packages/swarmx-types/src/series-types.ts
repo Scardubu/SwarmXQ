@@ -128,7 +128,8 @@ export interface SeriesJob {
   characterBible?: CharacterProfile[];
   worldGuide?: WorldRegistry;
   episodeRoadmap?: EpisodeRoadmapEntry[];
-  viralityArc?: string;                        // binge mechanics notes
+  viralityArc?: string;                        // binge mechanics notes (prose fallback)
+  viralityArcData?: SeriesViralityArcData;     // structured binge mechanics (V6.2.30+)
   videoJobIds: Partial<Record<number, string>>; // episodeNumber → jobId
   // V2.0 — per-episode pre-production data
   preProduction?: Partial<Record<number, EpisodePreProduction>>;
@@ -216,6 +217,18 @@ export interface EpisodeViralityScore {
   seoScore: number;        // 0–1
   overall: number;         // hookStrength×0.35 + completionProxy×0.25 + shareability×0.25 + seoScore×0.15
   recommendations: string[]; // 2–4 actionable
+}
+
+// ─── Structured Virality Arc (Phase 5) ───────────────────────────────────────
+
+export interface SeriesViralityArcData {
+  curiosityGap: string;       // unanswered question planted in Ep1, resolved in EpN
+  microRewardCadence: string; // small revelations every 2–3 episodes
+  loyaltySignal: string;      // element only returning viewers catch
+  socialProofHook: string;    // quotable/shareable moment per episode
+  loopEnding: string;         // EpN final frame makes viewer rewatch Ep1
+  algorithmSignal: string;    // Ep1 completion rate strategy (series unlock)
+  recencyLoop: string;        // release cadence as narrative tool
 }
 
 export type QualityGateCategory =

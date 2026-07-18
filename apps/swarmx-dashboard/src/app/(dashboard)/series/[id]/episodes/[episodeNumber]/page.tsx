@@ -13,6 +13,7 @@ import { AudioPlanPanel } from "@/components/series/AudioPlanPanel";
 import { PlatformAssetsPanel } from "@/components/series/PlatformAssetsPanel";
 import { QualityGatePanel } from "@/components/series/QualityGatePanel";
 import { ContinuityReportPanel } from "@/components/series/ContinuityReportPanel";
+import { CinematicDirectionsPanel } from "@/components/series/CinematicDirectionsPanel";
 import { useSeriesStore } from "@/stores/series";
 
 const POLL_INTERVAL_MS = 4_000;
@@ -256,6 +257,19 @@ export default function EpisodePreProductionPage() {
                     AI Prompt Suites
                   </h2>
                   <ScenePromptViewer scenes={preProduction.scenePrompts} />
+                </section>
+              )}
+
+              {/* Cinematic Directions */}
+              {preProduction.scenePrompts && preProduction.scenePrompts.length > 0 && (
+                <section aria-labelledby="cinematics-heading">
+                  <h2 id="cinematics-heading" className="mb-3 font-mono text-[10px] uppercase tracking-wider text-text-muted">
+                    Cinematic Directions
+                  </h2>
+                  <CinematicDirectionsPanel
+                    scenes={preProduction.scenePrompts}
+                    {...(series.worldGuide !== undefined ? { worldGuide: series.worldGuide } : {})}
+                  />
                 </section>
               )}
 

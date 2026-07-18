@@ -504,6 +504,9 @@ assert.ok(typesSource.includes("overallContinuityPassed"), "ContinuityReport mus
 assert.ok(typesSource.includes("characterDriftChecks"), "ContinuityReport must include characterDriftChecks");
 assert.ok(typesSource.includes("worldDriftCheck"), "ContinuityReport must include worldDriftCheck");
 assert.ok(typesSource.includes("plotThreadStatus"), "ContinuityReport must include plotThreadStatus");
+// V6.2.30 — structured virality arc
+assert.ok(typesSource.includes("SeriesViralityArcData"), "SeriesViralityArcData interface must exist in series-types.ts");
+assert.ok(typesSource.includes("viralityArcData?:"), "SeriesJob must have viralityArcData? optional field");
 
 console.log("  ✓ type file assertions passed");
 

@@ -4,11 +4,13 @@
  * V6.2.25 — Series Director spec injected: stronger persona (Pass 1),
  *            algorithm signal + recency loop + 600 tok (Pass 3),
  *            full shot vocabulary hint (Pass 4).
+ * V6.2.30 — Pass 3 switched to structured JSON (SeriesViralityArcData);
+ *            prose string fallback preserved for backward compatibility.
  *
  * Four-pass LLM pipeline that converts a SeriesBrief into a full series plan:
  *   Pass 1 (Pilot)     — character bible + world guide (JSON)
  *   Pass 2 (Architect) — episode roadmap, N entries (JSON)
- *   Pass 3 (Pilot)     — virality arc notes (plain text, optional)
+ *   Pass 3 (Pilot)     — structured virality arc → SeriesViralityArcData (optional, prose fallback)
  *   Pass 4 (Pilot)     — cinematic language lock: color grade + shot grammar (optional)
  *
  * Each pass uses ModelOrchestrator.requestModel() for SINGLE-7B LOCK compliance.
@@ -30,6 +32,7 @@ import { log } from "../lib/logger.js";
 import type {
   CharacterProfile,
   EpisodeRoadmapEntry,
+  SeriesViralityArcData,
   WorldRegistry,
 } from "@swarmx/types/series-types";
 
@@ -91,6 +94,16 @@ const EpisodeRoadmapEntrySchema = z.object({
 
 const Pass2Schema = z.object({
   episodes: z.array(EpisodeRoadmapEntrySchema).min(1),
+});
+
+const Pass3Schema = z.object({
+  curiosityGap:       z.string().min(1),
+  microRewardCadence: z.string().min(1),
+  loyaltySignal:      z.string().min(1),
+  socialProofHook:    z.string().min(1),
+  loopEnding:         z.string().min(1),
+  algorithmSignal:    z.string().min(1),
+  recencyLoop:        z.string().min(1),
 });
 
 const Pass4Schema = z.object({
@@ -245,7 +258,7 @@ function buildPass3Prompt(
   platformPrimary: string,
   episodeTitles: string[],
 ): string {
-  return `You are a viral content strategist. Write a binge-loop virality arc for this series.
+  return `You are a viral content strategist. Define the binge-loop virality arc for this series.
 
 SERIES: "${seriesTitle}"
 Episodes: ${seriesLength}
@@ -253,16 +266,17 @@ Tone: ${tone}
 Platform: ${platformPrimary}
 Episode titles: ${episodeTitles.map((t, i) => `${i + 1}. ${t}`).join(" | ")}
 
-Write 150–250 words describing:
-1. The series-level curiosity gap (planted in Ep1, resolved in Ep${seriesLength})
-2. The micro-reward cadence (small revelations every 2–3 episodes)
-3. The loyalty signal (something only returning viewers catch)
-4. The community trigger episode (one episode that sparks debate/comments)
-5. The loop ending (why Ep${seriesLength}'s final frame makes you want to rewatch Ep1)
-6. The algorithm signal: Ep1 must engineer maximum completion rate — it is the unlock for the rest of the series; it should be the most self-contained episode with the deepest curiosity gap
-7. The recency loop: each episode ends at a point where waiting feels costly; the release cadence is itself a narrative tool
+Respond with STRICT JSON only — one field per mechanic. Each field: 1–2 sentences, specific to this series. No generic advice.
 
-Plain text only. No headers. No bullet points. Write as a creative brief paragraph.`;
+{
+  "curiosityGap": "unanswered question planted in Ep1 that resolves only in Ep${seriesLength}",
+  "microRewardCadence": "small revelation delivered every 2–3 episodes to reward returning viewers",
+  "loyaltySignal": "recurring element that only viewers who have watched from Ep1 will recognise",
+  "socialProofHook": "the one moment per episode so specific and shareable that viewers post it as a reaction",
+  "loopEnding": "why Ep${seriesLength}'s final frame creates the urge to rewatch Ep1 immediately",
+  "algorithmSignal": "how Ep1 is engineered for maximum completion rate — it is the unlock for the rest of the series",
+  "recencyLoop": "how the release cadence and each episode's ending make waiting feel costly"
+}`;
 }
 
 function buildPass4Prompt(
@@ -391,8 +405,18 @@ export async function planSeries(seriesId: string): Promise<void> {
         600,
         ac.signal,
       );
-      const { text: viralityArc } = sanitizeReasoningOutput(pass3Raw);
-      updateSeries(seriesId, { viralityArc: viralityArc.trim() });
+      const pass3Result = extractJson<unknown>(pass3Raw);
+      const pass3Parsed = Pass3Schema.safeParse(pass3Result.data);
+      if (pass3Parsed.success) {
+        const viralityArcData: SeriesViralityArcData = pass3Parsed.data;
+        updateSeries(seriesId, { viralityArcData });
+        log.info({ seriesId }, "series planner: Pass 3 structured virality arc stored");
+      } else {
+        // Fallback: store as prose string for backward compatibility
+        const { text: viralityArc } = sanitizeReasoningOutput(pass3Raw);
+        updateSeries(seriesId, { viralityArc: viralityArc.trim() });
+        log.warn({ seriesId, error: pass3Parsed.error.message }, "series planner: Pass 3 JSON invalid — stored as prose fallback");
+      }
     } catch (err) {
       // Pass 3 failure is non-fatal — log and continue
       log.warn({ seriesId, err: err instanceof Error ? err.message : String(err) }, "series planner: Pass 3 failed (non-fatal)");
