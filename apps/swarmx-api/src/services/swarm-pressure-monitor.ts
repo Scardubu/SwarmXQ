@@ -63,6 +63,7 @@
 import { readFileSync }        from "node:fs";
 import { readFile as readFileAsync } from "node:fs/promises";
 import { log } from "../lib/logger.js";
+import { loadEnv } from "../lib/env.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -340,7 +341,7 @@ function calcEvictionCount(): number {
 }
 
 function buildSwarmMetrics(): SwarmMetrics {
-  const maxLoaded = Number.parseInt(process.env["OLLAMA_MAX_LOADED_MODELS"] ?? "1", 10);
+  const maxLoaded = loadEnv().OLLAMA_MAX_LOADED_MODELS;
   return {
     tokenThroughputPerSec: calcTokenThroughput(),
     averageLatencyMs:      calcAverageLatencyMs(),

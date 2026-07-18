@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { MODEL_OPERATOR_MAP, resolveCanonicalTag } from "@swarmx/types/operator-map";
 import type { VideoJobRequest, VideoJobStage } from "../types/video.js";
+import { loadEnv } from "../lib/env.js";
 
 export const LOW_RAM_VIDEO_MODEL = "instruct-phi4-lite-q4km-prod";
 export const VIDEO_RAM_RESERVE_MB = 800;
@@ -70,7 +71,7 @@ export function isTextVideoStage(stage: VideoJobStage): stage is TextVideoJobSta
 }
 
 export function isLowRamVideoMode(): boolean {
-  return process.env["SWARMX_VIDEO_LOW_RAM_MODE"] === "1";
+  return loadEnv().SWARMX_VIDEO_LOW_RAM_MODE === "1";
 }
 
 /** Read /proc/meminfo once and return current physical RAM in MB, or null on non-Linux hosts. */
@@ -91,7 +92,7 @@ export function detectAvailableMemoryMb(): number | null {
  * explicit env value.
  */
 export function shouldAutoEnableLowRamMode(): boolean {
-  if (process.env["SWARMX_VIDEO_LOW_RAM_MODE"]) return false;
+  if (loadEnv().SWARMX_VIDEO_LOW_RAM_MODE) return false;
   const available = detectAvailableMemoryMb();
   return available !== null && available < FULL_PIPELINE_MIN_AVAILABLE_MB;
 }

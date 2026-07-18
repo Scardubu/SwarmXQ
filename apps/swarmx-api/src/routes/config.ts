@@ -1,29 +1,31 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
+import { loadEnv } from "../lib/env.js";
 
 // In-memory config store (loaded from env / config file at startup)
+const _env = loadEnv();
 const config = {
   backend: {
-    port: parseInt(process.env["SWARMX_API_PORT"] ?? "3001", 10),
-    host: process.env["SWARMX_API_HOST"] ?? "127.0.0.1",
+    port: _env.SWARMX_API_PORT,
+    host: _env.SWARMX_API_HOST,
     sse: {
       flushIntervalMs: 100,
       keepAliveIntervalMs: 15_000,
     },
   },
   telemetry: {
-    pollIntervalMs: parseInt(process.env["SWARMX_TELEMETRY_INTERVAL_MS"] ?? "2000", 10),
+    pollIntervalMs: _env.SWARMX_TELEMETRY_INTERVAL_MS,
   },
   agents: {
-    maxConcurrent: parseInt(process.env["SWARMX_MAX_AGENTS"] ?? "10", 10),
-    defaultTimeout: parseInt(process.env["SWARMX_AGENT_TIMEOUT_MS"] ?? "300000", 10),
+    maxConcurrent: _env.SWARMX_MAX_AGENTS,
+    defaultTimeout: _env.SWARMX_AGENT_TIMEOUT_MS,
   },
   terminal: {
-    maxSessions: parseInt(process.env["SWARMX_MAX_PTY_SESSIONS"] ?? "8", 10),
+    maxSessions: _env.SWARMX_MAX_PTY_SESSIONS,
     sessionTimeoutMs: 3_600_000,
   },
   llm: {
-    defaultModel: process.env["SWARMX_DEFAULT_MODEL"] ?? "gpt-4o-mini",
+    defaultModel: _env.SWARMX_DEFAULT_MODEL,
     maxTokens: 16_384,
   },
 };

@@ -18,6 +18,7 @@ import {
 } from "./adaptive-timeout-config.js";
 import { extractJson, sanitizeReasoningOutput } from "./reasoning-sanitizer.js";
 import { generateOllamaText } from "./ollama.js";
+import { loadEnv } from "../lib/env.js";
 
 const MAX_RETRIES = 2;
 
@@ -52,9 +53,7 @@ function toLegacyAwarePlatform(platform: VideoExportPlatform): string {
 
 async function callPilotModel(prompt: string): Promise<string> {
   const orchestrator = ModelOrchestrator.getInstance();
-  const requestedTag = resolveCanonicalTag(
-    process.env["SWARMX_MODEL_FAST"] ?? process.env["SWARM_MODEL_FAST"] ?? "instruct-phi4-pro-q8-prod",
-  );
+  const requestedTag = resolveCanonicalTag(loadEnv().SWARMX_MODEL_FAST);
   const callConfig = getAdaptiveCallConfig(requestedTag, "fast_chat");
 
   if (callConfig.circuitOpen) {

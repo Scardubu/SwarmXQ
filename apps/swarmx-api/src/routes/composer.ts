@@ -34,6 +34,7 @@ import {
 } from "../services/reasoning-sanitizer.js";
 import { getModelOrchestrator } from "../services/model-orchestrator.js";
 import { resolveCanonicalTag } from "@swarmx/types/operator-map";
+import { loadEnv } from "../lib/env.js";
 
 type ComposerAgent = {
   id: string;
@@ -63,10 +64,16 @@ interface WorkflowRunRecord {
   updatedAt: string;
 }
 
-const TIMEOUT_HISTOGRAM_LOG_EVERY = Number.parseInt(
-  process.env["SWARMX_COMPOSER_TIMEOUT_HISTO_LOG_EVERY"] ?? "3",
-  10,
-);
+const _ce = loadEnv();
+const TIMEOUT_HISTOGRAM_LOG_EVERY  = _ce.SWARMX_COMPOSER_TIMEOUT_HISTO_LOG_EVERY;
+const COMPOSER_RETRY_MAX_ATTEMPTS  = Math.max(1, _ce.SWARMX_COMPOSER_RETRY_MAX_ATTEMPTS);
+const COMPOSER_RETRY_BASE_DELAY_MS = Math.max(50, _ce.SWARMX_COMPOSER_RETRY_BASE_DELAY_MS);
+const COMPOSER_RETRY_MAX_DELAY_MS  = Math.max(COMPOSER_RETRY_BASE_DELAY_MS, _ce.SWARMX_COMPOSER_RETRY_MAX_DELAY_MS);
+const COMPOSER_CB_FAILURE_THRESHOLD = Math.max(1, _ce.SWARMX_COMPOSER_CB_FAILURE_THRESHOLD);
+const COMPOSER_CB_OPEN_MS          = Math.max(1000, _ce.SWARMX_COMPOSER_CB_OPEN_MS);
+const COMPOSER_DEEP_TIMEOUT_MS     = Math.max(30_000, _ce.SWARMX_COMPOSER_DEEP_TIMEOUT_MS);
+// [V6.2-FIX-05] Lower the floor on constrained hosts via SWARMX_COMPOSER_DEEP_TIMEOUT_MIN_MS.
+const COMPOSER_DEEP_TIMEOUT_MIN_MS = _ce.SWARMX_COMPOSER_DEEP_TIMEOUT_MIN_MS;
 
 const composerTimeoutHistogram: Record<TimeoutBucket, number> = {
   lt5s: 0,
@@ -77,38 +84,6 @@ const composerTimeoutHistogram: Record<TimeoutBucket, number> = {
 };
 
 let composerTimeoutCount = 0;
-
-const COMPOSER_RETRY_MAX_ATTEMPTS = Math.max(
-  1,
-  Number.parseInt(process.env["SWARMX_COMPOSER_RETRY_MAX_ATTEMPTS"] ?? "2", 10) || 2,
-);
-const COMPOSER_RETRY_BASE_DELAY_MS = Math.max(
-  50,
-  Number.parseInt(process.env["SWARMX_COMPOSER_RETRY_BASE_DELAY_MS"] ?? "250", 10) || 250,
-);
-const COMPOSER_RETRY_MAX_DELAY_MS = Math.max(
-  COMPOSER_RETRY_BASE_DELAY_MS,
-  Number.parseInt(process.env["SWARMX_COMPOSER_RETRY_MAX_DELAY_MS"] ?? "2500", 10) || 2500,
-);
-const COMPOSER_CB_FAILURE_THRESHOLD = Math.max(
-  1,
-  Number.parseInt(process.env["SWARMX_COMPOSER_CB_FAILURE_THRESHOLD"] ?? "4", 10) || 4,
-);
-const COMPOSER_CB_OPEN_MS = Math.max(
-  1000,
-  Number.parseInt(process.env["SWARMX_COMPOSER_CB_OPEN_MS"] ?? "20000", 10) || 20000,
-);
-const COMPOSER_DEEP_TIMEOUT_MS = Math.max(
-  30_000,
-  Number.parseInt(process.env["SWARMX_COMPOSER_DEEP_TIMEOUT_MS"] ?? "90000", 10) || 90_000,
-);
-// [V6.2-FIX-05] Operator escape hatch: on constrained hosts (≤ 8 GB VRAM) the
-// default 90s deep-prompt floor may be unacceptable. Setting
-// SWARMX_COMPOSER_DEEP_TIMEOUT_MIN_MS to e.g. "45000" lowers the floor.
-const COMPOSER_DEEP_TIMEOUT_MIN_MS = Number.parseInt(
-  process.env["SWARMX_COMPOSER_DEEP_TIMEOUT_MIN_MS"] ?? String(COMPOSER_DEEP_TIMEOUT_MS),
-  10,
-) || COMPOSER_DEEP_TIMEOUT_MS;
 
 const composerCircuit = {
   state: "closed" as CircuitState,
@@ -365,10 +340,7 @@ function shouldLogHistogram(): boolean {
 }
 
 function workflowRunsFilePath(): string {
-  const runtimeHome =
-    process.env["SWARMX_HOME"] ??
-    `${process.env["HOME"] ?? process.env["USERPROFILE"] ?? ""}/.swarmx`;
-  return path.join(runtimeHome, "state", "workflow-runs.jsonl");
+  return path.join(loadEnv().SWARMX_HOME, "state", "workflow-runs.jsonl");
 }
 
 async function loadWorkflowRuns(limit = 1000): Promise<WorkflowRunRecord[]> {
@@ -829,30 +801,12 @@ function preferredModelCandidates(
   // model_reason / model_code). resolveCanonicalTag() inside
   // normalizeModelTag() (if wired) or here directly still protects against
   // an operator-set env var carrying a legacy/-scar value.
+  const _me = loadEnv();
   const fastModel = normalizeModelTag(
-    resolveCanonicalTag(
-      process.env["SWARMX_COMPOSER_FAST_MODEL"] ??
-      process.env["SWARMX_MODEL_FAST"] ??
-      process.env["SWARM_MODEL_FAST"] ??
-      selectedModel ??
-      "instruct-phi4-pro-q8-prod",
-    ),
+    resolveCanonicalTag(_me.SWARMX_COMPOSER_FAST_MODEL ?? _me.SWARMX_MODEL_FAST ?? selectedModel),
   );
-  const reasonModel = normalizeModelTag(
-    resolveCanonicalTag(
-      process.env["SWARMX_MODEL_REASON"] ??
-      process.env["SWARMX_MODEL_REASONER"] ??
-      process.env["SWARM_MODEL_REASON"] ??
-      "reason-deepseekr1-pro-q5km-prod",
-    ),
-  );
-  const codeModel = normalizeModelTag(
-    resolveCanonicalTag(
-      process.env["SWARMX_MODEL_CODE"] ??
-      process.env["SWARM_MODEL_CODE"] ??
-      "code-qwen25-pro-q5km-prod",
-    ),
-  );
+  const reasonModel = normalizeModelTag(resolveCanonicalTag(_me.SWARMX_MODEL_REASON));
+  const codeModel   = normalizeModelTag(resolveCanonicalTag(_me.SWARMX_MODEL_CODE));
 
   if (runtimePressure === "critical") {
     return [fastModel, selectedModel];
@@ -1122,51 +1076,19 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       // legacy alias an operator might still have set in SWARM_MODEL_FAST /
       // SWARMX_MODEL_FAST, per Hard Constraint #1 (no -scar tags in
       // production code paths).
+      const _re = loadEnv();
       const rawModel: string = resolveCanonicalTag(
-        process.env["SWARMX_COMPOSER_MODEL"] ??
-        process.env["SWARMX_MODEL_FAST"] ??
-        process.env["SWARM_MODEL_FAST"] ??
-        "instruct-phi4-pro-q8-prod",
+        _re.SWARMX_COMPOSER_MODEL ?? _re.SWARMX_MODEL_FAST,
       );
       const model = rawModel.includes(":") ? rawModel : `${rawModel}:latest`;
       let selectedModel = model;
-      // [SEED-FIX-02] Increase default composer timeout to 60s. The original 8s
-      // floor was too aggressive for cold Ollama model loads (first inference after
-      // boot requires loading weights into VRAM, which can take 15–40s on CPU-only
-      // hosts). Overridable via SWARMX_COMPOSER_TIMEOUT_MS env var.
-      const configuredTimeout = Number.parseInt(
-        process.env["SWARMX_COMPOSER_TIMEOUT_MS"] ?? "60000",
-        10,
-      );
-      const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0
-        ? configuredTimeout
-        : 60_000;
-      const configuredNumPredict = Number.parseInt(
-        process.env["SWARMX_COMPOSER_NUM_PREDICT"] ?? "256",
-        10,
-      );
-      const composerNumPredict = Number.isFinite(configuredNumPredict) && configuredNumPredict > 0
-        ? configuredNumPredict
-        : 256;
-      // [APEX17-r8] This used to be a single static "10m" default applied to
-      // EVERY model regardless of identity — which meant 7B specialists that
-      // configs/routing.yaml explicitly wants unloaded after each call
-      // (keep_alive: 0) were instead being told to stay resident for ten
-      // minutes, defeating the SINGLE-7B LOCK / 8 GB RAM discipline entirely.
-      // Per-model keep-alive now comes from ModelOrchestrator.requestModel()
-      // inside the dispatch loop below (see "composer_orchestrator_request").
+      const timeoutMs = _re.SWARMX_COMPOSER_TIMEOUT_MS;
+      const composerNumPredict = _re.SWARMX_COMPOSER_NUM_PREDICT;
+      // [APEX17-r8] Per-model keep-alive comes from ModelOrchestrator.requestModel().
       // This var is kept ONLY as an explicit operator override escape hatch —
       // empty string means "defer to the orchestrator".
-      const composerKeepAliveOverride = process.env["SWARMX_COMPOSER_KEEP_ALIVE"]?.trim() || "";
-      // [V6.1-FIX-18] Allow a dedicated cap for short prompts. The prior fixed
-      // 30s cap caused avoidable fallbacks during cold loads on constrained hosts.
-      const configuredShortPromptTimeout = Number.parseInt(
-        process.env["SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS"] ?? "45000",
-        10,
-      );
-      const shortPromptTimeoutMs = Number.isFinite(configuredShortPromptTimeout) && configuredShortPromptTimeout > 0
-        ? configuredShortPromptTimeout
-        : 45_000;
+      const composerKeepAliveOverride = _re.SWARMX_COMPOSER_KEEP_ALIVE?.trim() ?? "";
+      const shortPromptTimeoutMs = _re.SWARMX_COMPOSER_SHORT_PROMPT_TIMEOUT_MS;
 
       let responseText = "";
       let usedSummaryFallback = false;
@@ -1442,8 +1364,7 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
         selectedModel = pickBestDiscoveredModel(preflightModels, [
           model,
           rawModel,
-          process.env["SWARMX_MODEL_FAST"] ?? "",
-          process.env["SWARM_MODEL_FAST"] ?? "",
+          loadEnv().SWARMX_MODEL_FAST,
           "instruct-phi4-pro-q8-prod:latest",
           "instruct-phi4-pro-q8-prod",
         ]) ?? model;

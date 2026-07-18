@@ -13,6 +13,7 @@ import {
 } from "../src/services/video-runtime-config.js";
 import { buildOllamaGenerateBody } from "../src/services/ollama.js";
 import type { VideoJobRequest } from "../src/types/video.js";
+import { resetEnvForTesting } from "../src/lib/env.js";
 
 const request: VideoJobRequest = {
   prompt: "Create a 30-second faceless TikTok video about focus.",
@@ -27,10 +28,12 @@ delete process.env["SWARMX_VIDEO_INTENT_MODEL"];
 delete process.env["SWARMX_VIDEO_PLAN_MODEL"];
 delete process.env["SWARMX_VIDEO_SCRIPT_MODEL"];
 delete process.env["SWARMX_VIDEO_STORYBOARD_MODEL"];
+resetEnvForTesting();
 const defaultProfileRequiredMb = minimumRamRequiredForVideoRequest(request);
 assert.equal(defaultProfileRequiredMb, 6170);
 
 process.env["SWARMX_VIDEO_LOW_RAM_MODE"] = "1";
+resetEnvForTesting();
 assert.equal(resolveVideoModelTag(request, "intent_classification"), LOW_RAM_VIDEO_MODEL);
 assert.equal(resolveVideoModelTag(request, "planning"), LOW_RAM_VIDEO_MODEL);
 assert.equal(resolveVideoModelTag(request, "scripting"), LOW_RAM_VIDEO_MODEL);
@@ -39,6 +42,7 @@ assert.equal(minimumRamRequiredForVideoRequest(request), 3300);
 
 process.env["SWARMX_VIDEO_LOW_RAM_MODE"] = "0";
 process.env["SWARMX_VIDEO_PLAN_MODEL"] = "plan-phi4-pro-q8-prod";
+resetEnvForTesting();
 assert.equal(resolveVideoModelTag(request, "planning"), "plan-phi4-pro-q8-prod");
 delete process.env["SWARMX_VIDEO_PLAN_MODEL"];
 

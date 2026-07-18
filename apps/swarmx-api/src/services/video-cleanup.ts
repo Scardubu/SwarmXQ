@@ -10,27 +10,13 @@
 
 import { readdir, rm, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { loadEnv } from "../lib/env.js";
 
-const EXPORT_DIR = resolve(
-  process.env["SWARMX_VIDEO_EXPORT_DIR"] ??
-    join(process.cwd(), ".swarmx", "video", "exports"),
-);
-
-const ARTIFACT_DIR = resolve(
-  process.env["SWARMX_VIDEO_ARTIFACT_DIR"] ??
-    join(process.cwd(), ".swarmx", "video", "artifacts"),
-);
-
-const TTL_DAYS = Math.max(
-  1,
-  Number.parseInt(process.env["SWARMX_VIDEO_EXPORT_TTL_DAYS"] ?? "7", 10) || 7,
-);
-
-// Run cleanup every 6 hours by default; tunable for testing.
-const CLEANUP_INTERVAL_MS = Math.max(
-  60_000,
-  Number.parseInt(process.env["SWARMX_VIDEO_CLEANUP_INTERVAL_MS"] ?? String(6 * 60 * 60 * 1000), 10) || 6 * 60 * 60 * 1000,
-);
+const _clenv = loadEnv();
+const EXPORT_DIR = resolve(_clenv.SWARMX_VIDEO_EXPORT_DIR);
+const ARTIFACT_DIR = resolve(_clenv.SWARMX_VIDEO_ARTIFACT_DIR);
+const TTL_DAYS = Math.max(1, _clenv.SWARMX_VIDEO_EXPORT_TTL_DAYS || 7);
+const CLEANUP_INTERVAL_MS = Math.max(60_000, _clenv.SWARMX_VIDEO_CLEANUP_INTERVAL_MS || 6 * 60 * 60 * 1000);
 
 async function cleanDirectory(dir: string, ttlMs: number, tag: string): Promise<void> {
   let entries: string[];

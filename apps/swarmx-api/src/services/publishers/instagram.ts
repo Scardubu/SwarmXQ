@@ -2,6 +2,7 @@ import type { PublishResult, VideoArtifacts } from "@swarmx/types/video-types";
 import type { VideoJob } from "../../types/video.js";
 import { BaseVideoPublisher } from "./base-publisher.js";
 import { GenericVideoPublisher } from "./generic.js";
+import { loadEnv } from "../../lib/env.js";
 
 const INSTAGRAM_GRAPH_BASE = "https://graph.facebook.com/v23.0";
 
@@ -27,8 +28,8 @@ export class InstagramVideoPublisher extends BaseVideoPublisher {
     artifacts: VideoArtifacts,
     scheduledAt?: string,
   ): Promise<PublishResult> {
-    const token = process.env["SWARMX_INSTAGRAM_ACCESS_TOKEN"];
-    const userId = process.env["SWARMX_INSTAGRAM_USER_ID"];
+    const token = process.env["SWARMX_INSTAGRAM_ACCESS_TOKEN"]; // secret — intentional escape hatch
+    const userId = loadEnv().SWARMX_INSTAGRAM_USER_ID;
 
     if (!token || !userId) {
       this.log("warn", "approval_required", {

@@ -6,6 +6,7 @@
 import type { ComfyNode, ComfyWorkflow, FrameMath, VideoMode, VideoResolution } from "@swarmx/types/video-types";
 import { ModelOrchestrator } from "./model-orchestrator.js";
 import { log } from "../lib/logger.js";
+import { loadEnv } from "../lib/env.js";
 
 export interface WorkflowParams {
   seed: number;
@@ -27,7 +28,7 @@ const MAX_BATCH_FOR_RESOLUTION: Record<VideoResolution, number> = {
 };
 
 const MIN_BATCH_SIZE = 2;
-const MAX_BATCH_SIZE = parseInt(process.env["SWARMX_VIDEO_MAX_BATCH_SIZE"] ?? "8", 10);
+const MAX_BATCH_SIZE = loadEnv().SWARMX_VIDEO_MAX_BATCH_SIZE;
 
 function parseResolution(resolution: VideoResolution): { width: number; height: number } {
   const [widthRaw, heightRaw] = resolution.split("x").map((v) => parseInt(v, 10));
@@ -58,7 +59,7 @@ function buildFrameMath(params: WorkflowParams): FrameMath {
 }
 
 function teaCacheEnabled(availableMb: number): boolean {
-  return process.env["SWARMX_COMFYUI_TEACACHE"] === "1" && availableMb > 6000;
+  return loadEnv().SWARMX_COMFYUI_TEACACHE === "1" && availableMb > 6000;
 }
 
 function deterministicSeed(seed: number): number {

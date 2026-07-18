@@ -11,6 +11,7 @@ import type {
 } from "@swarmx/types/video-types";
 import type { VideoJob } from "../../types/video.js";
 import { log as sharedLog } from "../../lib/logger.js";
+import { loadEnv } from "../../lib/env.js";
 
 export interface PublisherProfile {
   accountLabel: string;
@@ -169,7 +170,7 @@ export abstract class BaseVideoPublisher implements PlatformPublisher {
       return undefined;
     }
 
-    const exportDir = process.env["SWARMX_VIDEO_EXPORT_DIR"] ?? ".swarmx/video/exports";
+    const exportDir = loadEnv().SWARMX_VIDEO_EXPORT_DIR;
     await mkdir(exportDir, { recursive: true });
 
     const sidecarPath = join(

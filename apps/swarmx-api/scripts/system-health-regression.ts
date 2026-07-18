@@ -8,6 +8,7 @@ import {
   readWarmupStatus,
   unavailableModelReadiness,
 } from "../src/routes/system.js";
+import { resetEnvForTesting } from "../src/lib/env.js";
 
 function withEnvironment<T>(key: string, value: string | undefined, action: () => T): T {
   const previous = process.env[key];
@@ -16,6 +17,7 @@ function withEnvironment<T>(key: string, value: string | undefined, action: () =
   } else {
     process.env[key] = value;
   }
+  resetEnvForTesting();
 
   try {
     return action();
@@ -25,6 +27,7 @@ function withEnvironment<T>(key: string, value: string | undefined, action: () =
     } else {
       process.env[key] = previous;
     }
+    resetEnvForTesting();
   }
 }
 

@@ -41,6 +41,7 @@ import type { PublishResult } from "@swarmx/types/video-types";
 import { recordVideoPerformance } from "../services/video-assets.js";
 import { resolveCanonicalTag } from "@swarmx/types/operator-map";
 import type { CaptionDraft } from "@swarmx/types/video-types";
+import { loadEnv } from "../lib/env.js";
 
 // ── Local helper: check a binary is on PATH without importing the renderer ────
 // Different tools use different version flags: ffmpeg/ffprobe require the
@@ -118,18 +119,13 @@ const ReprioritizeBodySchema = z.object({
   orderedIds: z.array(z.string().min(1)).min(1),
 });
 
+const { SWARMX_VIDEO_CAPTION_SCORE_LIMIT_PER_MIN, SWARMX_VIDEO_JOB_LIMIT_PER_HOUR } = loadEnv();
 const captionScoreRateWindowMs = 60_000;
-const captionScoreRateLimit = Number.parseInt(
-  process.env["SWARMX_VIDEO_CAPTION_SCORE_LIMIT_PER_MIN"] ?? "10",
-  10,
-) || 10;
+const captionScoreRateLimit = SWARMX_VIDEO_CAPTION_SCORE_LIMIT_PER_MIN;
 const captionScoreBuckets = new Map<string, number[]>();
 
 const jobSubmitRateWindowMs = 60_000 * 60; // 1 hour sliding window
-const jobSubmitRateLimit = Number.parseInt(
-  process.env["SWARMX_VIDEO_JOB_LIMIT_PER_HOUR"] ?? "10",
-  10,
-) || 10;
+const jobSubmitRateLimit = SWARMX_VIDEO_JOB_LIMIT_PER_HOUR;
 const jobSubmitBuckets = new Map<string, number[]>();
 
 // Evict stale IP keys every 2 h so the Maps do not grow unbounded.
@@ -373,7 +369,7 @@ export async function videoRoutes(
       // ffprobe is required for every successful artifact, including ComfyUI
       // outputs. ffmpeg and narration are only required when the local renderer
       // may run (local or automatic fallback).
-      const renderBackend = process.env["SWARMX_VIDEO_RENDER_BACKEND"] ?? "auto";
+      const renderBackend = loadEnv().SWARMX_VIDEO_RENDER_BACKEND;
       const hasFfprobe = await commandAvailable("ffprobe", "-version");
       if (!hasFfprobe) {
         return reply.status(503).send({
@@ -390,7 +386,7 @@ export async function videoRoutes(
             message: "ffmpeg is required for local video rendering but was not found. Install it with: sudo apt install ffmpeg",
           });
         }
-        if (process.env["SWARMX_VIDEO_ALLOW_SILENT_AUDIO"] !== "1") {
+        if (loadEnv().SWARMX_VIDEO_ALLOW_SILENT_AUDIO !== "1") {
           const hasEspeak = await commandAvailable("espeak-ng", "--version");
           if (!hasEspeak) {
             return reply.status(503).send({

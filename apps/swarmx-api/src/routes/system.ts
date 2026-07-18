@@ -10,34 +10,26 @@ import { promisify } from "node:util";
 import { readFileSync } from "node:fs";
 import { getAvailableModels, fastHealthProbe } from "../services/ollama.js";
 import { getSwarmHealthSummary } from "../services/swarm-pressure-monitor.js";
+import { loadEnv } from "../lib/env.js";
 
 const execFileAsync = promisify(execFile);
 
 function getCanonicalModelTriad() {
+  const e = loadEnv();
   return [
     {
       role: "router",
-      tag:
-        process.env["SWARMX_MODEL_ULTRA_ROUTER"] ??
-        process.env["SWARM_MODEL_ULTRA_ROUTER"] ??
-        "route-phi4-lite-q4km-prod",
+      tag: e.SWARMX_MODEL_ULTRA_ROUTER,
       gguf: "microsoft_Phi-4-mini-instruct-Q8_0.gguf",
     },
     {
       role: "reason",
-      tag:
-        process.env["SWARMX_MODEL_REASON"] ??
-        process.env["SWARMX_MODEL_REASONER"] ??
-        process.env["SWARM_MODEL_REASON"] ??
-        "reason-deepseekr1-pro-q5km-prod",
+      tag: e.SWARMX_MODEL_REASON,
       gguf: "DeepSeek-R1-Distill-Qwen-7B-Q5_K_M.gguf",
     },
     {
       role: "code",
-      tag:
-        process.env["SWARMX_MODEL_CODE"] ??
-        process.env["SWARM_MODEL_CODE"] ??
-        "code-qwen25-pro-q5km-prod",
+      tag: e.SWARMX_MODEL_CODE,
       gguf: "Qwen2.5-7B-Instruct-Q5_K_M.gguf",
     },
   ] as const;
@@ -53,30 +45,13 @@ export interface ModelReadiness {
   error?: string;
 }
 
-const DEFAULT_SYSTEM_HEALTH_LIVENESS_TIMEOUT_MS = 1_500;
-const DEFAULT_SYSTEM_HEALTH_MODEL_TIMEOUT_MS = 2_500;
-
-function readBoundedTimeoutMs(
-  value: string | undefined,
-  fallback: number,
-): number {
-  const parsed = Number.parseInt(value ?? "", 10);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(10_000, Math.max(250, parsed));
-}
-
+// Bounds validation (250–10 000 ms) is handled by the Zod schema in env.ts.
 export function getSystemHealthLivenessTimeoutMs(): number {
-  return readBoundedTimeoutMs(
-    process.env["SWARMX_SYSTEM_HEALTH_PROBE_TIMEOUT_MS"],
-    DEFAULT_SYSTEM_HEALTH_LIVENESS_TIMEOUT_MS,
-  );
+  return loadEnv().SWARMX_SYSTEM_HEALTH_PROBE_TIMEOUT_MS;
 }
 
 export function getSystemHealthModelTimeoutMs(): number {
-  return readBoundedTimeoutMs(
-    process.env["SWARMX_SYSTEM_HEALTH_MODEL_PROBE_TIMEOUT_MS"],
-    DEFAULT_SYSTEM_HEALTH_MODEL_TIMEOUT_MS,
-  );
+  return loadEnv().SWARMX_SYSTEM_HEALTH_MODEL_PROBE_TIMEOUT_MS;
 }
 
 // ─── Warmup status (V6.2.26) ─────────────────────────────────────────────────
@@ -84,7 +59,6 @@ export function getSystemHealthModelTimeoutMs(): number {
 // The dashboard uses `coldStartEtaSecs` to render an accurate "Loading Model"
 // countdown instead of the previous hardcoded 140 s literal.
 const DEFAULT_COLD_START_ETA_SECS = 140;
-const WARMUP_STATUS_FILE_DEFAULT = "/tmp/swarmxq-warmup.json";
 
 export interface WarmupStatus {
   done: boolean;
@@ -95,9 +69,9 @@ export interface WarmupStatus {
 }
 
 export function readWarmupStatus(nowMs: number = Date.now()): WarmupStatus {
-  const path = process.env["SWARMX_WARMUP_STATUS_FILE"] ?? WARMUP_STATUS_FILE_DEFAULT;
+  const filePath = loadEnv().SWARMX_WARMUP_STATUS_FILE;
   try {
-    const raw = readFileSync(path, "utf8");
+    const raw = readFileSync(filePath, "utf8");
     const parsed = JSON.parse(raw) as {
       done?: boolean;
       startedAt?: string;
@@ -248,30 +222,17 @@ export async function systemRouter(server: FastifyInstance): Promise<void> {
       memory: memGb,
       warmup: readWarmupStatus(),
       ...(vramWarning ? { warnings: [vramWarning] } : {}),
-      config: {
+      config: (({ e }) => ({
         healthProbeTimeoutMs: livenessTimeoutMs,
         healthModelProbeTimeoutMs: modelProbeTimeoutMs,
-        modelRouter:
-          process.env["SWARMX_MODEL_ULTRA_ROUTER"] ??
-          process.env["SWARM_MODEL_ULTRA_ROUTER"] ??
-          "route-phi4-lite-q4km-prod",
-        // [V6.2-FIX-14] Keep health output aligned with the env precedence used
-        // by the API routes/services so diagnostics reflect real runtime state.
-        modelFast:
-          process.env["SWARMX_MODEL_FAST"] ??
-          process.env["SWARM_MODEL_FAST"] ??
-          "instruct-phi4-pro-q8-prod",
-        modelReason:
-          process.env["SWARMX_MODEL_REASON"] ??
-          process.env["SWARMX_MODEL_REASONER"] ??
-          process.env["SWARM_MODEL_REASON"] ??
-          "reason-deepseekr1-pro-q5km-prod",
-        modelCode:
-          process.env["SWARMX_MODEL_CODE"] ??
-          process.env["SWARM_MODEL_CODE"] ??
-          "code-qwen25-pro-q5km-prod",
-        apiPort:     Number.parseInt(process.env["SWARMX_API_PORT"] ?? "3001", 10),
-      },
+        // [V6.2-FIX-14] Alias chains resolved centrally in env.ts so diagnostics
+        // always reflect the same precedence as API routes/services at runtime.
+        modelRouter: e.SWARMX_MODEL_ULTRA_ROUTER,
+        modelFast: e.SWARMX_MODEL_FAST,
+        modelReason: e.SWARMX_MODEL_REASON,
+        modelCode: e.SWARMX_MODEL_CODE,
+        apiPort: e.SWARMX_API_PORT,
+      }))({ e: loadEnv() }),
     });
   });
 
@@ -325,7 +286,7 @@ export async function systemRouter(server: FastifyInstance): Promise<void> {
         "--no-pager",
         "--output=json",
         "--all",
-        ...(process.env["SWARMX_SYSTEMD_FILTER"] ? ["--unit", process.env["SWARMX_SYSTEMD_FILTER"]] : []),
+        ...((f) => f ? ["--unit", f] : [])(loadEnv().SWARMX_SYSTEMD_FILTER),
       ]);
 
       interface SystemctlUnit {

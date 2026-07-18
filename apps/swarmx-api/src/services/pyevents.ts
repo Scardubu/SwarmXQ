@@ -24,15 +24,9 @@ import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { broadcastEvent } from "../plugins/sse.js";
 import type { SwarmXEvent } from "../types/events.js";
+import { loadEnv } from "../lib/env.js";
 
-const POLL_INTERVAL_MS = Number.parseInt(
-  process.env["SWARMX_PYEVENTS_POLL_MS"] ?? "2500",
-  10,
-);
-
-const RUNTIME_HOME =
-  process.env["SWARMX_HOME"] ??
-  `${process.env["HOME"] ?? process.env["USERPROFILE"] ?? ""}/.swarmx`;
+const { SWARMX_PYEVENTS_POLL_MS: POLL_INTERVAL_MS, SWARMX_HOME: RUNTIME_HOME } = loadEnv();
 
 const JOURNAL_PATH = join(RUNTIME_HOME, "traces", "journal.jsonl");
 

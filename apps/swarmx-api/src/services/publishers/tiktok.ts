@@ -3,6 +3,7 @@ import type { PublishResult, VideoArtifacts } from "@swarmx/types/video-types";
 import type { VideoJob } from "../../types/video.js";
 import { BaseVideoPublisher } from "./base-publisher.js";
 import { GenericVideoPublisher } from "./generic.js";
+import { loadEnv } from "../../lib/env.js";
 
 const TIKTOK_API_BASE = "https://open.tiktokapis.com";
 const POLL_ATTEMPTS = 12;
@@ -47,8 +48,8 @@ export class TikTokVideoPublisher extends BaseVideoPublisher {
     artifacts: VideoArtifacts,
     scheduledAt?: string,
   ): Promise<PublishResult> {
-    const token = process.env["SWARMX_TIKTOK_ACCESS_TOKEN"];
-    const approved = process.env["SWARMX_TIKTOK_API_APPROVED"] === "1";
+    const token = process.env["SWARMX_TIKTOK_ACCESS_TOKEN"]; // secret — intentional escape hatch
+    const approved = loadEnv().SWARMX_TIKTOK_API_APPROVED === "1";
 
     if (!token || !approved) {
       this.log("warn", "approval_required", {

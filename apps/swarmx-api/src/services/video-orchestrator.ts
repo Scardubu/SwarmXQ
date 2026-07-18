@@ -115,6 +115,7 @@ import {
   stageTimeoutMs,
   type TextVideoJobStage,
 } from "./video-runtime-config.js";
+import { loadEnv } from "../lib/env.js";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -445,7 +446,7 @@ complexity: 0.0 = simple topic, minimal narrative arc; 1.0 = nuanced multi-beat 
       recordOperatorTrace(ctx, "intent_classification", model, startedAt, true);
       return parsed;
     } catch (err) {
-      if (process.env["SWARMX_VIDEO_ALLOW_UNSTRUCTURED_INTENT"] === "1") {
+      if (loadEnv().SWARMX_VIDEO_ALLOW_UNSTRUCTURED_INTENT === "1") {
         recordOperatorTrace(ctx, "intent_classification", model, startedAt, true);
         return { intent: raw.slice(0, 200), complexity: 0.5 };
       }
@@ -617,10 +618,11 @@ async function stageRenderAssembly(
       }
     }
 
-    const backend = process.env["SWARMX_VIDEO_RENDER_BACKEND"] ?? "auto";
+    const _renv = loadEnv();
+    const backend = _renv.SWARMX_VIDEO_RENDER_BACKEND;
     const comfyClient = getComfyUIClient();
     const comfyAvailable = await comfyClient.isAvailable(controller.signal);
-    const comfyConfigured = Boolean(process.env["SWARMX_COMFYUI_OUTPUT_DIR"]);
+    const comfyConfigured = Boolean(_renv.SWARMX_COMFYUI_OUTPUT_DIR);
     if ((backend === "auto" || backend === "comfyui") && comfyAvailable && comfyConfigured) {
       const ram = ModelOrchestrator.getInstance().getRamSnapshot();
       const workflow = generateLTXWorkflow({

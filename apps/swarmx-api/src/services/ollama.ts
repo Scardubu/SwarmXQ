@@ -35,21 +35,14 @@ interface EndpointProbeResult {
   latencyMs: number;
 }
 
-function firstConfiguredEnv(keys: string[]): string {
-  for (const key of keys) {
-    const value = process.env[key]?.trim();
-    if (value) {
-      return value;
-    }
-  }
-  return "";
-}
+import { loadEnv } from "../lib/env.js";
 
 function getDefaultEndpoints(): string[] {
+  const _oe = loadEnv();
   const ordered = [
-    process.env["OLLAMA_HOST"]?.trim() || "",
-    process.env["SWARMX_OLLAMA_URL"]?.trim() || "",
-    process.env["SWARMX_OLLAMA_BASE_URL"]?.trim() || "",
+    _oe.OLLAMA_HOST?.trim() ?? "",
+    _oe.SWARMX_OLLAMA_URL?.trim() ?? "",
+    _oe.SWARMX_OLLAMA_BASE_URL?.trim() ?? "",
     "http://127.0.0.1:11434",
     "http://localhost:11434",
   ].filter(Boolean);
@@ -67,10 +60,7 @@ function getDefaultEndpoints(): string[] {
 
 // [V6.2-FIX-04] CACHE_TTL_MS is now env-overridable so constrained hosts can
 // tune discovery frequency without a code change.
-const CACHE_TTL_MS = Number.parseInt(
-  process.env["SWARMX_OLLAMA_CACHE_TTL_MS"] ?? "15000",
-  10,
-) || 15_000;
+const CACHE_TTL_MS = loadEnv().SWARMX_OLLAMA_CACHE_TTL_MS;
 
 let cachedConfig: OllamaServiceConfig | null = null;
 let lastDiscoveryTime = 0;
@@ -157,15 +147,16 @@ async function probeSubprocessModels(): Promise<string[]> {
 }
 
 function getStaticModels(): string[] {
+  const _sm = loadEnv();
   const models = [
-    firstConfiguredEnv(["SWARMX_COMPOSER_MODEL"]),
-    firstConfiguredEnv(["SWARMX_MODEL_FAST", "SWARM_MODEL_FAST"]),
-    firstConfiguredEnv(["SWARMX_MODEL_CODE", "SWARM_MODEL_CODE"]),
-    firstConfiguredEnv(["SWARMX_MODEL_REASON", "SWARMX_MODEL_REASONER", "SWARM_MODEL_REASON"]),
+    _sm.SWARMX_COMPOSER_MODEL,
+    _sm.SWARMX_MODEL_FAST,
+    _sm.SWARMX_MODEL_CODE,
+    _sm.SWARMX_MODEL_REASON,
     "instruct-phi4-pro-q8-prod",
     "code-qwen25-pro-q5km-prod",
     "reason-deepseekr1-pro-q5km-prod",
-  ].filter(Boolean);
+  ].filter((m): m is string => Boolean(m));
   return [...new Set(models)].sort();
 }
 
@@ -381,8 +372,7 @@ export function invalidateOllamaCache(): void {
 // [V6.2-FIX-22] Probe timeout is now env-overridable. On constrained hosts the
 // default 2000ms proved too tight during cold startup and high memory pressure;
 // default to 5000ms and override with SWARMX_OLLAMA_PROBE_TIMEOUT_MS if needed.
-const FAST_PROBE_TIMEOUT_MS =
-  Number.parseInt(process.env["SWARMX_OLLAMA_PROBE_TIMEOUT_MS"] ?? "5000", 10) || 5_000;
+const FAST_PROBE_TIMEOUT_MS = loadEnv().SWARMX_OLLAMA_PROBE_TIMEOUT_MS;
 
 export async function fastHealthProbe(timeoutMs = FAST_PROBE_TIMEOUT_MS): Promise<{
   reachable: boolean;

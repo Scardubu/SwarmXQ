@@ -18,13 +18,9 @@ import {
 } from "./adaptive-timeout-config.js";
 import { extractJson, sanitizeReasoningOutput } from "./reasoning-sanitizer.js";
 import { generateOllamaText } from "./ollama.js";
+import { loadEnv } from "../lib/env.js";
 
-const ORACLE_TAG = resolveCanonicalTag(
-  process.env["SWARMX_MODEL_REASON"] ??
-    process.env["SWARMX_MODEL_REASONING"] ??
-    process.env["SWARM_MODEL_REASON"] ??
-    "reason-deepseekr1-pro-q5km-prod",
-);
+const ORACLE_TAG = resolveCanonicalTag(loadEnv().SWARMX_MODEL_REASON);
 
 export const VIRALITY_SCORE_RUBRIC = `
 HOOK_STRENGTH (0-1): Pattern interruption in first 3 seconds. Criteria:

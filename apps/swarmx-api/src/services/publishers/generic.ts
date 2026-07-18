@@ -3,6 +3,7 @@ import { basename, extname, join } from "node:path";
 import type { PublishResult, VideoArtifacts } from "@swarmx/types/video-types";
 import type { VideoJob } from "../../types/video.js";
 import { BaseVideoPublisher } from "./base-publisher.js";
+import { loadEnv } from "../../lib/env.js";
 
 export class GenericVideoPublisher extends BaseVideoPublisher {
   readonly platform = "generic" as const;
@@ -19,7 +20,7 @@ export class GenericVideoPublisher extends BaseVideoPublisher {
     scheduledAt?: string,
   ): Promise<PublishResult> {
     const outputPath = artifacts.outputPath;
-    const exportDir = process.env["SWARMX_VIDEO_EXPORT_DIR"] ?? ".swarmx/video/exports";
+    const exportDir = loadEnv().SWARMX_VIDEO_EXPORT_DIR;
     await mkdir(exportDir, { recursive: true });
 
     const fileExtension = outputPath ? extname(outputPath) || ".mp4" : ".mp4";

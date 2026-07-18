@@ -9,6 +9,7 @@ import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import { broadcastEvent } from "../plugins/sse.js";
 import type { LogLevel, SwarmXEvent } from "../types/events.js";
+import { loadEnv } from "../lib/env.js";
 
 // journald priority → LogLevel
 const PRIORITY_MAP: Record<string, LogLevel> = {
@@ -79,8 +80,8 @@ export async function startJournaldStream(server: FastifyInstance): Promise<void
     "-o", "json",  // JSON output format
     "--no-pager",
     // Optionally filter by SwarmX units
-    ...(process.env["SWARMX_JOURNAL_UNITS"]
-      ? process.env["SWARMX_JOURNAL_UNITS"].split(",").flatMap((u) => ["-u", u.trim()])
+    ...(loadEnv().SWARMX_JOURNAL_UNITS
+      ? loadEnv().SWARMX_JOURNAL_UNITS!.split(",").flatMap((u) => ["-u", u.trim()])
       : []),
   ];
 

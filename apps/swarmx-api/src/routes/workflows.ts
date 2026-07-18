@@ -13,15 +13,14 @@ import { request as httpsRequest } from "node:https";
 import { broadcastEvent } from "../plugins/sse.js";
 import type { WorkflowEventData } from "../types/events.js";
 
-const WORKFLOWS_DIR = process.env["SWARMX_WORKFLOWS_DIR"]
-  ?? path.resolve(process.cwd(), "../../workflows");
-const SWARMX_HOME = process.env["SWARMX_HOME"]
-  ?? path.resolve(process.cwd(), "../../.swarmx");
+import { loadEnv } from "../lib/env.js";
+
+const _e = loadEnv();
+const WORKFLOWS_DIR = _e.SWARMX_WORKFLOWS_DIR;
+const SWARMX_HOME = _e.SWARMX_HOME;
 const WORKFLOW_RUNS_FILE = path.join(SWARMX_HOME, "state", "workflow-runs.jsonl");
-const PYTHON_API_BASE = process.env["SWARMX_PYTHON_API_URL"]
-  ?? "http://swarmx-python:8787";
-const DEFAULT_REPO = process.env["SWARMX_REPO_ROOT"]
-  ?? process.cwd();
+const PYTHON_API_BASE = _e.SWARMX_PYTHON_API_URL ?? "http://swarmx-python:8787";
+const DEFAULT_REPO = _e.SWARMX_REPO_ROOT;
 
 type WorkflowRunStatus = "queued" | "running" | "success" | "failed" | "cancelled";
 

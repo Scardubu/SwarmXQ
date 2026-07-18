@@ -13,20 +13,13 @@
 import { randomUUID } from "node:crypto";
 import type { ComfyWorkflow } from "@swarmx/types/video-types";
 import { ModelOrchestrator } from "./model-orchestrator.js";
+import { loadEnv } from "../lib/env.js";
 
-const DEFAULT_COMFY_BASE_URL = process.env["SWARMX_COMFYUI_URL"] ?? "http://127.0.0.1:8188";
-const DEFAULT_MAX_FRAME_BUDGET_MB = parseInt(
-  process.env["SWARMX_VIDEO_MAX_FRAME_BUDGET_MB"] ?? "7600",
-  10,
-);
-const DEFAULT_POLL_INTERVAL_MS = parseInt(
-  process.env["SWARMX_VIDEO_COMFY_POLL_INTERVAL_MS"] ?? "2000",
-  10,
-);
-const DEFAULT_POLL_MAX_ATTEMPTS = parseInt(
-  process.env["SWARMX_VIDEO_COMFY_POLL_MAX_ATTEMPTS"] ?? "180",
-  10,
-);
+const _cenv = loadEnv();
+const DEFAULT_COMFY_BASE_URL = _cenv.SWARMX_COMFYUI_URL;
+const DEFAULT_MAX_FRAME_BUDGET_MB = _cenv.SWARMX_VIDEO_MAX_FRAME_BUDGET_MB;
+const DEFAULT_POLL_INTERVAL_MS = _cenv.SWARMX_VIDEO_COMFY_POLL_INTERVAL_MS;
+const DEFAULT_POLL_MAX_ATTEMPTS = _cenv.SWARMX_VIDEO_COMFY_POLL_MAX_ATTEMPTS;
 
 export interface ComfyProgress {
   promptId: string;

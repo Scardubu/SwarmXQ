@@ -5,15 +5,15 @@ import { mkdir, mkdtemp, rename, rm, unlink, writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path";
 import type { VideoJobRequest } from "../types/video.js";
 import { outputDir, resolveOutputPath } from "./video-assets.js";
+import { loadEnv } from "../lib/env.js";
 
+const _ffenv = loadEnv();
 const RENDER_COMMAND_TIMEOUT_MS = Math.min(
   900_000,
-  Math.max(30_000, Number.parseInt(process.env["SWARMX_VIDEO_FFMPEG_TIMEOUT_MS"] ?? "240000", 10) || 240_000),
+  Math.max(30_000, _ffenv.SWARMX_VIDEO_FFMPEG_TIMEOUT_MS || 240_000),
 );
 const COMMAND_MAX_BUFFER_BYTES = 1024 * 1024;
-const RENDER_TEMP_DIR = resolve(
-  process.env["SWARMX_VIDEO_TEMP_DIR"] ?? join(process.cwd(), ".swarmx", "video", "tmp"),
-);
+const RENDER_TEMP_DIR = resolve(_ffenv.SWARMX_VIDEO_TEMP_DIR);
 
 interface FfmpegRenderInput {
   jobId: string;
@@ -315,7 +315,7 @@ export async function renderWithFfmpeg(input: FfmpegRenderInput): Promise<{ outp
 
     const narrationPath = join(workDir, "narration.wav");
     const hasEspeak = await commandAvailable("espeak-ng", "--version");
-    if (!hasEspeak && process.env["SWARMX_VIDEO_ALLOW_SILENT_AUDIO"] !== "1") {
+    if (!hasEspeak && loadEnv().SWARMX_VIDEO_ALLOW_SILENT_AUDIO !== "1") {
       throw Object.assign(new Error("espeak-ng is not available"), { code: "ESPEAK_UNAVAILABLE" });
     }
     if (hasEspeak) {

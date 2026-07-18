@@ -12,22 +12,13 @@ import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { agentRegistry } from "../routes/agents.js";
 import type { AgentState } from "../types/events.js";
+import { loadEnv } from "../lib/env.js";
 
 function resolveModelAlias(alias: string): string {
-  const modelFast =
-    process.env["SWARMX_MODEL_FAST"] ??
-    process.env["SWARM_MODEL_FAST"] ??
-    process.env["SWARMX_COMPOSER_MODEL"] ??
-    "instruct-phi4-pro-q8-prod";
-  const modelCode =
-    process.env["SWARMX_MODEL_CODE"] ??
-    process.env["SWARM_MODEL_CODE"] ??
-    "code-qwen25-pro-q5km-prod";
-  const modelReason =
-    process.env["SWARMX_MODEL_REASON"] ??
-    process.env["SWARMX_MODEL_REASONER"] ??
-    process.env["SWARM_MODEL_REASON"] ??
-    "reason-deepseekr1-pro-q5km-prod";
+  const _ae = loadEnv();
+  const modelFast = _ae.SWARMX_MODEL_FAST;
+  const modelCode = _ae.SWARMX_MODEL_CODE;
+  const modelReason = _ae.SWARMX_MODEL_REASON;
 
   switch (alias.toLowerCase()) {
     case "fast": return modelFast;
@@ -114,7 +105,7 @@ function parseCatalog(raw: string): CatalogAgent[] {
 }
 
 function locateCatalogCandidates(): string[] {
-  const repoRoot = resolve(process.env["SWARMX_REPO_ROOT"] ?? process.cwd());
+  const repoRoot = resolve(loadEnv().SWARMX_REPO_ROOT);
   return [
     join(repoRoot, "agents", "catalog.yaml"),
     join(repoRoot, "..", "agents", "catalog.yaml"),

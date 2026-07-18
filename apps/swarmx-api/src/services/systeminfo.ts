@@ -6,6 +6,7 @@ import type { FastifyInstance } from "fastify";
 import si from "systeminformation";
 import { broadcastEvent } from "../plugins/sse.js";
 import type { SystemMetricsSnapshot } from "../types/events.js";
+import { loadEnv } from "../lib/env.js";
 
 // WAT = UTC+1. We use explicit ISO string with offset.
 function watNow(): string {
@@ -19,7 +20,7 @@ let _prevDiskWrite = 0;
 let _lastTick = 0;
 
 export function startSystemInfoPoller(server: FastifyInstance): void {
-  const INTERVAL_MS = parseInt(process.env["SWARMX_TELEMETRY_INTERVAL_MS"] ?? "2000", 10);
+  const INTERVAL_MS = loadEnv().SWARMX_TELEMETRY_INTERVAL_MS;
 
   const tick = async () => {
     const now = Date.now();

@@ -15,6 +15,7 @@ import { basename, join, resolve, sep } from "node:path";
 import { createReadStream, existsSync } from "node:fs";
 import type { VideoOutputMetadata, VideoJobRequest, VideoJobStage } from "../types/video.js";
 import type { VideoPerformanceMetrics } from "@swarmx/types/video-types";
+import { loadEnv } from "../lib/env.js";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -31,10 +32,7 @@ const ARTIFACT_DIR = resolve(
 
 const PUBLIC_URL_BASE = process.env.VIDEO_PUBLIC_URL_BASE ?? "/api/video/files";
 
-const FFPROBE_TIMEOUT_MS = Math.min(
-  60_000,
-  Math.max(5_000, Number.parseInt(process.env["SWARMX_VIDEO_FFPROBE_TIMEOUT_MS"] ?? "15000", 10) || 15_000),
-);
+const FFPROBE_TIMEOUT_MS = Math.min(60_000, Math.max(5_000, loadEnv().SWARMX_VIDEO_FFPROBE_TIMEOUT_MS));
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -81,7 +79,7 @@ export async function buildOutputMetadata(
   const publicUrl = resolvePublicUrl(input.outputFilename);
   const relativePath = input.outputFilename;
 
-  if (input.outputFilename.startsWith("stub_") && process.env["SWARMX_VIDEO_ALLOW_STUB_RENDER"] !== "1") {
+  if (input.outputFilename.startsWith("stub_") && loadEnv().SWARMX_VIDEO_ALLOW_STUB_RENDER !== "1") {
     throw Object.assign(new Error("Stub render output is disabled"), {
       code: "STUB_RENDER_DISABLED",
     });
@@ -146,7 +144,7 @@ function hashFile(path: string): Promise<string> {
 }
 
 export async function importComfyOutput(filename: string): Promise<string> {
-  const comfyOutputDir = process.env["SWARMX_COMFYUI_OUTPUT_DIR"];
+  const comfyOutputDir = loadEnv().SWARMX_COMFYUI_OUTPUT_DIR;
   if (!comfyOutputDir) {
     throw Object.assign(new Error("SWARMX_COMFYUI_OUTPUT_DIR is required for ComfyUI output handoff"), {
       code: "COMFY_OUTPUT_DIR_MISSING",

@@ -3,18 +3,9 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { SwarmXEvent } from "../types/events.js";
 import { mapJournalEvent, type RawJournalEvent } from "../services/pyevents.js";
+import { loadEnv } from "../lib/env.js";
 
-const LOG_DIR = process.env["SWARMX_LOG_DIR"] ?? "/var/log/swarmx";
-const SWARMX_HOME =
-  process.env["SWARMX_HOME"] ??
-  path.join(process.env["HOME"] ?? process.env["USERPROFILE"] ?? "", ".swarmx");
-
-// [V5.9-FIX-05] Max events returned from the journal endpoint to prevent
-// large payload spikes. Overridable via SWARMX_EVENTS_LIMIT env var.
-const EVENTS_LIMIT = Number.parseInt(
-  process.env["SWARMX_EVENTS_LIMIT"] ?? "200",
-  10,
-);
+const { SWARMX_LOG_DIR: LOG_DIR, SWARMX_HOME, SWARMX_EVENTS_LIMIT: EVENTS_LIMIT } = loadEnv();
 
 export async function logsRouter(server: FastifyInstance): Promise<void> {
   // [V6.1-ENH-02] Expose a base route so manual probes of /api/logs return the

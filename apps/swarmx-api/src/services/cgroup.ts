@@ -7,9 +7,9 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { broadcastEvent } from "../plugins/sse.js";
 import type { CgroupScopeMetrics } from "../types/events.js";
+import { loadEnv } from "../lib/env.js";
 
-const CGROUP_ROOT = process.env["SWARMX_CGROUP_ROOT"] ?? "/sys/fs/cgroup/swarmx.slice";
-const INTERVAL_MS = parseInt(process.env["SWARMX_CGROUP_INTERVAL_MS"] ?? "2000", 10);
+const { SWARMX_CGROUP_ROOT: CGROUP_ROOT, SWARMX_CGROUP_INTERVAL_MS: INTERVAL_MS } = loadEnv();
 
 async function readCgroupFile(scopePath: string, filename: string): Promise<string> {
   return readFile(path.join(scopePath, filename), "utf8");

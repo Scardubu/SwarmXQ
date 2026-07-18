@@ -96,6 +96,7 @@ import {
 } from "./adaptive-timeout-config.js";
 import { recordEviction } from "./swarm-pressure-monitor.js";
 import type { TimeoutPressureLevel } from "@swarmx/types/operation-types";
+import { loadEnv } from "../lib/env.js";
 
 // ─── Memory pressure thresholds (orchestrator's own policy — see ORCH-r8-03) ──
 
@@ -262,10 +263,11 @@ export class ModelOrchestrator {
 
   static getInstance(ollamaBase?: string): ModelOrchestrator {
     if (!ModelOrchestrator._instance) {
+      const _oe = loadEnv();
       const base =
         ollamaBase ??
-        process.env["OLLAMA_HOST"] ??
-        process.env["SWARMX_OLLAMA_URL"] ??
+        _oe.OLLAMA_HOST?.trim() ??
+        _oe.SWARMX_OLLAMA_URL?.trim() ??
         "http://127.0.0.1:11434";
       ModelOrchestrator._instance = new ModelOrchestrator(base);
     }
@@ -280,7 +282,7 @@ export class ModelOrchestrator {
   async init(): Promise<void> {
     await this._refreshRam();
     await this.syncFromOllama();
-    if (process.env["SWARMX_MODEL_STARTUP_PREWARM"] === "1") {
+    if (loadEnv().SWARMX_MODEL_STARTUP_PREWARM === "1") {
       this._preloadFireAndForget(RELAY_PREWARM_TAG);
     }
   }
@@ -398,7 +400,7 @@ export class ModelOrchestrator {
    * before the user confirms action. Skips if RAM is too constrained.
    */
   preloadNextSpecialist(predictedModelTag: string): void {
-    if (process.env["SWARMX_MODEL_PREDICTIVE_PREWARM"] !== "1") return;
+    if (loadEnv().SWARMX_MODEL_PREDICTIVE_PREWARM !== "1") return;
     const canonicalTag = resolveCanonicalTag(predictedModelTag);
     if (this.state.pendingWarmup === canonicalTag) return;
     const profile = MODEL_REGISTRY[canonicalTag];
@@ -562,7 +564,7 @@ export class ModelOrchestrator {
     // POLICY 2 — Adaptive mode based on RAM
     const ram = this.state.availableRamMb;
     if      (ram < RAM_CRITICAL_MB) this.state.currentMode = "degraded";
-    else if (process.env["SWARMX_VIDEO_LOW_RAM_MODE"] === "1") this.state.currentMode = "low-ram";
+    else if (loadEnv().SWARMX_VIDEO_LOW_RAM_MODE === "1") this.state.currentMode = "low-ram";
     else if (ram < RAM_LOW_MB)      this.state.currentMode = "low-ram";
     else if (this.state.currentMode === "degraded" || this.state.currentMode === "low-ram") {
       this.state.currentMode = "normal"; // recover (evolver is set explicitly, not recovered)

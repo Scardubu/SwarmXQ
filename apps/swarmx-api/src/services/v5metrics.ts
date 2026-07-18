@@ -12,6 +12,7 @@ import { delimiter, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { broadcastEvent } from "../plugins/sse.js";
 import type { RuntimeGovernorSnapshot, StartupSummary } from "../types/events.js";
+import { loadEnv } from "../lib/env.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -58,25 +59,15 @@ function buildPythonPath(repoRoot: string): string {
 }
 
 export function startV5MetricsPoller(server: FastifyInstance): void {
-  const INTERVAL_MS = Number.parseInt(
-    process.env["SWARMX_V5_POLL_INTERVAL_MS"] ?? "15000",
-    10
-  );
-  // [V6.1-FIX-18] Metrics command may exceed 12s on constrained hosts.
-  // Keep timeout configurable and safely above common cold-path latency.
-  const configuredTimeoutMs = Number.parseInt(
-    process.env["SWARMX_V5_POLL_TIMEOUT_MS"] ?? "25000",
-    10
-  );
+  const _ve = loadEnv();
+  const INTERVAL_MS = _ve.SWARMX_V5_POLL_INTERVAL_MS;
+  const configuredTimeoutMs = _ve.SWARMX_V5_POLL_TIMEOUT_MS;
   const POLL_TIMEOUT_MS = Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0
     ? configuredTimeoutMs
     : 25_000;
-  // [V6.1-FIX-03] Prefer python3, fallback to python, then SWARMX_PYTHON env var
-  const pythonExe = process.env["SWARMX_PYTHON"] ?? "python3";
-  const repoRoot = resolve(process.env["SWARMX_REPO_ROOT"] ?? process.cwd());
-  const runtimeHome =
-    process.env["SWARMX_HOME"] ??
-    `${process.env["HOME"] ?? process.env["USERPROFILE"] ?? ""}/.swarmx`;
+  const pythonExe = _ve.SWARMX_PYTHON;
+  const repoRoot = resolve(_ve.SWARMX_REPO_ROOT);
+  const runtimeHome = _ve.SWARMX_HOME;
   const pythonEnv = {
     ...process.env,
     PYTHONPATH: buildPythonPath(repoRoot),
@@ -169,9 +160,7 @@ export function startV5MetricsPoller(server: FastifyInstance): void {
  * Fail-open — any error is logged and silently ignored.
  */
 export function broadcastStartupSummary(server: FastifyInstance): void {
-  const runtimeHome =
-    process.env["SWARMX_HOME"] ??
-    `${process.env["HOME"] ?? process.env["USERPROFILE"] ?? ""}/.swarmx`;
+  const runtimeHome = loadEnv().SWARMX_HOME;
 
   const summaryPath = join(runtimeHome, "state", "startup_summary.json");
 

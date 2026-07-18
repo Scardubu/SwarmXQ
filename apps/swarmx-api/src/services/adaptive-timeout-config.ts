@@ -53,6 +53,7 @@ import type {
   TimeoutPressureLevel as PressureLevel,
 } from "@swarmx/types/operation-types";
 import { log } from "../lib/logger.js";
+import { loadEnv } from "../lib/env.js";
 
 export type { OperationKey, PressureLevel };
 
@@ -193,12 +194,10 @@ interface CircuitBreakerState {
   successAfterHalfOpen: number;
 }
 
-const CIRCUIT_FAILURE_THRESHOLD = Number.parseInt(
-  process.env["SWARMX_CB_FAILURE_THRESHOLD"] ?? "3", 10);
-const CIRCUIT_WINDOW_MS = Number.parseInt(
-  process.env["SWARMX_CB_WINDOW_MS"] ?? "90000", 10);
-const CIRCUIT_OPEN_DURATION_MS = Number.parseInt(
-  process.env["SWARMX_CB_OPEN_DURATION_MS"] ?? "30000", 10);
+const { SWARMX_CB_FAILURE_THRESHOLD, SWARMX_CB_WINDOW_MS, SWARMX_CB_OPEN_DURATION_MS } = loadEnv();
+const CIRCUIT_FAILURE_THRESHOLD = SWARMX_CB_FAILURE_THRESHOLD;
+const CIRCUIT_WINDOW_MS         = SWARMX_CB_WINDOW_MS;
+const CIRCUIT_OPEN_DURATION_MS  = SWARMX_CB_OPEN_DURATION_MS;
 const CIRCUIT_HALFOPEN_SUCCESS_THRESHOLD = 2;
 
 const circuits = new Map<string, CircuitBreakerState>();

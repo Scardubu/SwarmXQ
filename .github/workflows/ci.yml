@@ -124,12 +124,18 @@ jobs:
           fi
           echo "PASS: all 8 TONE_RULES variants present (contrarian urgent educational cinematic warm minimal faceless_broll kinetic_text)"
 
-      # TODO(Priority 3): Uncomment once process.env[ hits are ≤10 in services/routes.
-      # - name: Invariant — process.env direct reads (≤10 allowed post-Priority-3)
-      #   run: |
-      #     COUNT=$(grep -rn 'process\.env\[' apps/swarmx-api/src/services apps/swarmx-api/src/routes 2>/dev/null | wc -l)
-      #     echo "process.env[ hits: $COUNT (limit: 10)"
-      #     if [ "$COUNT" -gt 10 ]; then exit 1; fi
+      - name: Invariant — process.env direct reads (6 intentional escape hatches only)
+        # Priority 3 complete: 6 remaining reads are documented intentional escape hatches:
+        # 3 OAuth/auth secrets, 1 OS PYTHONPATH, 2 dynamic parametric keys in video-runtime-config.ts
+        run: |
+          COUNT=$(grep -rn 'process\.env\[' apps/swarmx-api/src/services apps/swarmx-api/src/routes 2>/dev/null | wc -l)
+          echo "process.env[ hits: $COUNT (limit: 10)"
+          if [ "$COUNT" -gt 10 ]; then
+            echo "FAIL: $COUNT process.env[ reads found — migrate new reads to loadEnv() in src/lib/env.ts"
+            grep -rn 'process\.env\[' apps/swarmx-api/src/services apps/swarmx-api/src/routes 2>/dev/null
+            exit 1
+          fi
+          echo "PASS: $COUNT process.env[ reads (≤10 required)"
 
       # ── Gate 7 · Dashboard next build (≥14 routes, 0 build errors) ────────
 
