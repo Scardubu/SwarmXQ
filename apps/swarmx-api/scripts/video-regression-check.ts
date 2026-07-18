@@ -294,14 +294,18 @@ assert.ok(
 
 // ── V6.2.16 — FFmpeg renderer: tone palette and script-section extraction ────
 const rendererSource = await readFile(new URL("../src/services/ffmpeg-video-renderer.ts", import.meta.url), "utf8");
-assert.ok(
-  rendererSource.includes("TONE_BACKGROUNDS"),
-  "renderer must define tone-based background palette",
-);
-assert.ok(
-  rendererSource.includes("TONE_ACCENTS"),
-  "renderer must define tone-based accent colors for progress bar",
-);
+// V6.2.28 — all 8 tone variants must appear in both TONE_BACKGROUNDS and TONE_ACCENTS
+const REQUIRED_TONE_KEYS = [
+  "contrarian", "urgent", "educational", "cinematic",
+  "warm", "minimal", "faceless_broll", "kinetic_text",
+] as const;
+for (const tone of REQUIRED_TONE_KEYS) {
+  const hits = (rendererSource.match(new RegExp(`${tone}:`, "g")) ?? []).length;
+  assert.ok(
+    hits >= 2,
+    `Both TONE_BACKGROUNDS and TONE_ACCENTS must define key '${tone}' (found ${hits} hit(s))`,
+  );
+}
 assert.ok(
   rendererSource.includes("CAPTION_STYLE_CONFIGS"),
   "renderer must define per-captionStyle layout configs",

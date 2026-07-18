@@ -26,21 +26,25 @@ interface FfmpegRenderInput {
 // ── Visual Palette ─────────────────────────────────────────────────────────────
 
 const TONE_BACKGROUNDS: Record<string, string> = {
-  contrarian:  "0x0a0a0a",  // near black — harsh, high-contrast
-  urgent:      "0x150505",  // very dark red
-  educational: "0x070e1a",  // deep navy
-  cinematic:   "0x0c0c0c",  // dark charcoal
-  warm:        "0x100805",  // dark warm brown
-  minimal:     "0x000000",  // pure black
+  contrarian:    "0x0a0a0a",  // near black — harsh, high-contrast
+  urgent:        "0x150505",  // very dark red
+  educational:   "0x070e1a",  // deep navy
+  cinematic:     "0x0c0c0c",  // dark charcoal
+  warm:          "0x100805",  // dark warm brown
+  minimal:       "0x000000",  // pure black
+  faceless_broll:"0x1a1a1a",  // neutral dark gray — lets b-roll footage dictate mood
+  kinetic_text:  "0x000000",  // pure black — maximum contrast for on-screen text
 };
 
 const TONE_ACCENTS: Record<string, string> = {
-  contrarian:  "0xff2222",  // sharp red
-  urgent:      "0xff6600",  // orange
-  educational: "0x3399ff",  // electric blue
-  cinematic:   "0xddaa44",  // gold
-  warm:        "0xff9966",  // peach
-  minimal:     "0xffffff",  // white
+  contrarian:    "0xff2222",  // sharp red
+  urgent:        "0xff6600",  // orange
+  educational:   "0x3399ff",  // electric blue
+  cinematic:     "0xddaa44",  // gold
+  warm:          "0xff9966",  // peach
+  minimal:       "0xffffff",  // white
+  faceless_broll:"0x00ccee",  // soft cyan — unobtrusive; doesn't fight b-roll footage
+  kinetic_text:  "0xffcc00",  // bright amber — bold kinetic accent; distinct from minimal's white
 };
 
 interface CaptionStyleConfig {
