@@ -536,3 +536,10 @@ function scheduleCleanup(id: string): void {
     }
   }, JOB_TTL_MS);
 }
+
+// Testing only — mirrors resetEnvForTesting() in env.ts
+export function _resetRegistryForTesting(): void {
+  registry.clear();
+  bullQueue = null;
+  _bullmqOverride = null;
+}

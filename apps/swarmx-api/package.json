@@ -9,7 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/apps/swarmx-api/src/server.js",
     "typecheck": "tsc --noEmit",
-    "test": "pnpm run test:video",
+    "test": "vitest run",
     "test:video": "tsx scripts/video-regression-check.ts",
     "test:video:smoke": "tsx scripts/video-render-smoke.ts",
     "test:series": "tsx scripts/series-regression.ts",
@@ -29,9 +29,11 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@vitest/coverage-v8": "^2.1.9",
     "pino-pretty": "^13.0.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.9"
   },
   "engines": {
     "node": ">=22.0.0"

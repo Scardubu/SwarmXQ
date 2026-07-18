@@ -78,10 +78,9 @@ jobs:
       - name: Gate 4 — @swarmx/dashboard vitest
         run: pnpm --filter @swarmx/dashboard test
 
-      # ── Gate 5 · @swarmx/api vitest — SKIPPED until Priority 4 ───────────
-      # TODO(Priority 4): Uncomment after apps/swarmx-api/vitest.config.ts is added.
-      # - name: Gate 5 — @swarmx/api vitest
-      #   run: pnpm --filter @swarmx/api vitest run
+      # ── Gate 5 · @swarmx/api vitest ──────────────────────────────────────
+      - name: Gate 5 — @swarmx/api vitest
+        run: pnpm --filter @swarmx/api test
 
       # ── Gate 6 · API regression scripts (offline-safe, no Redis/Ollama) ────
 
