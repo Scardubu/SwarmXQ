@@ -7,6 +7,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import si from "systeminformation";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { readFileSync } from "node:fs";
 import { getAvailableModels, fastHealthProbe } from "../services/ollama.js";
 import { getSwarmHealthSummary } from "../services/swarm-pressure-monitor.js";
 
@@ -76,6 +77,64 @@ export function getSystemHealthModelTimeoutMs(): number {
     process.env["SWARMX_SYSTEM_HEALTH_MODEL_PROBE_TIMEOUT_MS"],
     DEFAULT_SYSTEM_HEALTH_MODEL_TIMEOUT_MS,
   );
+}
+
+// ─── Warmup status (V6.2.26) ─────────────────────────────────────────────────
+// startup-enhanced.sh writes a small JSON marker when the Ollama warmup finishes.
+// The dashboard uses `coldStartEtaSecs` to render an accurate "Loading Model"
+// countdown instead of the previous hardcoded 140 s literal.
+const DEFAULT_COLD_START_ETA_SECS = 140;
+const WARMUP_STATUS_FILE_DEFAULT = "/tmp/swarmxq-warmup.json";
+
+export interface WarmupStatus {
+  done: boolean;
+  coldStartEtaSecs: number;       // 0 when done; otherwise remaining seconds
+  startedAt?: string;
+  completedAt?: string;
+  source: "file" | "default";
+}
+
+export function readWarmupStatus(nowMs: number = Date.now()): WarmupStatus {
+  const path = process.env["SWARMX_WARMUP_STATUS_FILE"] ?? WARMUP_STATUS_FILE_DEFAULT;
+  try {
+    const raw = readFileSync(path, "utf8");
+    const parsed = JSON.parse(raw) as {
+      done?: boolean;
+      startedAt?: string;
+      completedAt?: string;
+    };
+    if (parsed.done === true) {
+      return {
+        done: true,
+        coldStartEtaSecs: 0,
+        ...(parsed.startedAt ? { startedAt: parsed.startedAt } : {}),
+        ...(parsed.completedAt ? { completedAt: parsed.completedAt } : {}),
+        source: "file",
+      };
+    }
+    let remaining = DEFAULT_COLD_START_ETA_SECS;
+    if (parsed.startedAt) {
+      const startedMs = Date.parse(parsed.startedAt);
+      if (Number.isFinite(startedMs)) {
+        remaining = Math.max(
+          0,
+          DEFAULT_COLD_START_ETA_SECS - Math.floor((nowMs - startedMs) / 1000),
+        );
+      }
+    }
+    return {
+      done: false,
+      coldStartEtaSecs: remaining,
+      ...(parsed.startedAt ? { startedAt: parsed.startedAt } : {}),
+      source: "file",
+    };
+  } catch {
+    return {
+      done: false,
+      coldStartEtaSecs: DEFAULT_COLD_START_ETA_SECS,
+      source: "default",
+    };
+  }
 }
 
 export function unavailableModelReadiness(): ModelReadiness[] {
@@ -187,6 +246,7 @@ export async function systemRouter(server: FastifyInstance): Promise<void> {
       models,
       swarm,
       memory: memGb,
+      warmup: readWarmupStatus(),
       ...(vramWarning ? { warnings: [vramWarning] } : {}),
       config: {
         healthProbeTimeoutMs: livenessTimeoutMs,

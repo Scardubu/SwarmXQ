@@ -2,11 +2,18 @@
 
 import { useQuery } from "@tanstack/react-query";
 
+export interface WarmupSnapshot {
+  done: boolean;
+  coldStartEtaSecs: number;
+  source: "file" | "default";
+}
+
 export interface ApiHealthState {
   apiOnline: boolean | null;
   ollamaOnline: boolean | null;
   latencyMs: number | null;
   lastChecked: number | null;
+  warmup: WarmupSnapshot | null;
 }
 
 function resolveDirectApiBaseUrl(): string {
@@ -24,6 +31,7 @@ const INITIAL_HEALTH: ApiHealthState = {
   ollamaOnline: null,
   latencyMs: null,
   lastChecked: null,
+  warmup: null,
 };
 
 async function fetchApiHealth(): Promise<ApiHealthState> {
@@ -46,15 +54,33 @@ async function fetchApiHealth(): Promise<ApiHealthState> {
         ollamaOnline: null,
         latencyMs,
         lastChecked: Date.now(),
+        warmup: null,
       };
     }
 
-    const data = (await response.json()) as { ollama?: { reachable?: boolean } };
+    const data = (await response.json()) as {
+      ollama?: { reachable?: boolean };
+      warmup?: {
+        done?: boolean;
+        coldStartEtaSecs?: number;
+        source?: "file" | "default";
+      };
+    };
+    const warmup: WarmupSnapshot | null = data.warmup
+      ? {
+          done: Boolean(data.warmup.done),
+          coldStartEtaSecs: Number.isFinite(data.warmup.coldStartEtaSecs)
+            ? Number(data.warmup.coldStartEtaSecs)
+            : 140,
+          source: data.warmup.source === "file" ? "file" : "default",
+        }
+      : null;
     return {
       apiOnline: true,
       ollamaOnline: data.ollama?.reachable ?? null,
       latencyMs,
       lastChecked: Date.now(),
+      warmup,
     };
   } catch {
     return {
@@ -62,6 +88,7 @@ async function fetchApiHealth(): Promise<ApiHealthState> {
       ollamaOnline: null,
       latencyMs: null,
       lastChecked: Date.now(),
+      warmup: null,
     };
   } finally {
     globalThis.clearTimeout(timeoutId);

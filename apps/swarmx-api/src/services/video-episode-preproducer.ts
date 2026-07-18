@@ -451,10 +451,18 @@ export function evaluateQualityGate(
       (p) => assets.some((a) => a.platform === p),
     ));
 
-  const urlRegex = /https?:\/\//i;
+  const urlRegex = /https?:\/\/|www\.|spotify|soundcloud|apple music/i;
   const badSound = assets.find((a) => urlRegex.test(a.soundSuggestion));
-  check("PRODUCTION_READINESS", "soundSuggestion contains no URLs", !badSound,
-    badSound ? `Platform ${badSound.platform} soundSuggestion contains a URL` : undefined);
+  check("PRODUCTION_READINESS", "soundSuggestion contains no URLs or streaming links", !badSound,
+    badSound ? `Platform ${badSound.platform} soundSuggestion contains a URL or streaming link` : undefined);
+
+  // V6.2.26 — mirror caption-generator.validateCaptionDraft artist-pattern rule.
+  // Prevents cross-platform assets from smuggling artist attribution into the
+  // audio suggestion, which downstream publishing would flag as a copyright risk.
+  const artistRegex = /\b(feat\.?|ft\.?|by\s+[A-Z][a-z]+|"[^"]+"|song|track|album)\b/;
+  const artistSound = assets.find((a) => artistRegex.test(a.soundSuggestion));
+  check("PRODUCTION_READINESS", "soundSuggestion contains no artist or track attribution", !artistSound,
+    artistSound ? `Platform ${artistSound.platform} soundSuggestion names a song/track/artist` : undefined);
 
   // Caption firstLine ≤ 40 chars — check primary platform
   if (primaryAsset) {

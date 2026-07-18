@@ -15,6 +15,7 @@ import { useVideoStore } from "../../stores/video";
 import { VideoJobTimeline } from "./VideoJobTimeline";
 import { isTerminalVideoStatus, type VideoJob } from "../../lib/video-dashboard";
 import { safeErrorMessage } from "@/lib/utils";
+import { useApiHealth } from "@/hooks/useApiHealth";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -90,6 +91,31 @@ function StatusBadge({ status }: { status: VideoJob["status"] }) {
   );
 }
 
+// ─── Virality Badge (V6.2.26) ─────────────────────────────────────────────────
+// Compact overall-score chip. Palette mirrors the color rules from CLAUDE.md
+// (<0.4 → red · 0.4–0.7 → amber · >0.7 → green). Shown on any job whose
+// virality signal has been scored — typically after the pipeline completes.
+function ViralityBadge({ overall }: { overall: number }) {
+  const bounded = Math.max(0, Math.min(1, overall));
+  const rounded = Math.round(bounded * 100) / 100;
+  const className =
+    bounded < 0.4
+      ? "border-status-error/35 bg-status-error/10 text-status-error"
+      : bounded <= 0.7
+        ? "border-status-warning/35 bg-status-warning/10 text-status-warning"
+        : "border-status-success/35 bg-status-success/10 text-status-success";
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${className}`}
+      title={`Virality overall score: ${rounded.toFixed(2)}`}
+      aria-label={`Virality overall score ${rounded.toFixed(2)}`}
+    >
+      <span className="opacity-70">viral</span>
+      <span className="font-mono tabular-nums">{rounded.toFixed(2)}</span>
+    </span>
+  );
+}
+
 // ─── Platform Icon ────────────────────────────────────────────────────────────
 
 function PlatformTag({ platform }: { platform?: string }) {
@@ -160,6 +186,20 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
     ? Math.round((nowMs - Date.parse(job.startedAt)) / 1000)
     : null;
   const statusAnnouncement = buildStatusAnnouncement(job);
+
+  // V6.2.26 — cold-start ETA sourced from /api/system/health warmup marker.
+  // When the API's warmup file confirms in-progress warmup, use its live
+  // remaining seconds directly. Otherwise fall back to the historical 140 s
+  // guide with local elapsed subtracted.
+  const { warmup } = useApiHealth();
+  const coldStartRemainingSecs: number = warmup?.done
+    ? 0
+    : warmup?.source === "file"
+      ? Math.max(0, warmup.coldStartEtaSecs)
+      : Math.max(0, 140 - (elapsed ?? 0));
+  const coldStartHintCeilingSecs = warmup?.source === "file"
+    ? Math.max(warmup.coldStartEtaSecs, 30)
+    : 140;
 
   return (
     <article
@@ -250,6 +290,9 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
                   #{job.request.niche}
                 </span>
               )}
+              {job.viralitySignal && typeof job.viralitySignal.overall === "number" && (
+                <ViralityBadge overall={job.viralitySignal.overall} />
+              )}
             </div>
             <p className="mt-1.5 line-clamp-2 text-sm font-medium leading-snug text-text-primary">
               {job.request.prompt}
@@ -274,7 +317,7 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
         <PublishSummary job={job} />
 
         {/* Loading Model hint — shown when model cold-start is likely (>30 s at first stage).
-            Includes a live ETA countdown so operators don't cancel during the expected 100–140 s cold load. */}
+            V6.2.26: ETA sourced from /api/system/health warmup marker instead of a hardcoded 140. */}
         {elapsed != null && elapsed > 30 &&
           (job.status === "classifying" || job.status === "running") && (
             <p
@@ -282,9 +325,9 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
               role="status"
               aria-live="polite"
             >
-              Loading Model — cold Ollama load takes 100–140 s.{" "}
-              {elapsed < 140
-                ? <>~<span className="font-mono tabular-nums">{Math.max(0, 140 - elapsed)}s</span> remaining. Wait; do not cancel.</>
+              Loading Model — cold Ollama load typically ≤ {coldStartHintCeilingSecs}s.{" "}
+              {coldStartRemainingSecs > 0
+                ? <>~<span className="font-mono tabular-nums">{coldStartRemainingSecs}s</span> remaining. Wait; do not cancel.</>
                 : <>Warmup exceeded typical range — first inference should complete shortly.</>}
             </p>
           )}
