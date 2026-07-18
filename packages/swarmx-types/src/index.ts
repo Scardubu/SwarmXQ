@@ -31,6 +31,7 @@
 export * from "./operator-map";
 export * from "./operation-types";
 export * from "./video-types";
+export * from "./series-types";
 
 import type { VideoHealthEventData, VideoJobEventData } from "./video-types";
 

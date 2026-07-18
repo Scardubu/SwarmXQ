@@ -6,7 +6,9 @@ import type {
   VideoExportPlatform,
   VideoJobStatus as CanonicalVideoJobStatus,
   ViralitySignal,
+  VideoTone,
 } from "@swarmx/types/video-types";
+import type { SeriesEpisodeContext } from "@swarmx/types/series-types";
 
 export type VideoJobStatus = CanonicalVideoJobStatus | "running" | "completed";
 
@@ -63,11 +65,15 @@ export interface VideoJobRequest {
   targetDurationSeconds?: number;
   modelTier?: "fast" | "worker" | "supervisor" | "reasoner";
   audience?: string;
-  tone?: "educational" | "urgent" | "warm" | "contrarian" | "cinematic" | "minimal";
+  tone?: VideoTone;
   style?: "faceless_broll" | "kinetic_text" | "storytime" | "tutorial" | "myth_busting";
   captionStyle?: "bold_center" | "lower_third" | "minimal";
   voice?: "default" | "calm" | "energetic" | "narrator";
   clientRequestId?: string;
+  seriesId?: string;
+  episodeNumber?: number;
+  totalEpisodes?: number;
+  seriesContext?: SeriesEpisodeContext;
 }
 
 export interface VideoStageProgress {

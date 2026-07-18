@@ -6,6 +6,16 @@
 
 export type VideoMode = "t2v" | "i2v" | "v2v" | "edit";
 
+export type VideoTone =
+  | "educational"
+  | "urgent"
+  | "warm"
+  | "contrarian"
+  | "cinematic"
+  | "minimal"
+  | "faceless_broll"
+  | "kinetic_text";
+
 export type VideoResolution =
   | "512x512"
   | "512x896"

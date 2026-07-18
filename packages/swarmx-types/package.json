@@ -15,6 +15,7 @@
     ".": "./src/index.ts",
     "./operator-map": "./src/operator-map.ts",
     "./operation-types": "./src/operation-types.ts",
-    "./video-types": "./src/video-types.ts"
+    "./video-types": "./src/video-types.ts",
+    "./series-types": "./src/series-types.ts"
   }
 }

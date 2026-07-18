@@ -1230,13 +1230,42 @@ const TONE_RULES: Record<string, string> = {
   cinematic: "Slower pacing. Declarative, atmospheric sentences. Build mood before information. Pauses implied.",
   warm: "Conversational and personal. Speak to one person, not a crowd. Use 'you' and 'your'. No jargon.",
   minimal: "Maximum impact per word. Short sentences. One idea per sentence. Cut every filler word.",
+  faceless_broll: "Narration-driven, no on-camera host. Write authoritative voiceover; every sentence pairs with a concrete visual. Avoid first-person entirely. One idea per 3–4 seconds. Pacing is deliberate — trust the b-roll to carry emotion.",
+  kinetic_text: "Text-forward, minimal narration. Each idea renders as a high-impact on-screen phrase. Maximum 7 words per visual moment. Strong rhythm — punch-cut cadence. Narration sparse or absent. Think: title card sequence.",
 };
+
+function buildSeriesContextPreamble(req: VideoJobRequest): string {
+  const ctx = req.seriesContext;
+  if (!ctx) return "";
+  const lines: string[] = [
+    `SERIES: "${ctx.seriesTitle}" — Episode ${req.episodeNumber ?? "?"} of ${req.totalEpisodes ?? "?"}`,
+    `EPISODE: "${ctx.episodeTitle}" — ${ctx.episodeSummary}`,
+  ];
+  if (ctx.characterBible.length > 0) {
+    lines.push(
+      `CHARACTERS: ${ctx.characterBible.map((c) => `${c.name}: ${c.appearance}. AI_SEED: ${c.aiPromptSeed}`).join(" | ")}`,
+    );
+  }
+  lines.push(
+    `WORLD: Palette ${ctx.worldGuide.colorPalette.join(", ")}. Camera: ${ctx.worldGuide.cameraLanguage.defaultLens}. ${ctx.worldGuide.cameraLanguage.shotGrammarRules}`,
+  );
+  if (ctx.previousEpisodeSummaries.length > 0) {
+    lines.push(
+      `PRIOR EPISODES: ${ctx.previousEpisodeSummaries.map((s, i) => `Ep${i + 1}: ${s}`).join(" | ")}`,
+    );
+  }
+  if (ctx.chekhovGun) {
+    lines.push(`PLANT THIS ELEMENT: ${ctx.chekhovGun}`);
+  }
+  return lines.join("\n") + "\n\n";
+}
 
 function buildScriptingPrompt(req: VideoJobRequest, plan: string[]): string {
   const dur = req.targetDurationSeconds ?? 60;
   const toneInstruction = TONE_RULES[req.tone ?? "educational"] ?? TONE_RULES["educational"];
+  const seriesPreamble = buildSeriesContextPreamble(req);
   return `You are an expert short-form video scriptwriter for ${req.platform ?? "tiktok"}.
-Niche: ${req.niche ?? "general"} | Tone: ${req.tone ?? "educational"} | Style: ${req.style ?? "faceless_broll"} | Voice: ${req.voice ?? "default"}
+${seriesPreamble}Niche: ${req.niche ?? "general"} | Tone: ${req.tone ?? "educational"} | Style: ${req.style ?? "faceless_broll"} | Voice: ${req.voice ?? "default"}
 Audience: ${req.audience ?? "general viewers"}
 Original brief: "${req.prompt}"
 
@@ -1263,7 +1292,7 @@ Output the full script with section markers intact. No other text.`;
 }
 
 function buildStoryboardPrompt(req: VideoJobRequest, scriptText: string): string {
-  const isKinetic = req.style === "kinetic_text";
+  const isKinetic = req.style === "kinetic_text" || req.tone === "kinetic_text";
   const styleNote = isKinetic
     ? "Bold typography on dark or high-contrast backgrounds. Text appears in sync with narration. Minimal motion blur."
     : "Abstract b-roll: particles, flowing light, slow-motion textures, data visualizations. No faces, no people.";
@@ -1274,12 +1303,19 @@ function buildStoryboardPrompt(req: VideoJobRequest, scriptText: string): string
     cinematic: "desaturated with warm golden undertone, subtle film grain feel",
     warm: "soft warm tones, gentle gradients, pastel highlights",
     minimal: "pure black or white background, single color accent",
+    faceless_broll: "neutral-to-dark tones with selective brightness; let the b-roll footage dictate the palette — no enforced monochrome",
+    kinetic_text: "pure black background, high-contrast white typography, single bold accent for emphasis",
   };
   const colorMood = colorMoods[req.tone ?? "educational"] ?? colorMoods["educational"];
+  const seriesPreamble = buildSeriesContextPreamble(req);
+  // Inject character AI seeds into visual instructions when a character bible exists
+  const characterSeedNote = req.seriesContext?.characterBible.length
+    ? `\nCharacter visual seeds (copy verbatim for any scene featuring the character):\n${req.seriesContext.characterBible.map((c) => `  ${c.name}: ${c.aiPromptSeed}`).join("\n")}`
+    : "";
   return `You are a visual director for ${isKinetic ? "kinetic typography" : "faceless b-roll"} short-form video.
-Platform: ${req.platform ?? "tiktok"} | Tone: ${req.tone ?? "educational"}
+${seriesPreamble}Platform: ${req.platform ?? "tiktok"} | Tone: ${req.tone ?? "educational"}
 Visual style: ${styleNote}
-Color palette direction: ${colorMood}
+Color palette direction: ${colorMood}${characterSeedNote}
 
 Script:
 ${scriptText.slice(0, 1400)}

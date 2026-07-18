@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clapperboard,
+  Film,
   FileText,
   Home,
   MessageSquareText,
@@ -32,6 +33,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/composer", label: "Composer", icon: MessageSquareText },
   { href: "/logs", label: "Logs", icon: FileText },
   { href: "/video", label: "Video", icon: Clapperboard, badge: "LOW-RAM" },
+  { href: "/series", label: "Series", icon: Film },
   { href: "/system", label: "System", icon: SlidersHorizontal },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

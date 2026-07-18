@@ -58,6 +58,7 @@ import { composerRouter } from "./routes/composer.js";
 import { metricsRouter } from "./routes/metrics.js";
 import { registerModelsRoutes } from "./routes/models.js";
 import { videoRoutes } from "./routes/video.js";
+import { seriesRoutes } from "./routes/series.js";
 
 import { startSystemInfoPoller } from "./services/systeminfo.js";
 import { startCgroupPoller } from "./services/cgroup.js";
@@ -70,6 +71,7 @@ import { startPyEventsPoller } from "./services/pyevents.js";
 import { startAgentSeedService } from "./services/agentSeed.js";
 import { startSwarmMonitor } from "./services/swarm-pressure-monitor.js";
 import { startVideoCleanup, stopVideoCleanup } from "./services/video-cleanup.js";
+import { startSeriesCleanup, stopSeriesCleanup } from "./services/series-registry.js";
 import { setBullMQRuntimeEnabled } from "./services/video-queue.js";
 import { startVideoWorker, stopVideoWorker } from "./workers/video-worker.js";
 import { ModelOrchestrator } from "./services/model-orchestrator.js";
@@ -188,6 +190,7 @@ await server.register(configRouter,    { prefix: "/api/config" });
 await server.register(composerRouter,  { prefix: "/api/composer" });
 await server.register(metricsRouter,   { prefix: "/api/metrics" });
 await server.register(videoRoutes,     { prefix: "/api/video" });
+await server.register(seriesRoutes,    { prefix: "/api/video/series" });
 await registerModelsRoutes(server);
 
 // ── Health check ──────────────────────────────────────────────────────────────
@@ -264,6 +267,7 @@ startPyEventsPoller(server);       // [V5.9-FIX-05] bridge Python journal events
 startAgentSeedService(server);     // [V6.1-FIX-15] Seed idle agents from catalog on API boot.
 broadcastStartupSummary(server);   // [V6.1-ENH-01] Broadcast the Python startup summary to SSE clients after boot
 startVideoCleanup();               // Best-effort periodic removal of exports/artifacts older than TTL
+startSeriesCleanup();              // Best-effort periodic eviction of series plans older than TTL
 await startJournaldStream(server);
 
 // ── BullMQ Worker ─────────────────────────────────────────────────────────────
@@ -333,6 +337,7 @@ const shutdown = async (signal: string): Promise<void> => {
 
   // Step 3 — stop cleanup timers (unref'd; won't block exit, but stop cleanly)
   stopVideoCleanup();
+  stopSeriesCleanup();
 
   // Step 3.5 — drain BullMQ Worker (waits for in-flight job to finish)
   try {

@@ -15,7 +15,9 @@ import type {
   ViralitySignal,
   VideoError,
   PublishResult,
+  VideoTone,
 } from "@swarmx/types/video-types";
+import type { SeriesEpisodeContext } from "@swarmx/types/series-types";
 
 // ─── Job Lifecycle ────────────────────────────────────────────────────────────
 
@@ -62,8 +64,8 @@ export interface VideoJobRequest {
   modelTier?: "fast" | "worker" | "supervisor" | "reasoner";
   /** Intended audience, used to shape script and caption guidance. */
   audience?: string;
-  /** Creative tone for script and caption generation. */
-  tone?: "educational" | "urgent" | "warm" | "contrarian" | "cinematic" | "minimal";
+  /** Creative tone for script and caption generation (8 variants). */
+  tone?: VideoTone;
   /** Visual/story format guidance for local and ComfyUI render plans. */
   style?: "faceless_broll" | "kinetic_text" | "storytime" | "tutorial" | "myth_busting";
   /** Caption placement and density preference. */
@@ -72,6 +74,11 @@ export interface VideoJobRequest {
   voice?: "default" | "calm" | "energetic" | "narrator";
   /** Client-supplied idempotency key. */
   clientRequestId?: string;
+  // ── Series Engine fields (populated by series planner when producing an episode) ──
+  seriesId?: string;
+  episodeNumber?: number;
+  totalEpisodes?: number;
+  seriesContext?: SeriesEpisodeContext;
 }
 
 export interface VideoJobResponse {

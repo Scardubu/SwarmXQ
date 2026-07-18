@@ -32,6 +32,7 @@ const BREADCRUMB_MAP: Record<string, string> = {
   "/composer": "Composer",
   "/logs": "Logs",
   "/video": "Video",
+  "/series": "Series",
   "/system": "System",
   "/settings": "Settings",
 };
