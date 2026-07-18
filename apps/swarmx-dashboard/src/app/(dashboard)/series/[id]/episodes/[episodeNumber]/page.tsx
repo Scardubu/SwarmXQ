@@ -12,6 +12,7 @@ import { EpisodeViralityPanel } from "@/components/series/EpisodeViralityPanel";
 import { AudioPlanPanel } from "@/components/series/AudioPlanPanel";
 import { PlatformAssetsPanel } from "@/components/series/PlatformAssetsPanel";
 import { QualityGatePanel } from "@/components/series/QualityGatePanel";
+import { ContinuityReportPanel } from "@/components/series/ContinuityReportPanel";
 import { useSeriesStore } from "@/stores/series";
 
 const POLL_INTERVAL_MS = 4_000;
@@ -235,6 +236,16 @@ export default function EpisodePreProductionPage() {
                     Quality Gate
                   </h2>
                   <QualityGatePanel result={preProduction.qualityGateResult} />
+                </section>
+              )}
+
+              {/* Continuity Report */}
+              {preProduction.continuityReport && (
+                <section aria-labelledby="continuity-heading">
+                  <h2 id="continuity-heading" className="mb-3 font-mono text-[10px] uppercase tracking-wider text-text-muted">
+                    Continuity Report
+                  </h2>
+                  <ContinuityReportPanel report={preProduction.continuityReport} />
                 </section>
               )}
 

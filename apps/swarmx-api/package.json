@@ -12,7 +12,8 @@
     "test": "pnpm run test:video",
     "test:video": "tsx scripts/video-regression-check.ts",
     "test:video:smoke": "tsx scripts/video-render-smoke.ts",
-    "test:regression": "tsx scripts/eviction-metric-regression.ts && tsx scripts/system-health-regression.ts && tsx scripts/reasoning-sanitizer-regression.ts && tsx scripts/adaptive-timeout-regression.ts"
+    "test:series": "tsx scripts/series-regression.ts",
+    "test:regression": "tsx scripts/eviction-metric-regression.ts && tsx scripts/system-health-regression.ts && tsx scripts/reasoning-sanitizer-regression.ts && tsx scripts/adaptive-timeout-regression.ts && tsx scripts/series-regression.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",

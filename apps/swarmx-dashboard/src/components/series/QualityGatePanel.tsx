@@ -9,6 +9,7 @@ const CATEGORY_LABELS: Record<QualityGateCategory, string> = {
   CREATIVE_QUALITY:     "Creative Quality",
   VISUAL_CONSISTENCY:   "Visual Consistency",
   PRODUCTION_READINESS: "Production Readiness",
+  AUDIO_COHERENCE:      "Audio Coherence",
 };
 
 const CATEGORY_ORDER: QualityGateCategory[] = [
@@ -16,6 +17,7 @@ const CATEGORY_ORDER: QualityGateCategory[] = [
   "CREATIVE_QUALITY",
   "VISUAL_CONSISTENCY",
   "PRODUCTION_READINESS",
+  "AUDIO_COHERENCE",
 ];
 
 interface QualityGatePanelProps {

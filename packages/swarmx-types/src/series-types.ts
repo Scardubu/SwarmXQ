@@ -222,7 +222,8 @@ export type QualityGateCategory =
   | "STORY_INTEGRITY"
   | "CREATIVE_QUALITY"
   | "VISUAL_CONSISTENCY"
-  | "PRODUCTION_READINESS";
+  | "PRODUCTION_READINESS"
+  | "AUDIO_COHERENCE";
 
 export interface QualityGateCheckItem {
   category: QualityGateCategory;
@@ -234,6 +235,26 @@ export interface QualityGateCheckItem {
 export interface QualityGateResult {
   passed: boolean;
   checks: QualityGateCheckItem[];
+}
+
+export interface ContinuityReport {
+  characterDriftChecks: Array<{
+    characterName: string;
+    seedPresentInPrompts: boolean;
+    speakingStyleNoted: boolean;
+  }>;
+  worldDriftCheck: {
+    colorPaletteReferenced: boolean;
+    soundSignaturePresent: boolean;
+    locationUsed: boolean;
+  };
+  plotThreadStatus: {
+    continuityThreadAddressed: boolean;
+    chekhovGunPlanted: boolean;
+    transitionBridgeSpecified: boolean;
+  };
+  transitionBridgeConfirmed: boolean;
+  overallContinuityPassed: boolean;
 }
 
 export type EpisodePreProductionStatus =
@@ -254,6 +275,7 @@ export interface EpisodePreProduction {
   platformAssets?: PlatformPublishingAsset[];
   viralityScore?: EpisodeViralityScore;
   qualityGateResult?: QualityGateResult;
+  continuityReport?: ContinuityReport;
   error?: string;
   startedAt?: string;
   completedAt?: string;

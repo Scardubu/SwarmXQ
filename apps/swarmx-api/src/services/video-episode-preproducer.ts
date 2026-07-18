@@ -37,6 +37,7 @@ import type {
   QualityGateResult,
   QualityGateCheckItem,
   EpisodePreProduction,
+  ContinuityReport,
 } from "@swarmx/types/series-types";
 
 // ─── Model tags ───────────────────────────────────────────────────────────────
@@ -47,6 +48,19 @@ const ARCHITECT_TAG = resolveCanonicalTag("plan-qwen25-pro-q5km-prod");
 // ─── Virality formula constants (CLAUDE.md invariant — never alter weights) ──
 
 const VIRALITY_WEIGHTS = { hookStrength: 0.35, completionProxy: 0.25, shareability: 0.25, seoScore: 0.15 } as const;
+
+// ─── Narration style coherence table (spec Phase 8, AUDIO_COHERENCE) ─────────
+
+const NARRATION_STYLE_BY_TONE: Record<string, AudioPlan["narrationStyle"][]> = {
+  educational:    ["authoritative", "intimate"],
+  urgent:         ["authoritative", "conspiratorial"],
+  warm:           ["intimate", "poetic"],
+  contrarian:     ["conspiratorial", "authoritative"],
+  cinematic:      ["poetic", "intimate"],
+  minimal:        ["intimate", "poetic"],
+  faceless_broll: ["intimate", "authoritative"],
+  kinetic_text:   ["authoritative", "conspiratorial"],
+};
 
 // ─── Hook quality constraints ─────────────────────────────────────────────────
 
@@ -429,6 +443,26 @@ export function evaluateQualityGate(
       ? `Overall score is ${viralityScore.overall.toFixed(2)} — must be ≥ 0.65`
       : undefined);
 
+  // Gap 2 — hookStrength < 0.5 → hard fail (spec: "< 0.5 → rewrite the hook")
+  check(
+    "CREATIVE_QUALITY",
+    `Hook strength ≥ 0.5 (actual: ${viralityScore.hookStrength.toFixed(2)})`,
+    viralityScore.hookStrength >= 0.5,
+    viralityScore.hookStrength < 0.5
+      ? `hookStrength ${viralityScore.hookStrength.toFixed(2)} — rewrite the hook before delivery`
+      : undefined,
+  );
+
+  // Gap 3 — virality hard floor 0.55 (separate from 0.65 soft minimum)
+  check(
+    "CREATIVE_QUALITY",
+    `Virality hard floor ≥ 0.55 (actual: ${viralityScore.overall.toFixed(2)})`,
+    viralityScore.overall >= 0.55,
+    viralityScore.overall < 0.55
+      ? `Overall ${viralityScore.overall.toFixed(2)} is below the 0.55 hard floor — episode must be revised`
+      : undefined,
+  );
+
   // ── VISUAL_CONSISTENCY ─────────────────────────────────────────────────────
   const allNineFields = prompts.every((s) =>
     s.master && s.character && s.environment && s.camera &&
@@ -478,9 +512,174 @@ export function evaluateQualityGate(
     // Count emojis via Unicode property
     const emojiCount = (primaryAsset.caption.match(/\p{Emoji_Presentation}/gu) ?? []).length;
     check("PRODUCTION_READINESS", `Emoji count ≤ 3 (actual: ${emojiCount})`, emojiCount <= 3);
+
+    // Gap 4 — Caption firstLine opener (spec CAPTION_RULES: never I/My/This/We/Our)
+    const captionFirstLine = primaryAsset.caption.split("\n")[0] ?? "";
+    const CAPTION_OPENER_BLOCKLIST = ["i ", "i'", "my ", "this ", "we ", "our "];
+    const badOpener = CAPTION_OPENER_BLOCKLIST.find((w) =>
+      captionFirstLine.toLowerCase().startsWith(w),
+    );
+    check(
+      "PRODUCTION_READINESS",
+      "Caption firstLine does not start with I/My/This/We/Our",
+      !badOpener,
+      badOpener ? `Caption firstLine starts with blocked opener "${captionFirstLine.slice(0, 20)}…"` : undefined,
+    );
+
+    // Gap 5 — Platform title ≤ 60 chars
+    const titleLen = primaryAsset.title.length;
+    check(
+      "PRODUCTION_READINESS",
+      `Platform title ≤ 60 chars (actual: ${titleLen})`,
+      titleLen <= 60,
+      titleLen > 60 ? `Title is ${titleLen} chars — must be trimmed to ≤ 60` : undefined,
+    );
+
+    // Gap 6 — SEO description 120–160 chars
+    const seoLen = primaryAsset.seoDescription.length;
+    check(
+      "PRODUCTION_READINESS",
+      `SEO description 120–160 chars (actual: ${seoLen})`,
+      seoLen >= 120 && seoLen <= 160,
+      seoLen < 120
+        ? `SEO description is ${seoLen} chars — must be ≥ 120`
+        : seoLen > 160 ? `SEO description is ${seoLen} chars — must be ≤ 160` : undefined,
+    );
+
+    // Gap 7 — Full caption ≤ 2,200 chars (TikTok hard cap)
+    const captionLen = primaryAsset.caption.length;
+    check(
+      "PRODUCTION_READINESS",
+      `Full caption ≤ 2,200 chars (actual: ${captionLen})`,
+      captionLen <= 2200,
+      captionLen > 2200 ? `Caption is ${captionLen} chars — TikTok hard cap is 2,200` : undefined,
+    );
+
+    // Gap 8 — In-feed visible ≤ 280 chars (first paragraph, before double-newline)
+    const inFeedVisible = primaryAsset.caption.split("\n\n")[0]?.length ?? captionLen;
+    check(
+      "PRODUCTION_READINESS",
+      `In-feed visible text ≤ 280 chars (actual: ${inFeedVisible})`,
+      inFeedVisible <= 280,
+      inFeedVisible > 280 ? `In-feed first paragraph is ${inFeedVisible} chars — soft cap is 280` : undefined,
+    );
   }
 
+  // ── AUDIO_COHERENCE ────────────────────────────────────────────────────────
+
+  // Gap 1a — Sonic signature echoes worldGuide.soundSignature (first-3-word check)
+  const worldSonicSig = series.worldGuide?.soundSignature ?? "";
+  const worldSigWords = worldSonicSig.split(" ").slice(0, 3).join(" ").toLowerCase();
+  const sonicSigPresent = worldSonicSig.length === 0 ||
+    audioPlan.seriesSonicSignature.toLowerCase().includes(worldSigWords);
+  check(
+    "AUDIO_COHERENCE",
+    "Series sonic signature consistent with worldGuide.soundSignature",
+    sonicSigPresent,
+    !sonicSigPresent
+      ? `audioPlan.seriesSonicSignature does not echo worldGuide.soundSignature ("${worldSonicSig.slice(0, 40)}")`
+      : undefined,
+  );
+
+  // Gap 1b — Narration style coherent with series tone
+  const allowedStyles = NARRATION_STYLE_BY_TONE[series.brief.tone] ?? [];
+  const narrationCoherent = allowedStyles.length === 0 ||
+    allowedStyles.includes(audioPlan.narrationStyle);
+  check(
+    "AUDIO_COHERENCE",
+    `Narration style coherent with tone "${series.brief.tone}" (actual: ${audioPlan.narrationStyle})`,
+    narrationCoherent,
+    !narrationCoherent
+      ? `"${audioPlan.narrationStyle}" not valid for tone "${series.brief.tone}"; expected: ${allowedStyles.join(", ")}`
+      : undefined,
+  );
+
+  // Gap 1c — Silence cues required for episodes ≥ 30s
+  const durationSecs = series.brief.episodeDurationSeconds;
+  check(
+    "AUDIO_COHERENCE",
+    `Silence cues present (${durationSecs >= 30 ? "required" : "optional"} for ${durationSecs}s)`,
+    durationSecs < 30 || audioPlan.silenceCues.length >= 1,
+    durationSecs >= 30 && audioPlan.silenceCues.length === 0
+      ? `Episode is ${durationSecs}s — spec requires at least 1 intentional silence cue`
+      : undefined,
+  );
+
   return { passed: checks.every((c) => c.passed), checks };
+}
+
+// ─── Continuity Report Builder (pure function — no LLM calls) ────────────────
+
+export function buildContinuityReport(
+  series: SeriesJob,
+  episodeNumber: number,
+  script: EpisodeScript,
+  prompts: ScenePromptSuite[],
+  audioPlan: AudioPlan,
+): ContinuityReport {
+  const entry = series.episodeRoadmap?.find((e) => e.episodeNumber === episodeNumber);
+
+  const characterDriftChecks = (series.characterBible ?? []).map((char) => {
+    const nameLower = char.name.toLowerCase();
+    const seedPrefix = char.aiPromptSeed.toLowerCase().slice(0, 60);
+    const seedPresentInPrompts = prompts.some((p) =>
+      p.character.toLowerCase().includes(nameLower) ||
+      p.character.toLowerCase().includes(seedPrefix),
+    );
+    const speakingStyleNoted = (audioPlan.dialogueNotes ?? []).some((note) =>
+      note.toLowerCase().includes(nameLower),
+    );
+    return { characterName: char.name, seedPresentInPrompts, speakingStyleNoted };
+  });
+
+  const worldDriftCheck = {
+    colorPaletteReferenced: (series.worldGuide?.colorPalette ?? []).some((color) =>
+      prompts.some((p) =>
+        p.style.toLowerCase().includes(color.toLowerCase()) ||
+        p.lighting.toLowerCase().includes(color.toLowerCase()),
+      ),
+    ),
+    soundSignaturePresent: (series.worldGuide?.soundSignature?.length ?? 0) > 0 &&
+      audioPlan.seriesSonicSignature.length > 0,
+    locationUsed: (series.worldGuide?.keyLocations ?? []).length === 0 ||
+      prompts.some((p) =>
+        (series.worldGuide!.keyLocations).some((loc) =>
+          p.environment.toLowerCase().includes(loc.name.toLowerCase()),
+        ),
+      ),
+  };
+
+  const threadKeyword = (entry?.continuityThread ?? "").toLowerCase().split(" ")[0] ?? "";
+  const plotThreadStatus = {
+    continuityThreadAddressed: !threadKeyword || (
+      script.body.toLowerCase().includes(threadKeyword) ||
+      script.emotionalPeak.toLowerCase().includes(threadKeyword)
+    ),
+    chekhovGunPlanted: !entry?.chekhovGun ||
+      script.body.toLowerCase().includes(
+        entry.chekhovGun.toLowerCase().split(" ").slice(0, 2).join(" "),
+      ),
+    transitionBridgeSpecified: script.transitionBridge.description.length > 0,
+  };
+
+  const transitionBridgeConfirmed = script.transitionBridge.description.length > 0;
+
+  const overallContinuityPassed =
+    (characterDriftChecks.length === 0 || characterDriftChecks.every((c) => c.seedPresentInPrompts)) &&
+    worldDriftCheck.colorPaletteReferenced &&
+    worldDriftCheck.soundSignaturePresent &&
+    plotThreadStatus.continuityThreadAddressed &&
+    plotThreadStatus.chekhovGunPlanted &&
+    plotThreadStatus.transitionBridgeSpecified &&
+    transitionBridgeConfirmed;
+
+  return {
+    characterDriftChecks,
+    worldDriftCheck,
+    plotThreadStatus,
+    transitionBridgeConfirmed,
+    overallContinuityPassed,
+  };
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -610,10 +809,15 @@ export async function runEpisodePreProduction(
       seriesFinal, episodeNumber, script, scenePrompts, audioPlan, platformAssets, viralityScore,
     );
 
+    const continuityReport = buildContinuityReport(
+      seriesFinal, episodeNumber, script, scenePrompts, audioPlan,
+    );
+
     const now = new Date().toISOString();
     patchPreProduction(seriesId, episodeNumber, {
       viralityScore,
       qualityGateResult,
+      continuityReport,
       status: "complete",
       completedAt: now,
     });
