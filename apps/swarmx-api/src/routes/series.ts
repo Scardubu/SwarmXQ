@@ -3,11 +3,13 @@
  * SwarmXQ Series Engine — Fastify Route Plugin
  *
  * Exposes:
- *   POST   /api/video/series               — create series + fire planning
- *   GET    /api/video/series               — list all series
- *   GET    /api/video/series/:id           — get series detail
- *   POST   /api/video/series/:id/episodes/:n/produce — start producing episode N
- *   DELETE /api/video/series/:id           — delete series
+ *   POST   /api/video/series                               — create series + fire planning
+ *   GET    /api/video/series                               — list all series
+ *   GET    /api/video/series/:id                           — get series detail
+ *   POST   /api/video/series/:id/episodes/:n/produce       — start producing episode N
+ *   POST   /api/video/series/:id/episodes/:n/preproduction — trigger episode pre-production (V2.0)
+ *   GET    /api/video/series/:id/episodes/:n/preproduction — get pre-production status (V2.0)
+ *   DELETE /api/video/series/:id                           — delete series
  */
 
 import type { FastifyInstance, FastifyPluginOptions, FastifyRequest, FastifyReply } from "fastify";
@@ -22,8 +24,11 @@ import {
   listSeries,
   deleteSeries,
   recordEpisodeJobId,
+  getPreProduction,
+  setPreProduction,
 } from "../services/series-registry.js";
 import { planSeries } from "../services/video-series-planner.js";
+import { runEpisodePreProduction } from "../services/video-episode-preproducer.js";
 import * as queue from "../services/video-queue.js";
 import { requireVideoWriteAuth } from "../services/video-auth.js";
 import { log } from "../lib/logger.js";
@@ -212,6 +217,98 @@ export async function seriesRoutes(
         episodeNumber,
         jobId: job.id,
         status: job.status,
+      });
+    },
+  );
+
+  // ── POST /:id/episodes/:n/preproduction — trigger episode pre-production ──
+  fastify.post<{ Params: { id: string; n: string } }>(
+    "/:id/episodes/:n/preproduction",
+    { preHandler: requireVideoWriteAuth },
+    async (request, reply) => {
+      const series = getSeries(request.params.id);
+      if (!series) {
+        return reply.status(404).send({ error: "not_found", message: `Series ${request.params.id} not found` });
+      }
+      if (series.status === "planning" || series.status === "failed") {
+        return reply.status(409).send({
+          error: "series_not_ready",
+          message: "Series must be in planned, producing, or completed status to pre-produce an episode.",
+        });
+      }
+
+      const episodeNumber = Number.parseInt(request.params.n, 10);
+      if (!Number.isFinite(episodeNumber) || episodeNumber < 1) {
+        return reply.status(400).send({ error: "invalid_episode", message: "Episode number must be a positive integer." });
+      }
+
+      const roadmap = series.episodeRoadmap ?? [];
+      if (!roadmap.find((e) => e.episodeNumber === episodeNumber)) {
+        return reply.status(404).send({ error: "episode_not_found", message: `Episode ${episodeNumber} not found in roadmap.` });
+      }
+
+      // Idempotency: reject if already running
+      const existing = getPreProduction(request.params.id, episodeNumber);
+      if (existing && ["scripting", "prompting", "audio_assets", "scoring"].includes(existing.status)) {
+        return reply.status(409).send({
+          error: "already_running",
+          message: `Episode ${episodeNumber} pre-production is already in progress (status: ${existing.status}).`,
+          preProduction: existing,
+        });
+      }
+
+      const now = new Date().toISOString();
+      const initial = {
+        episodeNumber,
+        status: "scripting" as const,
+        startedAt: now,
+      };
+      setPreProduction(request.params.id, episodeNumber, initial);
+
+      void runEpisodePreProduction(request.params.id, episodeNumber).catch((err) => {
+        log.error({
+          seriesId: request.params.id,
+          episodeNumber,
+          err: err instanceof Error ? err.message : String(err),
+        }, "pre-production fire-and-forget error");
+      });
+
+      log.info({ seriesId: request.params.id, episodeNumber }, "series episode pre-production started");
+      return reply.status(202).send({
+        seriesId: request.params.id,
+        episodeNumber,
+        preProduction: initial,
+      });
+    },
+  );
+
+  // ── GET /:id/episodes/:n/preproduction — get pre-production status ─────────
+  fastify.get<{ Params: { id: string; n: string } }>(
+    "/:id/episodes/:n/preproduction",
+    { preHandler: requireVideoWriteAuth },
+    async (request, reply) => {
+      const series = getSeries(request.params.id);
+      if (!series) {
+        return reply.status(404).send({ error: "not_found", message: `Series ${request.params.id} not found` });
+      }
+
+      const episodeNumber = Number.parseInt(request.params.n, 10);
+      if (!Number.isFinite(episodeNumber) || episodeNumber < 1) {
+        return reply.status(400).send({ error: "invalid_episode", message: "Episode number must be a positive integer." });
+      }
+
+      const preProduction = getPreProduction(request.params.id, episodeNumber);
+      if (!preProduction) {
+        return reply.status(404).send({
+          error: "not_found",
+          message: `No pre-production record for episode ${episodeNumber}.`,
+        });
+      }
+
+      return reply.send({
+        seriesId: request.params.id,
+        episodeNumber,
+        preProduction,
       });
     },
   );

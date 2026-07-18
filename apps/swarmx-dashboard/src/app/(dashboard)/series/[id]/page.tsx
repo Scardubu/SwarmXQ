@@ -64,7 +64,8 @@ export default function SeriesDetailPage() {
   const id = params?.id ?? "";
 
   const fetchSeriesDetail = useSeriesStore((s) => s.fetchSeriesDetail);
-  const produceEpisode = useSeriesStore((s) => s.produceEpisode);
+  const produceEpisode   = useSeriesStore((s) => s.produceEpisode);
+  const prepareEpisode   = useSeriesStore((s) => s.prepareEpisode);
   const series = useSeriesStore((s) => s.series.get(id));
 
   // Initial fetch
@@ -100,6 +101,13 @@ export default function SeriesDetailPage() {
       await produceEpisode(id, episodeNumber);
     },
     [id, produceEpisode],
+  );
+
+  const handlePrepare = useCallback(
+    async (episodeNumber: number) => {
+      await prepareEpisode(id, episodeNumber);
+    },
+    [id, prepareEpisode],
   );
 
   // Build jobStatuses map for EpisodeGrid
@@ -217,6 +225,7 @@ export default function SeriesDetailPage() {
               <EpisodeGrid
                 series={series}
                 onProduce={handleProduce}
+                onPrepare={handlePrepare}
                 jobStatuses={jobStatuses}
               />
             )}

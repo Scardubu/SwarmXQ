@@ -79,6 +79,14 @@ export interface WorldRegistry {
   era: string;
   toneMap: string;               // derived from TONE_BACKGROUNDS / TONE_ACCENTS
   soundSignature: string;        // defining recurring audio element
+  // V2.0 — added by Pass 4 cinematic lock (non-fatal; absent on planning failure)
+  colorGradeContract?: {
+    shadowTone: string;
+    highlight: string;
+    saturation: string;
+    filmEmulation: string;
+  };
+  cinematicShotGrammar?: string; // e.g. "ECU on tension, WS on wonder"
 }
 
 // ─── Episode Roadmap ──────────────────────────────────────────────────────────
@@ -122,6 +130,8 @@ export interface SeriesJob {
   episodeRoadmap?: EpisodeRoadmapEntry[];
   viralityArc?: string;                        // binge mechanics notes
   videoJobIds: Partial<Record<number, string>>; // episodeNumber → jobId
+  // V2.0 — per-episode pre-production data
+  preProduction?: Partial<Record<number, EpisodePreProduction>>;
   createdAt: string;
   updatedAt: string;
   planningError?: string;
@@ -145,4 +155,111 @@ export interface SeriesProduceEpisodeResponse {
   episodeNumber: number;
   jobId: string;
   status: string;
+}
+
+// ─── V2.0 — Per-Episode Pre-Production ───────────────────────────────────────
+
+export interface EpisodeScript {
+  hook: string;            // ≤ 18 words
+  body: string;
+  emotionalPeak: string;
+  cliffhanger: {
+    type: "REVELATION" | "JEOPARDY" | "MYSTERY" | "IDENTITY" | "CHOICE";
+    text: string;
+  };
+  transitionBridge: {
+    type: "VISUAL_MATCH" | "AUDIO_THREAD" | "QUESTION_ECHO" | "SMASH_CUT_TEASE";
+    description: string;
+  };
+  sceneCount: number;
+}
+
+export interface ScenePromptSuite {
+  sceneIndex: number;
+  sceneTitle: string;
+  master: string;
+  character: string;
+  environment: string;
+  camera: string;
+  lighting: string;
+  motion: string;
+  style: string;
+  animation: string;
+  negative: string;
+}
+
+export interface AudioPlan {
+  narrationStyle: "intimate" | "authoritative" | "conspiratorial" | "poetic";
+  musicDescription: string;
+  soundEffects: string[];
+  silenceCues: string[];
+  seriesSonicSignature: string;
+}
+
+export interface PlatformPublishingAsset {
+  platform: SeriesPrimaryPlatform;
+  title: string;           // ≤ 60 chars
+  seoDescription: string;  // 120–160 chars
+  caption: string;
+  hashtags: string[];      // 3–5
+  cta: string;             // 5–8 words
+  thumbnailConcept: string;
+  pinnedComment: string;
+  soundSuggestion: string; // no URLs or artist names
+}
+
+export interface EpisodeViralityScore {
+  hookStrength: number;    // 0–1
+  completionProxy: number; // 0–1
+  shareability: number;    // 0–1
+  seoScore: number;        // 0–1
+  overall: number;         // hookStrength×0.35 + completionProxy×0.25 + shareability×0.25 + seoScore×0.15
+  recommendations: string[]; // 2–4 actionable
+}
+
+export type QualityGateCategory =
+  | "STORY_INTEGRITY"
+  | "CREATIVE_QUALITY"
+  | "VISUAL_CONSISTENCY"
+  | "PRODUCTION_READINESS";
+
+export interface QualityGateCheckItem {
+  category: QualityGateCategory;
+  label: string;
+  passed: boolean;
+  detail?: string;
+}
+
+export interface QualityGateResult {
+  passed: boolean;
+  checks: QualityGateCheckItem[];
+}
+
+export type EpisodePreProductionStatus =
+  | "pending"
+  | "scripting"
+  | "prompting"
+  | "audio_assets"
+  | "scoring"
+  | "complete"
+  | "failed";
+
+export interface EpisodePreProduction {
+  episodeNumber: number;
+  status: EpisodePreProductionStatus;
+  script?: EpisodeScript;
+  scenePrompts?: ScenePromptSuite[];
+  audioPlan?: AudioPlan;
+  platformAssets?: PlatformPublishingAsset[];
+  viralityScore?: EpisodeViralityScore;
+  qualityGateResult?: QualityGateResult;
+  error?: string;
+  startedAt?: string;
+  completedAt?: string;
+}
+
+export interface SeriesPreProductionResponse {
+  seriesId: string;
+  episodeNumber: number;
+  preProduction: EpisodePreProduction;
 }

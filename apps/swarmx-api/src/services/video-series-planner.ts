@@ -2,14 +2,15 @@
  * apps/swarmx-api/src/services/video-series-planner.ts
  * SwarmXQ Series Engine — AI Planning Pipeline
  *
- * Three-pass LLM pipeline that converts a SeriesBrief into a full series plan:
+ * Four-pass LLM pipeline that converts a SeriesBrief into a full series plan:
  *   Pass 1 (Pilot)     — character bible + world guide (JSON)
  *   Pass 2 (Architect) — episode roadmap, N entries (JSON)
  *   Pass 3 (Pilot)     — virality arc notes (plain text, optional)
+ *   Pass 4 (Pilot)     — cinematic language lock: color grade + shot grammar (optional)
  *
  * Each pass uses ModelOrchestrator.requestModel() for SINGLE-7B LOCK compliance.
  * Every Ollama response is wrapped in sanitizeReasoningOutput() before parsing.
- * Pass 3 failure is non-fatal; Pass 1 or 2 failure marks the series as failed.
+ * Passes 3 and 4 are non-fatal; Passes 1 or 2 failure marks the series as failed.
  */
 
 import { z } from "zod";
@@ -87,6 +88,16 @@ const EpisodeRoadmapEntrySchema = z.object({
 
 const Pass2Schema = z.object({
   episodes: z.array(EpisodeRoadmapEntrySchema).min(1),
+});
+
+const Pass4Schema = z.object({
+  colorGradeContract: z.object({
+    shadowTone:    z.string().min(1),
+    highlight:     z.string().min(1),
+    saturation:    z.string().min(1),
+    filmEmulation: z.string().min(1),
+  }),
+  cinematicShotGrammar: z.string().min(1),
 });
 
 // ─── Per-pass helper ──────────────────────────────────────────────────────────
@@ -249,6 +260,35 @@ Write 150–200 words describing:
 Plain text only. No headers. No bullet points. Write as a creative brief paragraph.`;
 }
 
+function buildPass4Prompt(
+  seriesTitle: string,
+  tone: string,
+  colorPalette: string[],
+  architecture: string,
+  era: string,
+): string {
+  return `You are a cinematographer. Define the locked cinematic language for this video series.
+
+SERIES: "${seriesTitle}"
+Tone: ${tone}
+Architecture/setting: ${architecture}
+Era: ${era}
+Established color palette: ${colorPalette.join(", ")}
+
+Using the established color palette as your base, define the series-locked cinematic grade and shot grammar.
+Respond with STRICT JSON only:
+
+{
+  "colorGradeContract": {
+    "shadowTone": "derived from darkest palette value or implied shadow (e.g. '#0a0a0a warm charcoal')",
+    "highlight": "derived from lightest or accent palette value (e.g. '#f5e6c8 golden highlight')",
+    "saturation": "one of: desaturated cinematic | vibrant social | muted editorial | punchy pop",
+    "filmEmulation": "one of: none | S-Log2 | LOG-C | Kodak 2383 | Fuji 3513"
+  },
+  "cinematicShotGrammar": "2–3 shot rules that define the series grammar, e.g. ECU on tension moments, WS on revelation, OTS for intimacy"
+}`;
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 /**
@@ -351,6 +391,41 @@ export async function planSeries(seriesId: string): Promise<void> {
     } catch (err) {
       // Pass 3 failure is non-fatal — log and continue
       log.warn({ seriesId, err: err instanceof Error ? err.message : String(err) }, "series planner: Pass 3 failed (non-fatal)");
+    }
+
+    // ── Pass 4: Pilot → cinematic language lock (optional) ────────────────────
+    log.info({ seriesId, pass: 4 }, "series planner: starting Pass 4 (cinematic lock)");
+    try {
+      const pass4Raw = await runPlannerPass(
+        PILOT_TAG,
+        buildPass4Prompt(
+          seriesTitle,
+          brief.tone,
+          worldGuide.colorPalette,
+          worldGuide.architecture,
+          worldGuide.era,
+        ),
+        400,
+        ac.signal,
+      );
+      const pass4Result = extractJson<unknown>(pass4Raw);
+      const pass4Parsed = Pass4Schema.safeParse(pass4Result.data);
+      if (pass4Parsed.success) {
+        const currentWorld = getSeries(seriesId)?.worldGuide;
+        if (currentWorld) {
+          updateSeries(seriesId, {
+            worldGuide: {
+              ...currentWorld,
+              colorGradeContract: pass4Parsed.data.colorGradeContract,
+              cinematicShotGrammar: pass4Parsed.data.cinematicShotGrammar,
+            },
+          });
+        }
+      } else {
+        log.warn({ seriesId, error: pass4Parsed.error.message }, "series planner: Pass 4 JSON invalid (non-fatal)");
+      }
+    } catch (err) {
+      log.warn({ seriesId, err: err instanceof Error ? err.message : String(err) }, "series planner: Pass 4 failed (non-fatal)");
     }
 
     setSeriesStatus(seriesId, "planned");

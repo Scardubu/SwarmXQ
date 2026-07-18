@@ -16,6 +16,7 @@ import type {
   SeriesCreateResponse,
   SeriesListResponse,
   SeriesProduceEpisodeResponse,
+  SeriesPreProductionResponse,
 } from "@swarmx/types/series-types";
 
 // ─── API base (mirrors video.ts) ──────────────────────────────────────────────
@@ -76,6 +77,8 @@ export interface SeriesActions {
   fetchSeriesDetail: (id: string) => Promise<void>;
   createSeries: (brief: SeriesBrief) => Promise<string | null>;
   produceEpisode: (seriesId: string, episodeNumber: number) => Promise<SeriesProduceEpisodeResponse | null>;
+  // V2.0 — episode pre-production
+  prepareEpisode: (seriesId: string, episodeNumber: number) => Promise<SeriesPreProductionResponse | null>;
   deleteSeries: (id: string) => Promise<void>;
   pollSeriesStatus: (id: string) => Promise<void>;
   clearErrors: () => void;
@@ -163,6 +166,21 @@ export const useSeriesStore = create<SeriesStore>()(
           return data;
         } catch (err) {
           set({ createError: err instanceof Error ? err.message : "Failed to produce episode." });
+          return null;
+        }
+      },
+
+      prepareEpisode: async (seriesId: string, episodeNumber: number) => {
+        try {
+          const data = await apiFetch<SeriesPreProductionResponse>(
+            `/api/video/series/${seriesId}/episodes/${episodeNumber}/preproduction`,
+            { method: "POST", body: "{}" },
+          );
+          // Refresh series detail so preProduction field is updated in state
+          await get().fetchSeriesDetail(seriesId);
+          return data;
+        } catch (err) {
+          set({ createError: err instanceof Error ? err.message : "Failed to start pre-production." });
           return null;
         }
       },

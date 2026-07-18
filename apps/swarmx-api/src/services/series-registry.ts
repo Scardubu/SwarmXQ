@@ -12,6 +12,8 @@ import type {
   SeriesBrief,
   SeriesJob,
   SeriesJobStatus,
+  EpisodePreProduction,
+  EpisodePreProductionStatus,
 } from "@swarmx/types/series-types";
 import { log } from "../lib/logger.js";
 import { loadEnv } from "../lib/env.js";
@@ -84,6 +86,48 @@ export function recordEpisodeJobId(seriesId: string, episodeNumber: number, jobI
 
 export function deleteSeries(id: string): boolean {
   return registry.delete(id);
+}
+
+// ─── Pre-production CRUD (V2.0) ───────────────────────────────────────────────
+
+export function getPreProduction(
+  seriesId: string,
+  episodeNumber: number,
+): EpisodePreProduction | undefined {
+  return registry.get(seriesId)?.preProduction?.[episodeNumber];
+}
+
+export function setPreProduction(
+  seriesId: string,
+  episodeNumber: number,
+  data: EpisodePreProduction,
+): void {
+  const series = registry.get(seriesId);
+  if (!series) return;
+  const preProduction = { ...(series.preProduction ?? {}), [episodeNumber]: data };
+  registry.set(seriesId, { ...series, preProduction, updatedAt: new Date().toISOString() });
+}
+
+export function patchPreProduction(
+  seriesId: string,
+  episodeNumber: number,
+  patch: Partial<EpisodePreProduction>,
+): void {
+  const series = registry.get(seriesId);
+  if (!series) return;
+  const existing = series.preProduction?.[episodeNumber];
+  if (!existing) return;
+  const updated: EpisodePreProduction = { ...existing, ...patch };
+  const preProduction = { ...(series.preProduction ?? {}), [episodeNumber]: updated };
+  registry.set(seriesId, { ...series, preProduction, updatedAt: new Date().toISOString() });
+}
+
+export function updatePreProductionStatus(
+  seriesId: string,
+  episodeNumber: number,
+  status: EpisodePreProductionStatus,
+): void {
+  patchPreProduction(seriesId, episodeNumber, { status });
 }
 
 // ─── Cleanup ─────────────────────────────────────────────────────────────────

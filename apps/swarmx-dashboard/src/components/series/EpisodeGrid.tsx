@@ -8,12 +8,14 @@ import type { SeriesJob } from "@swarmx/types/series-types";
 interface EpisodeGridProps {
   series: SeriesJob;
   onProduce: (episodeNumber: number) => Promise<void>;
+  onPrepare: (episodeNumber: number) => Promise<void>;
   jobStatuses?: Record<number, string>; // episodeNumber → job status string
 }
 
-export function EpisodeGrid({ series, onProduce, jobStatuses = {} }: EpisodeGridProps) {
+export function EpisodeGrid({ series, onProduce, onPrepare, jobStatuses = {} }: EpisodeGridProps) {
   const [producingEpisode, setProducingEpisode] = useState<number | null>(null);
   const roadmap = series.episodeRoadmap ?? [];
+  const preProductionMap = series.preProduction ?? {};
 
   if (roadmap.length === 0) {
     return (
@@ -51,7 +53,11 @@ export function EpisodeGrid({ series, onProduce, jobStatuses = {} }: EpisodeGrid
             {...(jobId !== undefined ? { jobId } : {})}
             {...(jobStatus !== undefined ? { jobStatus } : {})}
             onProduce={handleProduce}
+            onPrepare={onPrepare}
             isProducing={producingEpisode === episode.episodeNumber}
+            {...(preProductionMap[episode.episodeNumber] !== undefined
+              ? { preProduction: preProductionMap[episode.episodeNumber] }
+              : {})}
           />
         );
       })}
