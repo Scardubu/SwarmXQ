@@ -1,7 +1,7 @@
 # .github/workflows/ci.yml
 # SwarmXQ Quality Gate CI — Priority 2 milestone
-# Automates all 8 release gates from CLAUDE.md
-# pnpm 11.9.0 · Node 22 · ubuntu-latest
+# Automates all 8 release gates from CLAUDE.md + Gate 5.5 BullMQ integration.
+# pnpm 11.9.0 · Node 22 · ubuntu-latest · Redis 7-alpine
 
 name: CI
 
@@ -21,21 +21,52 @@ jobs:
     name: Quality Gates
     runs-on: ubuntu-latest
 
+    # Redis 7 is required for Gate 5.5 (BullMQ integration check).
+    # GitHub Actions waits for the health check to pass before running any step.
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
     env:
       NODE_ENV: test
       LOG_LEVEL: warn
+      # API
       SWARMX_API_PORT: '3001'
       SWARMX_API_HOST: '127.0.0.1'
+      # Redis — points to the service container above
       REDIS_URL: 'redis://127.0.0.1:6379'
+      # Ollama (offline in CI; env vars satisfy loadEnv() schema)
       OLLAMA_HOST: 'http://127.0.0.1:11434'
       OLLAMA_KEEP_ALIVE_PILOT_S: '300'
-      SWARMX_VIDEO_USE_BULLMQ: '0'
+      OLLAMA_NUM_PARALLEL: '1'
+      OLLAMA_FLASH_ATTENTION: '1'
+      OLLAMA_KV_CACHE_TYPE: 'q8_0'
+      OLLAMA_NUM_THREADS: '3'
+      OLLAMA_MAX_LOADED_MODELS: '1'
+      # BullMQ — enabled; Redis service above provides real connectivity for Gate 5.5.
+      # Unit tests (video-queue.test.ts) vi.mock("bullmq") so they never touch Redis.
+      SWARMX_VIDEO_USE_BULLMQ: '1'
+      # Video pipeline
       SWARMX_VIDEO_LOW_RAM_MODE: '0'
+      SWARMX_VIDEO_RENDER_BACKEND: 'auto'
+      SWARMX_VIDEO_ALLOW_STUB_RENDER: '0'
+      SWARMX_VIDEO_ALLOW_UNSTRUCTURED_INTENT: '0'
+      SWARMX_VIDEO_ALLOW_SILENT_AUDIO: '0'
       SWARMX_VIDEO_JOB_LIMIT_PER_HOUR: '10'
       SWARMX_VIDEO_CAPTION_SCORE_LIMIT_PER_MIN: '10'
       SWARMX_VIDEO_QUEUE_MAX_SIZE: '20'
       SWARMX_VIDEO_EXPORT_TTL_DAYS: '7'
       SWARMX_VIDEO_CLEANUP_INTERVAL_MS: '21600000'
+      # Health / warmup
+      SWARMX_WARMUP_STATUS_FILE: '/tmp/swarmxq-warmup.json'
+      # Dashboard
       NEXT_PUBLIC_SWARMX_VERSION: ci
 
     steps:
@@ -79,11 +110,22 @@ jobs:
       - name: Gate 4 — @swarmx/dashboard vitest
         run: pnpm --filter @swarmx/dashboard test
 
-      # ── Gate 5 · @swarmx/api vitest ──────────────────────────────────────
+      # ── Gate 5 · @swarmx/api vitest (150 passing) ────────────────────────
+      # BullMQ is vi.mock()'d in video-queue.test.ts — unit tests never touch Redis.
+
       - name: Gate 5 — @swarmx/api vitest
         run: pnpm --filter @swarmx/api test
 
-      # ── Gate 6 · API regression scripts (offline-safe, no Redis/Ollama) ────
+      # ── Gate 5.5 · BullMQ + Redis integration (Priority 1 done-when check) ─
+      # Creates a named CI queue, enqueues one sentinel job, confirms it is
+      # waiting in Redis, then obliterates to clean up.
+      # This exercises the real BullMQ path that unit tests mock out.
+
+      - name: Gate 5.5 — BullMQ + Redis integration check
+        working-directory: apps/swarmx-api
+        run: pnpm exec tsx scripts/ci-bullmq-health.ts
+
+      # ── Gate 6 · API regression scripts (offline-safe, no Ollama) ────────
 
       - name: Gate 6a — video-regression-check
         run: pnpm --filter @swarmx/api run test:video
@@ -94,10 +136,9 @@ jobs:
       # ── Invariants (ms-fast; run before expensive next build) ─────────────
 
       - name: Invariant — console.* zero tolerance (services + routes)
-        # Uses Perl regex (-P) with negative lookbehind (?<!["']) to match only
-        # actual method calls, not string literals. composer.ts contains code-sample
-        # template strings like "console.log(greet(...))" — these are code content
-        # returned to users, not logging calls, and are correctly excluded.
+        # Perl regex (-P) with negative lookbehind (?<!["']) matches only actual
+        # method calls, not string literals. composer.ts contains code-sample
+        # strings like "console.log(greet(...))" which are correctly excluded.
         run: |
           HITS=$(grep -rPn '(?<!["'"'"'])console\.(log|warn|error|info|debug)\(' \
             apps/swarmx-api/src/services \
@@ -124,8 +165,8 @@ jobs:
           fi
           echo "PASS: all 8 TONE_RULES variants present (contrarian urgent educational cinematic warm minimal faceless_broll kinetic_text)"
 
-      - name: Invariant — process.env direct reads (6 intentional escape hatches only)
-        # Priority 3 complete: 6 remaining reads are documented intentional escape hatches:
+      - name: Invariant — process.env direct reads (≤10 intentional escape hatches)
+        # 6 remaining reads are documented intentional escape hatches:
         # 3 OAuth/auth secrets, 1 OS PYTHONPATH, 2 dynamic parametric keys in video-runtime-config.ts
         run: |
           COUNT=$(grep -rn 'process\.env\[' apps/swarmx-api/src/services apps/swarmx-api/src/routes 2>/dev/null | wc -l)

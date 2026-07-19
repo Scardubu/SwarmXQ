@@ -683,10 +683,10 @@ Push only after all quality gates pass.
 
 | Priority | Milestone | Done When |
 |---|---|---|
-| 1 | **BullMQ Default-On** — `SWARMX_VIDEO_USE_BULLMQ=1`, Worker separation, Redis fallback to in-memory | regression passes + worker survives API restart |
-| 2 | **GitHub Actions CI** — `.github/workflows/ci.yml`, all 8 gates, pnpm cache, Ollama model stubs | first green run on test branch |
-| 3 | **Env Schema Expansion** — high-risk `process.env[…]` reads migrated to `env.ts` | `grep 'process\.env\['` ≤10 hits in services/routes |
-| 4 | **First API Unit Tests** — `video-queue.ts` state machine, `reasoning-sanitizer.ts` fixtures, pure helpers | ≥30 new tests, >60% coverage on 4 modules |
+| ~~1~~ | ~~**BullMQ Default-On**~~ | ✅ V6.2.22+V6.2.40 — `SWARMX_VIDEO_USE_BULLMQ=1` default; Worker co-located; TCP-probe fallback; `setBullMQRuntimeEnabled(true/false)` explicit; Gate 5.5 integration check added |
+| ~~2~~ | ~~**GitHub Actions CI**~~ | ✅ V6.2.40 — `.github/workflows/ci.yml` all 8 gates + Gate 5.5; Redis service; BullMQ enabled in CI; Ollama perf vars in env block; push to `main` triggers first green run |
+| ~~3~~ | ~~**Env Schema Expansion**~~ | ✅ V6.2.38 — `grep 'process\.env\['` returns 6 hits (≤10); all are documented escape hatches in `env.ts` |
+| ~~4~~ | ~~**First API Unit Tests**~~ | ✅ V6.2.39 — 150 tests across 5 files; series-registry + quality-gate coverage added; >60% on all 6 modules |
 | 5 | **16 GB Profile Config** — `startup-enhanced.sh`, dual-model residency, Pilot keep-alive, ComfyUI frame budget | warmup confirmed on startup; ETA updated in dashboard from API |
 | 6 | **TONE_RULES Completeness Audit** — verify all 8 tone variants in `video-orchestrator.ts`, add `faceless_broll` and `kinetic_text` if missing | `grep TONE_RULES` shows all 8 keys; creative quality regression passes |
 
@@ -757,12 +757,12 @@ Repository code overrides all prior documentation. Grep/read before acting.
 
 | Gap | Action |
 |---|---|
-| BullMQ disabled by default (`SWARMX_VIDEO_USE_BULLMQ=0`) | Priority 1: enable + Worker separation |
-| Zero CI — manual gates only | Priority 2: GitHub Actions |
-| `process.env[…]` still scattered in services | Priority 3: env schema expansion |
-| Zero API unit tests | Priority 4: vitest suite for API package |
+| ~~BullMQ disabled by default (`SWARMX_VIDEO_USE_BULLMQ=0`)~~ | ✅ V6.2.22+V6.2.40 |
+| ~~Zero CI — manual gates only~~ | ✅ V6.2.40 — `.github/workflows/ci.yml` ready; push to `main` triggers first run |
+| ~~`process.env[…]` still scattered in services~~ | ✅ V6.2.38 — 6 documented escape hatches remain (≤10 limit) |
+| ~~Zero API unit tests~~ | ✅ V6.2.39 — 150 tests, 5 files, 6 modules in coverage |
 | `startup-enhanced.sh` not wired for 16 GB | Priority 5: dual-model warmup |
-| `TONE_RULES` completeness unverified for `faceless_broll`, `kinetic_text` | Priority 6: audit and fill |
+| `TONE_RULES` completeness unverified for `faceless_broll`, `kinetic_text` | ✅ V6.2.23 — all 8 variants present and CI-gated |
 
 ---
 

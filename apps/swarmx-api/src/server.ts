@@ -321,6 +321,7 @@ await startJournaldStream(server);
     });
 
     if (redisReachable) {
+      setBullMQRuntimeEnabled(true);
       startVideoWorker();
       server.log.info({ redis: probeUrl }, "bullmq: Redis reachable — Worker started");
     } else {
