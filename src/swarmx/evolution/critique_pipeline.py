@@ -116,7 +116,7 @@ class CritiquePipeline:
         self.last_improvement_brief = None
 
         critic_verdict: CriticVerdict = self.critic.evaluate(proposal, recent_missions)
-        logger.info("[CRITIQUE] Critic: %s (delta=%.1f%%)", critic_verdict.decision, critic_verdict.improvement_delta)
+        logger.info("critique_critic_verdict", decision=critic_verdict.decision, improvement_delta_pct=round(critic_verdict.improvement_delta, 1))
 
         if critic_verdict.decision in {"REJECT", "REVISE"}:
             self.last_improvement_brief = {
@@ -137,7 +137,7 @@ class CritiquePipeline:
             return False, f"Critic rejected: {critic_verdict.reasoning}"
 
         rt_verdict: RedTeamVerdict = self.red_team.attack(proposal, policy_rules)
-        logger.info("[CRITIQUE] RedTeam: %s severity=%s", rt_verdict.decision, rt_verdict.severity)
+        logger.info("critique_redteam_verdict", decision=rt_verdict.decision, severity=rt_verdict.severity)
 
         if rt_verdict.decision == "FAIL" and rt_verdict.severity in SEVERITY_BLOCK:
             scenario = rt_verdict.failure_scenario or rt_verdict.reasoning

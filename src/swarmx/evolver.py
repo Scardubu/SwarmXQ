@@ -529,11 +529,7 @@ def build_evolution_proposals(
     )
     if _divergent_proposal is not None:
         proposals.append(_divergent_proposal)
-        logger.info(
-            "[DIVERGENT] Added Pareto-optimal proposal: scope=%s, score=%.3f",
-            _divergent_proposal.scope,
-            _divergent_proposal.score,
-        )
+        logger.info("divergent_proposal_added", scope=_divergent_proposal.scope, score=round(_divergent_proposal.score, 3))
 
     proposals.sort(key=lambda p: p.score, reverse=True)
     return proposals[: cfg.proposal_budget]
@@ -557,7 +553,7 @@ def _run_divergent_proposal(
     try:
         from core.evolution.divergent_proposer import DivergentProposer  # type: ignore[import]
     except Exception as exc:
-        logger.debug("[DIVERGENT] DivergentProposer unavailable: %s", exc)
+        logger.debug("divergent_proposer_unavailable", exc=str(exc))
         return None
 
     try:
@@ -596,9 +592,11 @@ def _run_divergent_proposal(
         # ── Delta-driven skill invocation (APEX-16) ───────────────────────────
         delta = pipeline.last_delta or {}
         if delta:
+            _delta_pid = delta.get("proposal_id", "unknown")
             store_memory(runtime_dir, {
+                "id": f"memory-{_delta_pid}-evolution-delta",
                 "type": "evolution_delta",
-                "proposal_id": delta.get("proposal_id", "unknown"),
+                "proposal_id": _delta_pid,
                 "delta_action": delta.get("delta_action", "unknown"),
                 "evolution_signal": delta.get("evolution_signal"),
                 "triggered_skills": delta.get("triggered_skills", []),
@@ -606,13 +604,7 @@ def _run_divergent_proposal(
                 "composite_score": delta.get("composite_score", 0.0),
                 "ts": now_iso(),
             })
-            logger.info(
-                "[Delta] proposal=%s action=%s signal=%s skills=%s",
-                delta.get("proposal_id"),
-                delta.get("delta_action"),
-                delta.get("evolution_signal"),
-                delta.get("triggered_skills"),
-            )
+            logger.info("evolution_delta", proposal=delta.get("proposal_id"), action=delta.get("delta_action"), signal=delta.get("evolution_signal"), skills=delta.get("triggered_skills"))
         # ─────────────────────────────────────────────────────────────────────
 
         # Derive EvolutionProposal score from Pareto score (clamp to [0, 0.99])
@@ -628,7 +620,7 @@ def _run_divergent_proposal(
             score=pareto_score,
         )
     except Exception as exc:
-        logger.warning("[DIVERGENT] proposal generation failed: %s", exc)
+        logger.warning("divergent_proposal_failed", exc=str(exc))
         return None
 
 def _merge_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
@@ -799,7 +791,7 @@ def apply_proposals(
                     f"and cannot be auto-applied at any risk tier. "
                     f"Human approval required."
                 )
-                logger.warning("[IEP] %s", block_reason)
+                logger.warning("iep_invariant_block", proposal=proposal.id, reason=block_reason)
                 result.update({
                     "rejected": True,
                     "blocked_iep": True,
@@ -818,6 +810,7 @@ def apply_proposals(
                 except Exception:
                     pass  # telemetry must never block the safety decision
                 store_memory(runtime_dir, {
+                    "id": f"memory-{proposal.id}-evolution-iep-blocked",
                     "kind": "evolution-iep-blocked",
                     "summary": block_reason,
                     "scope": proposal.scope,
@@ -846,6 +839,7 @@ def apply_proposals(
             store_memory(
                 runtime_dir,
                 {
+                    "id": f"memory-{proposal.id}-evolution-rejected",
                     "kind": "evolution-rejected",
                     "summary": reason,
                     "scope": proposal.scope,
@@ -875,6 +869,7 @@ def apply_proposals(
                         {"source_proposal": proposal.id, "scope": proposal.scope},
                     )
             store_memory(runtime_dir, {
+                "id":          f"memory-{proposal.id}-evolution-applied",
                 "kind":        "evolution-applied",
                 "summary":     proposal.reason,
                 "scope":       proposal.scope,
@@ -910,7 +905,7 @@ def run_skill_crystallization(
     try:
         from core.skills.crystallizer import SkillCrystallizer  # type: ignore[import]
     except Exception as exc:
-        logger.warning("[EVOLVE] SkillCrystallizer unavailable: %s", exc)
+        logger.warning("skill_crystallizer_unavailable", exc=str(exc))
         return 0
 
     def _wrapped_propose(
@@ -955,5 +950,5 @@ def run_skill_crystallization(
         cfg=cfg,
     )
     if n:
-        logger.info("[EVOLVE] Crystallizer proposed %d new skill(s)", n)
+        logger.info("crystallizer_proposed_skills", count=n)
     return n

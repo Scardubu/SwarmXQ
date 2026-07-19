@@ -47,7 +47,7 @@ def approve(runtime_home: Path, proposal_id: str) -> bool:
         store_kv(runtime_home, "evolution_proposals", proposals)
         return True
     except Exception as exc:
-        logger.warning("approve(%s) failed: %s", proposal_id, exc)
+        logger.warning("proposal_approve_failed", proposal_id=proposal_id, exc=str(exc))
         return False
 
 
@@ -62,7 +62,7 @@ def reject(runtime_home: Path, proposal_id: str) -> bool:
         store_kv(runtime_home, "evolution_proposals", proposals)
         return True
     except Exception as exc:
-        logger.warning("reject(%s) failed: %s", proposal_id, exc)
+        logger.warning("proposal_reject_failed", proposal_id=proposal_id, exc=str(exc))
         return False
 
 def delta_capture(
@@ -178,7 +178,7 @@ def generate_proposals(
             proposals.append(d)
         return proposals
     except Exception as exc:
-        logger.debug("DivergentProposer unavailable (%s), falling back to evolver", exc)
+        logger.debug("divergent_proposer_unavailable_fallback", exc=str(exc))
 
     # Fallback: build_evolution_proposals
     try:
@@ -188,7 +188,7 @@ def generate_proposals(
                 p.setdefault("pareto_score", 0.0)
             return raw
     except Exception as exc:
-        logger.warning("build_evolution_proposals failed: %s", exc)
+        logger.warning("build_evolution_proposals_failed", exc=str(exc))
 
     return []
 

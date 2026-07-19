@@ -263,8 +263,9 @@ def learn_from_run(runtime_dir: Path, record: dict[str, Any]) -> list[Path]:
     plan = record.get("plan")
     if isinstance(plan, dict):
         stack = list(plan.get("stack", []) or [])
+    run_id = record.get("id") or "unknown"
     memory_base = {
-        "source_run": record.get("id"),
+        "source_run": run_id,
         "workflow": workflow,
         "status": status,
         "target": target,
@@ -272,6 +273,7 @@ def learn_from_run(runtime_dir: Path, record: dict[str, Any]) -> list[Path]:
     }
     created.append(store_memory(runtime_dir, {
         **memory_base,
+        "id": f"memory-{run_id}-run-summary",
         "kind": "run-summary",
         "summary": summary,
         "note": f"{workflow}::{status}",
@@ -281,6 +283,7 @@ def learn_from_run(runtime_dir: Path, record: dict[str, Any]) -> list[Path]:
     if blocked:
         created.append(store_memory(runtime_dir, {
             **memory_base,
+            "id": f"memory-{run_id}-blocking-pattern",
             "kind": "blocking-pattern",
             "summary": f"Blocked tasks detected: {', '.join(blocked[:5])}",
             "note": "Add stronger gates, smaller steps, or a safer workflow.",
@@ -290,6 +293,7 @@ def learn_from_run(runtime_dir: Path, record: dict[str, Any]) -> list[Path]:
     if test_result.get("exit_code") not in (None, 0):
         created.append(store_memory(runtime_dir, {
             **memory_base,
+            "id": f"memory-{run_id}-test-failure",
             "kind": "test-failure",
             "summary": f"Test command failed: {test_result.get('command')}",
             "note": (test_result.get("stderr") or test_result.get("stdout") or "")[:1000],
@@ -298,6 +302,7 @@ def learn_from_run(runtime_dir: Path, record: dict[str, Any]) -> list[Path]:
     if evidence:
         created.append(store_memory(runtime_dir, {
             **memory_base,
+            "id": f"memory-{run_id}-evidence-snapshot",
             "kind": "evidence-snapshot",
             "summary": summary,
             "content": evidence[-1][:2000],
