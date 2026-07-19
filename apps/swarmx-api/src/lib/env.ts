@@ -40,6 +40,12 @@ const schema = z.object({
   SWARMX_OLLAMA_PROBE_TIMEOUT_MS: positiveInt.default(5000),
   SWARMX_OLLAMA_CACHE_TTL_MS: nonNegativeInt.default(15_000),
   OLLAMA_MAX_LOADED_MODELS: z.coerce.number().int().min(1).default(1),
+  // CPU performance profile (WSL2/CPU-only) — set by startup-enhanced.sh before Ollama starts.
+  // Defaults reflect safe fallbacks when not set; actual required values are enforced by startup script.
+  OLLAMA_NUM_PARALLEL: z.coerce.number().int().min(1).default(1),
+  OLLAMA_FLASH_ATTENTION: z.enum(["0", "1"]).default("0"),
+  OLLAMA_KV_CACHE_TYPE: z.string().default("f16"),
+  OLLAMA_NUM_THREADS: z.coerce.number().int().min(1).default(4),
   // Pilot keep-alive in seconds. startup-enhanced.sh exports 300 (5 min) on 16 GB hosts
   // so the model stays resident between the intent stage and the post-pipeline virality call.
   OLLAMA_KEEP_ALIVE_PILOT_S: z.coerce.number().int().min(0).default(300),

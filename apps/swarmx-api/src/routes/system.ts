@@ -232,6 +232,13 @@ export async function systemRouter(server: FastifyInstance): Promise<void> {
         modelReason: e.SWARMX_MODEL_REASON,
         modelCode: e.SWARMX_MODEL_CODE,
         apiPort: e.SWARMX_API_PORT,
+        ollamaPerf: {
+          numParallel: e.OLLAMA_NUM_PARALLEL,
+          flashAttention: e.OLLAMA_FLASH_ATTENTION === "1",
+          kvCacheType: e.OLLAMA_KV_CACHE_TYPE,
+          numThreads: e.OLLAMA_NUM_THREADS,
+          maxLoadedModels: e.OLLAMA_MAX_LOADED_MODELS,
+        },
       }))({ e: loadEnv() }),
     });
   });

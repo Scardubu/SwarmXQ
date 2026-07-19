@@ -176,6 +176,19 @@ await server.register(fastifyHelmet, {
 // are exported to the configured OTLP collector.
 initOtel(server.log);
 
+// Log Ollama CPU performance profile at boot so operators can diagnose
+// throughput regressions without inspecting env files.
+{
+  const _e = loadEnv();
+  server.log.info({
+    numParallel: _e.OLLAMA_NUM_PARALLEL,
+    flashAttention: _e.OLLAMA_FLASH_ATTENTION,
+    kvCacheType: _e.OLLAMA_KV_CACHE_TYPE,
+    numThreads: _e.OLLAMA_NUM_THREADS,
+    maxLoadedModels: _e.OLLAMA_MAX_LOADED_MODELS,
+  }, "ollama: CPU performance profile");
+}
+
 // ── [API-FIX-03] CORS — allowlist-only ───────────────────────────────────────
 await server.register(fastifyCors, {
   origin: buildAllowedOrigins(),
