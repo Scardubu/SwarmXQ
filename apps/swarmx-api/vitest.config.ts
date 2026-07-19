@@ -23,6 +23,8 @@ export default defineConfig({
         "src/services/video-queue.ts",
         "src/services/video-runtime-config.ts",
         "src/lib/env.ts",
+        "src/services/series-registry.ts",
+        "src/services/video-episode-preproducer.ts",
       ],
       thresholds: { lines: 60 },
     },

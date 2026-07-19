@@ -201,3 +201,13 @@ export function stopSeriesCleanup(): void {
     cleanupTimer = undefined;
   }
 }
+
+// ─── Test helpers ─────────────────────────────────────────────────────────────
+
+export function _clearSeriesRegistryForTesting(): void {
+  registry.clear();
+}
+
+export function _runCleanupForTesting(): void {
+  runCleanup();
+}
