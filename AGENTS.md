@@ -1,134 +1,229 @@
-Repository Engineering Contract
-Project Discovery
-Before implementing work:
-    1. read the root README and applicable documentation;
-    2. inspect workspace manifests and package scripts;
-    3. map applications, packages, services, data stores, queues, and external dependencies;
-    4. identify existing architecture and naming conventions;
-    5. inspect the relevant tests;
-    6. inspect configuration and deployment files;
-    7. inspect current working-tree changes.
-Do not infer the stack from prior experience. Verify it from the repository.
-Monorepo Boundaries
-Each workspace should expose a clear public surface.
-Applications may depend on shared packages. Shared packages must not import applications.
-Keep:
-    • domain contracts in shared schema/type packages;
-    • UI-only primitives in UI packages;
-    • persistence adapters in backend-owned packages;
-    • runtime-specific code outside universal packages;
-    • generated code clearly separated from handwritten code.
-Avoid deep imports into another package’s private directories.
-When changing a shared contract:
-    1. identify every consumer;
-    2. preserve compatibility or provide a coordinated migration;
-    3. update tests and documentation;
-    4. verify all affected workspaces.
-Product and Architecture Decisions
-Before a substantial feature, write a concise implementation brief:
-User outcome:
-Current behavior:
-Target behavior:
-Primary flow:
-Failure states:
-Data contracts:
-Security boundaries:
-Performance constraints:
-Compatibility constraints:
-Validation plan:
-The brief is a working tool, not ceremony. Keep it proportionate to the task.
-API and UI Contract
-Public API responses must use stable schemas.
-Represent asynchronous operations with explicit states such as:
-queued
-running
-completed
-failed
-cancelled
-Do not infer completion from request acceptance.
-For generated or uploaded artifacts, verify:
-    • file exists;
-    • size is nonzero;
-    • format is valid;
-    • metadata reflects the real file;
-    • public access route works;
-    • authorization is correct.
-A placeholder, stub, or mock must be visibly identified and must never satisfy a production success gate.
-Reliability Requirements
-All outbound calls require:
-    • explicit timeout;
-    • cancellation;
-    • bounded response size where relevant;
-    • typed parsing;
-    • failure classification;
-    • deliberate retry policy.
-All queues require:
-    • idempotent submission or documented duplicate semantics;
-    • bounded attempts;
-    • terminal-state rules;
-    • queue-depth protection;
-    • recovery behavior;
-    • observable attempt count.
-All background workers require graceful shutdown and must stop accepting new work before process termination.
-Observability Requirements
-Use structured logs.
-Include where applicable:
-timestamp
-level
-service
-environment
-requestId
-traceId
-spanId
-jobId
-userId or tenantId when safe
-operation
-durationMs
-status
-errorCode
-retryAttempt
-Do not create high-cardinality metric labels from raw IDs or user input.
-Instrument critical paths with:
-    • request rate;
-    • error rate;
-    • latency;
-    • saturation;
-    • queue depth;
-    • retry count;
-    • timeout count;
-    • dependency health;
-    • resource pressure.
-Use consistent OpenTelemetry semantic attributes when available.
-Dependency Policy
-Before adding a dependency, establish:
-    • existing code cannot reasonably provide the capability;
-    • package is actively maintained;
-    • license is acceptable;
-    • bundle/runtime cost is justified;
-    • security history is acceptable;
-    • dependency does not duplicate an existing library.
-Use the repository’s package manager. Never create a second lockfile.
-Documentation Policy
-Update documentation when changing:
-    • setup;
-    • environment variables;
-    • commands;
-    • public APIs;
-    • architectural boundaries;
-    • deployment;
-    • migrations;
-    • operational behavior;
-    • user-visible workflows.
-Examples must be executable and must match current contracts.
-Repository Definition of Done
-Run the repository’s own scripts. At minimum verify:
-lint
-typecheck
-targeted tests
-production build
-runtime smoke test
-Add package-specific checks when touched.
-Review:
+# SwarmXQ Engineering Contract — V6.2.22
+# Location: AGENTS.md (root — governs all Codex / OpenAI Agents / ChatGPT Code tasks)
+# Hardware: HP EliteBook 850 G3 · 16 GB RAM · CPU-only · WSL2
+
+This document governs all AI-assisted code generation, review, and modification in
+the SwarmXQ repository. Read it completely before producing any output.
+
+---
+
+## PROJECT DISCOVERY (Execute Before Any Task)
+
+```
+1. Read CLAUDE.md (root)         ← project invariants, skill registry, milestone queue
+2. Read NEXUS.md (root)          ← task routing and skill selection logic
+3. Read the relevant SKILL.md    ← domain-specific constraints for the task
+4. Read affected source files    ← grep/cat before writing; never infer from memory
+5. Check git status              ← working tree must be clean before changes
+6. Verify invariants are intact  ← run quick-check commands below
+```
+
+**Do not infer the stack from training data. Verify it from the repository.**
+
+---
+
+## NON-NEGOTIABLE INVARIANTS
+
+Violations of these rules are CRITICAL — fix before any other work in a session.
+
+### 1. SINGLE-7B LOCK
+Only one 7B-class model (Architect, Oracle, Forge, Auditor, Lab) may be
+inference-active simultaneously. On 16 GB, `OLLAMA_MAX_LOADED_MODELS=2` allows
+Pilot (~3 GB) to remain resident while a 7B runs — NOT concurrent inference.
+`evictIncompatible()` must be called before every 7B model load.
+
+### 2. console.* ZERO TOLERANCE
+`grep -rn 'console\.' apps/swarmx-api/src/services apps/swarmx-api/src/routes`
+must return zero hits. Use `log.*` from `src/lib/logger.ts` exclusively.
+
+### 3. CANONICAL TAG RESOLUTION
+All model tags MUST pass through `resolveCanonicalTag()` from
+`@swarmx/types/operator-map` before entering the registry, any log entry,
+or any API response. Legacy `-scar` tags and V5 operator names
+(`SENTINEL`, `CANVAS`, `LEDGER`, `PROPHET`, `EVOLVER`) are forbidden in new code.
+
+### 4. sanitizeReasoningOutput() MANDATORY
+Every Ollama response passes through `sanitizeReasoningOutput()` before parsing.
+DeepSeek `<think>` blocks must never reach intent JSON, script text, storyboard
+frames, or downstream agents. Use `extractJson()` — never `JSON.parse()` on raw output.
+
+### 5. ENV SCHEMA COMPLIANCE
+Never use `process.env['VAR']` directly in `src/services/` or `src/routes/`.
+All environment access goes through `src/lib/env.ts` (Zod schema + `loadEnv()`).
+
+### 6. PROTECTED CONSTANTS
+- `RAM_CRITICAL_MB = 800` — do not change
+- `MAX_CONCURRENT_JOBS = 1` — do not change
+- `OLLAMA_NUM_PARALLEL = 1` — CPU cannot benefit from parallelism; do not increase
+
+### 7. VIDEO STAGE ORDER (immutable)
+```
+intent_classification → planning → scripting → storyboard_generation → render_assembly → finalizing
+```
+Post-pipeline (non-blocking): `stageViralityAndCaption()`
+
+### 8. modelsUsed[stage] PLACEMENT
+Set `ctx.modelsUsed[stage]` immediately after `acquireModel()` inside the stage
+function — never in `runStage()`.
+
+### 9. TONE_RULES EXHAUSTIVE
+`TONE_RULES` in `video-orchestrator.ts` must contain all 8 variants:
+`contrarian | urgent | educational | cinematic | warm | minimal | faceless_broll | kinetic_text`
+
+---
+
+## MONOREPO BOUNDARIES
+
+```
+packages/swarmx-types/  ← canonical contracts; apps import from here, never the reverse
+apps/swarmx-api/        ← Fastify API; imports from packages/
+apps/swarmx-dashboard/  ← Next.js dashboard; imports from packages/; zero direct Ollama calls
+src/swarmx/             ← Python brain; structlog only; asyncio + httpx; no requests/print
+```
+
+**Package manager: pnpm only.** Never create a second lockfile. Never `npm install`.
+
+---
+
+## OPERATOR MAP (Canonical — packages/swarmx-types/src/operator-map.ts)
+
+| Operator | Canonical tag | Role |
+|---|---|---|
+| Relay | `route-phi4-lite-q4km-prod` | Pre-pipeline routing |
+| Pilot | `instruct-phi4-pro-q8-prod` | intent_classification, caption |
+| Pilot lite | `instruct-phi4-lite-q4km-prod` | Low-RAM text stage fallback |
+| Architect | `plan-qwen25-pro-q5km-prod` | planning, scripting, storyboard |
+| Architect deep | `plan-deepseekr1-pro-q5km-prod` | Deep planning fallback |
+| Oracle | `reason-deepseekr1-pro-q5km-prod` | Virality scoring |
+| Forge | `code-qwen25-pro-q5km-prod` | Agent code generation |
+| Auditor | `critique-deepseekr1-pro-q5km-prod` | Agent QA gating |
+| Lab | `synth-qwen25-exp-q4km-dev` | Meta-evolution (dev only) |
+
+---
+
+## SKILL SYSTEM (.ai/skills/)
+
+Before generating code for any domain, read the governing SKILL.md:
+
+```bash
+# Read before writing video pipeline code
+cat .ai/skills/swarmxq-video-pipeline-architect/SKILL.md
+
+# Read before any model routing or keep-alive change
+cat .ai/skills/swarmxq-model-orchestrator/SKILL.md
+
+# Read before any script quality, tone, or virality change
+cat .ai/skills/swarmxq-creative-director/SKILL.md
+
+# Read before startup-enhanced.sh or Ollama perf var changes
+cat .ai/skills/swarmxq-startup-ops-architect/SKILL.md
+
+# Read before .github/workflows/ changes
+cat .ai/skills/swarmxq-ci-release-architect/SKILL.md
+```
+
+---
+
+## FASTIFY API CONTRACT
+
+```typescript
+// Routes: thin — auth, validation, protocol translation only
+// Services: application logic, domain rules, AI calls
+// Never: business logic in routes; never: model calls in routes
+
+// All model calls require all three wrappers:
+import { getAdaptiveCallConfig, withTimeout } from "./adaptive-timeout-config.js"
+import { sanitizeReasoningOutput, extractJson } from "./reasoning-sanitizer.js"
+import { resolveCanonicalTag } from "@swarmx/types/operator-map"
+
+// requireVideoWriteAuth() on every POST /api/video/* mutation
+// Logging: log.info | log.warn | log.error | log.fatal — zero console.*
+```
+
+---
+
+## PYTHON BRAIN CONTRACT
+
+```python
+# structlog only — no print(), no logging.basicConfig()
+import structlog
+log = structlog.get_logger()
+
+# httpx.AsyncClient only — no requests (blocking I/O)
+import httpx
+
+# operator_map.py must mirror operator-map.ts semantically
+# Never: SENTINEL, CANVAS, LEDGER, PROPHET, EVOLVER (V5 names)
+# Use: Relay, Pilot, Architect, Forge, Oracle, Auditor, Lab (APEX-17 r8)
+```
+
+---
+
+## RELIABILITY REQUIREMENTS
+
+All outbound Ollama calls require:
+- Explicit timeout via `withTimeout()` from `adaptive-timeout-config.ts`
+- Circuit breaker check (`circuitOpen`) before calling
+- Fallback path when circuit is open — never throw uncaught exceptions
+- `sanitizeReasoningOutput()` on every response
+- `recordSuccess()` / `recordFailure()` for circuit breaker state
+
+All BullMQ jobs require:
+- Idempotent submission using `clientRequestId` dedup
+- Dead-letter queue configuration
+- Bounded retry attempts
+- Graceful shutdown (stop accepting before process termination)
+
+---
+
+## OBSERVABILITY REQUIREMENTS
+
+Structured logs must include where applicable:
+`timestamp`, `level`, `service`, `requestId`, `jobId`, `stage`, `modelTag`,
+`durationMs`, `status`, `errorCode`, `retryAttempt`, `availableMb`
+
+Video-specific spans: `video.job.enqueue`, `video.stage.{name}.start`,
+`video.stage.{name}.complete`, `video.model.acquire`, `video.render.start`
+
+---
+
+## DEFINITION OF DONE
+
+Before marking any task complete:
+
+```bash
+pnpm -F swarmx-api tsc --noEmit
+pnpm -F swarmx-types tsc --noEmit
+pnpm -F swarmx-dashboard tsc --noEmit
+pnpm -F swarmx-dashboard vitest run         # ≥52 passing
+pnpm -F swarmx-dashboard next build
+npx tsx apps/swarmx-api/scripts/video-regression-check.ts
+npx tsx apps/swarmx-api/scripts/reasoning-sanitizer-regression.ts
 git diff --check
-git diff --stat
-git diff
+
+# Invariant checks
+grep -rn 'console\.' apps/swarmx-api/src/services apps/swarmx-api/src/routes  # zero hits
+grep -rn '\-scar' apps/ packages/ src/                                          # zero hits
+```
+
+---
+
+## WHAT NOT TO GENERATE
+
+```
+❌ Any -scar model tag (phi4-fast-scar, qwen-worker-scar, deepseek-reasoner-scar, ...)
+❌ V5 operator names in new code (SENTINEL, CANVAS, LEDGER, PROPHET, EVOLVER)
+❌ console.log / console.error anywhere in src/services/ or src/routes/
+❌ process.env['VAR'] directly in services or routes (use env.ts)
+❌ JSON.parse() on raw DeepSeek/Ollama output (use extractJson())
+❌ OLLAMA_MAX_LOADED_MODELS=1 on 16 GB host (correct value is 2)
+❌ OLLAMA_NUM_PARALLEL > 1 (CPU cannot benefit)
+❌ Two 7B models simultaneously
+❌ exec() for FFmpeg calls (use execFile() with timeout and maxBuffer)
+❌ Hardcoded model tags outside MODEL_OPERATOR_MAP
+❌ Cold-start ETA values (140/45) hardcoded in dashboard components
+❌ COMFY_POLL_MAX_ATTEMPTS as a literal constant
+❌ requestVideoWriteAuth() missing from POST /api/video/* routes
+❌ AbortController listeners without { once: true }
+❌ modelsUsed[stage] set in runStage() rather than inside the stage function
+```

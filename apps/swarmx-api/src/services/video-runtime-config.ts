@@ -38,25 +38,25 @@ const TEXT_STAGE_MODEL_ENV: Record<TextVideoJobStage, string> = {
 // Q4_K_M at ~5 tok/s) can complete each text stage without env overrides. GPU
 // hosts wanting tighter bounds can still override via VIDEO_*_TIMEOUT_MS.
 const STAGE_TIMEOUT_DEFAULTS: Record<VideoJobStage, number> = {
-  intent_classification: 30_000,
-  planning: 60_000,
-  scripting: 90_000,
-  storyboard_generation: 120_000,
-  render_assembly: 240_000,
-  finalizing: 15_000,
+  intent_classification: 120_000,
+  planning: 300_000,
+  scripting: 600_000,
+  storyboard_generation: 600_000,
+  render_assembly: 1_800_000,
+  finalizing: 120_000,
 };
 
 const STAGE_TIMEOUT_BOUNDS: Record<VideoJobStage, { min: number; max: number }> = {
-  // Upper bounds sized for CPU-only inference on constrained laptops. A 3.8B
-  // Q4_K_M model at ~5 tokens/sec needs headroom for structured-output stages
-  // where the model may emit 100+ tokens. Operators on GPU-backed hosts can
-  // still set lower per-env timeouts; the bounds only clamp the ceiling.
-  intent_classification: { min: 1_000, max: 90_000 },
-  planning: { min: 5_000, max: 180_000 },
-  scripting: { min: 10_000, max: 240_000 },
-  storyboard_generation: { min: 10_000, max: 300_000 },
-  render_assembly: { min: 30_000, max: 900_000 },
-  finalizing: { min: 5_000, max: 60_000 },
+  // Upper bounds account for CPU-only inference on 2-core constrained laptops.
+  // A 3.8B Q4_K_M model at ~5–6 tok/s with 200-600 token prompts and up to
+  // 1024 tokens output needs 5–15 min per stage. GPU operators can override
+  // via VIDEO_*_TIMEOUT_MS env vars; the max bounds only clamp the ceiling.
+  intent_classification: { min: 1_000, max: 600_000 },
+  planning: { min: 5_000, max: 900_000 },
+  scripting: { min: 10_000, max: 1_800_000 },
+  storyboard_generation: { min: 10_000, max: 1_200_000 },
+  render_assembly: { min: 30_000, max: 7_200_000 },
+  finalizing: { min: 5_000, max: 600_000 },
 };
 
 const STAGE_TIMEOUT_ENV: Record<VideoJobStage, string> = {

@@ -53,19 +53,20 @@ assert.ok(
   `expected reasoner workflow to require more RAM than pilot mode, got ${reasonerRequiredMb}`,
 );
 
+// V6.2.42 — over-bound value is clamped to STAGE_TIMEOUT_BOUNDS[stage].max
 process.env["VIDEO_PLANNING_TIMEOUT_MS"] = "999999";
-assert.equal(stageTimeoutMs("planning"), 180000);
+assert.equal(stageTimeoutMs("planning"), 900_000);
 delete process.env["VIDEO_PLANNING_TIMEOUT_MS"];
 
-// V6.2.15 — new defaults are CPU-safe (cover cold-load latency on any host).
+// V6.2.42 — defaults sized for 2-core CPU-only (5–6 tok/s, 200–1024 token stages).
 delete process.env["VIDEO_INTENT_CLASSIFY_TIMEOUT_MS"];
 delete process.env["VIDEO_PLANNING_TIMEOUT_MS"];
 delete process.env["VIDEO_SCRIPTING_TIMEOUT_MS"];
 delete process.env["VIDEO_STORYBOARD_TIMEOUT_MS"];
-assert.equal(stageTimeoutMs("intent_classification"), 30_000);
-assert.equal(stageTimeoutMs("planning"), 60_000);
-assert.equal(stageTimeoutMs("scripting"), 90_000);
-assert.equal(stageTimeoutMs("storyboard_generation"), 120_000);
+assert.equal(stageTimeoutMs("intent_classification"), 120_000);
+assert.equal(stageTimeoutMs("planning"), 300_000);
+assert.equal(stageTimeoutMs("scripting"), 600_000);
+assert.equal(stageTimeoutMs("storyboard_generation"), 600_000);
 
 // V6.2.15 — shouldAutoEnableLowRamMode never overrides an explicit env value.
 process.env["SWARMX_VIDEO_LOW_RAM_MODE"] = "0";

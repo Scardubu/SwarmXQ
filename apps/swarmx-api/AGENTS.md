@@ -1,326 +1,133 @@
-Elite Backend and Platform Engineering Instructions
-Backend Mission
+# SwarmXQ API Engineering Instructions — V6.2.22
+# Location: apps/swarmx-api/AGENTS.md
+# Scope: Fastify 5 API — all code in apps/swarmx-api/src/
 
-Build services that remain correct under:
+Inherits from root AGENTS.md. This file adds API-package-specific constraints.
 
-malformed input;
-duplicate requests;
-concurrent requests;
-dependency failure;
-timeout;
-cancellation;
-process restart;
-partial infrastructure outage;
-elevated load;
-low-memory conditions.
+---
 
-A successful HTTP status is not proof that an asynchronous workflow completed.
+## API ARCHITECTURE (Strict Layering)
 
-Layering
+```
+src/routes/        ← thin: auth, schema validation, request/response mapping ONLY
+src/services/      ← application logic, model calls, domain rules
+src/lib/           ← shared utilities (logger.ts, env.ts — do not add new files lightly)
+src/plugins/       ← Fastify plugins (sse.ts, websocket.ts)
+src/types/         ← bridge adapters over packages/swarmx-types — do not duplicate contracts
+```
 
-Keep routes thin.
+**Routes own:** `requireVideoWriteAuth()`, Zod body/query validation, rate-limit bucket checks.
+**Services own:** all Ollama calls, BullMQ operations, file I/O, virality scoring, caption generation.
+**Routes must NEVER call Ollama or BullMQ directly.**
 
-Recommended ownership:
+---
 
-Route or transport:
-  authentication
-  authorization entry point
-  schema validation
-  protocol translation
-  response mapping
+## FASTIFY-SPECIFIC PATTERNS
 
-Application service:
-  use-case orchestration
-  transaction boundary
-  policy enforcement
-  dependency coordination
+```typescript
+// Plugin registration — always prefix-scoped
+server.register(videoRoutes, { prefix: '/api/video' })
 
-Domain:
-  invariants
-  state transitions
-  calculations
-  domain errors
+// Typed FastifyInstance — never 'any' on the server object
+import type { FastifyInstance } from 'fastify'
 
-Repository or adapter:
-  database or external-system access
-  persistence translation
+// Import with .js extension (ESM)
+import { log } from '../lib/logger.js'
+import { env } from '../lib/env.js'
 
-Do not place SQL, queue coordination, or complex business logic directly in route handlers.
+// Rate-limit buckets — always evicted via unref'd setInterval
+const evictionTimer = setInterval(evictStaleBuckets, 2 * 60 * 60 * 1000)
+evictionTimer.unref()   // ← always unref — never block process exit
 
-Fastify
+// Graceful shutdown — SIGTERM/SIGINT handlers in server.ts; never add new uncaught handlers
+// Global unhandledRejection and uncaughtException handlers already exist — do not add more
+```
 
-When using Fastify:
+---
 
-organize capabilities as plugins;
-define request and response schemas;
-use encapsulation deliberately;
-test through fastify.inject() where suitable;
-configure structured logging;
-centralize stable error translation;
-add hooks only at the narrowest required scope;
-close resources during shutdown.
+## ENV SCHEMA ADDITIONS
 
-Do not mutate global Fastify state from unrelated plugins.
+When adding a new environment variable, ALWAYS add to `src/lib/env.ts` Zod schema:
 
-Input and Output Contracts
+```typescript
+const envSchema = z.object({
+  // Existing vars...
+  NEW_VAR: z.string().default('default_value'),
+  // Risk annotation in JSDoc:
+  // @risk silent-fail — wrong value degrades behaviour without error
+  // @risk startup-crash — wrong value blocks API startup via loadEnv()
+})
+```
 
-Define runtime schemas for:
+Never add `process.env['NEW_VAR']` directly to a service. Always go through `env.ts`.
 
-params;
-query strings;
-headers when material;
-request bodies;
-successful responses;
-documented errors.
+---
 
-Reject unknown or privileged fields when mass assignment is possible.
+## VIDEO PIPELINE PATTERNS
 
-Keep response contracts stable.
+```typescript
+// Correct stage fn signature — always sets modelsUsed inside, never in runStage()
+async function stageScripting(
+  ctx: VideoOrchestrationContext,
+  signal: AbortSignal,
+  broadcast: BroadcastFn
+): Promise<void> {
+  const canonicalTag = resolveCanonicalTag(resolveVideoModelTag('scripting', ctx.availableMb))
+  ctx.modelsUsed['scripting'] = canonicalTag    // ← set HERE, immediately after resolve
 
-Do not expose database records directly when they contain internal or sensitive fields.
+  const controller = stageController('scripting')
+  signal.addEventListener('abort', () => controller.abort(), { once: true })  // ← { once: true }
 
-Authentication and Authorization
+  const { timeoutMs, circuitOpen } = getAdaptiveCallConfig(canonicalTag, 'supervisor_planning')
+  if (circuitOpen) throw new VideoError('SCRIPTING_FAILED', 'Circuit open')
 
-Authentication establishes identity. Authorization establishes permission.
+  const raw = await withTimeout(callOllama(canonicalTag, { prompt, signal: controller.signal }), timeoutMs)
+  const clean = sanitizeReasoningOutput(raw.text)   // ← always sanitize
+  // parse clean, never raw
+}
 
-Check authorization against the requested object, tenant, and operation.
+// Before FFmpeg render — evict all Ollama models
+for (const [stage, tag] of Object.entries(ctx.modelsUsed)) {
+  if (tag) await ModelOrchestrator.unloadModel(tag)
+}
+// Only then call FFmpeg via execFile(), never exec()
+```
 
-Never rely solely on:
+---
 
-possession of an identifier;
-a hidden UI control;
-client-provided tenant ID;
-route-level authentication;
-an “admin” string without validated role semantics.
+## BULLMQ PATTERNS (Priority 1 Milestone)
 
-Use deny-by-default behavior.
-
-Error Model
-
-Use stable error codes such as:
-
-VALIDATION_FAILED
-UNAUTHENTICATED
-FORBIDDEN
-NOT_FOUND
-CONFLICT
-RATE_LIMITED
-DEPENDENCY_UNAVAILABLE
-TIMEOUT
-RESOURCE_EXHAUSTED
-INTERNAL_ERROR
-
-Separate:
-
-safe client message;
-internal diagnostic context;
-retryability;
-HTTP status;
-causal error.
-
-Do not return raw exceptions or stack traces.
-
-Timeouts, Cancellation, and Retries
-
-Every external call must have a timeout.
-
-Propagate cancellation.
-
-Separate:
-
-connection timeout;
-response timeout;
-overall operation deadline;
-queue timeout;
-model-load timeout;
-inference timeout.
-
-Retries must be:
-
-bounded;
-observable;
-limited to transient failures;
-idempotent;
-protected by backoff and jitter.
-
-Never retry validation, authorization, deterministic model-capability, or permanent configuration failures.
-
-Idempotency
-
-Use idempotency keys for operations likely to be retried externally, especially:
-
-payment-like actions;
-job creation;
-webhook handling;
-artifact generation;
-resource provisioning.
-
-Persist enough information to return the prior result safely.
-
-Define behavior for:
-
-same key and same payload;
-same key and different payload;
-in-progress operation;
-failed terminal operation;
-expiration.
-Concurrency and State Machines
-
-Represent workflows with explicit valid transitions.
-
-Prevent impossible transitions using:
-
-database constraints;
-compare-and-swap updates;
-transactions;
-locks only when justified;
-version fields;
-unique constraints.
-
-Do not let a retrying job remain displayed as queued while it is executing.
-
-Record:
-
-attempt count;
-current stage;
-stage start and end;
-terminal error;
-progress timestamp;
-output identity.
-Database Access
-
-Keep transactions short.
-
-Do not make slow network or model calls inside database transactions.
-
-Use:
-
-unique constraints for uniqueness;
-foreign keys for referential integrity;
-indexes based on observed query patterns;
-pagination for unbounded collections;
-explicit selected fields;
-batch loading to prevent N+1 behavior.
-
-Investigate query plans before adding speculative indexes.
-
-Caching
-
-Every cache must define:
-
-ownership;
-key format;
-value schema;
-TTL;
-invalidation;
-maximum size;
-stale behavior;
-stampede protection;
-failure behavior.
-
-Caches must not weaken authorization or tenant isolation.
-
-The source of truth must remain explicit.
-
-Files and Artifacts
-
-For file operations:
-
-resolve paths against an approved root;
-reject traversal;
-validate MIME type and extension independently;
-impose size limits;
-use atomic writes where relevant;
-verify existence and nonzero size;
-calculate integrity metadata;
-clean temporary files;
-authorize downloads;
-set safe content headers.
-
-Never mark a generated artifact complete before validating the real file.
-
-SSRF and Outbound Requests
-
-Do not fetch arbitrary user-provided URLs.
-
-Use:
-
-allowed schemes;
-host allowlists;
-DNS and IP validation;
-redirect limits;
-private-network protection;
-response size limits;
-content-type validation;
-timeouts.
-
-Revalidate redirects rather than trusting the original host check.
-
-Resource Protection
-
-Bound:
-
-body size;
-file size;
-query complexity;
-pagination size;
-concurrency;
-queue depth;
-model context;
-output tokens;
-subprocess runtime;
-memory-heavy operations.
-
-Return an explicit resource-exhaustion response rather than destabilizing the host.
-
-Logging and Telemetry
-
-Log structured events at ownership boundaries.
-
-Avoid duplicate logging of the same failure at every layer.
-
-Measure:
-
-route latency;
-dependency latency;
-stage latency;
-error code;
-retry attempt;
-queue wait;
-active jobs;
-memory pressure;
-saturation.
-
-Use correlation IDs across HTTP, queues, workers, and generated artifacts.
-
-Graceful Shutdown
-
-On termination:
-
-stop accepting new work;
-mark readiness false;
-cancel or drain bounded work;
-close queue consumers;
-close database and cache clients;
-flush telemetry;
-exit within a defined deadline.
-
-Do not continue accepting jobs during shutdown.
-
-Backend Verification
-
-For each changed use case, test:
-
-valid request;
-invalid request;
-unauthenticated request;
-forbidden object access;
-duplicate request;
-dependency failure;
-timeout;
-cancellation;
-concurrent execution where material;
-persistence rollback;
-graceful shutdown impact.
-
-Run a real health and readiness smoke test after starting the production build.
+```typescript
+// Worker and Queue must use SEPARATE ioredis connections
+const queueConnection  = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null })
+const workerConnection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null })
+
+// Never share connections between Queue and Worker roles
+const videoQueue  = new Queue('video', { connection: queueConnection })
+const videoWorker = new Worker('video', processor, { connection: workerConnection, concurrency: 1 })
+
+// clientRequestId dedup — must be preserved when BullMQ is enabled
+const jobId = clientRequestId  // use as BullMQ job ID for idempotency
+
+// Redis fallback to in-memory — never crash on Redis unavailability
+if (!redisAvailable) {
+  log.warn({ reason: 'Redis unavailable' }, 'Falling back to in-memory video queue')
+  // use in-memory queue implementation
+}
+```
+
+---
+
+## SSE PATTERNS
+
+```typescript
+// subscribeToJob returns AsyncIterable<SwarmXEvent>
+// SSE plugin must handle client disconnect via return() on the iterable
+for await (const event of subscribeToJob(jobId)) {
+  if (clientDisconnected) break   // triggers return() → calls unsubscribe()
+  yield sseFormat(event)
+}
+
+// On client reconnect — always re-fetch full job state via REST, never resume stream
+// The in-memory registry is always authoritative; SSE is delivery-only
+```
