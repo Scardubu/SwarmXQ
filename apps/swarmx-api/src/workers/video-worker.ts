@@ -15,6 +15,7 @@ import {
   restoreJobFromBullMQ,
   VIDEO_QUEUE_NAME,
 } from "../services/video-queue.js";
+import { isTerminalStatus } from "../types/video.js";
 import { runOrchestration } from "../services/video-orchestrator.js";
 import { broadcastEvent } from "../plugins/sse.js";
 
@@ -22,9 +23,16 @@ let worker: Worker<VideoJobRequest> | null = null;
 
 async function processJob(job: Job<VideoJobRequest>): Promise<void> {
   const jobId = job.id!;
-  // Restore registry entry if the API restarted between enqueue and dequeue
-  const videoJob = getJob(jobId) ?? restoreJobFromBullMQ(jobId, job.data);
-  log.info({ jobId }, "video-worker: processing job");
+  const existing = getJob(jobId);
+  // On BullMQ retry: if the prior attempt left the registry entry in a terminal
+  // state (failed/cancelled/completed), restore it as fresh-queued so the
+  // orchestrator can start cleanly. This prevents the assertMutable() throw
+  // inside failJob() when a retry arrives after the first attempt already failed.
+  const videoJob =
+    !existing || isTerminalStatus(existing.status)
+      ? restoreJobFromBullMQ(jobId, job.data)
+      : existing;
+  log.info({ jobId, attempt: job.attemptsMade }, "video-worker: processing job");
   await runOrchestration(videoJob.id, broadcastEvent);
 }
 
