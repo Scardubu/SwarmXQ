@@ -64,13 +64,13 @@ describe("readBoundedEnvInt", () => {
 });
 
 describe("stageTimeoutMs", () => {
-  test("returns default 30000 for intent_classification with no env override", () => {
-    expect(stageTimeoutMs("intent_classification")).toBe(30_000);
+  test("returns default 120000 for intent_classification with no env override", () => {
+    expect(stageTimeoutMs("intent_classification")).toBe(120_000);
   });
 
-  test("env override is clamped to stage max bound (90000 for intent_classification)", () => {
-    process.env["VIDEO_INTENT_CLASSIFY_TIMEOUT_MS"] = "200000"; // above max 90_000
-    expect(stageTimeoutMs("intent_classification")).toBe(90_000);
+  test("env override is clamped to stage max bound (600000 for intent_classification)", () => {
+    process.env["VIDEO_INTENT_CLASSIFY_TIMEOUT_MS"] = "999999"; // above max 600_000
+    expect(stageTimeoutMs("intent_classification")).toBe(600_000);
   });
 });
 
