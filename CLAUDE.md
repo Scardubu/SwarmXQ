@@ -1,6 +1,6 @@
 # AI Engineering Control System (Claude Code)
 # SwarmXQ — Autonomous Multi-Agent AI Orchestration Platform
-# Baseline: V6.2.26 · APEX-17 r8 · Hardware: 16 GB RAM (HP EliteBook 850 G3 · CPU-only · WSL2)
+# Baseline: V6.2.44 · APEX-17 r8 · Hardware: 16 GB RAM (HP EliteBook 850 G3 · CPU-only · bare-metal Linux)
 # Video Generator Principal Engineer Directive: V3.1.0
 # Lagos precision. Global scale.
 
@@ -687,8 +687,8 @@ Push only after all quality gates pass.
 | ~~2~~ | ~~**GitHub Actions CI**~~ | ✅ V6.2.40 — `.github/workflows/ci.yml` all 8 gates + Gate 5.5; Redis service; BullMQ enabled in CI; Ollama perf vars in env block; push to `main` triggers first green run |
 | ~~3~~ | ~~**Env Schema Expansion**~~ | ✅ V6.2.38 — `grep 'process\.env\['` returns 6 hits (≤10); all are documented escape hatches in `env.ts` |
 | ~~4~~ | ~~**First API Unit Tests**~~ | ✅ V6.2.39 — 150 tests across 5 files; series-registry + quality-gate coverage added; >60% on all 6 modules |
-| 5 | **16 GB Profile Config** — `startup-enhanced.sh`, dual-model residency, Pilot keep-alive, ComfyUI frame budget | warmup confirmed on startup; ETA updated in dashboard from API |
-| 6 | **TONE_RULES Completeness Audit** — verify all 8 tone variants in `video-orchestrator.ts`, add `faceless_broll` and `kinetic_text` if missing | `grep TONE_RULES` shows all 8 keys; creative quality regression passes |
+| ~~5~~ | ~~**16 GB Profile Config**~~ | ✅ V6.2.44 — `startup-enhanced.sh`: CPU governor check, `ensure_video_model()`, `FLASH_ATTENTION=0` default (Q8 segfault prevention), `KV_CACHE=f16`; API prewarm via `SWARMX_MODEL_STARTUP_PREWARM=1` writes warmup marker; dashboard reads ETA from `/api/system/health` |
+| ~~6~~ | ~~**TONE_RULES Completeness Audit**~~ | ✅ V6.2.23 + confirmed V6.2.44 — all 8 variants present (`contrarian`, `urgent`, `educational`, `cinematic`, `warm`, `minimal`, `faceless_broll`, `kinetic_text`) |
 
 ---
 
@@ -761,8 +761,8 @@ Repository code overrides all prior documentation. Grep/read before acting.
 | ~~Zero CI — manual gates only~~ | ✅ V6.2.40 — `.github/workflows/ci.yml` ready; push to `main` triggers first run |
 | ~~`process.env[…]` still scattered in services~~ | ✅ V6.2.38 — 6 documented escape hatches remain (≤10 limit) |
 | ~~Zero API unit tests~~ | ✅ V6.2.39 — 150 tests, 5 files, 6 modules in coverage |
-| `startup-enhanced.sh` not wired for 16 GB | Priority 5: dual-model warmup |
-| `TONE_RULES` completeness unverified for `faceless_broll`, `kinetic_text` | ✅ V6.2.23 — all 8 variants present and CI-gated |
+| ~~`startup-enhanced.sh` not wired for 16 GB~~ | ✅ V6.2.44 — CPU governor, video model ensure, flash-attn=0, kv-cache=f16 |
+| ~~`TONE_RULES` completeness unverified for `faceless_broll`, `kinetic_text`~~ | ✅ V6.2.23 — all 8 variants present and CI-gated |
 
 ---
 
