@@ -1,12 +1,37 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, User, Globe, Palette, TrendingUp } from "lucide-react";
+import { ChevronDown, ChevronRight, User, Globe, Palette, TrendingUp, RotateCcw, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { SeriesJob } from "@swarmx/types/series-types";
+import type { SeriesJob, SeriesPassStatus } from "@swarmx/types/series-types";
+
+type SeriesPass = "1" | "2" | "3" | "4";
+
+interface SeriesPassDef {
+  key: "pass1" | "pass2" | "pass3" | "pass4";
+  num: SeriesPass;
+  title: string;
+  isDestructive: boolean;
+}
+
+const SERIES_PASSES: SeriesPassDef[] = [
+  { key: "pass1", num: "1", title: "World Builder",  isDestructive: true  },
+  { key: "pass2", num: "2", title: "Roadmap",        isDestructive: true  },
+  { key: "pass3", num: "3", title: "Virality Arc",   isDestructive: false },
+  { key: "pass4", num: "4", title: "Cinematic Lock", isDestructive: false },
+];
+
+const STATUS_TEXT: Record<SeriesPassStatus, string> = {
+  idle:     "idle",
+  running:  "running",
+  complete: "done",
+  failed:   "failed",
+};
 
 interface SeriesContextPanelProps {
   series: SeriesJob;
+  rerunningPass?: SeriesPass | null;
+  onRerunPass?: (pass: SeriesPass) => void;
 }
 
 function CollapseSection({
@@ -59,7 +84,7 @@ const PASS_STATUS_COLOR: Record<string, string> = {
   idle:     "bg-border",
 };
 
-export function SeriesContextPanel({ series }: SeriesContextPanelProps) {
+export function SeriesContextPanel({ series, rerunningPass, onRerunPass }: SeriesContextPanelProps) {
   const characters = series.characterBible ?? [];
   const world = series.worldGuide;
   const viralityArc = series.viralityArc;
@@ -79,26 +104,79 @@ export function SeriesContextPanel({ series }: SeriesContextPanelProps) {
       {/* Planning pass status strip */}
       {ps && (
         <div
-          className="flex items-center gap-3 rounded border border-border bg-bg-surface px-3 py-2"
-          aria-label="Planning pass status"
+          className="rounded border border-border bg-bg-surface px-3 py-2.5"
+          aria-label="Series planning passes"
+          role="group"
         >
-          <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-text-muted">
-            Passes
-          </span>
-          <div className="flex items-center gap-3">
-            {(["pass1", "pass2", "pass3", "pass4"] as const).map((key, i) => (
-              <span key={key} className="flex items-center gap-1" aria-label={`Pass ${i + 1}: ${ps[key]}`}>
-                <span
-                  className={cn("h-2 w-2 rounded-full", PASS_STATUS_COLOR[ps[key]] ?? "bg-border")}
-                  aria-hidden="true"
-                />
-                <span className="font-mono text-[10px] text-text-muted">{i + 1}</span>
-              </span>
-            ))}
+          <div className="mb-2 flex items-center justify-between">
+            <span className="font-mono text-[10px] uppercase tracking-wider text-text-muted">
+              Passes
+            </span>
+            <span className="font-mono text-[10px] text-text-muted capitalize">
+              {series.status}
+            </span>
           </div>
-          <span className="ml-auto font-mono text-[10px] text-text-muted capitalize">
-            {series.status}
-          </span>
+
+          <div className="flex flex-col gap-1.5">
+            {SERIES_PASSES.map(({ key, num, title, isDestructive }) => {
+              const status = ps[key];
+              const isThisRerunning = rerunningPass === num;
+              const canRerun =
+                (status === "complete" || status === "failed") &&
+                !rerunningPass &&
+                !!onRerunPass;
+
+              return (
+                <div key={key} className="flex items-center gap-1.5" aria-label={`Pass ${num} ${title}: ${status}`}>
+                  <span
+                    className={cn("h-2 w-2 shrink-0 rounded-full", PASS_STATUS_COLOR[status] ?? "bg-border")}
+                    aria-hidden="true"
+                  />
+                  <span className="w-3 shrink-0 font-mono text-[10px] text-text-muted">{num}</span>
+                  <span className="flex-1 font-mono text-[10px] text-text-muted">{title}</span>
+                  <span
+                    className={cn(
+                      "font-mono text-[10px]",
+                      status === "complete" && "text-status-success",
+                      status === "running"  && "text-accent",
+                      status === "failed"   && "text-status-error",
+                      status === "idle"     && "text-text-muted",
+                    )}
+                  >
+                    {STATUS_TEXT[status]}
+                  </span>
+
+                  {canRerun && (
+                    <button
+                      type="button"
+                      onClick={() => onRerunPass(num)}
+                      disabled={isThisRerunning || !!rerunningPass}
+                      title={
+                        isDestructive
+                          ? `Regenerate Pass ${num} — overwrites character bible and world guide`
+                          : `Regenerate Pass ${num} (${title})`
+                      }
+                      className={cn(
+                        "ml-0.5 flex items-center gap-0.5 rounded border border-border px-1 py-0.5",
+                        "font-mono text-[10px] text-text-muted transition-colors",
+                        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
+                        "disabled:cursor-not-allowed disabled:opacity-50",
+                        !isDestructive && "hover:border-border-accent hover:text-text-primary",
+                        isDestructive  && "hover:border-status-error/50 hover:text-status-error",
+                      )}
+                      aria-label={`Regenerate Pass ${num} (${title})${isDestructive ? " — destructive" : ""}`}
+                    >
+                      {isThisRerunning
+                        ? <Loader2 className="h-2.5 w-2.5 animate-spin" aria-hidden="true" />
+                        : <RotateCcw className="h-2.5 w-2.5" aria-hidden="true" />
+                      }
+                      Regen
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
       {/* Character Bible */}

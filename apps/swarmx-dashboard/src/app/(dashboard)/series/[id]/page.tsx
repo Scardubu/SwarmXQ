@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Film, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -64,9 +64,13 @@ export default function SeriesDetailPage() {
   const id = params?.id ?? "";
 
   const fetchSeriesDetail = useSeriesStore((s) => s.fetchSeriesDetail);
-  const produceEpisode   = useSeriesStore((s) => s.produceEpisode);
-  const prepareEpisode   = useSeriesStore((s) => s.prepareEpisode);
+  const produceEpisode    = useSeriesStore((s) => s.produceEpisode);
+  const prepareEpisode    = useSeriesStore((s) => s.prepareEpisode);
+  const rerunSeriesPass   = useSeriesStore((s) => s.rerunSeriesPass);
   const series = useSeriesStore((s) => s.series.get(id));
+
+  const [rerunningPass, setRerunningPass] = useState<"1" | "2" | "3" | "4" | null>(null);
+  const [rerunError, setRerunError]       = useState<string | null>(null);
 
   // Initial fetch
   useEffect(() => {
@@ -74,11 +78,17 @@ export default function SeriesDetailPage() {
     void fetchSeriesDetail(id);
   }, [id, fetchSeriesDetail]);
 
-  // Poll while planning is in progress
+  // Stable key for planningPassStatus — avoids object-ref churn in deps
+  const passStatusKey = series?.planningPassStatus
+    ? `${series.planningPassStatus.pass1},${series.planningPassStatus.pass2},${series.planningPassStatus.pass3},${series.planningPassStatus.pass4}`
+    : "";
+
+  // Poll while planning pipeline OR an individual pass rerun is in progress
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => {
     if (!id) return;
-    if (series?.status === "planning") {
+    const anyPassRunning = passStatusKey.includes("running");
+    if (series?.status === "planning" || anyPassRunning) {
       pollRef.current = setInterval(() => {
         void fetchSeriesDetail(id);
       }, POLL_INTERVAL_MS);
@@ -94,7 +104,7 @@ export default function SeriesDetailPage() {
         pollRef.current = null;
       }
     };
-  }, [id, series?.status, fetchSeriesDetail]);
+  }, [id, series?.status, passStatusKey, fetchSeriesDetail]);
 
   const handleProduce = useCallback(
     async (episodeNumber: number) => {
@@ -108,6 +118,22 @@ export default function SeriesDetailPage() {
       await prepareEpisode(id, episodeNumber);
     },
     [id, prepareEpisode],
+  );
+
+  const handleRerunSeriesPass = useCallback(
+    async (pass: "1" | "2" | "3" | "4") => {
+      setRerunError(null);
+      setRerunningPass(pass);
+      try {
+        await rerunSeriesPass(id, pass);
+        await fetchSeriesDetail(id);
+      } catch (err) {
+        setRerunError(err instanceof Error ? err.message : "Failed to start pass rerun.");
+      } finally {
+        setRerunningPass(null);
+      }
+    },
+    [id, rerunSeriesPass, fetchSeriesDetail],
   );
 
   // Build jobStatuses map for EpisodeGrid
@@ -180,10 +206,22 @@ export default function SeriesDetailPage() {
             <h2 id="context-panel-heading" className="mb-3 text-[10px] font-mono uppercase tracking-wider text-text-muted">
               Series Context
             </h2>
+            {rerunError && (
+              <div
+                className="mb-2 rounded border border-status-error/35 bg-status-error/10 px-3 py-2 text-[11px] text-status-error"
+                role="alert"
+              >
+                {rerunError}
+              </div>
+            )}
             {isPlanning ? (
               <PlanningProgressSkeleton />
             ) : (
-              <SeriesContextPanel series={series} />
+              <SeriesContextPanel
+                series={series}
+                rerunningPass={rerunningPass}
+                onRerunPass={handleRerunSeriesPass}
+              />
             )}
           </section>
 
