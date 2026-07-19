@@ -193,8 +193,11 @@ setup_ollama_runtime_tuning() {
     fi
   fi
 
-  export OLLAMA_FLASH_ATTENTION="${OLLAMA_FLASH_ATTENTION:-1}"
-  export OLLAMA_KV_CACHE_TYPE="${OLLAMA_KV_CACHE_TYPE:-q8_0}"
+  # flash_attention=1 + kv_cache_type=q8_0 causes llama.cpp segfaults with Q8 Phi-4
+  # models (confirmed on i5-6300U / Ollama 0.22.0). Default to off; GPU operators
+  # can override by exporting OLLAMA_FLASH_ATTENTION=1 before running this script.
+  export OLLAMA_FLASH_ATTENTION="${OLLAMA_FLASH_ATTENTION:-0}"
+  export OLLAMA_KV_CACHE_TYPE="${OLLAMA_KV_CACHE_TYPE:-f16}"
   # [V6.2-ENH-05] Leave 1 core for WSL2 hypervisor + OS; bare-metal Linux uses all cores.
   if grep -qi microsoft /proc/version 2>/dev/null; then
     export OLLAMA_NUM_THREADS="${OLLAMA_NUM_THREADS:-3}"
@@ -253,6 +256,78 @@ setup_ollama_runtime_tuning() {
   fi
 
   log_info "Ollama tuning: HOST_PROFILE=$SWARMX_HOST_PROFILE EFFECTIVE_PROFILE=$SWARMX_EFFECTIVE_HOST_PROFILE TOTAL_MB=$total_mb AVAILABLE_MB=$avail_mb FLASH_ATTENTION=$OLLAMA_FLASH_ATTENTION KV_CACHE=$OLLAMA_KV_CACHE_TYPE THREADS=$OLLAMA_NUM_THREADS PARALLEL=$OLLAMA_NUM_PARALLEL MAX_MODELS=$OLLAMA_MAX_LOADED_MODELS KEEP_ALIVE=$OLLAMA_KEEP_ALIVE PILOT_KEEP_ALIVE_S=${OLLAMA_KEEP_ALIVE_PILOT_S:-0} STARTUP_PREWARM=$SWARMX_MODEL_STARTUP_PREWARM PREDICTIVE_PREWARM=$SWARMX_MODEL_PREDICTIVE_PREWARM"
+}
+
+# ─── CPU Governor Check ──────────────────────────────��───────────────────────
+# On bare-metal Linux (non-WSL2) the default governor is often "powersave",
+# which runs at ~500 MHz instead of ~2.5 GHz — a 5× inference slowdown.
+# This function checks the governor and tries to set "performance" if it's wrong.
+# Non-fatal: logs a warning and continues if sudo access is unavailable.
+check_cpu_governor() {
+  # Skip on WSL2 — WSL2 CPU scaling is managed by the Windows hypervisor.
+  if grep -qi microsoft /proc/version 2>/dev/null; then
+    return 0
+  fi
+  local first_gov
+  first_gov=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo "unknown")
+  if [[ "$first_gov" == "performance" ]]; then
+    log_success "CPU governor: performance (optimal for inference)"
+    return 0
+  fi
+  log_warning "CPU governor is '$first_gov' — inference will run at reduced clock speed (~5× slower than 'performance')"
+  if command -v sudo >/dev/null 2>&1; then
+    if sudo -n true 2>/dev/null; then
+      echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor >/dev/null 2>&1
+      local new_gov
+      new_gov=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo "unknown")
+      if [[ "$new_gov" == "performance" ]]; then
+        log_success "CPU governor set to performance"
+      else
+        log_warning "Failed to set CPU governor to performance — run: echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor"
+      fi
+    else
+      log_warning "Cannot set CPU governor (no passwordless sudo). To fix: echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor"
+    fi
+  else
+    log_warning "sudo not available — cannot set CPU governor"
+  fi
+}
+
+# ─── Ensure swarmxq-video-model Exists ───────────────────────────────────────
+# swarmxq-video-model is a derived Ollama model with a 21-token system prompt and
+# n_batch=256 (vs the parent's 1239-token prompt and n_batch=32). It is NOT in git
+# because Ollama models are local. This function re-creates it if missing.
+ensure_video_model() {
+  if ! command -v ollama >/dev/null 2>&1; then
+    log_warning "ollama CLI not found — skipping swarmxq-video-model check"
+    return 0
+  fi
+  if ! probe_ollama_url "${OLLAMA_HOST:-http://localhost:11434}" 2>/dev/null; then
+    log_warning "Ollama not reachable — skipping swarmxq-video-model check"
+    return 0
+  fi
+  if ollama list 2>/dev/null | grep -q "swarmxq-video-model"; then
+    log_success "swarmxq-video-model: present"
+    return 0
+  fi
+  log_info "swarmxq-video-model not found — creating from instruct-phi4-lite-q4km-prod..."
+  local tmp_modelfile
+  tmp_modelfile=$(mktemp /tmp/swarmxq-video-XXXXXX.Modelfile)
+  cat > "$tmp_modelfile" << 'MODELFILE'
+FROM instruct-phi4-lite-q4km-prod
+SYSTEM "You are a helpful assistant. Follow instructions precisely."
+PARAMETER num_batch 256
+PARAMETER num_ctx 3072
+PARAMETER num_thread 4
+PARAMETER temperature 0.1
+PARAMETER num_predict 1024
+MODELFILE
+  if ollama create swarmxq-video-model -f "$tmp_modelfile" >/dev/null 2>&1; then
+    log_success "swarmxq-video-model created successfully"
+  else
+    log_warning "Failed to create swarmxq-video-model — video inference will fall back to instruct-phi4-lite-q4km-prod (slower due to 1239-token system prompt)"
+  fi
+  rm -f "$tmp_modelfile"
 }
 
 # ─── Helper: Port Availability Check ──────────────────────────────────────────
@@ -695,6 +770,7 @@ main() {
   log_info "Running health checks..."
   check_directories || { log_error "Directory check failed"; exit 1; }
   evict_stale_instances
+  check_cpu_governor  # Non-fatal: advisory only; sets governor if sudo is available
   check_python || { log_error "Python check failed"; exit 1; }
   check_nodejs || { log_error "Node.js check failed"; exit 1; }
   check_ports || { log_error "Port check failed"; exit 1; }
@@ -704,6 +780,10 @@ main() {
   # exports cannot hide unsafe low-RAM settings.
   setup_environment
   setup_ollama_runtime_tuning
+
+  # Ensure swarmxq-video-model exists (21-token system prompt + n_batch=256).
+  # Must run after Ollama is checked and after ollama runtime tuning is set.
+  ensure_video_model
 
   # Write warmup status marker — API reads this via readWarmupStatus() in src/routes/system.ts
   # to serve a dynamic cold-start ETA to the dashboard instead of the hardcoded 140 s default.
