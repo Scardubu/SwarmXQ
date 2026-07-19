@@ -66,6 +66,7 @@ import concurrent.futures
 import hashlib
 import json
 import os
+import structlog
 import sys
 import time
 from collections.abc import Callable
@@ -77,6 +78,8 @@ from urllib import request
 from urllib.error import URLError
 
 from .config import SwarmConfig
+
+_log = structlog.get_logger("swarmx.llm")
 
 
 # ── Retry decorator (v4.2 [LLM-NEW-01]) ─────────────────────────────────────
@@ -99,10 +102,13 @@ def with_retry(max_retries: int = 3, base_backoff: float = 1.0):
                     if attempt == max_retries:
                         break
                     sleep_time = base_backoff * (2 ** attempt)
-                    print(
-                        f"[swarmx.llm retry] attempt {attempt + 1}/{max_retries} "
-                        f"after {type(exc).__name__}: {exc} — sleeping {sleep_time:.1f}s",
-                        file=sys.stderr,
+                    _log.warning(
+                        "llm.retry",
+                        attempt=attempt + 1,
+                        max_retries=max_retries,
+                        exc_type=type(exc).__name__,
+                        exc=str(exc),
+                        sleep_s=round(sleep_time, 1),
                     )
                     time.sleep(sleep_time)
             raise last_exc  # type: ignore[misc]
@@ -1273,10 +1279,7 @@ def generate(
                 _emit_dispatch_telemetry(candidate, "success", elapsed_ms)
 
             if candidate != model:
-                print(
-                    f"[swarmx.llm] escalation: {model} unavailable → used {candidate}",
-                    file=sys.stderr,
-                )
+                _log.warning("llm.model_escalation", requested=model, used=candidate)
 
             result = GenerateResult(
                 text=text, model_used=candidate, role=role,
@@ -1295,18 +1298,10 @@ def generate(
             if stream_callback is None:
                 _record_latency(candidate, elapsed_ms)
                 _emit_dispatch_telemetry(candidate, "error", elapsed_ms)
-            print(
-                f"[swarmx.llm] provider={provider} model={candidate} "
-                f"error={type(exc).__name__}: {exc}",
-                file=sys.stderr,
-            )
+            _log.error("llm.generate_error", provider=provider, model=candidate, exc_type=type(exc).__name__, exc=str(exc))
             continue
 
-    print(
-        f"[swarmx.llm] all escalation candidates exhausted for model={model}; "
-        f"using deterministic fallback",
-        file=sys.stderr,
-    )
+    _log.warning("llm.all_candidates_exhausted", model=model)
     text = deterministic_response(prompt, model)
     return GenerateResult(
         text=text, model_used=model, role=role,

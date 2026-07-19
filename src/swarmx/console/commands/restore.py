@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import logging
+import structlog
 import shutil
 import tarfile
 from pathlib import Path
@@ -18,7 +18,7 @@ import typer
 from swarmx.console.compat import is_json_mode
 from swarmx.console.output import emit_error, emit_json, get_console
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger("swarmx.console.commands.restore")
 
 app = typer.Typer(
     help="Restore SwarmX state from a backup archive.",

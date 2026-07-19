@@ -5,7 +5,7 @@ Bug fix vs v0.2.0:
 """
 from __future__ import annotations
 
-import logging
+import structlog
 from pathlib import Path
 from typing import Annotated
 
@@ -15,7 +15,7 @@ from rich.live import Live
 from swarmx.console.compat import is_json_mode, is_no_progress
 from swarmx.console.output import emit_error, emit_json, get_console, kv_panel, make_spinner, safe_print
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger("swarmx.console.commands.gate")
 
 app = typer.Typer(help="Evaluate policy gate for a given action.")
 

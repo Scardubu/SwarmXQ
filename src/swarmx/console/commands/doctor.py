@@ -6,7 +6,7 @@ network connectivity (optional), and key module imports.
 from __future__ import annotations
 
 import importlib
-import logging
+import structlog
 import platform
 import sys
 from pathlib import Path
@@ -17,7 +17,7 @@ import typer
 from swarmx.console.compat import is_json_mode
 from swarmx.console.output import emit_json, get_console, make_table, safe_print
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger("swarmx.console.commands.doctor")
 
 app = typer.Typer(help="Run environment health checks.")
 

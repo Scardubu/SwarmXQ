@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import logging
+import structlog
 import shutil
 import tarfile
 from datetime import UTC, datetime
@@ -24,7 +24,7 @@ import typer
 from swarmx.console.compat import is_json_mode
 from swarmx.console.output import emit_error, emit_json, get_console, safe_print
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger("swarmx.console.commands.backup")
 
 app = typer.Typer(
     help="Back up SwarmX runtime state (DB + audit log + config).",
@@ -78,7 +78,7 @@ def cmd_create(
 
     def _copy(src: Path, label: str) -> None:
         if not src.exists():
-            logger.debug("Skipping %s — not found at %s", label, src)
+            logger.debug("backup_source_missing", label=label, src=str(src))
             return
         dest = backup_dir / src.name
         try:

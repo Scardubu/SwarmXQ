@@ -32,8 +32,8 @@ CHANGES V5.9 (this revision):
 """
 from __future__ import annotations
 
-import logging
 import os
+import structlog
 import sys
 from collections import Counter, defaultdict
 from collections.abc import Generator
@@ -42,7 +42,7 @@ from typing import Any
 
 from .journal import append_event, load_events
 
-_log = logging.getLogger(__name__)
+_log = structlog.get_logger("swarmx.event_bus")
 
 
 # ── Typed event kind constants ─────────────────────────────────────────────────
@@ -158,7 +158,7 @@ def publish(
         )
         if strict:
             # Print to stderr — visible in all environments, never crashes agents
-            print(f"SWARMX_EVENT_STRICT: {msg}", file=sys.stderr)
+            sys.stderr.write(f"SWARMX_EVENT_STRICT: {msg}\n")
         _log.warning(msg)
         # Do NOT mutate payload — publish the event as-is so the data is preserved
 

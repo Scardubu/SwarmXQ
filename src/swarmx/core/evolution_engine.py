@@ -8,13 +8,13 @@ Bug fixes vs v0.2.0:
 """
 from __future__ import annotations
 
-import logging
+import structlog
 from pathlib import Path
 from typing import Any
 
 from swarmx.evolver import apply_proposals, build_evolution_proposals
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger("swarmx.core.evolution_engine")
 
 # ── Proposal list helpers ─────────────────────────────────────────────────────
 

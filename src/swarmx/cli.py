@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import os
+import structlog
 import threading
 import webbrowser
 from datetime import UTC, datetime
@@ -37,7 +37,7 @@ from .tooling import detect_tools, load_mcp_manifest, summarize_tooling
 from .utils import platform_summary, read_json, write_json
 from .worker import start_worker
 
-logger = logging.getLogger(__name__)
+log = structlog.get_logger("swarmx.cli")
 
 console = Console()
 
@@ -288,11 +288,14 @@ def run(repo: Path, target: str, autonomous: bool = False, max_iterations: int =
     # ── Startup: resume any incomplete Execute-stage checkpoints ──────────────
     incomplete = list_incomplete_step_checkpoints(cfg.home)
     if incomplete:
-        logger.info("Resuming %d incomplete stage(s) from step checkpoints", len(incomplete))
+        log.info("resume.incomplete_checkpoints", count=len(incomplete))
         for cp in incomplete:
-            logger.info(
-                "  → mission=%s stage=%s step=%s ts=%s",
-                cp.get("mission_id"), cp.get("stage"), cp.get("step_index"), cp.get("ts"),
+            log.info(
+                "resume.checkpoint",
+                mission_id=cp.get("mission_id"),
+                stage=cp.get("stage"),
+                step_index=cp.get("step_index"),
+                ts=cp.get("ts"),
             )
     # ── End startup recovery ───────────────────────────────────────────────────
 

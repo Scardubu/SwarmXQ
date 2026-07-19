@@ -23,7 +23,7 @@ Usage::
 
 from __future__ import annotations
 
-import logging
+import structlog
 from pathlib import Path
 from typing import Any
 
@@ -32,11 +32,7 @@ from .event_bus import EventKind, publish
 from .policy import ExecutionPolicy, PolicyDecision, assess_action
 from .state import RiskLevel
 
-try:
-    import structlog as _structlog  # type: ignore[import-untyped]
-    _log = _structlog.get_logger("swarmx.execution_gate")
-except ImportError:  # pragma: no cover
-    _log = logging.getLogger("swarmx.execution_gate")
+_log = structlog.get_logger("swarmx.execution_gate")
 
 
 def gate_execution(

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
-import logging
 import secrets
+import structlog
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
@@ -32,7 +32,7 @@ from .storage import get_kv, list_missions, store_skill_record
 from .telemetry import emit_event  # [IEP-FIX] For IEP block telemetry
 from .utils import read_json, write_json
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger("swarmx.evolver")
 
 
 def now_iso() -> str:

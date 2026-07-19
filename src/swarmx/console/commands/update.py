@@ -6,7 +6,7 @@ prompts the user, then runs pip upgrade with a rollback prompt on failure.
 from __future__ import annotations
 
 import importlib.metadata
-import logging
+import structlog
 import subprocess
 import sys
 from typing import Annotated
@@ -16,7 +16,7 @@ import typer
 from swarmx.console.compat import is_json_mode
 from swarmx.console.output import emit_error, emit_json, get_console, safe_print
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger("swarmx.console.commands.update")
 
 app = typer.Typer(
     help="Update SwarmX to the latest release.",
@@ -104,7 +104,7 @@ def cmd_apply(
         from swarmx.console.commands.backup import cmd_create
         cmd_create(compress=False, tag=f"pre-update-{current}", json_out=_json)
     except Exception as exc:
-        logger.debug("Pre-update backup skipped: %s", exc)
+        logger.debug("pre_update_backup_skipped", exc=str(exc))
         if not _json:
             console.print(f"[dim]Pre-update backup skipped: {exc}[/dim]")
 
@@ -160,5 +160,5 @@ def _latest_version() -> str:
             data = _json.loads(resp.read().decode())
             return str(data["info"]["version"])
     except Exception as exc:
-        logger.debug("Could not fetch latest version from PyPI: %s", exc)
+        logger.debug("pypi_version_fetch_failed", exc=str(exc))
         return _current_version()

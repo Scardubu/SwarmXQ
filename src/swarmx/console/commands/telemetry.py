@@ -1,7 +1,7 @@
 """``swarm telemetry`` — trace event aggregation and reset."""
 from __future__ import annotations
 
-import logging
+import structlog
 from typing import Annotated
 
 import typer
@@ -9,7 +9,7 @@ import typer
 from swarmx.console.compat import is_json_mode
 from swarmx.console.output import emit_json, get_console, kv_panel, make_table, safe_print
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger("swarmx.console.commands.telemetry")
 
 app = typer.Typer(
     help="Inspect and manage telemetry traces.",

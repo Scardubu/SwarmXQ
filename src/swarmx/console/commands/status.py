@@ -7,7 +7,7 @@ Bug fix vs v0.2.0:
 """
 from __future__ import annotations
 
-import logging
+import structlog
 import time
 from pathlib import Path
 from typing import Annotated
@@ -19,7 +19,7 @@ from rich.table import Table
 from swarmx.console.compat import is_json_mode, is_no_progress
 from swarmx.console.output import emit_json, get_console, make_table, safe_print
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger("swarmx.console.commands.status")
 
 app = typer.Typer(
     help="Show swarm runtime status.",

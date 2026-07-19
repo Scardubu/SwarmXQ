@@ -23,6 +23,7 @@ APEX-17 r7 changes from r6:
 from __future__ import annotations
 
 import os
+import structlog
 from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -448,12 +449,7 @@ class SwarmConfig:
 
     def validate(self) -> list[str]:
         """Validate critical config fields at startup."""
-        try:
-            import structlog as _sl
-            _log = _sl.get_logger("swarmx.config.validate")
-        except ImportError:
-            import logging as _logging
-            _log = _logging.getLogger("swarmx.config.validate")  # type: ignore[assignment]
+        _log = structlog.get_logger("swarmx.config.validate")
 
         warnings: list[str] = []
 

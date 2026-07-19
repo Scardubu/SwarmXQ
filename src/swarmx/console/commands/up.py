@@ -6,7 +6,7 @@ server. Respects the SWARMX_HOME runtime directory and the config at
 """
 from __future__ import annotations
 
-import logging
+import structlog
 import os
 import shutil
 import signal
@@ -20,7 +20,7 @@ import typer
 from swarmx.console.compat import is_json_mode
 from swarmx.console.output import emit_error, emit_json, get_console, safe_print
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger("swarmx.console.commands.up")
 
 app = typer.Typer(
     help="Start the SwarmX stack (API + workers + dashboard).",
@@ -305,7 +305,7 @@ def _run_startup_autopilot(*, console: object, _json: bool) -> None:
         if not _json:
             console.print(format_startup_banner(summary))  # type: ignore[union-attr]
     except Exception as exc:
-        logger.debug("startup_autopilot_skipped", exc_info=exc)
+        logger.debug("startup_autopilot_skipped", exc=str(exc))
 
 
 def _start_detached(

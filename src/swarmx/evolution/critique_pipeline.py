@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import logging
+import structlog
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +10,7 @@ from ..storage import payload_sha256, write_audit_log
 from .critic_agent import CriticAgent, CriticVerdict
 from .redteam_agent import RedTeamAgent, RedTeamVerdict
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger("swarmx.evolution.critique_pipeline")
 
 SEVERITY_BLOCK = {"HIGH", "CRITICAL"}
 

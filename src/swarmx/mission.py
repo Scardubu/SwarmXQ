@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import logging
+import structlog
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -11,7 +11,7 @@ from .policy import assess_action
 from .storage import list_missions as db_list_missions
 from .storage import store_mission_record, update_mission_record
 
-logger = logging.getLogger(__name__)
+log = structlog.get_logger("swarmx.mission")
 
 
 def now_iso() -> str:
@@ -55,7 +55,7 @@ def build_mission(
     # ── Intake: inject semantically similar prior missions ────────────────────
     prior_missions = _vs_retrieve(cfg.home, query=target, k=5)
     if prior_missions:
-        logger.info("[MEMORY] Injected %d similar prior missions into Intake context", len(prior_missions))
+        log.info("memory.intake_injected", count=len(prior_missions))
 
     phases = [
         {"name": "intake",     "owner": "strategist",       "purpose": "Confirm the objective, scope, and stop condition."},

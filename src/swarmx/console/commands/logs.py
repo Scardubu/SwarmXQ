@@ -6,7 +6,7 @@ and optionally tails it in real time. Supports JSON, level, and agent filters.
 from __future__ import annotations
 
 import json
-import logging
+import structlog
 import time
 from typing import Annotated
 
@@ -15,7 +15,7 @@ import typer
 from swarmx.console.compat import is_json_mode
 from swarmx.console.output import emit_json, get_console, safe_print
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger("swarmx.console.commands.logs")
 
 app = typer.Typer(
     help="Stream and filter SwarmX runtime logs.",

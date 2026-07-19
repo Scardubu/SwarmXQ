@@ -712,7 +712,7 @@ def serve_dashboard(
     # [SRV-ENH-01] Graceful shutdown signal handlers
     def _shutdown_handler(signum: int, frame: Any) -> None:  # noqa: ARG001
         import sys
-        print(f"\n[swarmx.server] signal {signum} received — shutting down gracefully", flush=True)
+        sys.stderr.write(f"\n[swarmx.server] signal {signum} received — shutting down gracefully\n")
         # server.shutdown() blocks until all in-flight requests complete.
         # Run it in a daemon thread so the signal handler returns immediately.
         t = threading.Thread(target=httpd.shutdown, daemon=True)

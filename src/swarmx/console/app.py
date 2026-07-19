@@ -11,7 +11,7 @@ CHANGES:
 """
 from __future__ import annotations
 
-import logging
+import structlog
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -22,7 +22,7 @@ from swarmx import __version__
 from swarmx.console.compat import is_json_mode
 from swarmx.console.output import emit_json, print_banner, safe_print
 
-_log = logging.getLogger(__name__)
+_log = structlog.get_logger("swarmx.console.app")
 
 # ── Root app ──────────────────────────────────────────────────────────────────
 

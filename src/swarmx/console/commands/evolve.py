@@ -9,7 +9,7 @@ Bug fixes vs v0.2.0:
 """
 from __future__ import annotations
 
-import logging
+import structlog
 from pathlib import Path
 from typing import Annotated
 
@@ -18,7 +18,7 @@ import typer
 from swarmx.console.compat import is_json_mode
 from swarmx.console.output import emit_error, emit_json, get_console, make_table, safe_print
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger("swarmx.console.commands.evolve")
 
 app = typer.Typer(help="Generate, review, and apply swarm evolution proposals.")
 

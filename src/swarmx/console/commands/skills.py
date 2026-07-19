@@ -9,7 +9,7 @@ Subcommands:
 """
 from __future__ import annotations
 
-import logging
+import structlog
 from typing import Annotated
 
 import typer
@@ -17,7 +17,7 @@ import typer
 from swarmx.console.compat import is_json_mode
 from swarmx.console.output import emit_json, get_console, make_table, safe_print
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger("swarmx.console.commands.skills")
 
 app = typer.Typer(help="Browse and search the SwarmX skill library.")
 
@@ -227,7 +227,7 @@ def skills_delta_history(
         cfg = SwarmConfig()
         records = get_delta_history(cfg.home, limit=limit)
     except Exception as exc:
-        logger.debug("delta-history: %s", exc)
+        logger.debug("delta_history_error", exc=str(exc))
         records = []
 
     if not records:
