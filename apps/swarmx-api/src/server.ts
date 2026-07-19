@@ -83,6 +83,7 @@ import {
   shouldAutoEnableLowRamMode,
 } from "./services/video-runtime-config.js";
 import { loadEnv } from "./lib/env.js";
+import { initOtel, shutdownOtel } from "./lib/otel.js";
 
 // Fail-fast on invalid env before any other module reads process.env.
 // Errors are formatted with the invalid key path so operators can fix quickly.
@@ -168,6 +169,12 @@ const server = Fastify({
 await server.register(fastifyHelmet, {
   contentSecurityPolicy: false,
 });
+
+// ── OpenTelemetry — conditional SDK activation ────────────────────────────────
+// No-op when OTEL_EXPORTER_OTLP_ENDPOINT is not set (default on this CPU-only host).
+// When set, activates BatchSpanProcessor so video.orchestration / video.stage spans
+// are exported to the configured OTLP collector.
+initOtel(server.log);
 
 // ── [API-FIX-03] CORS — allowlist-only ───────────────────────────────────────
 await server.register(fastifyCors, {
@@ -358,6 +365,13 @@ const shutdown = async (signal: string): Promise<void> => {
     await stopVideoWorker();
   } catch (err) {
     server.log.warn({ err }, "BullMQ Worker stop failed — continuing shutdown");
+  }
+
+  // Step 3.7 — flush and shut down OTel SDK (exports any buffered spans before exit)
+  try {
+    await shutdownOtel();
+  } catch (err) {
+    server.log.warn({ err }, "OTel shutdown failed — continuing");
   }
 
   // Step 4 — [APEX17-MOT-02] destroy orchestrator AFTER requests are drained
