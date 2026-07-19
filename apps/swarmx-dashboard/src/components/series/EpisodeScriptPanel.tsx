@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Zap, BookOpen, Flame, Anchor, ArrowRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Zap, BookOpen, Flame, Anchor, ArrowRight, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { EpisodeScript } from "@swarmx/types/series-types";
 
@@ -120,12 +120,20 @@ export function EpisodeScriptPanel({ script }: EpisodeScriptPanelProps) {
         }
 
         if (key === "transitionBridge") {
+          const isLoop = script.transitionBridge.type === "LOOP_BRIDGE";
           return (
             <ScriptSection key={key} label={label} icon={Icon} defaultOpen={defaultOpen}>
               <div className="space-y-1.5">
-                <span className="inline-block rounded border border-border px-1.5 py-0.5 font-mono text-[10px] uppercase text-text-muted">
-                  {script.transitionBridge.type.replace("_", " ")}
-                </span>
+                {isLoop ? (
+                  <span className="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] uppercase text-amber-400">
+                    <RotateCcw className="h-3 w-3" aria-hidden="true" />
+                    Loop Bridge — Finale
+                  </span>
+                ) : (
+                  <span className="inline-block rounded border border-border px-1.5 py-0.5 font-mono text-[10px] uppercase text-text-muted">
+                    {script.transitionBridge.type.replace(/_/g, " ")}
+                  </span>
+                )}
                 <p className="text-sm leading-relaxed text-text-secondary">
                   {script.transitionBridge.description}
                 </p>

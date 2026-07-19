@@ -52,12 +52,20 @@ function CollapseSection({
   );
 }
 
+const PASS_STATUS_COLOR: Record<string, string> = {
+  complete: "bg-status-success",
+  running:  "animate-pulse bg-accent",
+  failed:   "bg-status-error",
+  idle:     "bg-border",
+};
+
 export function SeriesContextPanel({ series }: SeriesContextPanelProps) {
   const characters = series.characterBible ?? [];
   const world = series.worldGuide;
   const viralityArc = series.viralityArc;
+  const ps = series.planningPassStatus;
 
-  if (characters.length === 0 && !world && !viralityArc) {
+  if (characters.length === 0 && !world && !viralityArc && !ps) {
     return (
       <div className="flex items-center gap-2 rounded border border-dashed border-border px-3 py-2.5 text-sm text-text-muted">
         <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-status-reload" aria-hidden="true" />
@@ -68,6 +76,31 @@ export function SeriesContextPanel({ series }: SeriesContextPanelProps) {
 
   return (
     <div className="flex flex-col gap-3">
+      {/* Planning pass status strip */}
+      {ps && (
+        <div
+          className="flex items-center gap-3 rounded border border-border bg-bg-surface px-3 py-2"
+          aria-label="Planning pass status"
+        >
+          <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-text-muted">
+            Passes
+          </span>
+          <div className="flex items-center gap-3">
+            {(["pass1", "pass2", "pass3", "pass4"] as const).map((key, i) => (
+              <span key={key} className="flex items-center gap-1" aria-label={`Pass ${i + 1}: ${ps[key]}`}>
+                <span
+                  className={cn("h-2 w-2 rounded-full", PASS_STATUS_COLOR[ps[key]] ?? "bg-border")}
+                  aria-hidden="true"
+                />
+                <span className="font-mono text-[10px] text-text-muted">{i + 1}</span>
+              </span>
+            ))}
+          </div>
+          <span className="ml-auto font-mono text-[10px] text-text-muted capitalize">
+            {series.status}
+          </span>
+        </div>
+      )}
       {/* Character Bible */}
       {characters.length > 0 && (
         <CollapseSection title={`Character Bible (${characters.length})`} icon={User} defaultOpen>

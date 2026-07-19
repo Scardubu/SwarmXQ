@@ -14,6 +14,7 @@ import { PlatformAssetsPanel } from "@/components/series/PlatformAssetsPanel";
 import { QualityGatePanel } from "@/components/series/QualityGatePanel";
 import { ContinuityReportPanel } from "@/components/series/ContinuityReportPanel";
 import { CinematicDirectionsPanel } from "@/components/series/CinematicDirectionsPanel";
+import { PassStatusRow } from "@/components/series/PassStatusRow";
 import { useSeriesStore } from "@/stores/series";
 
 const POLL_INTERVAL_MS = 4_000;
@@ -29,10 +30,12 @@ export default function EpisodePreProductionPage() {
   const fetchSeriesDetail = useSeriesStore((s) => s.fetchSeriesDetail);
   const prepareEpisode    = useSeriesStore((s) => s.prepareEpisode);
   const produceEpisode    = useSeriesStore((s) => s.produceEpisode);
+  const rerunEpisodePass  = useSeriesStore((s) => s.rerunEpisodePass);
   const series = useSeriesStore((s) => s.series.get(seriesId));
 
   const [isPreparing, setIsPreparing] = useState(false);
   const [isProducing, setIsProducing] = useState(false);
+  const [rerunningPass, setRerunningPass] = useState<"a" | "b" | "c" | "d" | null>(null);
   const [overrideGate, setOverrideGate] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -66,6 +69,20 @@ export default function EpisodePreProductionPage() {
       }
     };
   }, [seriesId, preStatus, fetchSeriesDetail]);
+
+  const handleRerunPass = useCallback(async (pass: "a" | "b" | "c" | "d") => {
+    setActionError(null);
+    setRerunningPass(pass);
+    try {
+      await rerunEpisodePass(seriesId, episodeNumber, pass);
+      // Poll will pick up changes; trigger one immediate refresh
+      await fetchSeriesDetail(seriesId);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : `Failed to rerun pass ${pass.toUpperCase()}.`);
+    } finally {
+      setRerunningPass(null);
+    }
+  }, [seriesId, episodeNumber, rerunEpisodePass, fetchSeriesDetail]);
 
   const handlePrepare = useCallback(async () => {
     setActionError(null);
@@ -162,6 +179,15 @@ export default function EpisodePreProductionPage() {
               <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               Pre-production failed: {preProduction.error}
             </div>
+          )}
+
+          {/* Pass status row — visible whenever preProduction exists */}
+          {preProduction?.passStatus && (
+            <PassStatusRow
+              passStatus={preProduction.passStatus}
+              rerunningPass={rerunningPass}
+              onRerun={handleRerunPass}
+            />
           )}
 
           {/* No pre-production yet */}

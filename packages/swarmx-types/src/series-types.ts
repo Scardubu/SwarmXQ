@@ -43,6 +43,7 @@ export interface SeriesBrief {
   platformPrimary: SeriesPrimaryPlatform;
   recurringSymbols?: string;
   arcStructure: SeriesArcStructure;
+  soloFormat?: boolean;          // V2.1 — narrator-only; omit Character Bible; skip aiPromptSeed
 }
 
 // ─── Continuity Registry (Phase 1) ───────────────────────────────────────────
@@ -121,6 +122,8 @@ export type SeriesJobStatus =
   | "completed"  // all episodes produced
   | "failed";    // planning pipeline failed
 
+export type SeriesPassStatus = "idle" | "running" | "complete" | "failed";
+
 export interface SeriesJob {
   id: string;
   status: SeriesJobStatus;
@@ -133,6 +136,13 @@ export interface SeriesJob {
   videoJobIds: Partial<Record<number, string>>; // episodeNumber → jobId
   // V2.0 — per-episode pre-production data
   preProduction?: Partial<Record<number, EpisodePreProduction>>;
+  // V2.1 — per-pass status for modular re-runs
+  planningPassStatus?: {
+    pass1: SeriesPassStatus;
+    pass2: SeriesPassStatus;
+    pass3: SeriesPassStatus;
+    pass4: SeriesPassStatus;
+  };
   createdAt: string;
   updatedAt: string;
   planningError?: string;
@@ -169,14 +179,16 @@ export interface EpisodeScript {
     text: string;
   };
   transitionBridge: {
-    type: "VISUAL_MATCH" | "AUDIO_THREAD" | "QUESTION_ECHO" | "SMASH_CUT_TEASE";
+    // V2.1 — LOOP_BRIDGE is required for the series finale (Episode N)
+    type: "VISUAL_MATCH" | "AUDIO_THREAD" | "QUESTION_ECHO" | "SMASH_CUT_TEASE" | "LOOP_BRIDGE";
     description: string;
   };
   sceneCount: number;
 }
 
 export interface ScenePromptSuite {
-  sceneIndex: number;
+  sceneIndex: number;      // 0-based within episode
+  sceneLabel: string;      // V2.1 — "[E.S]" format, e.g. "SCENE [3.1]"
   sceneTitle: string;
   master: string;
   character: string;
@@ -189,13 +201,22 @@ export interface ScenePromptSuite {
   negative: string;
 }
 
+// V2.1 — structured dialogue direction per character line
+export interface DialogueNote {
+  characterName: string;
+  emotion: string;
+  subtext: string;
+  deliveryInstruction: string;
+  transitionType: "J-cut" | "L-cut" | "musical-bridge" | "silence-as-tension" | "hard-cut";
+}
+
 export interface AudioPlan {
   narrationStyle: "intimate" | "authoritative" | "conspiratorial" | "poetic";
   musicDescription: string;
   soundEffects: string[];
   silenceCues: string[];
   seriesSonicSignature: string;
-  dialogueNotes?: string[];  // V6.2.25 — per-character emotion/delivery cues
+  dialogueNotes?: DialogueNote[];  // V2.1 — structured per-character direction (replaces string[])
 }
 
 export interface PlatformPublishingAsset {
@@ -289,6 +310,13 @@ export interface EpisodePreProduction {
   viralityScore?: EpisodeViralityScore;
   qualityGateResult?: QualityGateResult;
   continuityReport?: ContinuityReport;
+  // V2.1 — per-pass status for modular re-runs
+  passStatus?: {
+    passA: SeriesPassStatus;
+    passB: SeriesPassStatus;
+    passC: SeriesPassStatus;
+    passD: SeriesPassStatus;
+  };
   error?: string;
   startedAt?: string;
   completedAt?: string;

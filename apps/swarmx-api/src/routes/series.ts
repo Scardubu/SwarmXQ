@@ -9,6 +9,8 @@
  *   POST   /api/video/series/:id/episodes/:n/produce       — start producing episode N
  *   POST   /api/video/series/:id/episodes/:n/preproduction — trigger episode pre-production (V2.0)
  *   GET    /api/video/series/:id/episodes/:n/preproduction — get pre-production status (V2.0)
+ *   POST   /api/video/series/:id/rerun-pass/:pass          — re-run a series planning pass (V2.1)
+ *   POST   /api/video/series/:id/episodes/:n/rerun-pass/:pass — re-run an episode pass (V2.1)
  *   DELETE /api/video/series/:id                           — delete series
  */
 
@@ -27,8 +29,20 @@ import {
   getPreProduction,
   setPreProduction,
 } from "../services/series-registry.js";
-import { planSeries } from "../services/video-series-planner.js";
-import { runEpisodePreProduction } from "../services/video-episode-preproducer.js";
+import {
+  planSeries,
+  runPass1WorldBuilder,
+  runPass2RoadmapBuilder,
+  runPass3ViralityArc,
+  runPass4CinematicLock,
+} from "../services/video-series-planner.js";
+import {
+  runEpisodePreProduction,
+  runPassAScript,
+  runPassBPrompts,
+  runPassCAudioAssets,
+  runPassDScoring,
+} from "../services/video-episode-preproducer.js";
 import * as queue from "../services/video-queue.js";
 import { requireVideoWriteAuth } from "../services/video-auth.js";
 import { log } from "../lib/logger.js";
@@ -309,6 +323,121 @@ export async function seriesRoutes(
         seriesId: request.params.id,
         episodeNumber,
         preProduction,
+      });
+    },
+  );
+
+  // ── POST /:id/rerun-pass/:pass — re-run a series planning pass (V2.1) ──────
+  fastify.post<{ Params: { id: string; pass: string } }>(
+    "/:id/rerun-pass/:pass",
+    { preHandler: requireVideoWriteAuth },
+    async (request, reply) => {
+      const series = getSeries(request.params.id);
+      if (!series) {
+        return reply.status(404).send({ error: "not_found", message: `Series ${request.params.id} not found` });
+      }
+
+      const passParam = request.params.pass;
+      if (!["1", "2", "3", "4"].includes(passParam)) {
+        return reply.status(400).send({
+          error: "invalid_pass",
+          message: "Pass must be one of: 1, 2, 3, 4",
+        });
+      }
+
+      const ps = series.planningPassStatus;
+      if (ps && (Object.values(ps) as string[]).includes("running")) {
+        return reply.status(409).send({
+          error: "pass_running",
+          message: "A planning pass is already in progress.",
+        });
+      }
+
+      const passMap: Record<string, () => Promise<boolean | void>> = {
+        "1": () => runPass1WorldBuilder(request.params.id),
+        "2": () => runPass2RoadmapBuilder(request.params.id),
+        "3": () => runPass3ViralityArc(request.params.id),
+        "4": () => runPass4CinematicLock(request.params.id),
+      };
+
+      void passMap[passParam]!().catch((err) => {
+        log.error({
+          seriesId: request.params.id,
+          pass: passParam,
+          err: err instanceof Error ? err.message : String(err),
+        }, "series rerun-pass fire-and-forget error");
+      });
+
+      log.info({ seriesId: request.params.id, pass: passParam }, "series planning pass rerun started");
+      return reply.status(202).send({
+        seriesId: request.params.id,
+        pass: passParam,
+        message: `Planning pass ${passParam} rerun started.`,
+      });
+    },
+  );
+
+  // ── POST /:id/episodes/:n/rerun-pass/:pass — re-run an episode pass (V2.1) ─
+  fastify.post<{ Params: { id: string; n: string; pass: string } }>(
+    "/:id/episodes/:n/rerun-pass/:pass",
+    { preHandler: requireVideoWriteAuth },
+    async (request, reply) => {
+      const series = getSeries(request.params.id);
+      if (!series) {
+        return reply.status(404).send({ error: "not_found", message: `Series ${request.params.id} not found` });
+      }
+
+      const episodeNumber = Number.parseInt(request.params.n, 10);
+      if (!Number.isFinite(episodeNumber) || episodeNumber < 1) {
+        return reply.status(400).send({ error: "invalid_episode", message: "Episode number must be a positive integer." });
+      }
+
+      const passParam = request.params.pass.toLowerCase();
+      if (!["a", "b", "c", "d"].includes(passParam)) {
+        return reply.status(400).send({
+          error: "invalid_pass",
+          message: "Episode pass must be one of: a, b, c, d",
+        });
+      }
+
+      const preProduction = getPreProduction(request.params.id, episodeNumber);
+      if (!preProduction) {
+        return reply.status(404).send({
+          error: "not_found",
+          message: `No pre-production record for episode ${episodeNumber}. Start pre-production first.`,
+        });
+      }
+
+      const eps = preProduction.passStatus;
+      if (eps && (Object.values(eps) as string[]).includes("running")) {
+        return reply.status(409).send({
+          error: "pass_running",
+          message: `Episode ${episodeNumber} pre-production already has a pass in progress.`,
+        });
+      }
+
+      const passMap: Record<string, () => Promise<boolean | void>> = {
+        "a": () => runPassAScript(request.params.id, episodeNumber),
+        "b": () => runPassBPrompts(request.params.id, episodeNumber),
+        "c": () => runPassCAudioAssets(request.params.id, episodeNumber),
+        "d": () => runPassDScoring(request.params.id, episodeNumber),
+      };
+
+      void passMap[passParam]!().catch((err) => {
+        log.error({
+          seriesId: request.params.id,
+          episodeNumber,
+          pass: passParam,
+          err: err instanceof Error ? err.message : String(err),
+        }, "episode rerun-pass fire-and-forget error");
+      });
+
+      log.info({ seriesId: request.params.id, episodeNumber, pass: passParam }, "episode pass rerun started");
+      return reply.status(202).send({
+        seriesId: request.params.id,
+        episodeNumber,
+        pass: passParam,
+        message: `Episode ${episodeNumber} pass ${passParam.toUpperCase()} rerun started.`,
       });
     },
   );

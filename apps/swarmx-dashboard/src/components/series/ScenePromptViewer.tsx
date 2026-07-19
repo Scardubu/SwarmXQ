@@ -5,7 +5,7 @@ import { ChevronDown, ChevronRight, Camera } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ScenePromptSuite } from "@swarmx/types/series-types";
 
-const PROMPT_FIELDS: Array<{ key: keyof Omit<ScenePromptSuite, "sceneIndex" | "sceneTitle">; label: string }> = [
+const PROMPT_FIELDS: Array<{ key: keyof Omit<ScenePromptSuite, "sceneIndex" | "sceneTitle" | "sceneLabel">; label: string }> = [
   { key: "master",      label: "① Master" },
   { key: "character",   label: "② Character" },
   { key: "environment", label: "③ Environment" },
@@ -33,7 +33,7 @@ function SceneCard({ scene }: { scene: ScenePromptSuite }) {
       >
         <span className="flex items-center gap-2">
           <Camera className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
-          <span className="font-mono text-text-muted text-[10px]">Scene {scene.sceneIndex + 1}</span>
+          <span className="font-mono text-text-muted text-[10px]">{scene.sceneLabel}</span>
           <span className="text-text-primary">{scene.sceneTitle}</span>
         </span>
         {open

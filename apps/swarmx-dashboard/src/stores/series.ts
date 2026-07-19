@@ -79,6 +79,9 @@ export interface SeriesActions {
   produceEpisode: (seriesId: string, episodeNumber: number) => Promise<SeriesProduceEpisodeResponse | null>;
   // V2.0 — episode pre-production
   prepareEpisode: (seriesId: string, episodeNumber: number) => Promise<SeriesPreProductionResponse | null>;
+  // V2.1 — modular pass re-runs
+  rerunSeriesPass: (seriesId: string, pass: "1" | "2" | "3" | "4") => Promise<void>;
+  rerunEpisodePass: (seriesId: string, episodeNumber: number, pass: "a" | "b" | "c" | "d") => Promise<void>;
   deleteSeries: (id: string) => Promise<void>;
   pollSeriesStatus: (id: string) => Promise<void>;
   clearErrors: () => void;
@@ -183,6 +186,20 @@ export const useSeriesStore = create<SeriesStore>()(
           set({ createError: err instanceof Error ? err.message : "Failed to start pre-production." });
           return null;
         }
+      },
+
+      rerunSeriesPass: async (seriesId: string, pass: "1" | "2" | "3" | "4") => {
+        await apiFetch<unknown>(
+          `/api/video/series/${seriesId}/rerun-pass/${pass}`,
+          { method: "POST", body: "{}" },
+        );
+      },
+
+      rerunEpisodePass: async (seriesId: string, episodeNumber: number, pass: "a" | "b" | "c" | "d") => {
+        await apiFetch<unknown>(
+          `/api/video/series/${seriesId}/episodes/${episodeNumber}/rerun-pass/${pass}`,
+          { method: "POST", body: "{}" },
+        );
       },
 
       deleteSeries: async (id: string) => {

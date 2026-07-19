@@ -12,6 +12,7 @@ import type {
   SeriesBrief,
   SeriesJob,
   SeriesJobStatus,
+  SeriesPassStatus,
   EpisodePreProduction,
   EpisodePreProductionStatus,
 } from "@swarmx/types/series-types";
@@ -128,6 +129,46 @@ export function updatePreProductionStatus(
   status: EpisodePreProductionStatus,
 ): void {
   patchPreProduction(seriesId, episodeNumber, { status });
+}
+
+// ─── Pass Status (V2.1 — modular re-run support) ──────────────────────────────
+
+export function updateSeriesPassStatus(
+  id: string,
+  pass: "pass1" | "pass2" | "pass3" | "pass4",
+  status: SeriesPassStatus,
+): void {
+  const series = registry.get(id);
+  if (!series) return;
+  const current = series.planningPassStatus ?? {
+    pass1: "idle", pass2: "idle", pass3: "idle", pass4: "idle",
+  };
+  registry.set(id, {
+    ...series,
+    planningPassStatus: { ...current, [pass]: status },
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export function updateEpisodePassStatus(
+  seriesId: string,
+  episodeNumber: number,
+  pass: "passA" | "passB" | "passC" | "passD",
+  status: SeriesPassStatus,
+): void {
+  const series = registry.get(seriesId);
+  if (!series) return;
+  const existing = series.preProduction?.[episodeNumber];
+  if (!existing) return;
+  const current = existing.passStatus ?? {
+    passA: "idle", passB: "idle", passC: "idle", passD: "idle",
+  };
+  const updated: EpisodePreProduction = {
+    ...existing,
+    passStatus: { ...current, [pass]: status },
+  };
+  const preProduction = { ...(series.preProduction ?? {}), [episodeNumber]: updated };
+  registry.set(seriesId, { ...series, preProduction, updatedAt: new Date().toISOString() });
 }
 
 // ─── Cleanup ─────────────────────────────────────────────────────────────────

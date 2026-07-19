@@ -161,6 +161,7 @@ interface Step2State {
   seriesLength: number;
   arcStructure: SeriesArcStructure;
   recurringSymbols: string;
+  soloFormat: boolean;
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -194,6 +195,7 @@ export function SeriesWizardForm({ onCreated }: SeriesWizardFormProps) {
     seriesLength: 6,
     arcStructure: DEFAULT_ARC,
     recurringSymbols: "",
+    soloFormat: false,
   });
 
   const step1Valid =
@@ -226,6 +228,7 @@ export function SeriesWizardForm({ onCreated }: SeriesWizardFormProps) {
       seriesLength: s2.seriesLength,
       arcStructure: s2.arcStructure,
       ...(s2.recurringSymbols.trim() ? { recurringSymbols: s2.recurringSymbols.trim() } : {}),
+      ...(s2.soloFormat ? { soloFormat: true } : {}),
     };
 
     const id = await createSeries(brief);
@@ -460,6 +463,28 @@ export function SeriesWizardForm({ onCreated }: SeriesWizardFormProps) {
               <p className="text-[10px] text-text-muted">Visual or narrative motifs the AI will plant across episodes.</p>
             </div>
           </div>
+
+          {/* Solo format toggle */}
+          <label
+            htmlFor={`${formId}-solo`}
+            className="flex cursor-pointer items-start gap-3 rounded border border-border bg-bg-surface px-3 py-2.5"
+          >
+            <input
+              id={`${formId}-solo`}
+              type="checkbox"
+              checked={s2.soloFormat}
+              onChange={(e) => setS2((prev) => ({ ...prev, soloFormat: e.target.checked }))}
+              disabled={isCreating}
+              className="mt-0.5 accent-accent"
+            />
+            <div>
+              <p className="text-xs font-medium text-text-primary">Solo Format (narrator only)</p>
+              <p className="mt-0.5 text-[10px] text-text-muted">
+                Omits character bible. All AI scene prompts use narrator-only mode. Ideal for faceless or
+                voiceover-driven series.
+              </p>
+            </div>
+          </label>
 
           {/* Summary card */}
           <div className="rounded border border-border/60 bg-bg-surface px-3 py-2.5 text-[11px] text-text-muted">

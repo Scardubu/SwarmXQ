@@ -25,6 +25,7 @@ import {
   getSeries,
   setPreProduction,
   patchPreProduction,
+  updateEpisodePassStatus,
 } from "./series-registry.js";
 import { log } from "../lib/logger.js";
 import type {
@@ -109,7 +110,7 @@ const EpisodeScriptSchema = z.object({
     text: z.string().min(1),
   }),
   transitionBridge: z.object({
-    type: z.enum(["VISUAL_MATCH", "AUDIO_THREAD", "QUESTION_ECHO", "SMASH_CUT_TEASE"]),
+    type: z.enum(["VISUAL_MATCH", "AUDIO_THREAD", "QUESTION_ECHO", "SMASH_CUT_TEASE", "LOOP_BRIDGE"]),
     description: z.string().min(1),
   }),
   sceneCount: z.number().int().min(1).default(3),
@@ -133,13 +134,22 @@ const PassBSchema = z.object({
   scenes: z.array(ScenePromptSuiteSchema).min(1),
 });
 
+// V2.1 — structured per-character dialogue direction
+const DialogueNoteSchema = z.object({
+  characterName: z.string().min(1),
+  emotion: z.string().min(1),
+  subtext: z.string().min(1),
+  deliveryInstruction: z.string().min(1),
+  transitionType: z.enum(["J-cut", "L-cut", "musical-bridge", "silence-as-tension", "hard-cut"]),
+});
+
 const AudioPlanSchema = z.object({
   narrationStyle: z.enum(["intimate", "authoritative", "conspiratorial", "poetic"]),
   musicDescription: z.string().min(1),
   soundEffects: z.array(z.string()).default([]),
   silenceCues: z.array(z.string()).default([]),
   seriesSonicSignature: z.string().min(1),
-  dialogueNotes: z.array(z.string()).optional(),
+  dialogueNotes: z.array(DialogueNoteSchema).optional(),
 });
 
 const PlatformAssetSchema = z.object({
@@ -179,7 +189,10 @@ function buildPassAPrompt(series: SeriesJob, episodeNumber: number): string {
   const durationSecs = series.brief.episodeDurationSeconds;
   const hookMaxWords = 18;
   const cliffhangerTypes = "REVELATION | JEOPARDY | MYSTERY | IDENTITY | CHOICE";
-  const bridgeTypes = "VISUAL_MATCH | AUDIO_THREAD | QUESTION_ECHO | SMASH_CUT_TEASE";
+  const isFinale = episodeNumber === series.brief.seriesLength;
+  const bridgeTypes = isFinale
+    ? "LOOP_BRIDGE (REQUIRED for finale — final frame/sound echoes Episode 1 opening; makes viewer rewatch Ep1)"
+    : "VISUAL_MATCH | AUDIO_THREAD | QUESTION_ECHO | SMASH_CUT_TEASE";
 
   return `You are a series director. Write the five-part script for Episode ${episodeNumber} of ${series.brief.seriesLength}.
 
@@ -205,8 +218,9 @@ MANDATORY SCRIPT RULES:
 - body: escalate stakes or deepen understanding; tag visual moments as [VISUAL: subject · motion · setting · mood · quality]; reference prior episodes via visual echo only — never narrate what happened; body advances, never recaps
 - emotionalPeak: ONE dominant emotion moment (tension OR revelation OR humour OR inspiration OR grief OR wonder) — pick one and commit
 - cliffhanger type must be one of: ${cliffhangerTypes} — end on the unresolved state, NEVER say "find out next time"
-- transitionBridge type must be one of: ${bridgeTypes}
+- transitionBridge: ${bridgeTypes}
 - sceneCount: how many distinct visual scenes this script contains (min 2, max 6)
+${isFinale ? `\nFINALE RULES (Episode ${episodeNumber} — series end):\n- transitionBridge.type MUST be "LOOP_BRIDGE"\n- transitionBridge.description must describe how the final frame or sound echoes Episode 1's opening composition\n- This is NOT a cliffhanger — it is a loop trigger designed to make the viewer immediately rewatch Episode 1` : ""}
 
 Respond with STRICT JSON only:
 {
@@ -218,8 +232,8 @@ Respond with STRICT JSON only:
     "text": "..."
   },
   "transitionBridge": {
-    "type": "VISUAL_MATCH",
-    "description": "the last frame mirrors the color and framing of episode ${episodeNumber + 1}'s opening"
+    "type": ${isFinale ? '"LOOP_BRIDGE"' : '"VISUAL_MATCH"'},
+    "description": "${isFinale ? `the final frame holds on the same composition as Episode 1's opening — colour grade, framing, and subject position are identical; the series loops` : `the last frame mirrors the color and framing of episode ${episodeNumber + 1}'s opening`}"
   },
   "sceneCount": 3
 }`;
@@ -230,9 +244,10 @@ function buildPassBPrompt(
   episodeNumber: number,
   script: EpisodeScript,
 ): string {
-  const characterSeeds = (series.characterBible ?? [])
-    .map((c) => `${c.name}: "${c.aiPromptSeed}"`)
-    .join("\n");
+  const isSolo = (series.characterBible ?? []).length === 0 || series.brief.soloFormat;
+  const characterSeeds = isSolo
+    ? "SOLO FORMAT — narrator only; no on-camera characters; skip aiPromptSeed"
+    : (series.characterBible ?? []).map((c) => `${c.name}: "${c.aiPromptSeed}"`).join("\n");
   const colorPalette = series.worldGuide?.colorPalette.join(", ") ?? "neutral tones";
   const defaultLens = series.worldGuide?.cameraLanguage.defaultLens ?? "35mm standard";
   const shotGrammar = series.worldGuide?.cameraLanguage.shotGrammarRules ?? "follow the emotion";
@@ -260,7 +275,7 @@ ${colorGrade ? `Color grade: shadow ${colorGrade.shadowTone}, highlight ${colorG
 
 PROMPT RULES:
 - master: ≤ 150 words; complete self-contained scene; include subject, action, environment, lighting, camera, motion, quality
-- character: copy AI seed verbatim + scene-specific expression/costume delta only
+- character: ${isSolo ? 'set to "narrator only — no on-camera characters" for every scene; do NOT include any character description' : "copy AI seed verbatim + scene-specific expression/costume delta only"}
 - environment: location + time-of-day + weather + atmosphere
 - camera: shot type (ECU/CU/MCU/MS/MWS/WS/EWS/aerial/POV/OTS) + movement (static|push-in|pull-back|pan-L/R|tilt-U/D|dolly|crane|handheld|Steadicam|whip-pan|Dutch-angle) + lens (16mm-wide|35mm-std|50mm-natural|85mm-portrait|telephoto-compressed|macro) + depth-of-field (shallow|deep|rack-focus) + framing (rule-of-thirds|centred-symmetry|negative-space|leading-lines)
 - lighting: key light + colour-temp (2700K-warm|4000K-neutral|6500K-cool|split-gel) + contrast + motivation
@@ -314,7 +329,7 @@ AUDIO PLAN RULES:
 - musicDescription: genre + tempo + instrumentation + emotional function
 - soundEffects: list specific timed effects (not generic)
 - silenceCues: list specific moments where silence is the audio design
-- dialogueNotes: optional; per-character emotion + subtext + delivery cue (e.g. "Character — drop to near-whisper on the pivotal word"); include audio transition type: J-cut | L-cut | musical-bridge | silence-as-tension | hard-cut
+- dialogueNotes: optional array; one object per significant character line; each object: { "characterName": "...", "emotion": "...", "subtext": "...", "deliveryInstruction": "...", "transitionType": "J-cut | L-cut | musical-bridge | silence-as-tension | hard-cut" }
 - seriesSonicSignature: the recurring audio element that appears every episode
 
 PLATFORM ASSET RULES:
@@ -336,7 +351,7 @@ Respond with STRICT JSON only:
     "soundEffects": ["..."],
     "silenceCues": ["..."],
     "seriesSonicSignature": "${sonicSig}",
-    "dialogueNotes": ["optional: Character — emotion (subtext) — delivery cue + transition type"]
+    "dialogueNotes": [{ "characterName": "...", "emotion": "...", "subtext": "...", "deliveryInstruction": "...", "transitionType": "J-cut" }]
   },
   "platformAssets": [
     {
@@ -420,6 +435,22 @@ export function evaluateQualityGate(
     !!(script.hook && script.body && script.emotionalPeak && script.cliffhanger.text && script.transitionBridge.description));
   check("STORY_INTEGRITY", "Cliffhanger type is valid",
     ["REVELATION", "JEOPARDY", "MYSTERY", "IDENTITY", "CHOICE"].includes(script.cliffhanger.type));
+
+  // V2.1 — finale must use LOOP_BRIDGE; non-finale must NOT use LOOP_BRIDGE
+  const isFinaleEp = episodeNumber === series.brief.seriesLength;
+  if (isFinaleEp) {
+    check("STORY_INTEGRITY", "Finale transition bridge is LOOP_BRIDGE",
+      script.transitionBridge.type === "LOOP_BRIDGE",
+      script.transitionBridge.type !== "LOOP_BRIDGE"
+        ? `Episode ${episodeNumber} is the finale — transitionBridge.type must be "LOOP_BRIDGE", got "${script.transitionBridge.type}"`
+        : undefined);
+  } else {
+    check("STORY_INTEGRITY", "Non-finale bridge is not LOOP_BRIDGE",
+      script.transitionBridge.type !== "LOOP_BRIDGE",
+      script.transitionBridge.type === "LOOP_BRIDGE"
+        ? `Episode ${episodeNumber} is not the finale — LOOP_BRIDGE is only valid for Episode ${series.brief.seriesLength}`
+        : undefined);
+  }
 
   // ── CREATIVE_QUALITY ───────────────────────────────────────────────────────
   const hookWords = script.hook.trim().split(/\s+/).length;
@@ -627,7 +658,7 @@ export function buildContinuityReport(
       p.character.toLowerCase().includes(seedPrefix),
     );
     const speakingStyleNoted = (audioPlan.dialogueNotes ?? []).some((note) =>
-      note.toLowerCase().includes(nameLower),
+      note.characterName.toLowerCase() === nameLower,
     );
     return { characterName: char.name, seedPresentInPrompts, speakingStyleNoted };
   });
@@ -682,6 +713,207 @@ export function buildContinuityReport(
   };
 }
 
+// ─── Exported pass functions ──────────────────────────────────────────────────
+
+/**
+ * Pass A — Architect → 5-part episode script.
+ * Can be called independently for per-pass re-runs.
+ * Prerequisite: preProduction entry must exist in the registry.
+ */
+export async function runPassAScript(seriesId: string, episodeNumber: number): Promise<boolean> {
+  const series = getSeries(seriesId);
+  if (!series) {
+    log.warn({ seriesId, episodeNumber }, "passA: series not found");
+    return false;
+  }
+  const entry = series.episodeRoadmap?.find((e) => e.episodeNumber === episodeNumber);
+  if (!entry) {
+    log.warn({ seriesId, episodeNumber }, "passA: episode not in roadmap");
+    patchPreProduction(seriesId, episodeNumber, {
+      status: "failed",
+      error: `Episode ${episodeNumber} not found in series roadmap`,
+    });
+    return false;
+  }
+
+  updateEpisodePassStatus(seriesId, episodeNumber, "passA", "running");
+  const ac = new AbortController();
+  try {
+    log.info({ seriesId, episodeNumber, pass: "A" }, "preproducer: Pass A (episode script)");
+    const raw = await runPass(ARCHITECT_TAG, buildPassAPrompt(series, episodeNumber), 1500, ac.signal);
+    const parsed = EpisodeScriptSchema.safeParse(extractJson<unknown>(raw).data);
+    if (!parsed.success) {
+      const msg = `Pass A JSON invalid: ${parsed.error.message}`;
+      log.error({ seriesId, episodeNumber, error: msg }, "preproducer: Pass A failed");
+      patchPreProduction(seriesId, episodeNumber, { status: "failed", error: msg });
+      updateEpisodePassStatus(seriesId, episodeNumber, "passA", "failed");
+      return false;
+    }
+    patchPreProduction(seriesId, episodeNumber, { script: parsed.data as EpisodeScript, status: "prompting" });
+    updateEpisodePassStatus(seriesId, episodeNumber, "passA", "complete");
+    return true;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.error({ seriesId, episodeNumber, err: msg }, "preproducer: Pass A error");
+    patchPreProduction(seriesId, episodeNumber, { status: "failed", error: msg });
+    updateEpisodePassStatus(seriesId, episodeNumber, "passA", "failed");
+    return false;
+  }
+}
+
+/**
+ * Pass B — Architect → scene AI prompt suites.
+ * Prerequisite: Pass A complete (script present in preProduction).
+ */
+export async function runPassBPrompts(seriesId: string, episodeNumber: number): Promise<boolean> {
+  const series = getSeries(seriesId);
+  const script = series?.preProduction?.[episodeNumber]?.script;
+  if (!series || !script) {
+    log.warn({ seriesId, episodeNumber }, "passB: missing series or Pass A script");
+    return false;
+  }
+
+  updateEpisodePassStatus(seriesId, episodeNumber, "passB", "running");
+  const ac = new AbortController();
+  try {
+    log.info({ seriesId, episodeNumber, pass: "B" }, "preproducer: Pass B (scene prompts)");
+    const raw = await runPass(ARCHITECT_TAG, buildPassBPrompt(series, episodeNumber, script), 2000, ac.signal);
+    const parsed = PassBSchema.safeParse(extractJson<unknown>(raw).data);
+    if (!parsed.success) {
+      const msg = `Pass B JSON invalid: ${parsed.error.message}`;
+      log.error({ seriesId, episodeNumber, error: msg }, "preproducer: Pass B failed");
+      patchPreProduction(seriesId, episodeNumber, { status: "failed", error: msg });
+      updateEpisodePassStatus(seriesId, episodeNumber, "passB", "failed");
+      return false;
+    }
+    const scenePrompts: ScenePromptSuite[] = parsed.data.scenes.map((scene) => ({
+      ...scene,
+      sceneLabel: `SCENE [${episodeNumber}.${scene.sceneIndex}]`,
+    }));
+    patchPreProduction(seriesId, episodeNumber, { scenePrompts, status: "audio_assets" });
+    updateEpisodePassStatus(seriesId, episodeNumber, "passB", "complete");
+    return true;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.error({ seriesId, episodeNumber, err: msg }, "preproducer: Pass B error");
+    patchPreProduction(seriesId, episodeNumber, { status: "failed", error: msg });
+    updateEpisodePassStatus(seriesId, episodeNumber, "passB", "failed");
+    return false;
+  }
+}
+
+/**
+ * Pass C — Pilot → audio plan + platform assets (all 5 platforms).
+ * Prerequisite: Pass A complete (script present).
+ */
+export async function runPassCAudioAssets(seriesId: string, episodeNumber: number): Promise<boolean> {
+  const series = getSeries(seriesId);
+  const script = series?.preProduction?.[episodeNumber]?.script;
+  if (!series || !script) {
+    log.warn({ seriesId, episodeNumber }, "passC: missing series or Pass A script");
+    return false;
+  }
+
+  updateEpisodePassStatus(seriesId, episodeNumber, "passC", "running");
+  const ac = new AbortController();
+  try {
+    log.info({ seriesId, episodeNumber, pass: "C" }, "preproducer: Pass C (audio + assets)");
+    const raw = await runPass(PILOT_TAG, buildPassCPrompt(series, episodeNumber, script), 1000, ac.signal);
+    const parsed = PassCSchema.safeParse(extractJson<unknown>(raw).data);
+    if (!parsed.success) {
+      const msg = `Pass C JSON invalid: ${parsed.error.message}`;
+      log.error({ seriesId, episodeNumber, error: msg }, "preproducer: Pass C failed");
+      patchPreProduction(seriesId, episodeNumber, { status: "failed", error: msg });
+      updateEpisodePassStatus(seriesId, episodeNumber, "passC", "failed");
+      return false;
+    }
+    const audioPlan = parsed.data.audioPlan as AudioPlan;
+    const platformAssets = parsed.data.platformAssets as PlatformPublishingAsset[];
+    patchPreProduction(seriesId, episodeNumber, { audioPlan, platformAssets, status: "scoring" });
+    updateEpisodePassStatus(seriesId, episodeNumber, "passC", "complete");
+    return true;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.error({ seriesId, episodeNumber, err: msg }, "preproducer: Pass C error");
+    patchPreProduction(seriesId, episodeNumber, { status: "failed", error: msg });
+    updateEpisodePassStatus(seriesId, episodeNumber, "passC", "failed");
+    return false;
+  }
+}
+
+/**
+ * Pass D — Pilot → virality score + quality gate + continuity report.
+ * Prerequisite: Passes A, B, C complete.
+ * Terminal pass — writes "complete" or "failed" episode status.
+ */
+export async function runPassDScoring(seriesId: string, episodeNumber: number): Promise<void> {
+  const series = getSeries(seriesId);
+  const preProduction = series?.preProduction?.[episodeNumber];
+  const script       = preProduction?.script;
+  const scenePrompts = preProduction?.scenePrompts;
+  const audioPlan    = preProduction?.audioPlan;
+  const platformAssets = preProduction?.platformAssets;
+
+  if (!series || !script || !scenePrompts || !audioPlan || !platformAssets) {
+    log.warn({ seriesId, episodeNumber }, "passD: missing prerequisites (A, B, C)");
+    return;
+  }
+
+  updateEpisodePassStatus(seriesId, episodeNumber, "passD", "running");
+  const ac = new AbortController();
+  try {
+    log.info({ seriesId, episodeNumber, pass: "D" }, "preproducer: Pass D (virality score)");
+    const raw = await runPass(PILOT_TAG, buildPassDPrompt(series, episodeNumber, script), 300, ac.signal);
+    const parsed = PassDSchema.safeParse(extractJson<unknown>(raw).data);
+    if (!parsed.success) {
+      const msg = `Pass D JSON invalid: ${parsed.error.message}`;
+      log.error({ seriesId, episodeNumber, error: msg }, "preproducer: Pass D failed");
+      patchPreProduction(seriesId, episodeNumber, { status: "failed", error: msg });
+      updateEpisodePassStatus(seriesId, episodeNumber, "passD", "failed");
+      return;
+    }
+    const { hookStrength, completionProxy, shareability, seoScore, recommendations } = parsed.data;
+    const overall =
+      hookStrength * VIRALITY_WEIGHTS.hookStrength +
+      completionProxy * VIRALITY_WEIGHTS.completionProxy +
+      shareability * VIRALITY_WEIGHTS.shareability +
+      seoScore * VIRALITY_WEIGHTS.seoScore;
+
+    const viralityScore: EpisodeViralityScore = {
+      hookStrength, completionProxy, shareability, seoScore,
+      overall: Math.round(overall * 100) / 100,
+      recommendations,
+    };
+
+    const seriesFinal = getSeries(seriesId) ?? series;
+    const qualityGateResult = evaluateQualityGate(
+      seriesFinal, episodeNumber, script, scenePrompts, audioPlan, platformAssets, viralityScore,
+    );
+    const continuityReport = buildContinuityReport(
+      seriesFinal, episodeNumber, script, scenePrompts, audioPlan,
+    );
+
+    patchPreProduction(seriesId, episodeNumber, {
+      viralityScore,
+      qualityGateResult,
+      continuityReport,
+      status: "complete",
+      completedAt: new Date().toISOString(),
+    });
+    updateEpisodePassStatus(seriesId, episodeNumber, "passD", "complete");
+
+    log.info(
+      { seriesId, episodeNumber, overall: viralityScore.overall, gatePassed: qualityGateResult.passed },
+      "preproducer: episode pre-production complete",
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.error({ seriesId, episodeNumber, err: msg }, "preproducer: Pass D error");
+    patchPreProduction(seriesId, episodeNumber, { status: "failed", error: msg });
+    updateEpisodePassStatus(seriesId, episodeNumber, "passD", "failed");
+  }
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 /**
@@ -697,9 +929,7 @@ export async function runEpisodePreProduction(
     log.warn({ seriesId, episodeNumber }, "preproducer: series not found");
     return;
   }
-
-  const entry = series.episodeRoadmap?.find((e) => e.episodeNumber === episodeNumber);
-  if (!entry) {
+  if (!series.episodeRoadmap?.find((e) => e.episodeNumber === episodeNumber)) {
     log.warn({ seriesId, episodeNumber }, "preproducer: episode not in roadmap");
     patchPreProduction(seriesId, episodeNumber, {
       status: "failed",
@@ -708,125 +938,11 @@ export async function runEpisodePreProduction(
     return;
   }
 
-  const ac = new AbortController();
-
   try {
-    // ── Pass A: Architect → 5-part episode script ─────────────────────────────
-    log.info({ seriesId, episodeNumber, pass: "A" }, "preproducer: Pass A (episode script)");
-    const passARaw = await runPass(
-      ARCHITECT_TAG,
-      buildPassAPrompt(series, episodeNumber),
-      1500,
-      ac.signal,
-    );
-    const passAResult = extractJson<unknown>(passARaw);
-    const passAParsed = EpisodeScriptSchema.safeParse(passAResult.data);
-    if (!passAParsed.success) {
-      const msg = `Pass A JSON invalid: ${passAParsed.error.message}`;
-      log.error({ seriesId, episodeNumber, error: msg }, "preproducer: Pass A failed");
-      patchPreProduction(seriesId, episodeNumber, { status: "failed", error: msg });
-      return;
-    }
-    const script = passAParsed.data as EpisodeScript;
-    patchPreProduction(seriesId, episodeNumber, { script, status: "prompting" });
-
-    // ── Pass B: Architect → scene AI prompt suites ────────────────────────────
-    log.info({ seriesId, episodeNumber, pass: "B" }, "preproducer: Pass B (scene prompts)");
-
-    // Refresh series to get any registry changes after Pass A
-    const seriesForB = getSeries(seriesId) ?? series;
-
-    const passBRaw = await runPass(
-      ARCHITECT_TAG,
-      buildPassBPrompt(seriesForB, episodeNumber, script),
-      2000,
-      ac.signal,
-    );
-    const passBResult = extractJson<unknown>(passBRaw);
-    const passBParsed = PassBSchema.safeParse(passBResult.data);
-    if (!passBParsed.success) {
-      const msg = `Pass B JSON invalid: ${passBParsed.error.message}`;
-      log.error({ seriesId, episodeNumber, error: msg }, "preproducer: Pass B failed");
-      patchPreProduction(seriesId, episodeNumber, { status: "failed", error: msg });
-      return;
-    }
-    const scenePrompts = passBParsed.data.scenes as ScenePromptSuite[];
-    patchPreProduction(seriesId, episodeNumber, { scenePrompts, status: "audio_assets" });
-
-    // ── Pass C: Pilot → audio plan + platform assets ──────────────────────────
-    log.info({ seriesId, episodeNumber, pass: "C" }, "preproducer: Pass C (audio + assets)");
-    const seriesForC = getSeries(seriesId) ?? series;
-    const passCRaw = await runPass(
-      PILOT_TAG,
-      buildPassCPrompt(seriesForC, episodeNumber, script),
-      1000,
-      ac.signal,
-    );
-    const passCResult = extractJson<unknown>(passCRaw);
-    const passCParsed = PassCSchema.safeParse(passCResult.data);
-    if (!passCParsed.success) {
-      const msg = `Pass C JSON invalid: ${passCParsed.error.message}`;
-      log.error({ seriesId, episodeNumber, error: msg }, "preproducer: Pass C failed");
-      patchPreProduction(seriesId, episodeNumber, { status: "failed", error: msg });
-      return;
-    }
-    const audioPlan = passCParsed.data.audioPlan as AudioPlan;
-    const platformAssets = passCParsed.data.platformAssets as PlatformPublishingAsset[];
-    patchPreProduction(seriesId, episodeNumber, { audioPlan, platformAssets, status: "scoring" });
-
-    // ── Pass D: Pilot → virality score ────────────────────────────────────────
-    log.info({ seriesId, episodeNumber, pass: "D" }, "preproducer: Pass D (virality score)");
-    const passDRaw = await runPass(
-      PILOT_TAG,
-      buildPassDPrompt(series, episodeNumber, script),
-      300,
-      ac.signal,
-    );
-    const passDResult = extractJson<unknown>(passDRaw);
-    const passDParsed = PassDSchema.safeParse(passDResult.data);
-    if (!passDParsed.success) {
-      const msg = `Pass D JSON invalid: ${passDParsed.error.message}`;
-      log.error({ seriesId, episodeNumber, error: msg }, "preproducer: Pass D failed");
-      patchPreProduction(seriesId, episodeNumber, { status: "failed", error: msg });
-      return;
-    }
-    const { hookStrength, completionProxy, shareability, seoScore, recommendations } = passDParsed.data;
-    const overall =
-      hookStrength * VIRALITY_WEIGHTS.hookStrength +
-      completionProxy * VIRALITY_WEIGHTS.completionProxy +
-      shareability * VIRALITY_WEIGHTS.shareability +
-      seoScore * VIRALITY_WEIGHTS.seoScore;
-
-    const viralityScore: EpisodeViralityScore = {
-      hookStrength, completionProxy, shareability, seoScore,
-      overall: Math.round(overall * 100) / 100,
-      recommendations,
-    };
-
-    // ── Quality gate ─────────────────────────────────────────────────────────
-    const seriesFinal = getSeries(seriesId) ?? series;
-    const qualityGateResult = evaluateQualityGate(
-      seriesFinal, episodeNumber, script, scenePrompts, audioPlan, platformAssets, viralityScore,
-    );
-
-    const continuityReport = buildContinuityReport(
-      seriesFinal, episodeNumber, script, scenePrompts, audioPlan,
-    );
-
-    const now = new Date().toISOString();
-    patchPreProduction(seriesId, episodeNumber, {
-      viralityScore,
-      qualityGateResult,
-      continuityReport,
-      status: "complete",
-      completedAt: now,
-    });
-
-    log.info(
-      { seriesId, episodeNumber, overall: viralityScore.overall, gatePassed: qualityGateResult.passed },
-      "preproducer: episode pre-production complete",
-    );
-
+    if (!await runPassAScript(seriesId, episodeNumber)) return;
+    if (!await runPassBPrompts(seriesId, episodeNumber)) return;
+    if (!await runPassCAudioAssets(seriesId, episodeNumber)) return;
+    await runPassDScoring(seriesId, episodeNumber);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     log.error({ seriesId, episodeNumber, err: msg }, "preproducer: pipeline error");

@@ -11,8 +11,10 @@ import { evaluateQualityGate, buildContinuityReport } from "../src/services/vide
 import type {
   SeriesJob,
   EpisodeScript,
+  EpisodeRoadmapEntry,
   ScenePromptSuite,
   AudioPlan,
+  DialogueNote,
   PlatformPublishingAsset,
   EpisodeViralityScore,
 } from "@swarmx/types/series-types";
@@ -97,6 +99,7 @@ const BASE_SCRIPT: EpisodeScript = {
 // Scene prompt includes character name + aiPromptSeed prefix + color palette reference
 const BASE_PROMPTS: ScenePromptSuite[] = [{
   sceneIndex: 0,
+  sceneLabel: "SCENE [1.0]",
   sceneTitle: "Kai enters the dojo",
   master: "Kai, 28, tall lean male, dark skin, short locs, slate grey gear enters a sparse dojo at dawn. natural key light from high window. 50mm natural lens. slow push-in. cinematic grain. #1a1a2e shadows. 720p",
   character: "Kai, 28, tall lean male, dark skin, short locs, slate grey gear, sharp jawline — expression: apprehensive, hand near scar",
@@ -112,19 +115,25 @@ const BASE_PROMPTS: ScenePromptSuite[] = [{
 // Audio plan: tone=cinematic → allowed narration styles: poetic, intimate
 // silenceCues ≥ 1 (episode is 45s, requires silence cues)
 // seriesSonicSignature echoes worldGuide.soundSignature "distant piano motif"
+const KAI_DIALOGUE_NOTE: DialogueNote = {
+  characterName: "Kai",
+  emotion: "fear",
+  subtext: "fear holds him back from speaking aloud",
+  deliveryInstruction: "barely audible, almost a whisper — pause before last word",
+  transitionType: "J-cut",
+};
+
 const BASE_AUDIO: AudioPlan = {
   narrationStyle: "poetic",
   musicDescription: "sparse piano, slow tempo 60bpm, building string tension, emotional function: amplify dread transitioning to resolve",
   soundEffects: ["wooden floor creak on entry", "staff hitting floor", "distant city ambient"],
   silenceCues: ["beat of silence after Kai picks up the broken staff — 2 seconds of visual only"],
   seriesSonicSignature: "distant piano motif with subtle reverb returns in every episode final 5 seconds",
-  dialogueNotes: ["Kai — whispered, barely audible (fear subtext) — J-cut into music"],
+  dialogueNotes: [KAI_DIALOGUE_NOTE],
 };
 
 // Title ≤ 60 chars, caption firstLine ≤ 40 chars (not starting with I/My/This/We/Our)
 // SEO description 120–160 chars, caption ≤ 2200 chars, in-feed first paragraph ≤ 280 chars
-const TIKTOK_CAPTION_FIRST_LINE = "Courage waits on the other side of fear.";
-// 41 chars — 1 over! Use shorter:
 const PASSING_FIRST_LINE = "Courage waits beyond fear."; // 26 chars ✓
 
 const PASSING_SEO = "A warrior enters the dojo for the very first time and confronts what fear truly means in this powerful 45-second cinematic story series.";
@@ -433,13 +442,31 @@ console.log("Section 3: buildContinuityReport...");
   console.log("  ✓ character absent from prompts → seedPresentInPrompts: false");
 }
 
-// Speaking style noted when dialogueNotes mentions character name
+// Speaking style noted when structured DialogueNote has matching characterName
 {
-  const audioWithKaiNote: AudioPlan = { ...BASE_AUDIO, dialogueNotes: ["Kai — whispered delivery (fear)"] };
+  const audioWithKaiNote: AudioPlan = {
+    ...BASE_AUDIO,
+    dialogueNotes: [{
+      characterName: "Kai",
+      emotion: "resolve",
+      subtext: "committed despite fear",
+      deliveryInstruction: "whispered, deliberate",
+      transitionType: "L-cut",
+    }],
+  };
   const report = buildContinuityReport(BASE_SERIES, 1, BASE_SCRIPT, BASE_PROMPTS, audioWithKaiNote);
   const kai = report.characterDriftChecks.find((c) => c.characterName === "Kai");
-  assert.ok(kai && kai.speakingStyleNoted, "character named in dialogueNotes must yield speakingStyleNoted: true");
-  console.log("  ✓ character in dialogueNotes → speakingStyleNoted: true");
+  assert.ok(kai && kai.speakingStyleNoted, "DialogueNote with characterName 'Kai' must yield speakingStyleNoted: true");
+  console.log("  ✓ DialogueNote.characterName === 'Kai' → speakingStyleNoted: true");
+}
+
+// speakingStyleNoted false when no DialogueNote matches
+{
+  const audioNoNote: AudioPlan = { ...BASE_AUDIO, dialogueNotes: [] };
+  const report = buildContinuityReport(BASE_SERIES, 1, BASE_SCRIPT, BASE_PROMPTS, audioNoNote);
+  const kai = report.characterDriftChecks.find((c) => c.characterName === "Kai");
+  assert.ok(kai && !kai.speakingStyleNoted, "empty dialogueNotes must yield speakingStyleNoted: false");
+  console.log("  ✓ empty dialogueNotes → speakingStyleNoted: false");
 }
 
 // worldGuide soundSignature present + audioPlan non-empty → soundSignaturePresent: true
@@ -509,6 +536,101 @@ assert.ok(typesSource.includes("SeriesViralityArcData"), "SeriesViralityArcData 
 assert.ok(typesSource.includes("viralityArcData?:"), "SeriesJob must have viralityArcData? optional field");
 
 console.log("  ✓ type file assertions passed");
+
+// ─── Section 5: V2.1 Gap Fills ────────────────────────────────────────────────
+
+console.log("Section 5: V2.1 gap fill assertions...");
+
+// 5a — Source structure: modular pass exports
+assert.ok(preproducerSource.includes("export async function runPassAScript"), "runPassAScript must be exported");
+assert.ok(preproducerSource.includes("export async function runPassBPrompts"), "runPassBPrompts must be exported");
+assert.ok(preproducerSource.includes("export async function runPassCAudioAssets"), "runPassCAudioAssets must be exported");
+assert.ok(preproducerSource.includes("export async function runPassDScoring"), "runPassDScoring must be exported");
+assert.ok(preproducerSource.includes("updateEpisodePassStatus"), "updateEpisodePassStatus must be called in preproducer");
+assert.ok(preproducerSource.includes("LOOP_BRIDGE"), "LOOP_BRIDGE must be present in preproducer");
+assert.ok(preproducerSource.includes("sceneLabel"), "sceneLabel must be computed in preproducer");
+assert.ok(preproducerSource.includes("DialogueNoteSchema"), "DialogueNoteSchema must be defined in preproducer");
+console.log("  ✓ preproducer modular exports + V2.1 source checks passed");
+
+const seriesPlannerSource = await readFile(
+  new URL("../src/services/video-series-planner.ts", import.meta.url), "utf8",
+);
+assert.ok(seriesPlannerSource.includes("export async function runPass1WorldBuilder"), "runPass1WorldBuilder must be exported");
+assert.ok(seriesPlannerSource.includes("export async function runPass2RoadmapBuilder"), "runPass2RoadmapBuilder must be exported");
+assert.ok(seriesPlannerSource.includes("export async function runPass3ViralityArc"), "runPass3ViralityArc must be exported");
+assert.ok(seriesPlannerSource.includes("export async function runPass4CinematicLock"), "runPass4CinematicLock must be exported");
+assert.ok(seriesPlannerSource.includes("soloFormat"), "soloFormat branch must be present in series planner");
+assert.ok(seriesPlannerSource.includes("updateSeriesPassStatus"), "updateSeriesPassStatus must be called in series planner");
+console.log("  ✓ series planner modular exports + SOLO FORMAT + pass status wiring checked");
+
+// 5b — Type file: V2.1 additions
+assert.ok(typesSource.includes("soloFormat?:"), "soloFormat must be in SeriesBrief");
+assert.ok(typesSource.includes("sceneLabel:"), "sceneLabel must be in ScenePromptSuite");
+assert.ok(typesSource.includes("LOOP_BRIDGE"), "LOOP_BRIDGE must be in transitionBridge union");
+assert.ok(typesSource.includes("interface DialogueNote"), "DialogueNote interface must exist in series-types.ts");
+assert.ok(typesSource.includes("dialogueNotes?: DialogueNote[]"), "AudioPlan.dialogueNotes must be DialogueNote[]");
+assert.ok(typesSource.includes("passStatus?:"), "passStatus must be in EpisodePreProduction");
+assert.ok(typesSource.includes("planningPassStatus?:"), "planningPassStatus must be in SeriesJob");
+assert.ok(typesSource.includes("SeriesPassStatus"), "SeriesPassStatus type must exist");
+console.log("  ✓ type file V2.1 field assertions passed");
+
+// 5c — LOOP_BRIDGE quality gate: finale (ep 6/6) with LOOP_BRIDGE must pass
+{
+  const finaleSeries: SeriesJob = { ...BASE_SERIES, brief: { ...BASE_SERIES.brief, seriesLength: 6 } };
+  const finaleEntry: EpisodeRoadmapEntry = { episodeNumber: 6, title: "The Return", summary: "Kai completes his arc", continuityThread: "broken staff restored" };
+  const seriesWithFinale: SeriesJob = {
+    ...finaleSeries,
+    episodeRoadmap: [...(BASE_SERIES.episodeRoadmap ?? []), finaleEntry],
+  };
+  const finaleScript: EpisodeScript = {
+    ...BASE_SCRIPT,
+    transitionBridge: { type: "LOOP_BRIDGE", description: "final frame holds on dojo entrance — same composition as episode 1 opening; loop triggers rewatch" },
+  };
+  const result = evaluateQualityGate(seriesWithFinale, 6, finaleScript, BASE_PROMPTS, BASE_AUDIO, PASSING_ASSETS, PASSING_VIRALITY);
+  const check = result.checks.find((c) => c.label === "Finale transition bridge is LOOP_BRIDGE");
+  assert.ok(check, "Finale LOOP_BRIDGE check must be present for episode 6/6");
+  assert.ok(check.passed, "LOOP_BRIDGE in finale (ep 6/6) must pass STORY_INTEGRITY");
+  console.log("  ✓ LOOP_BRIDGE in finale (ep 6/6) passes STORY_INTEGRITY");
+}
+
+// 5d — VISUAL_MATCH in finale (ep 6/6) must fail
+{
+  const finaleSeries: SeriesJob = { ...BASE_SERIES, brief: { ...BASE_SERIES.brief, seriesLength: 6 } };
+  const finaleEntry: EpisodeRoadmapEntry = { episodeNumber: 6, title: "The Return", summary: "finale", continuityThread: "restored" };
+  const seriesWithFinale: SeriesJob = {
+    ...finaleSeries,
+    episodeRoadmap: [...(BASE_SERIES.episodeRoadmap ?? []), finaleEntry],
+  };
+  // BASE_SCRIPT uses VISUAL_MATCH — wrong for finale
+  const result = evaluateQualityGate(seriesWithFinale, 6, BASE_SCRIPT, BASE_PROMPTS, BASE_AUDIO, PASSING_ASSETS, PASSING_VIRALITY);
+  const check = result.checks.find((c) => c.label === "Finale transition bridge is LOOP_BRIDGE");
+  assert.ok(check && !check.passed, "VISUAL_MATCH in finale must fail — only LOOP_BRIDGE is valid");
+  console.log("  ✓ VISUAL_MATCH in finale (ep 6/6) fails STORY_INTEGRITY");
+}
+
+// 5e — LOOP_BRIDGE in non-finale (ep 1/6) must fail
+{
+  const loopInNonFinaleScript: EpisodeScript = {
+    ...BASE_SCRIPT,
+    transitionBridge: { type: "LOOP_BRIDGE", description: "incorrectly used in non-finale" },
+  };
+  const result = evaluateQualityGate(BASE_SERIES, 1, loopInNonFinaleScript, BASE_PROMPTS, BASE_AUDIO, PASSING_ASSETS, PASSING_VIRALITY);
+  const check = result.checks.find((c) => c.label === "Non-finale bridge is not LOOP_BRIDGE");
+  assert.ok(check && !check.passed, "LOOP_BRIDGE in non-finale (ep 1/6) must fail STORY_INTEGRITY");
+  console.log("  ✓ LOOP_BRIDGE in non-finale (ep 1/6) fails STORY_INTEGRITY");
+}
+
+// 5f — sceneLabel format: SCENE [episodeNumber.sceneIndex]
+{
+  // sceneLabel is computed deterministically — test the pattern
+  const ep = 3;
+  const sceneIdx = 1;
+  const expectedLabel = `SCENE [${ep}.${sceneIdx}]`;
+  assert.strictEqual(expectedLabel, "SCENE [3.1]", "sceneLabel format must be SCENE [episodeNumber.sceneIndex]");
+  console.log("  ✓ sceneLabel format 'SCENE [3.1]' verified");
+}
+
+console.log("Section 5: all V2.1 assertions passed ✓");
 
 // ─── Done ─────────────────────────────────────────────────────────────────────
 

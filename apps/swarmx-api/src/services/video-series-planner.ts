@@ -6,6 +6,9 @@
  *            full shot vocabulary hint (Pass 4).
  * V6.2.30 — Pass 3 switched to structured JSON (SeriesViralityArcData);
  *            prose string fallback preserved for backward compatibility.
+ * V2.1   — Modular pass extraction (runPass1–4 are independently exported);
+ *            SOLO FORMAT support in Pass 1 (soloFormat=true → empty characterBible);
+ *            planningPassStatus updated per pass.
  *
  * Four-pass LLM pipeline that converts a SeriesBrief into a full series plan:
  *   Pass 1 (Pilot)     — character bible + world guide (JSON)
@@ -27,6 +30,7 @@ import {
   getSeries,
   setSeriesStatus,
   updateSeries,
+  updateSeriesPassStatus,
 } from "./series-registry.js";
 import { log } from "../lib/logger.js";
 import type {
@@ -79,7 +83,7 @@ const WorldRegistrySchema = z.object({
 
 const Pass1Schema = z.object({
   seriesTitle:    z.string().min(1),
-  characterBible: z.array(CharacterProfileSchema),
+  characterBible: z.array(CharacterProfileSchema), // empty array valid for SOLO FORMAT
   worldGuide:     WorldRegistrySchema,
 });
 
@@ -153,8 +157,13 @@ function buildPass1Prompt(
   tone: string,
   seriesLength: number,
   arcStructure: string,
+  soloFormat: boolean,
   recurringSymbols?: string,
 ): string {
+  const characterInstruction = soloFormat
+    ? `SOLO FORMAT — this is a narrator-only series (faceless B-roll or kinetic text). Do NOT create any characters. Set "characterBible": [] (empty array). The series has no on-camera characters.`
+    : `Create a series title, 1–3 characters with full profiles, and a world guide.`;
+
   return `You are a series director building the foundational bible. Lock character and world to enforce visual and emotional consistency across all ${seriesLength} episodes.
 
 SERIES BRIEF:
@@ -168,7 +177,7 @@ Episodes: ${seriesLength}
 Arc structure: ${arcStructure}
 ${recurringSymbols ? `Recurring symbols: ${recurringSymbols}` : ""}
 
-Create a series title, 1–3 characters with full profiles, and a world guide.
+${characterInstruction}
 Respond with STRICT JSON only, no other text:
 
 {
@@ -224,7 +233,7 @@ Core message: ${coreMessage}
 Emotional journey: ${emotionalJourney}
 Arc structure: ${arcStructure}
 Episode duration: ${episodeDurationSeconds} seconds
-Characters: ${characterNames.join(", ")}
+Characters: ${characterNames.length > 0 ? characterNames.join(", ") : "narrator only — no on-camera characters"}
 
 World and character context:
 ${pass1Summary}
@@ -308,27 +317,30 @@ Respond with STRICT JSON only:
 }`;
 }
 
-// ─── Main export ──────────────────────────────────────────────────────────────
+// ─── Exported modular pass functions ─────────────────────────────────────────
+//
+// Each function reads its prerequisites from the registry, runs one LLM pass,
+// writes results back to the registry, and updates planningPassStatus.
+// Returns true on success, false on fatal failure (passes 1 and 2 only).
+// Passes 3 and 4 are non-fatal — they always return true and log warnings.
 
 /**
- * Runs the three-pass planning pipeline for a series.
- * Intended to be called fire-and-forget from the route handler.
- * Updates the series-registry directly with results.
+ * Pass 1 — Pilot: character bible + world guide.
+ * Required. Failure marks series as "failed".
+ * Respects brief.soloFormat: empty characterBible for narrator-only series.
  */
-export async function planSeries(seriesId: string): Promise<void> {
+export async function runPass1WorldBuilder(seriesId: string): Promise<boolean> {
   const series = getSeries(seriesId);
   if (!series) {
-    log.warn({ seriesId }, "planSeries: series not found in registry");
-    return;
+    log.warn({ seriesId }, "runPass1: series not found");
+    return false;
   }
-
   const brief = series.brief;
   const ac = new AbortController();
-
+  updateSeriesPassStatus(seriesId, "pass1", "running");
   try {
-    // ── Pass 1: Pilot → character bible + world guide ─────────────────────────
-    log.info({ seriesId, pass: 1 }, "series planner: starting Pass 1 (character bible + world guide)");
-    const pass1Raw = await runPlannerPass(
+    log.info({ seriesId, pass: 1 }, "series planner: Pass 1 (character bible + world guide)");
+    const raw = await runPlannerPass(
       PILOT_TAG,
       buildPass1Prompt(
         brief.storyTheme,
@@ -339,30 +351,57 @@ export async function planSeries(seriesId: string): Promise<void> {
         brief.tone,
         brief.seriesLength,
         brief.arcStructure,
+        brief.soloFormat ?? false,
         brief.recurringSymbols,
       ),
       1200,
       ac.signal,
     );
-
-    const pass1Result = extractJson<unknown>(pass1Raw);
-    const pass1Parsed = Pass1Schema.safeParse(pass1Result.data);
-    if (!pass1Parsed.success) {
-      const msg = `Pass 1 JSON invalid: ${pass1Parsed.error.message}`;
+    const parsed = Pass1Schema.safeParse(extractJson<unknown>(raw).data);
+    if (!parsed.success) {
+      const msg = `Pass 1 JSON invalid: ${parsed.error.message}`;
       log.error({ seriesId, error: msg }, "series planner: Pass 1 failed");
       setSeriesStatus(seriesId, "failed", msg);
-      return;
+      updateSeriesPassStatus(seriesId, "pass1", "failed");
+      return false;
     }
-    const { seriesTitle, characterBible, worldGuide } = pass1Parsed.data;
+    const { characterBible, worldGuide } = parsed.data;
     updateSeries(seriesId, {
       characterBible: characterBible as CharacterProfile[],
       worldGuide: worldGuide as WorldRegistry,
     });
+    updateSeriesPassStatus(seriesId, "pass1", "complete");
+    return true;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.error({ seriesId, err: msg }, "series planner: Pass 1 threw");
+    setSeriesStatus(seriesId, "failed", msg);
+    updateSeriesPassStatus(seriesId, "pass1", "failed");
+    return false;
+  }
+}
 
-    // ── Pass 2: Architect → episode roadmap ───────────────────────────────────
-    log.info({ seriesId, pass: 2 }, "series planner: starting Pass 2 (episode roadmap)");
-    const pass1Summary = `Title: ${seriesTitle}. Characters: ${characterBible.map((c) => c.name).join(", ")}. World: ${worldGuide.architecture}, ${worldGuide.era}.`;
-    const pass2Raw = await runPlannerPass(
+/**
+ * Pass 2 — Architect: episode roadmap.
+ * Required. Reads characterBible + worldGuide from registry (set by Pass 1).
+ * Failure marks series as "failed".
+ */
+export async function runPass2RoadmapBuilder(seriesId: string): Promise<boolean> {
+  const series = getSeries(seriesId);
+  if (!series || !series.worldGuide) {
+    log.warn({ seriesId }, "runPass2: series or worldGuide not found — run Pass 1 first");
+    return false;
+  }
+  const brief = series.brief;
+  const characterBible = series.characterBible ?? [];
+  const worldGuide = series.worldGuide;
+  const seriesTitle = brief.storyTheme; // use storyTheme as fallback title if not stored
+  const ac = new AbortController();
+  updateSeriesPassStatus(seriesId, "pass2", "running");
+  try {
+    log.info({ seriesId, pass: 2 }, "series planner: Pass 2 (episode roadmap)");
+    const pass1Summary = `Characters: ${characterBible.map((c) => c.name).join(", ") || "none (narrator only)"}. World: ${worldGuide.architecture}, ${worldGuide.era}.`;
+    const raw = await runPlannerPass(
       ARCHITECT_TAG,
       buildPass2Prompt(
         seriesTitle,
@@ -378,88 +417,145 @@ export async function planSeries(seriesId: string): Promise<void> {
       2000,
       ac.signal,
     );
-
-    const pass2Result = extractJson<unknown>(pass2Raw);
-    const pass2Parsed = Pass2Schema.safeParse(pass2Result.data);
-    if (!pass2Parsed.success) {
-      const msg = `Pass 2 JSON invalid: ${pass2Parsed.error.message}`;
+    const parsed = Pass2Schema.safeParse(extractJson<unknown>(raw).data);
+    if (!parsed.success) {
+      const msg = `Pass 2 JSON invalid: ${parsed.error.message}`;
       log.error({ seriesId, error: msg }, "series planner: Pass 2 failed");
       setSeriesStatus(seriesId, "failed", msg);
-      return;
+      updateSeriesPassStatus(seriesId, "pass2", "failed");
+      return false;
     }
-    const episodeRoadmap = pass2Parsed.data.episodes as EpisodeRoadmapEntry[];
-    updateSeries(seriesId, { episodeRoadmap });
+    updateSeries(seriesId, { episodeRoadmap: parsed.data.episodes as EpisodeRoadmapEntry[] });
+    updateSeriesPassStatus(seriesId, "pass2", "complete");
+    return true;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.error({ seriesId, err: msg }, "series planner: Pass 2 threw");
+    setSeriesStatus(seriesId, "failed", msg);
+    updateSeriesPassStatus(seriesId, "pass2", "failed");
+    return false;
+  }
+}
 
-    // ── Pass 3: Pilot → virality arc (optional) ───────────────────────────────
-    log.info({ seriesId, pass: 3 }, "series planner: starting Pass 3 (virality arc)");
-    try {
-      const pass3Raw = await runPlannerPass(
-        PILOT_TAG,
-        buildPass3Prompt(
-          seriesTitle,
-          brief.seriesLength,
-          brief.tone,
-          brief.platformPrimary,
-          episodeRoadmap.map((e) => e.title),
-        ),
-        600,
-        ac.signal,
-      );
-      const pass3Result = extractJson<unknown>(pass3Raw);
-      const pass3Parsed = Pass3Schema.safeParse(pass3Result.data);
-      if (pass3Parsed.success) {
-        const viralityArcData: SeriesViralityArcData = pass3Parsed.data;
-        updateSeries(seriesId, { viralityArcData });
-        log.info({ seriesId }, "series planner: Pass 3 structured virality arc stored");
-      } else {
-        // Fallback: store as prose string for backward compatibility
-        const { text: viralityArc } = sanitizeReasoningOutput(pass3Raw);
-        updateSeries(seriesId, { viralityArc: viralityArc.trim() });
-        log.warn({ seriesId, error: pass3Parsed.error.message }, "series planner: Pass 3 JSON invalid — stored as prose fallback");
+/**
+ * Pass 3 — Pilot: structured virality arc (optional/non-fatal).
+ * Reads episodeRoadmap from registry (set by Pass 2).
+ * Falls back to prose string on JSON parse failure.
+ */
+export async function runPass3ViralityArc(seriesId: string): Promise<void> {
+  const series = getSeries(seriesId);
+  if (!series?.episodeRoadmap) {
+    log.warn({ seriesId }, "runPass3: episodeRoadmap not found — skipping Pass 3");
+    return;
+  }
+  const brief = series.brief;
+  const episodeRoadmap = series.episodeRoadmap;
+  const ac = new AbortController();
+  updateSeriesPassStatus(seriesId, "pass3", "running");
+  try {
+    log.info({ seriesId, pass: 3 }, "series planner: Pass 3 (virality arc)");
+    const raw = await runPlannerPass(
+      PILOT_TAG,
+      buildPass3Prompt(
+        brief.storyTheme,
+        brief.seriesLength,
+        brief.tone,
+        brief.platformPrimary,
+        episodeRoadmap.map((e) => e.title),
+      ),
+      600,
+      ac.signal,
+    );
+    const parsed = Pass3Schema.safeParse(extractJson<unknown>(raw).data);
+    if (parsed.success) {
+      updateSeries(seriesId, { viralityArcData: parsed.data as SeriesViralityArcData });
+      log.info({ seriesId }, "series planner: Pass 3 structured virality arc stored");
+    } else {
+      const { text: viralityArc } = sanitizeReasoningOutput(raw);
+      updateSeries(seriesId, { viralityArc: viralityArc.trim() });
+      log.warn({ seriesId, error: parsed.error.message }, "series planner: Pass 3 JSON invalid — prose fallback");
+    }
+    updateSeriesPassStatus(seriesId, "pass3", "complete");
+  } catch (err) {
+    log.warn({ seriesId, err: err instanceof Error ? err.message : String(err) }, "series planner: Pass 3 failed (non-fatal)");
+    updateSeriesPassStatus(seriesId, "pass3", "failed");
+  }
+}
+
+/**
+ * Pass 4 — Pilot: cinematic language lock (optional/non-fatal).
+ * Reads worldGuide from registry (set by Pass 1).
+ */
+export async function runPass4CinematicLock(seriesId: string): Promise<void> {
+  const series = getSeries(seriesId);
+  if (!series?.worldGuide) {
+    log.warn({ seriesId }, "runPass4: worldGuide not found — skipping Pass 4");
+    return;
+  }
+  const brief = series.brief;
+  const worldGuide = series.worldGuide;
+  const ac = new AbortController();
+  updateSeriesPassStatus(seriesId, "pass4", "running");
+  try {
+    log.info({ seriesId, pass: 4 }, "series planner: Pass 4 (cinematic lock)");
+    const raw = await runPlannerPass(
+      PILOT_TAG,
+      buildPass4Prompt(
+        brief.storyTheme,
+        brief.tone,
+        worldGuide.colorPalette,
+        worldGuide.architecture,
+        worldGuide.era,
+      ),
+      400,
+      ac.signal,
+    );
+    const parsed = Pass4Schema.safeParse(extractJson<unknown>(raw).data);
+    if (parsed.success) {
+      const currentWorld = getSeries(seriesId)?.worldGuide;
+      if (currentWorld) {
+        updateSeries(seriesId, {
+          worldGuide: {
+            ...currentWorld,
+            colorGradeContract: parsed.data.colorGradeContract,
+            cinematicShotGrammar: parsed.data.cinematicShotGrammar,
+          },
+        });
       }
-    } catch (err) {
-      // Pass 3 failure is non-fatal — log and continue
-      log.warn({ seriesId, err: err instanceof Error ? err.message : String(err) }, "series planner: Pass 3 failed (non-fatal)");
+      updateSeriesPassStatus(seriesId, "pass4", "complete");
+    } else {
+      log.warn({ seriesId, error: parsed.error.message }, "series planner: Pass 4 JSON invalid (non-fatal)");
+      updateSeriesPassStatus(seriesId, "pass4", "failed");
     }
+  } catch (err) {
+    log.warn({ seriesId, err: err instanceof Error ? err.message : String(err) }, "series planner: Pass 4 failed (non-fatal)");
+    updateSeriesPassStatus(seriesId, "pass4", "failed");
+  }
+}
 
-    // ── Pass 4: Pilot → cinematic language lock (optional) ────────────────────
-    log.info({ seriesId, pass: 4 }, "series planner: starting Pass 4 (cinematic lock)");
-    try {
-      const pass4Raw = await runPlannerPass(
-        PILOT_TAG,
-        buildPass4Prompt(
-          seriesTitle,
-          brief.tone,
-          worldGuide.colorPalette,
-          worldGuide.architecture,
-          worldGuide.era,
-        ),
-        400,
-        ac.signal,
-      );
-      const pass4Result = extractJson<unknown>(pass4Raw);
-      const pass4Parsed = Pass4Schema.safeParse(pass4Result.data);
-      if (pass4Parsed.success) {
-        const currentWorld = getSeries(seriesId)?.worldGuide;
-        if (currentWorld) {
-          updateSeries(seriesId, {
-            worldGuide: {
-              ...currentWorld,
-              colorGradeContract: pass4Parsed.data.colorGradeContract,
-              cinematicShotGrammar: pass4Parsed.data.cinematicShotGrammar,
-            },
-          });
-        }
-      } else {
-        log.warn({ seriesId, error: pass4Parsed.error.message }, "series planner: Pass 4 JSON invalid (non-fatal)");
-      }
-    } catch (err) {
-      log.warn({ seriesId, err: err instanceof Error ? err.message : String(err) }, "series planner: Pass 4 failed (non-fatal)");
-    }
+// ─── Thin orchestrator ────────────────────────────────────────────────────────
 
+/**
+ * Runs all 4 planning passes in sequence.
+ * Intended to be called fire-and-forget from the route handler.
+ * Passes 1 and 2 are required; Passes 3 and 4 are non-fatal.
+ */
+export async function planSeries(seriesId: string): Promise<void> {
+  const series = getSeries(seriesId);
+  if (!series) {
+    log.warn({ seriesId }, "planSeries: series not found in registry");
+    return;
+  }
+
+  try {
+    if (!await runPass1WorldBuilder(seriesId)) return;
+    if (!await runPass2RoadmapBuilder(seriesId)) return;
+    await runPass3ViralityArc(seriesId);
+    await runPass4CinematicLock(seriesId);
+
+    const final = getSeries(seriesId);
     setSeriesStatus(seriesId, "planned");
-    log.info({ seriesId, episodes: episodeRoadmap.length }, "series planner: plan complete");
-
+    log.info({ seriesId, episodes: final?.episodeRoadmap?.length ?? 0 }, "series planner: plan complete");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     log.error({ seriesId, err: msg }, "series planner: planning failed");
