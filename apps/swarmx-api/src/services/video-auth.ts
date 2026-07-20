@@ -17,6 +17,15 @@ export async function requireVideoWriteAuth(
   reply: FastifyReply,
 ): Promise<void> {
   if (!isVideoAuthRequired()) {
+    // In production with no token configured, fail closed — never allow open writes.
+    // In development, allow through for local convenience.
+    if (process.env["NODE_ENV"] === "production") {
+      return reply.code(401).send({
+        error: "unauthorized",
+        message:
+          "SWARMX_VIDEO_API_TOKEN is not configured. Video writes are blocked in production. Set the token to enable write access.",
+      });
+    }
     return;
   }
 

@@ -19,14 +19,11 @@ import type {
   SeriesPreProductionResponse,
 } from "@swarmx/types/series-types";
 
-// ─── API base (mirrors video.ts) ──────────────────────────────────────────────
-
-const API_BASE =
-  process.env.NEXT_PUBLIC_SWARMX_API_URL?.trim() ||
-  process.env.NEXT_PUBLIC_API_URL?.trim() ||
-  "http://127.0.0.1:3001";
-
-const VIDEO_API_TOKEN = process.env.NEXT_PUBLIC_SWARMX_VIDEO_API_TOKEN?.trim() ?? "";
+// ─── API base ─────────────────────────────────────────────────────────────────
+// Use relative paths so all requests route through the Next.js server.
+// The Next.js middleware (middleware.ts) injects SWARMX_VIDEO_API_TOKEN
+// server-side — the token never reaches the browser bundle.
+const API_BASE = "";
 
 class SeriesApiError extends Error {
   readonly status: number;
@@ -42,9 +39,6 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: {
       "Content-Type": "application/json",
-      ...(VIDEO_API_TOKEN
-        ? { Authorization: `Bearer ${VIDEO_API_TOKEN}`, "x-video-api-key": VIDEO_API_TOKEN }
-        : {}),
       ...init?.headers,
     },
     ...init,

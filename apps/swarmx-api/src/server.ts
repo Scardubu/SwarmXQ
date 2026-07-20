@@ -187,6 +187,13 @@ initOtel(server.log);
     numThreads: _e.OLLAMA_NUM_THREADS,
     maxLoadedModels: _e.OLLAMA_MAX_LOADED_MODELS,
   }, "ollama: CPU performance profile");
+
+  // Intentional escape hatch: SWARMX_VIDEO_API_TOKEN must never be cached in a logged object.
+  if (_e.NODE_ENV === "production" && !(process.env["SWARMX_VIDEO_API_TOKEN"]?.trim())) {
+    server.log.warn(
+      "SWARMX_VIDEO_API_TOKEN is not set — all video/series write routes are BLOCKED in production. Set the token to enable write access.",
+    );
+  }
 }
 
 // ── [API-FIX-03] CORS — allowlist-only ───────────────────────────────────────
