@@ -56,6 +56,25 @@ for (const stage of [
 assertIncludes(workflowSource, "hydrateWorkflowRunsFromDisk", "workflow runs must hydrate from durable state");
 assertIncludes(workflowSource, "idempotencyKey", "workflow runs must carry an idempotency key");
 assertIncludes(workflowSource, "humanApprovalRequired", "workflow stages must model human approval gates");
+assertIncludes(workflowSource, "PREREQUISITE_INCOMPLETE", "workflow checkpointing must block incomplete prerequisites");
+
+const factoryRouteSource = await readRepoFile("apps/swarmx-api/src/routes/creative-factory.ts");
+assertIncludes(factoryRouteSource, "/runs/:id/checkpoints", "Creative Factory routes must expose resumable checkpoints");
+assertIncludes(factoryRouteSource, "requireVideoWriteAuth", "Creative Factory write routes must require video write auth");
+assertIncludes(factoryRouteSource, "/analytics/performance", "Creative Factory routes must expose observed analytics ingestion");
+
+const certificationSource = await readRepoFile("apps/swarmx-api/src/services/creative-factory-certification.ts");
+assertIncludes(certificationSource, "READY_TO_POST", "READY_TO_POST certification must be executable");
+assertIncludes(certificationSource, "Stub media cannot be READY_TO_POST", "stub media must never certify as ready");
+assertIncludes(certificationSource, "rights state", "asset rights must participate in READY_TO_POST certification");
+
+const analyticsSource = await readRepoFile("apps/swarmx-api/src/services/creative-factory-analytics.ts");
+assertIncludes(analyticsSource, "PerformanceSnapshot", "analytics storage must use observed PerformanceSnapshot records");
+assert.equal(
+  analyticsSource.includes("viralityAtPublish"),
+  false,
+  "observed analytics storage must not persist predicted virality as observed performance",
+);
 
 const localStoreSource = await readRepoFile("apps/swarmx-api/src/services/local-state-store.ts");
 assertIncludes(localStoreSource, "appendFileSync", "local state store must keep an append-only lifecycle journal");
@@ -66,6 +85,7 @@ const serverSource = await readRepoFile("apps/swarmx-api/src/server.ts");
 assertIncludes(serverSource, "hydrateVideoQueueFromDisk", "API startup must hydrate video jobs");
 assertIncludes(serverSource, "hydrateSeriesRegistryFromDisk", "API startup must hydrate series jobs");
 assertIncludes(serverSource, "hydrateWorkflowRunsFromDisk", "API startup must hydrate workflow runs");
+assertIncludes(serverSource, "creativeFactoryRoutes", "API startup must register Creative Factory routes");
 assertIncludes(serverSource, "SWARMX_VIDEO_API_TOKEN is not set", "production write-token fail-closed warning must remain");
 
 const preproducerSource = await readRepoFile("apps/swarmx-api/src/services/video-episode-preproducer.ts");
@@ -95,6 +115,7 @@ assert.equal(nextConfigSource.includes('source: "/api/:path*"'), false, "Next re
 assertIncludes(nextConfigSource, 'source: "/ws/:path*"', "WebSocket rewrite must remain separate from API proxy");
 
 const composeSource = await readRepoFile("docker-compose.yml");
+assertIncludes(composeSource, "dockerfile: apps/swarmx-api/Dockerfile", "API Compose build must use repo-root Docker context");
 for (const requiredDefault of [
   'OLLAMA_MAX_LOADED_MODELS: "${OLLAMA_MAX_LOADED_MODELS:-2}"',
   'OLLAMA_NUM_PARALLEL: "${OLLAMA_NUM_PARALLEL:-1}"',
@@ -104,6 +125,20 @@ for (const requiredDefault of [
 ]) {
   assertIncludes(composeSource, requiredDefault, `docker-compose.yml missing ${requiredDefault}`);
 }
+
+const apiDockerfileSource = await readRepoFile("apps/swarmx-api/Dockerfile");
+const dashboardDockerfileSource = await readRepoFile("apps/swarmx-dashboard/Dockerfile");
+assertIncludes(apiDockerfileSource, "ARG PNPM_VERSION=11.9.0", "API Dockerfile must pin pnpm to repository packageManager");
+assertIncludes(dashboardDockerfileSource, "ARG PNPM_VERSION=11.9.0", "Dashboard Dockerfile must pin pnpm to repository packageManager");
+assertIncludes(dashboardDockerfileSource, "COPY pnpm-lock.yaml", "Dashboard Dockerfile must install from the workspace lockfile");
+assert.equal(
+  dashboardDockerfileSource.includes("next.config.override.js"),
+  false,
+  "Dashboard Dockerfile must not synthesize a next.config override during image build",
+);
+
+const dashboardNextConfigSource = await readRepoFile("apps/swarmx-dashboard/next.config.ts");
+assertIncludes(dashboardNextConfigSource, 'output: "standalone"', "Dashboard standalone output must be explicit in next.config.ts");
 
 for (const docsFile of [
   "docs/CREATIVE_FACTORY_AUDIT_LEDGER.md",

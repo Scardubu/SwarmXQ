@@ -86,12 +86,38 @@ export type EpisodeLifecycleState =
 
 export type CapabilityState = "available" | "degraded" | "unavailable";
 
+export interface DurableRecordBase {
+  id: string;
+  schemaVersion: 1;
+  createdAt: string;
+  updatedAt: string;
+  state: string;
+  revision: number;
+  parentLineage: string[];
+  configurationSnapshot: Record<string, unknown>;
+  source: "user" | "system" | "provider";
+  idempotencyKey?: string;
+}
+
 export interface CapabilityRequirement {
   capability: string;
   requiredFor: CreativeFactoryExecutionMode[];
   state: CapabilityState;
   reason?: string;
   action?: string;
+}
+
+export interface Workspace extends DurableRecordBase {
+  state: "active" | "archived";
+  name: string;
+}
+
+export interface Project extends DurableRecordBase {
+  state: "draft" | "active" | "archived";
+  workspaceId: string;
+  name: string;
+  brandKitId?: string;
+  audiencePersonaId?: string;
 }
 
 export interface BrandKit {
@@ -103,6 +129,7 @@ export interface BrandKit {
   typographyTokens: Record<string, string>;
   visualMotifs: string[];
   forbiddenClaims: string[];
+  revision?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -116,6 +143,7 @@ export interface AudiencePersona {
   desiredOutcomes: string[];
   platformHabits: Partial<Record<VideoExportPlatform, string>>;
   languageLocale: string;
+  revision?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -131,6 +159,97 @@ export interface PlatformCapability {
   supportsDirectPublish: boolean;
   requiresAiDisclosure: boolean;
   notes?: string[];
+}
+
+export interface VideoBlueprint {
+  id: string;
+  schemaVersion: 1;
+  name: string;
+  mode: CreativeFactoryExecutionMode;
+  profile: CreativeFactoryProfile;
+  platform: VideoExportPlatform;
+  aspectRatio: "9:16" | "1:1" | "16:9";
+  durationSeconds: number;
+  templateId: string;
+  captionStyle: "bold_center" | "lower_third" | "minimal";
+  requiredCapabilityIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const CREATIVE_FACTORY_STAGE_ORDER = [
+  "INTAKE_VALIDATE",
+  "BRAND_AUDIENCE_RESOLVE",
+  "PLATFORM_CAPABILITIES_RESOLVE",
+  "TREND_RESEARCH",
+  "CONCEPT_GENERATE",
+  "CONCEPT_TOURNAMENT",
+  "SERIES_PLAN",
+  "SERIES_PLAN_VALIDATE",
+  "EPISODE_SCRIPT",
+  "EPISODE_SCRIPT_VALIDATE",
+  "STORYBOARD",
+  "ASSET_PLAN",
+  "ASSET_GENERATE_OR_IMPORT",
+  "ASSET_VALIDATE",
+  "VOICE_GENERATE",
+  "AUDIO_DESIGN",
+  "COMPOSE",
+  "SUBTITLE_ALIGN",
+  "TECHNICAL_QC",
+  "CREATIVE_QC",
+  "CONTINUITY_QC",
+  "COMPLIANCE_QC",
+  "REVISION",
+  "HUMAN_REVIEW",
+  "PLATFORM_PACKAGE",
+  "PUBLISH_OR_EXPORT",
+  "REMOTE_PROCESSING_VERIFY",
+  "ANALYTICS_INGEST",
+  "LEARNING_UPDATE",
+] as const;
+
+export type CreativeFactoryStage = (typeof CREATIVE_FACTORY_STAGE_ORDER)[number];
+
+export type WorkflowStageStatus =
+  | "pending"
+  | "running"
+  | "checkpointed"
+  | "complete"
+  | "failed"
+  | "skipped"
+  | "blocked";
+
+export interface WorkflowStageDefinition {
+  stage: CreativeFactoryStage;
+  requiredFor: CreativeFactoryExecutionMode[];
+  prerequisites: CreativeFactoryStage[];
+  retryable: boolean;
+  timeoutMs: number;
+  humanApprovalRequired: boolean;
+}
+
+export interface WorkflowCheckpoint {
+  stage: CreativeFactoryStage;
+  status: WorkflowStageStatus;
+  revision: number;
+  updatedAt: string;
+  outputRef?: string;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+export interface CreativeFactoryWorkflowRun {
+  id: string;
+  schemaVersion: 1;
+  mode: CreativeFactoryExecutionMode;
+  profile: CreativeFactoryProfile;
+  status: "queued" | "running" | "blocked" | "complete" | "failed" | "cancelled";
+  idempotencyKey: string;
+  capabilityRequirements: CapabilityRequirement[];
+  checkpoints: Partial<Record<CreativeFactoryStage, WorkflowCheckpoint>>;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type AssetSourceKind = "generated" | "imported" | "template" | "recorded";
@@ -267,6 +386,13 @@ export interface LearningRecord {
   evidence: string;
   approvalState: "pending" | "approved" | "rejected";
   createdAt: string;
+}
+
+export interface ReadyToPostCertification {
+  lifecycleState: EpisodeLifecycleState;
+  passed: boolean;
+  blockers: string[];
+  certifiedAt: string;
 }
 
 export interface HashtagSet {

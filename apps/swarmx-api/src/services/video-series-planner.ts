@@ -36,6 +36,7 @@ import { log } from "../lib/logger.js";
 import type {
   CharacterProfile,
   EpisodeRoadmapEntry,
+  SeriesBrief,
   SeriesViralityArcData,
   WorldRegistry,
 } from "@swarmx/types/series-types";
@@ -119,6 +120,63 @@ const Pass4Schema = z.object({
   }),
   cinematicShotGrammar: z.string().min(1),
 });
+
+function wordCount(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+function validatePass1Result(
+  brief: SeriesBrief,
+  result: z.infer<typeof Pass1Schema>,
+): string[] {
+  const errors: string[] = [];
+  if ((brief.soloFormat ?? false) && result.characterBible.length > 0) {
+    errors.push("soloFormat=true requires an empty characterBible");
+  }
+  const paletteSize = result.worldGuide.colorPalette.length;
+  if (paletteSize < 3 || paletteSize > 5) {
+    errors.push(`worldGuide.colorPalette must contain 3-5 values, got ${paletteSize}`);
+  }
+  for (const character of result.characterBible) {
+    const seedWords = wordCount(character.aiPromptSeed);
+    if (seedWords > 40) {
+      errors.push(`${character.name} aiPromptSeed is ${seedWords} words; maximum is 40`);
+    }
+  }
+  return errors;
+}
+
+function validateRoadmap(
+  seriesLength: number,
+  roadmap: EpisodeRoadmapEntry[],
+): string[] {
+  const errors: string[] = [];
+  if (roadmap.length !== seriesLength) {
+    errors.push(`episode roadmap must contain exactly ${seriesLength} entries, got ${roadmap.length}`);
+  }
+  const seen = new Set<number>();
+  for (let index = 0; index < roadmap.length; index += 1) {
+    const entry = roadmap[index];
+    if (!entry) continue;
+    const expected = index + 1;
+    if (entry.episodeNumber !== expected) {
+      errors.push(`episode ${expected} expected episodeNumber=${expected}, got ${entry.episodeNumber}`);
+    }
+    if (seen.has(entry.episodeNumber)) {
+      errors.push(`duplicate episodeNumber ${entry.episodeNumber}`);
+    }
+    seen.add(entry.episodeNumber);
+    if (
+      entry.chekhovPayoffEpisode !== undefined &&
+      (entry.chekhovPayoffEpisode <= entry.episodeNumber || entry.chekhovPayoffEpisode > seriesLength)
+    ) {
+      errors.push(
+        `episode ${entry.episodeNumber} chekhovPayoffEpisode must be later and within series length`,
+      );
+    }
+  }
+  return errors;
+}
 
 // ─── Per-pass helper ──────────────────────────────────────────────────────────
 
@@ -365,8 +423,17 @@ export async function runPass1WorldBuilder(seriesId: string): Promise<boolean> {
       updateSeriesPassStatus(seriesId, "pass1", "failed");
       return false;
     }
-    const { characterBible, worldGuide } = parsed.data;
+    const validationErrors = validatePass1Result(brief, parsed.data);
+    if (validationErrors.length > 0) {
+      const msg = `Pass 1 validation failed: ${validationErrors.join("; ")}`;
+      log.error({ seriesId, errors: validationErrors }, "series planner: Pass 1 failed validation");
+      setSeriesStatus(seriesId, "failed", msg);
+      updateSeriesPassStatus(seriesId, "pass1", "failed");
+      return false;
+    }
+    const { seriesTitle, characterBible, worldGuide } = parsed.data;
     updateSeries(seriesId, {
+      seriesTitle,
       characterBible: characterBible as CharacterProfile[],
       worldGuide: worldGuide as WorldRegistry,
     });
@@ -395,7 +462,7 @@ export async function runPass2RoadmapBuilder(seriesId: string): Promise<boolean>
   const brief = series.brief;
   const characterBible = series.characterBible ?? [];
   const worldGuide = series.worldGuide;
-  const seriesTitle = brief.storyTheme; // use storyTheme as fallback title if not stored
+  const seriesTitle = series.seriesTitle ?? brief.storyTheme;
   const ac = new AbortController();
   updateSeriesPassStatus(seriesId, "pass2", "running");
   try {
@@ -421,6 +488,14 @@ export async function runPass2RoadmapBuilder(seriesId: string): Promise<boolean>
     if (!parsed.success) {
       const msg = `Pass 2 JSON invalid: ${parsed.error.message}`;
       log.error({ seriesId, error: msg }, "series planner: Pass 2 failed");
+      setSeriesStatus(seriesId, "failed", msg);
+      updateSeriesPassStatus(seriesId, "pass2", "failed");
+      return false;
+    }
+    const validationErrors = validateRoadmap(brief.seriesLength, parsed.data.episodes as EpisodeRoadmapEntry[]);
+    if (validationErrors.length > 0) {
+      const msg = `Pass 2 validation failed: ${validationErrors.join("; ")}`;
+      log.error({ seriesId, errors: validationErrors }, "series planner: Pass 2 failed validation");
       setSeriesStatus(seriesId, "failed", msg);
       updateSeriesPassStatus(seriesId, "pass2", "failed");
       return false;

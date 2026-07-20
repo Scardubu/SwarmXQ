@@ -112,6 +112,19 @@ const schema = z.object({
   SWARMX_VIDEO_JOB_LIMIT_PER_HOUR: positiveInt.default(10),
   SWARMX_VIDEO_CAPTION_SCORE_LIMIT_PER_MIN: positiveInt.default(10),
   SWARMX_VIDEO_QUEUE_MAX_SIZE: positiveInt.default(20),
+  SWARMX_VIDEO_QUEUE_NAME: z.string().min(1).default("swarmx-video"),
+  SWARMX_VIDEO_MAX_RETRIES: z.preprocess(
+    (val) => val ?? process.env["VIDEO_MAX_RETRIES"],
+    nonNegativeInt.default(1),
+  ),
+  SWARMX_VIDEO_JOB_TTL_MS: z.preprocess(
+    (val) => val ?? process.env["VIDEO_JOB_TTL_MS"],
+    positiveInt.default(4 * 60 * 60 * 1000),
+  ),
+  SWARMX_VIDEO_MAX_CONCURRENT_JOBS: z.preprocess(
+    (val) => val ?? process.env["VIDEO_MAX_CONCURRENT_JOBS"],
+    positiveInt.default(1),
+  ),
   SWARMX_VIDEO_EXPORT_TTL_DAYS: positiveInt.default(7),
   SWARMX_VIDEO_CLEANUP_INTERVAL_MS: positiveInt.default(6 * 60 * 60 * 1000),
   SWARMX_VIDEO_FFPROBE_TIMEOUT_MS: positiveInt.default(15_000),

@@ -16,6 +16,14 @@ Certification level: `CODE_VALIDATED` target in progress
   for mandatory creative/technical gate failures.
 - Source-aware Creative Factory release invariant script wired into API regression and CI gates.
 - Docker Compose Ollama defaults aligned with the verified CPU-safe startup profile.
+- Dockerfiles now pin `pnpm@11.9.0`; dashboard Docker builds from the root lockfile and uses explicit Next standalone output.
+- API Compose build context now matches the API Dockerfile's workspace-copy requirements.
+- Video queue configuration now reads non-secret queue, retry, TTL, concurrency, and Redis settings through the centralized API env schema.
+- Creative Factory workflow definitions, run creation, checkpointing, capabilities, BrandKits, audiences, blueprints, observed analytics, and learning records are exposed under `/api/video/factory/*`.
+- Dashboard Series page now includes a Creative Factory creator-studio panel showing workflow, capability, BrandKit, audience, blueprint, and run state through the server-side API proxy.
+- Series Engine now persists the generated `seriesTitle` and enforces roadmap count, contiguous episode numbering, Chekhov payoff bounds, solo-format character rules, palette size, AI-seed length, scene prompt count/labels, and exact character seed preservation.
+- `READY_TO_POST` certification is executable and blocks stub media, missing subtitles, unresolved rights, failed QC/compliance, and incomplete platform packages.
+- Observed analytics now persist as `PerformanceSnapshot` records separated from predicted virality and learning recommendations remain approval-gated.
 
 ## Validation Executed On 2026-07-20
 
@@ -23,6 +31,7 @@ Certification level: `CODE_VALIDATED` target in progress
 - `pnpm --filter @swarmx/api typecheck` passed.
 - `pnpm --filter @swarmx/dashboard typecheck` passed.
 - `pnpm --filter @swarmx/api test` passed: 156 tests.
+- `pnpm --filter @swarmx/api test` passed after Creative Factory route/certification additions: 165 tests.
 - `pnpm --filter @swarmx/dashboard test` passed: 52 tests.
 - `pnpm --filter @swarmx/api build` passed.
 - `pnpm --filter @swarmx/dashboard build` passed.
@@ -37,6 +46,7 @@ Certification level: `CODE_VALIDATED` target in progress
 
 ## Required Before `LOCAL_PRODUCTION_VALIDATED`
 
+- Re-run all listed validation commands after the current implementation patch lands.
 - Run native API and dashboard servers.
 - Execute constrained narrator-only golden path through the live API workflow.
 - Verify live workflow output MP4 with FFprobe and generated manifest hash.

@@ -1,8 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type {
   CapabilityRequirement,
+  CreativeFactoryStage,
   CreativeFactoryExecutionMode,
   CreativeFactoryProfile,
+  CreativeFactoryWorkflowRun,
+  WorkflowCheckpoint,
+  WorkflowStageDefinition,
+  WorkflowStageStatus,
 } from "@swarmx/types/video-types";
 import { appendStateEvent, readSnapshot, writeSnapshot } from "./local-state-store.js";
 
@@ -38,40 +43,6 @@ export const CREATIVE_FACTORY_STAGE_ORDER = [
   "LEARNING_UPDATE",
 ] as const;
 
-export type CreativeFactoryStage = (typeof CREATIVE_FACTORY_STAGE_ORDER)[number];
-export type WorkflowStageStatus = "pending" | "running" | "checkpointed" | "complete" | "failed" | "skipped";
-
-export interface WorkflowStageDefinition {
-  stage: CreativeFactoryStage;
-  requiredFor: CreativeFactoryExecutionMode[];
-  prerequisites: CreativeFactoryStage[];
-  retryable: boolean;
-  humanApprovalRequired: boolean;
-}
-
-export interface WorkflowCheckpoint {
-  stage: CreativeFactoryStage;
-  status: WorkflowStageStatus;
-  revision: number;
-  updatedAt: string;
-  outputRef?: string;
-  errorCode?: string;
-  errorMessage?: string;
-}
-
-export interface CreativeFactoryWorkflowRun {
-  id: string;
-  schemaVersion: 1;
-  mode: CreativeFactoryExecutionMode;
-  profile: CreativeFactoryProfile;
-  status: "queued" | "running" | "blocked" | "complete" | "failed" | "cancelled";
-  idempotencyKey: string;
-  capabilityRequirements: CapabilityRequirement[];
-  checkpoints: Partial<Record<CreativeFactoryStage, WorkflowCheckpoint>>;
-  createdAt: string;
-  updatedAt: string;
-}
-
 const STAGE_DEFINITIONS: WorkflowStageDefinition[] = CREATIVE_FACTORY_STAGE_ORDER.map((stage, index) => {
   const prerequisites = index === 0 ? [] : [CREATIVE_FACTORY_STAGE_ORDER[index - 1]!];
   const publishOnly = [
@@ -85,6 +56,7 @@ const STAGE_DEFINITIONS: WorkflowStageDefinition[] = CREATIVE_FACTORY_STAGE_ORDE
     requiredFor: requiredModesFor(stage),
     prerequisites,
     retryable: stage !== "PUBLISH_OR_EXPORT" && stage !== "REMOTE_PROCESSING_VERIFY",
+    timeoutMs: timeoutFor(stage),
     humanApprovalRequired: stage === "HUMAN_REVIEW" || publishOnly,
   };
 });
@@ -113,6 +85,16 @@ function requiredModesFor(stage: CreativeFactoryStage): CreativeFactoryExecution
   return ["PUBLISH_AND_LEARN"];
 }
 
+function timeoutFor(stage: CreativeFactoryStage): number {
+  if (["ASSET_GENERATE_OR_IMPORT", "VOICE_GENERATE", "COMPOSE"].includes(stage)) {
+    return 15 * 60 * 1000;
+  }
+  if (["PUBLISH_OR_EXPORT", "REMOTE_PROCESSING_VERIFY", "ANALYTICS_INGEST"].includes(stage)) {
+    return 5 * 60 * 1000;
+  }
+  return 2 * 60 * 1000;
+}
+
 function persist(event: string, run: CreativeFactoryWorkflowRun): void {
   appendStateEvent("creative-workflow-runs", event, run);
   writeSnapshot("creative-workflow-runs", [...runs.values()]);
@@ -120,6 +102,18 @@ function persist(event: string, run: CreativeFactoryWorkflowRun): void {
 
 export function workflowDefinitions(): WorkflowStageDefinition[] {
   return STAGE_DEFINITIONS;
+}
+
+export function listWorkflowRuns(): CreativeFactoryWorkflowRun[] {
+  hydrateWorkflowRunsFromDisk();
+  return [...runs.values()].sort(
+    (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt),
+  );
+}
+
+export function getWorkflowRun(id: string): CreativeFactoryWorkflowRun | undefined {
+  hydrateWorkflowRunsFromDisk();
+  return runs.get(id);
 }
 
 export function createWorkflowRun(input: {
@@ -159,9 +153,42 @@ export function checkpointWorkflowStage(
   hydrateWorkflowRunsFromDisk();
   const run = runs.get(runId);
   if (!run) return undefined;
+  const definition = STAGE_DEFINITIONS.find((item) => item.stage === checkpoint.stage);
+  if (!definition) return undefined;
+  const missingPrerequisite = definition.prerequisites.find(
+    (stage) => run.checkpoints[stage]?.status !== "complete" && checkpoint.status === "complete",
+  );
+  if (missingPrerequisite) {
+    const blocked: WorkflowCheckpoint = {
+      stage: checkpoint.stage,
+      status: "blocked",
+      revision: checkpoint.revision,
+      updatedAt: now(),
+      errorCode: "PREREQUISITE_INCOMPLETE",
+      errorMessage: `${missingPrerequisite} must complete before ${checkpoint.stage}`,
+    };
+    const updatedRun: CreativeFactoryWorkflowRun = {
+      ...run,
+      status: "blocked",
+      checkpoints: { ...run.checkpoints, [checkpoint.stage]: blocked },
+      updatedAt: now(),
+    };
+    runs.set(runId, updatedRun);
+    persist("checkpoint_blocked", updatedRun);
+    return updatedRun;
+  }
+
+  const terminalStage = lastRequiredStage(run.mode);
+  const nextStatus = checkpoint.status === "failed"
+    ? "failed"
+    : checkpoint.status === "blocked"
+      ? "blocked"
+      : checkpoint.status === "complete" && checkpoint.stage === terminalStage
+        ? "complete"
+        : "running";
   const updated: CreativeFactoryWorkflowRun = {
     ...run,
-    status: checkpoint.status === "failed" ? "failed" : checkpoint.status === "complete" ? "running" : run.status,
+    status: nextStatus,
     checkpoints: {
       ...run.checkpoints,
       [checkpoint.stage]: { ...checkpoint, updatedAt: now() },
@@ -171,6 +198,11 @@ export function checkpointWorkflowStage(
   runs.set(runId, updated);
   persist("checkpoint", updated);
   return updated;
+}
+
+function lastRequiredStage(mode: CreativeFactoryExecutionMode): CreativeFactoryStage {
+  const required = STAGE_DEFINITIONS.filter((item) => item.requiredFor.includes(mode));
+  return required[required.length - 1]?.stage ?? "LEARNING_UPDATE";
 }
 
 export function hydrateWorkflowRunsFromDisk(): number {

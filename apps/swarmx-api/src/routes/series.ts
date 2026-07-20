@@ -184,7 +184,7 @@ export async function seriesRoutes(
         .map((e) => e.summary);
 
       const seriesContext: SeriesEpisodeContext = {
-        seriesTitle: series.brief.storyTheme, // title derived from theme; planner sets it in brief
+        seriesTitle: series.seriesTitle ?? series.brief.storyTheme,
         episodeTitle: entry.title,
         episodeSummary: entry.summary,
         characterBible: series.characterBible ?? [],

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Film, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SeriesCard } from "@/components/series/SeriesCard";
+import { CreativeFactoryPanel } from "@/components/series/CreativeFactoryPanel";
 import { useSeriesStore } from "@/stores/series";
 
 function SeriesListSkeleton() {
@@ -88,6 +89,8 @@ export default function SeriesListPage() {
       </header>
 
       <div className="flex-1 overflow-auto px-4 py-5 sm:px-6">
+        <CreativeFactoryPanel />
+
         {listError && (
           <div
             className="mb-4 rounded border border-status-error/35 bg-status-error/10 px-3 py-2 text-xs text-status-error"

@@ -175,6 +175,57 @@ describe("evaluateQualityGate — full passing fixture", () => {
   });
 });
 
+describe("evaluateQualityGate — VISUAL_CONSISTENCY: scene contract", () => {
+  test("scene count mismatch fails", () => {
+    const result = runGate({ prompts: passingPrompts.slice(0, 2) });
+    const check = findCheck(result, "Scene prompt count matches script sceneCount");
+    expect(check?.passed).toBe(false);
+  });
+
+  test("non-contiguous scene labels fail", () => {
+    const badPrompts = passingPrompts.map((prompt, index) => ({
+      ...prompt,
+      sceneLabel: index === 1 ? "SCENE [1.9]" : prompt.sceneLabel,
+    }));
+    const result = runGate({ prompts: badPrompts });
+    const check = findCheck(result, "Scene indices and labels are contiguous");
+    expect(check?.passed).toBe(false);
+  });
+
+  test("character scenes require exact aiPromptSeed preservation", () => {
+    const character: CharacterProfile = {
+      name: "Kai",
+      appearance: "lean founder in a charcoal jacket",
+      face: "sharp jaw, focused eyes",
+      defaultOutfit: "charcoal jacket, white tee",
+      voice: "measured Lagos cadence",
+      personality: "precise, restless, generous, privately doubtful",
+      relationships: {},
+      emotionalArc: "scattered to decisive",
+      signatureCues: "taps a brass pen",
+      speakingStyle: "short declarative lines",
+      aiPromptSeed: "Kai, lean Nigerian founder, charcoal jacket, focused eyes, brass pen",
+    };
+    const series: SeriesJob = {
+      ...baseSeries,
+      characterBible: [character],
+    };
+    const goodPrompts = passingPrompts.map((prompt) => ({
+      ...prompt,
+      character: character.aiPromptSeed,
+    }));
+    const badPrompts = passingPrompts.map((prompt) => ({
+      ...prompt,
+      character: "Kai in a jacket",
+    }));
+
+    expect(evaluateQualityGate(series, 1, passingScript, goodPrompts, passingAudioPlan, allPlatformAssets, passingViralityScore).passed).toBe(true);
+    const bad = evaluateQualityGate(series, 1, passingScript, badPrompts, passingAudioPlan, allPlatformAssets, passingViralityScore);
+    const check = findCheck(bad, "Exact character aiPromptSeed preserved");
+    expect(check?.passed).toBe(false);
+  });
+});
+
 // ─── STORY_INTEGRITY — LOOP_BRIDGE rule ─────────────────────────────────────
 
 describe("evaluateQualityGate — STORY_INTEGRITY: LOOP_BRIDGE rule", () => {

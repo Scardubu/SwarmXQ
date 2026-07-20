@@ -10,6 +10,7 @@
 # Compiled server path: apps/swarmx-api/dist/apps/swarmx-api/src/server.js
 
 ARG NODE_VERSION=22.13.1
+ARG PNPM_VERSION=11.9.0
 
 FROM node:${NODE_VERSION}-bookworm-slim AS base
 ENV NODE_ENV=production
@@ -25,7 +26,7 @@ COPY package.json                               ./package.json
 COPY packages/swarmx-types/package.json         ./packages/swarmx-types/package.json
 COPY apps/swarmx-api/package.json               ./apps/swarmx-api/package.json
 
-RUN corepack enable && corepack prepare pnpm@latest --activate && \
+RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate && \
     pnpm install --frozen-lockfile
 
 # ── TypeScript compilation ────────────────────────────────────────────────────
@@ -49,7 +50,7 @@ COPY packages/swarmx-types/package.json         ./packages/swarmx-types/package.
 COPY packages/swarmx-types/src/                 ./packages/swarmx-types/src/
 COPY apps/swarmx-api/package.json               ./apps/swarmx-api/package.json
 
-RUN corepack enable && corepack prepare pnpm@latest --activate && \
+RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate && \
     pnpm install --frozen-lockfile --prod
 
 # Compiled output from builder stage

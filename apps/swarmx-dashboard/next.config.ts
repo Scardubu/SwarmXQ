@@ -5,6 +5,7 @@ import type { NextConfig } from "next";
 const API_URL = process.env.SWARMX_API_URL ?? "http://127.0.0.1:3001";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   // /api/* is handled by src/app/api/[...path]/route.ts so server-only
   // credentials can be injected for write routes without entering the browser.
   async rewrites() {

@@ -21,6 +21,7 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 
 ARG NODE_VERSION=22.13.1
+ARG PNPM_VERSION=11.9.0
 
 FROM node:${NODE_VERSION}-bookworm-slim AS base
 
@@ -37,10 +38,12 @@ COPY packages/swarmx-types/src/          ./packages/swarmx-types/src/
 
 COPY apps/swarmx-dashboard/package.json  ./apps/swarmx-dashboard/package.json
 COPY pnpm-workspace.yaml                 ./pnpm-workspace.yaml
+COPY package.json                        ./package.json
+COPY pnpm-lock.yaml                      ./pnpm-lock.yaml
 
 # Install pnpm and install dependencies
-RUN corepack enable && corepack prepare pnpm@latest --activate
-RUN pnpm install --frozen-lockfile --dir apps/swarmx-dashboard
+RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
+RUN pnpm install --frozen-lockfile
 
 # ── Next.js build ─────────────────────────────────────────────────────────────
 FROM deps AS builder
@@ -49,10 +52,6 @@ ARG NEXT_PUBLIC_SWARMX_VERSION=2026.6.0
 ENV NEXT_PUBLIC_SWARMX_VERSION=${NEXT_PUBLIC_SWARMX_VERSION}
 
 COPY apps/swarmx-dashboard/ ./apps/swarmx-dashboard/
-
-# Enable standalone output so we can copy a self-contained server bundle
-RUN echo 'const c=require("./next.config.ts"); module.exports={...c.default,output:"standalone"}' \
-    > apps/swarmx-dashboard/next.config.override.js || true
 
 WORKDIR /app/apps/swarmx-dashboard
 RUN pnpm build

@@ -501,11 +501,45 @@ export function evaluateQualityGate(
   );
   check("VISUAL_CONSISTENCY", "All 9 prompt types populated for each scene", allNineFields);
 
+  check(
+    "VISUAL_CONSISTENCY",
+    `Scene prompt count matches script sceneCount (${script.sceneCount})`,
+    prompts.length === script.sceneCount,
+    prompts.length !== script.sceneCount
+      ? `Expected ${script.sceneCount} scene prompts, got ${prompts.length}`
+      : undefined,
+  );
+
+  const sceneLabelsContiguous = prompts.every(
+    (scene, index) =>
+      scene.sceneIndex === index &&
+      scene.sceneLabel === `SCENE [${episodeNumber}.${index}]`,
+  );
+  check(
+    "VISUAL_CONSISTENCY",
+    "Scene indices and labels are contiguous",
+    sceneLabelsContiguous,
+    !sceneLabelsContiguous ? `Expected labels SCENE [${episodeNumber}.0..${Math.max(0, prompts.length - 1)}]` : undefined,
+  );
+
   const characterNames = (series.characterBible ?? []).map((c) => c.name.toLowerCase());
   const seedPresent = characterNames.length === 0 ||
     prompts.some((s) => characterNames.some((name) => s.character.toLowerCase().includes(name)));
   check("VISUAL_CONSISTENCY", "Character AI seed present in scene prompts", seedPresent,
     !seedPresent ? "No character name found in any scene character prompt" : undefined);
+
+  const exactSeedPreserved = (series.characterBible ?? []).length === 0 ||
+    prompts.every((scene) =>
+      (series.characterBible ?? []).some((character) =>
+        scene.character.includes(character.aiPromptSeed),
+      ),
+    );
+  check(
+    "VISUAL_CONSISTENCY",
+    "Exact character aiPromptSeed preserved in every character scene prompt",
+    exactSeedPreserved,
+    !exactSeedPreserved ? "At least one scene prompt omits the exact character aiPromptSeed" : undefined,
+  );
 
   // ── PRODUCTION_READINESS ───────────────────────────────────────────────────
   check("PRODUCTION_READINESS", "Audio plan has required fields",

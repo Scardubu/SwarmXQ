@@ -128,6 +128,7 @@ export interface SeriesJob {
   id: string;
   status: SeriesJobStatus;
   brief: SeriesBrief;
+  seriesTitle?: string;
   characterBible?: CharacterProfile[];
   worldGuide?: WorldRegistry;
   episodeRoadmap?: EpisodeRoadmapEntry[];

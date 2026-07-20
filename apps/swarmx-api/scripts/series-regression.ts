@@ -97,20 +97,36 @@ const BASE_SCRIPT: EpisodeScript = {
 };
 
 // Scene prompt includes character name + aiPromptSeed prefix + color palette reference
-const BASE_PROMPTS: ScenePromptSuite[] = [{
-  sceneIndex: 0,
-  sceneLabel: "SCENE [1.0]",
-  sceneTitle: "Kai enters the dojo",
-  master: "Kai, 28, tall lean male, dark skin, short locs, slate grey gear enters a sparse dojo at dawn. natural key light from high window. 50mm natural lens. slow push-in. cinematic grain. #1a1a2e shadows. 720p",
-  character: "Kai, 28, tall lean male, dark skin, short locs, slate grey gear, sharp jawline — expression: apprehensive, hand near scar",
-  environment: "dojo training hall, dawn, wooden floors, single high window, sparse, minimal brutalist architecture",
-  camera: "MS · slow push-in · 50mm natural · shallow DOF · rule-of-thirds",
-  lighting: "natural key from high window · 4000K neutral · low contrast motivated by dawn",
-  motion: "Kai walks slowly head down; camera pushes in steadily; dust motes in light beam",
-  style: "#1a1a2e cinematic grain, desaturated editorial, deep shadow tones, moody",
-  animation: "static scene — no keyframe animation",
-  negative: "blurry, watermark, duplicate limbs, text overlay, low resolution, distorted face, anachronistic props",
-}];
+const BASE_PROMPTS: ScenePromptSuite[] = [
+  {
+    sceneIndex: 0,
+    sceneLabel: "SCENE [1.0]",
+    sceneTitle: "Kai enters the dojo",
+    master: "Kai, 28, tall lean male, dark skin, short locs, slate grey gear enters a sparse dojo at dawn. natural key light from high window. 50mm natural lens. slow push-in. cinematic grain. #1a1a2e shadows. 720p",
+    character: "Kai, 28, tall lean male, dark skin, short locs, slate grey gear, sharp jawline — expression: apprehensive, hand near scar",
+    environment: "dojo training hall, dawn, wooden floors, single high window, sparse, minimal brutalist architecture",
+    camera: "MS · slow push-in · 50mm natural · shallow DOF · rule-of-thirds",
+    lighting: "natural key from high window · 4000K neutral · low contrast motivated by dawn",
+    motion: "Kai walks slowly head down; camera pushes in steadily; dust motes in light beam",
+    style: "#1a1a2e cinematic grain, desaturated editorial, deep shadow tones, moody",
+    animation: "static scene — no keyframe animation",
+    negative: "blurry, watermark, duplicate limbs, text overlay, low resolution, distorted face, anachronistic props",
+  },
+  {
+    sceneIndex: 1,
+    sceneLabel: "SCENE [1.1]",
+    sceneTitle: "The broken staff",
+    master: "Kai notices a broken training staff on the dojo floor. #16213e shadows, #e94560 accent glint, 50mm natural lens, slow push-in, cinematic grain, 720p",
+    character: "Kai, 28, tall lean male, dark skin, short locs, slate grey gear, sharp jawline — fingers hover above the broken staff",
+    environment: "dojo training hall, dawn, wooden floorboards, dust in natural key light",
+    camera: "CU · slow push-in · 50mm natural · shallow DOF · centred-symmetry",
+    lighting: "natural key from high window · 4000K neutral · low contrast · #e94560 accent reflection",
+    motion: "Kai kneels; dust shifts around the staff; camera pushes toward his hand",
+    style: "#16213e cinematic grain, desaturated editorial, deep shadow tones, moody",
+    animation: "static scene — no keyframe animation",
+    negative: "blurry, watermark, duplicate limbs, text overlay, low resolution, distorted face, anachronistic props",
+  },
+];
 
 // Audio plan: tone=cinematic → allowed narration styles: poetic, intimate
 // silenceCues ≥ 1 (episode is 45s, requires silence cues)

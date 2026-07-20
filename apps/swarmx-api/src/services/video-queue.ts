@@ -13,7 +13,6 @@ import { randomUUID } from "node:crypto";
 import { Queue } from "bullmq";
 import { log } from "../lib/logger.js";
 import { loadEnv } from "../lib/env.js";
-import { resolve } from "node:path";
 import type {
   VideoJob,
   VideoJobRequest,
@@ -29,21 +28,16 @@ import { appendStateEvent, readSnapshot, writeSnapshot } from "./local-state-sto
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const MAX_QUEUE_SIZE = parseInt(process.env.VIDEO_QUEUE_MAX_SIZE ?? "20", 10);
+const queueEnv = loadEnv();
+const MAX_QUEUE_SIZE = queueEnv.SWARMX_VIDEO_QUEUE_MAX_SIZE;
 // SINGLE-VIDEO LOCK: 8 GB RAM cannot support parallel generation
 const MAX_CONCURRENT_JOBS = 1;
 const concurrency = MAX_CONCURRENT_JOBS;
-const CONFIGURED_CONCURRENCY = parseInt(
-  process.env.VIDEO_MAX_CONCURRENT_JOBS ?? "1",
-  10,
-);
-const MAX_RETRIES = parseInt(process.env.VIDEO_MAX_RETRIES ?? "1", 10);
-const JOB_TTL_MS = parseInt(
-  process.env.VIDEO_JOB_TTL_MS ?? String(4 * 60 * 60 * 1000), // 4 h
-  10
-);
-export const VIDEO_QUEUE_NAME = process.env.SWARMX_VIDEO_QUEUE_NAME ?? "swarmx-video";
-const REDIS_URL = process.env.REDIS_URL ?? "redis://127.0.0.1:6379";
+const CONFIGURED_CONCURRENCY = queueEnv.SWARMX_VIDEO_MAX_CONCURRENT_JOBS;
+const MAX_RETRIES = queueEnv.SWARMX_VIDEO_MAX_RETRIES;
+const JOB_TTL_MS = queueEnv.SWARMX_VIDEO_JOB_TTL_MS;
+export const VIDEO_QUEUE_NAME = queueEnv.SWARMX_VIDEO_QUEUE_NAME;
+const REDIS_URL = queueEnv.REDIS_URL;
 
 // Runtime override — set by server.ts after Redis health check.
 // null = not overridden; read from env schema. false = Redis unavailable fallback.

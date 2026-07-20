@@ -3,7 +3,25 @@ import { dirname, join } from "node:path";
 import { loadEnv } from "../lib/env.js";
 import { log } from "../lib/logger.js";
 
-export type DurableCollection = "series" | "video-jobs" | "creative-workflow-runs";
+export type DurableCollection =
+  | "series"
+  | "video-jobs"
+  | "creative-workflow-runs"
+  | "workspaces"
+  | "projects"
+  | "brand-kits"
+  | "audience-personas"
+  | "video-blueprints"
+  | "platform-capabilities"
+  | "assets"
+  | "render-recipes"
+  | "subtitle-tracks"
+  | "quality-reports"
+  | "compliance-reports"
+  | "publish-packages"
+  | "performance-snapshots"
+  | "experiments"
+  | "learning-records";
 
 interface SnapshotEnvelope<T> {
   schemaVersion: 1;

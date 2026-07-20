@@ -137,8 +137,8 @@ services:
   # ── SwarmX API (Fastify / Node 22) ─────────────────────────────────────────
   swarmx-api:
     build:
-      context: apps/swarmx-api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/swarmx-api/Dockerfile
     restart: unless-stopped
     depends_on:
       redis:

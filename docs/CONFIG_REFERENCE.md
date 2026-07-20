@@ -52,6 +52,11 @@ decisions use physical `MemAvailable` and report ZRAM separately.
 | `SWARMX_VIDEO_LOW_RAM_MODE` | unset | Set `1` to force all video text stages through the 2.5 GB Pilot-lite profile; requires at least 3300 MB available RAM. |
 | `SWARMX_VIDEO_API_TOKEN` | unset | Server-only bearer/API-key token for video and series write routes. Production writes fail closed when unset. Never expose through `NEXT_PUBLIC_*`. |
 | `SWARMX_VIDEO_JOB_LIMIT_PER_HOUR` | `10` | Max video job submissions per connection per hour (sliding window). Returns 429 when exceeded. |
+| `SWARMX_VIDEO_QUEUE_MAX_SIZE` | `20` | Max queued or running video jobs accepted by the local registry. |
+| `SWARMX_VIDEO_QUEUE_NAME` | `swarmx-video` | BullMQ queue name when Redis-backed video jobs are enabled. |
+| `SWARMX_VIDEO_MAX_RETRIES` | `1` | Retry count for retryable video job failures. Legacy `VIDEO_MAX_RETRIES` is still accepted by the env schema. |
+| `SWARMX_VIDEO_JOB_TTL_MS` | `14400000` | Terminal job retention window before in-memory cleanup. Legacy `VIDEO_JOB_TTL_MS` is still accepted by the env schema. |
+| `SWARMX_VIDEO_MAX_CONCURRENT_JOBS` | `1` | Configuration visibility for concurrency requests. The SINGLE-VIDEO LOCK still enforces one active video job on CPU-only hosts. Legacy `VIDEO_MAX_CONCURRENT_JOBS` is still accepted by the env schema. |
 | `SWARMX_VIDEO_EXPORT_TTL_DAYS` | `7` | Days after which rendered exports and artifacts are eligible for cleanup. Minimum 1. |
 | `SWARMX_VIDEO_CLEANUP_INTERVAL_MS` | `21600000` | How often the cleanup service scans for stale exports (ms). Minimum 60000. First run fires 30 s after startup. |
 
