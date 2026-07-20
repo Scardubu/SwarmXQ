@@ -51,7 +51,7 @@ export function CreativeFactoryPanel() {
   const startRun = async () => {
     await createRun({
       mode: "FULL_RENDER",
-      profile: "constrained_cpu",
+      profile: "constrained_cpu_8gb",
       idempotencyKey: `dashboard-${new Date().toISOString().slice(0, 19)}`,
     });
   };

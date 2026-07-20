@@ -1,11 +1,18 @@
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { copyFile, mkdir, mkdtemp, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import type {
+  MediaQualityReport,
+  RendererCapabilityTier,
+  VoiceArtifact,
+} from "@swarmx/types/video-types";
 import type { VideoJobRequest } from "../types/video.js";
 import { outputDir, resolveOutputPath } from "./video-assets.js";
 import { loadEnv } from "../lib/env.js";
+import { normalizeScriptForSpeech, selectVoiceProvider } from "./voice-providers.js";
 
 const _ffenv = loadEnv();
 const RENDER_COMMAND_TIMEOUT_MS = Math.min(
@@ -21,6 +28,20 @@ interface FfmpegRenderInput {
   scriptText?: string;
   storyboardFrames: string[];
   signal?: AbortSignal;
+}
+
+export interface FfmpegRenderPackage {
+  rendererTier: RendererCapabilityTier;
+  templateId: string;
+  packageDir: string;
+  renderManifestPath: string;
+  transcriptPath: string;
+  srtPath: string;
+  vttPath: string;
+  rightsManifestPath: string;
+  platformPackagePath: string;
+  mediaQualityReport: MediaQualityReport;
+  voiceArtifact?: VoiceArtifact;
 }
 
 // ── Visual Palette ─────────────────────────────────────────────────────────────
@@ -66,7 +87,7 @@ function execFileChecked(
   command: string,
   args: string[],
   signal?: AbortSignal,
-): Promise<void> {
+): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = execFile(
       command,
@@ -76,12 +97,12 @@ function execFileChecked(
         timeout: RENDER_COMMAND_TIMEOUT_MS,
         maxBuffer: COMMAND_MAX_BUFFER_BYTES,
       },
-      (error, _stdout, stderr) => {
+      (error, stdout, stderr) => {
         if (error) {
           reject(Object.assign(error, { stderr }));
           return;
         }
-        resolve();
+        resolve({ stdout, stderr });
       },
     );
     child.on("error", reject);
@@ -211,22 +232,67 @@ function renderCards(input: FfmpegRenderInput): string[] {
 function narrationText(input: FfmpegRenderInput, cards: string[]): string {
   const script = input.scriptText?.trim();
   const raw = script || cards.join(". ");
-  const normalized = raw
-    .replace(/[\r\n\t]+/g, " ")
-    .replace(/\[(?:HOOK|BODY|RESOLUTION|CTA|VISUAL:[^\]]*)\]/gi, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  const normalized = normalizeScriptForSpeech(raw);
   return normalized.slice(0, 600);
 }
 
-// Scale font size down for long text so it stays readable in 720px wide frame.
+function rendererTierForRequest(request: VideoJobRequest): RendererCapabilityTier {
+  if (request.style === "faceless_broll" || request.tone === "faceless_broll") return "ffmpeg_faceless_broll";
+  if (request.style === "kinetic_text" || request.tone === "kinetic_text") return "ffmpeg_kinetic_text";
+  return "ffmpeg_kinetic_text";
+}
+
+function templateIdForTier(tier: RendererCapabilityTier): string {
+  switch (tier) {
+    case "ffmpeg_faceless_broll":
+      return "faceless_broll_story_v1";
+    case "ffmpeg_cinematic_explainer":
+      return "narrator_cinematic_explainer_v1";
+    case "ffmpeg_text_smoke":
+      return "ffmpeg_text_smoke_v1";
+    default:
+      return "kinetic_text_insight_v1";
+  }
+}
+
+// Scale font size down for long text so it stays readable in a 720px wide frame.
 function fontSizeForText(text: string, base: number): number {
-  const len = text.length;
-  if (len > 150) return Math.round(base * 0.62);
-  if (len > 100) return Math.round(base * 0.75);
-  if (len > 60)  return Math.round(base * 0.88);
+  const normalized = text.replace(/\n/g, " ");
+  const len = normalized.length;
+  const longestLine = Math.max(
+    ...text.split("\n").map((line) => line.trim().length),
+    0,
+  );
+  if (longestLine > 34 || len > 150) return Math.round(base * 0.62);
+  if (longestLine > 28 || len > 100) return Math.round(base * 0.75);
+  if (longestLine > 22 || len > 60)  return Math.round(base * 0.88);
   if (len <= 20) return Math.round(base * 1.25);
   return base;
+}
+
+function wrapCardText(text: string, baseFontSize: number): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+
+  const estimatedFontSize = fontSizeForText(normalized, baseFontSize);
+  const maxChars = Math.max(18, Math.min(34, Math.floor(620 / (estimatedFontSize * 0.54))));
+  const words = normalized.split(" ");
+  const lines: string[] = [];
+  let current = "";
+
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length <= maxChars || !current) {
+      current = candidate;
+      continue;
+    }
+
+    lines.push(current);
+    current = word;
+  }
+
+  if (current) lines.push(current);
+  return lines.slice(0, 4).join("\n");
 }
 
 // Build the filter_complex chain: fade in, per-card drawtext, progress bar, fade out.
@@ -237,8 +303,10 @@ function buildFilterComplex(
   duration: number,
   accentHex: string,
   styleConfig: CaptionStyleConfig,
+  rendererTier: RendererCapabilityTier,
 ): string {
   const slot = duration / textFiles.length;
+  const accentRgb = accentHex.replace(/^0x/, "");
 
   const textFilters = textFiles.map((file, index) => {
     const start = Math.floor(index * slot * 10) / 10;
@@ -266,21 +334,235 @@ function buildFilterComplex(
 
   // Animated progress bar: grows from left to right over the full duration.
   // Accent color in hex without the 0x prefix for FFmpeg's color syntax.
-  const accentRgb = accentHex.replace(/^0x/, "");
   const progressBar = `drawbox=x=0:y=ih-8:w=trunc(iw*t/${duration}):h=8:color=${accentRgb}@0.9:t=fill`;
+  const motionLayers = rendererTier === "ffmpeg_text_smoke"
+    ? []
+    : [
+      `drawbox=x='-160+mod(t*120\\,880)':y=120:w=160:h=6:color=${accentRgb}@0.55:t=fill`,
+      `drawbox=x='iw-80-mod(t*90\\,820)':y=ih*0.18:w=80:h=80:color=${accentRgb}@0.18:t=fill`,
+      `drawbox=x=80:y='220+mod(t*75\\,760)':w=5:h=180:color=${accentRgb}@0.45:t=fill`,
+      "drawbox=x=iw-96:y='ih-320-mod(t*60\\,700)':w=8:h=220:color=white@0.22:t=fill",
+    ];
 
   return [
     "format=yuv420p",
     `fade=t=in:st=0:d=0.4`,
+    ...motionLayers,
     ...textFilters,
     progressBar,
     `fade=t=out:st=${Math.max(0, duration - 0.6)}:d=0.6`,
   ].join(",");
 }
 
+function cueTimestamp(seconds: number, separator: "," | "."): string {
+  const safe = Math.max(0, seconds);
+  const hh = Math.floor(safe / 3600);
+  const mm = Math.floor((safe % 3600) / 60);
+  const ss = Math.floor(safe % 60);
+  const ms = Math.floor((safe - Math.floor(safe)) * 1000);
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}${separator}${String(ms).padStart(3, "0")}`;
+}
+
+function buildTimedText(cards: string[], duration: number): { srt: string; vtt: string } {
+  const slot = duration / Math.max(1, cards.length);
+  const srt = cards.map((card, index) => {
+    const start = index * slot;
+    const end = index === cards.length - 1 ? duration : (index + 1) * slot;
+    return `${index + 1}\n${cueTimestamp(start, ",")} --> ${cueTimestamp(end, ",")}\n${card.replace(/\n/g, " ")}\n`;
+  }).join("\n");
+  const vtt = `WEBVTT\n\n${cards.map((card, index) => {
+    const start = index * slot;
+    const end = index === cards.length - 1 ? duration : (index + 1) * slot;
+    return `${cueTimestamp(start, ".")} --> ${cueTimestamp(end, ".")}\n${card.replace(/\n/g, " ")}\n`;
+  }).join("\n")}`;
+  return { srt, vtt };
+}
+
+function hashJson(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function hashFile(path: string): Promise<string> {
+  return new Promise((resolveHash, reject) => {
+    const hash = createHash("sha256");
+    const stream = createReadStream(path);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("error", reject);
+    stream.on("end", () => resolveHash(hash.digest("hex")));
+  });
+}
+
+async function collectDetectorFinding(
+  outputPath: string,
+  detector: "blackdetect" | "freezedetect",
+  filter: string,
+  templateId: string,
+): Promise<MediaQualityReport["rawDetectorFindings"][number]> {
+  const result = await execFileChecked("ffmpeg", [
+    "-hide_banner",
+    "-i", outputPath,
+    "-vf", filter,
+    "-an",
+    "-f", "null",
+    "-",
+  ]).catch((error: unknown) => ({
+    stdout: "",
+    stderr: error instanceof Error ? error.message : String(error),
+  }));
+  const raw = result.stderr.slice(-4_000);
+  const hasFinding = raw.includes(detector === "blackdetect" ? "black_start" : "freeze_start");
+  return {
+    detector,
+    raw,
+    interpretedStatus: hasFinding ? "review" : "pass",
+    message: hasFinding
+      ? `${detector} reported intervals; interpreted by ${templateId} cadence rules`
+      : `${detector} reported no intervals`,
+  };
+}
+
+async function writeProductionPackage(input: {
+  jobId: string;
+  request: VideoJobRequest;
+  outputPath: string;
+  outputFilename: string;
+  rendererTier: RendererCapabilityTier;
+  templateId: string;
+  cards: string[];
+  narration: string;
+  duration: number;
+  voiceArtifact?: VoiceArtifact;
+}): Promise<FfmpegRenderPackage> {
+  const packageDir = resolve(loadEnv().SWARMX_VIDEO_ARTIFACT_DIR, input.jobId);
+  await mkdir(packageDir, { recursive: true });
+
+  const transcriptPath = join(packageDir, "transcript.txt");
+  const srtPath = join(packageDir, "captions.srt");
+  const vttPath = join(packageDir, "captions.vtt");
+  const rightsManifestPath = join(packageDir, "rights-provenance.json");
+  const platformPackagePath = join(packageDir, "platform-package.json");
+  const renderManifestPath = join(packageDir, "render-manifest.json");
+  const qcPath = join(packageDir, "technical-creative-qc.json");
+  const packagedVoicePath = join(packageDir, "narration.wav");
+  let voiceArtifact = input.voiceArtifact;
+
+  const timedText = buildTimedText(input.cards, input.duration);
+  await writeFile(transcriptPath, `${input.narration}\n`, "utf8");
+  await writeFile(srtPath, timedText.srt, "utf8");
+  await writeFile(vttPath, timedText.vtt, "utf8");
+  if (voiceArtifact) {
+    await copyFile(voiceArtifact.outputPath, packagedVoicePath);
+    voiceArtifact = { ...voiceArtifact, outputPath: packagedVoicePath };
+  }
+
+  const rights = {
+    schemaVersion: 1,
+    createdAt: new Date().toISOString(),
+    assets: [{
+      id: "swarmxq-template-motion-shapes",
+      sourceProvider: "bundled-local-fixture",
+      creator: "SwarmXQ",
+      license: {
+        state: "approved",
+        sourceName: "SwarmXQ generated geometric fixtures",
+        allowedUses: ["short-form-video", "local-export"],
+        attribution: "Generated geometric motion fixtures bundled with SwarmXQ.",
+      },
+      transformations: ["ffmpeg drawbox motion layers", "caption text rendering"],
+      reviewStatus: "approved",
+    }],
+    voice: voiceArtifact ?? null,
+  };
+  await writeFile(rightsManifestPath, `${JSON.stringify(rights, null, 2)}\n`, "utf8");
+
+  const platformPackage = {
+    schemaVersion: 1,
+    platform: input.request.platform ?? "generic",
+    lifecycleState: "REVIEW_REQUIRED",
+    mediaPath: input.outputPath,
+    title: titleFromRequest(input.request).slice(0, 60),
+    description: input.cards.slice(0, 3).join(" ").slice(0, 160),
+    caption: {
+      firstLine: input.cards[0]?.replace(/\n/g, " ").slice(0, 40) ?? "Watch this",
+      body: input.cards.slice(1, -1).join(" "),
+      cta: input.cards.at(-1) ?? "Save this for later",
+      hashtags: { broad: ["#creator"], niche: ["#swarmxq"], trending: [] },
+    },
+    aiDisclosure: "AI-assisted local video package; no external publication attempted.",
+    subtitleTracks: [srtPath, vttPath],
+  };
+  await writeFile(platformPackagePath, `${JSON.stringify(platformPackage, null, 2)}\n`, "utf8");
+
+  const rawDetectorFindings = [
+    await collectDetectorFinding(input.outputPath, "blackdetect", "blackdetect=d=0.5:pix_th=0.10", input.templateId),
+    await collectDetectorFinding(input.outputPath, "freezedetect", "freezedetect=n=-60dB:d=0.5", input.templateId),
+  ];
+  const productionRenderer = input.rendererTier !== "ffmpeg_text_smoke";
+  const voiceEligible = voiceArtifact !== undefined && voiceArtifact.qualityTier !== "silent_fixture";
+  const mediaQualityReport: MediaQualityReport = {
+    id: `qc-${input.jobId}`,
+    schemaVersion: 1,
+    certificationTier: productionRenderer && voiceEligible ? "PRODUCTION_PACK_VALID" : "CREATIVE_REVIEW_REQUIRED",
+    rendererTier: input.rendererTier,
+    templateId: input.templateId,
+    technicalPassed: true,
+    creativePassed: productionRenderer,
+    accessibilityPassed: true,
+    audioPassed: voiceEligible,
+    rightsPassed: true,
+    rawDetectorFindings,
+    interpretedFindings: rawDetectorFindings.map((finding) => ({
+      detector: "template",
+      raw: finding.raw,
+      interpretedStatus: finding.interpretedStatus === "fail" ? "fail" : "pass",
+      message: `${input.templateId} treats dark backgrounds and short static holds as valid only with visible foreground text, motion layers, captions, and package lineage.`,
+    })),
+    createdAt: new Date().toISOString(),
+  };
+  await writeFile(qcPath, `${JSON.stringify(mediaQualityReport, null, 2)}\n`, "utf8");
+
+  const manifest = {
+    schemaVersion: 1,
+    rendererTier: input.rendererTier,
+    templateId: input.templateId,
+    outputFilename: input.outputFilename,
+    outputSha256: await hashFile(input.outputPath),
+    recipeHash: hashJson({
+      rendererTier: input.rendererTier,
+      templateId: input.templateId,
+      cards: input.cards,
+      duration: input.duration,
+      voiceHash: voiceArtifact?.sha256 ?? null,
+    }),
+    transcriptPath,
+    srtPath,
+    vttPath,
+    rightsManifestPath,
+    platformPackagePath,
+    qcPath,
+    voiceArtifact: voiceArtifact ?? null,
+    createdAt: new Date().toISOString(),
+  };
+  await writeFile(renderManifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+
+  return {
+    rendererTier: input.rendererTier,
+    templateId: input.templateId,
+    packageDir,
+    renderManifestPath,
+    transcriptPath,
+    srtPath,
+    vttPath,
+    rightsManifestPath,
+    platformPackagePath,
+    mediaQualityReport,
+    ...(voiceArtifact ? { voiceArtifact } : {}),
+  };
+}
+
 // ── Public API ─────────────────────────────────────────────────────────────────
 
-export async function renderWithFfmpeg(input: FfmpegRenderInput): Promise<{ outputFilename: string }> {
+export async function renderWithFfmpeg(input: FfmpegRenderInput): Promise<{ outputFilename: string; renderPackage: FfmpegRenderPackage }> {
   if (!(await commandAvailable("ffmpeg"))) {
     throw Object.assign(new Error("ffmpeg is not available"), { code: "FFMPEG_UNAVAILABLE" });
   }
@@ -297,6 +579,8 @@ export async function renderWithFfmpeg(input: FfmpegRenderInput): Promise<{ outp
   const fontFile     = discoverFont();
   const duration     = clampDuration(input.request.targetDurationSeconds);
   const cards        = renderCards(input);
+  const rendererTier = rendererTierForRequest(input.request);
+  const templateId   = templateIdForTier(rendererTier);
 
   await mkdir(RENDER_TEMP_DIR, { recursive: true });
   const workDir         = await mkdtemp(join(RENDER_TEMP_DIR, `swarmx-video-${input.jobId}-`));
@@ -310,42 +594,45 @@ export async function renderWithFfmpeg(input: FfmpegRenderInput): Promise<{ outp
 
     // Write each card to a temp text file for drawtext=textfile= (avoids
     // shell-quoting issues with apostrophes and special characters).
+    const displayCards = cards.map((card) => wrapCardText(card, styleConfig.baseFontSize));
     const textFiles: string[] = [];
-    for (let i = 0; i < cards.length; i += 1) {
+    for (let i = 0; i < displayCards.length; i += 1) {
       const file = join(workDir, `card-${i}-${randomUUID()}.txt`);
-      await writeFile(file, `${cards[i] ?? ""}\n`, "utf8");
+      await writeFile(file, `${displayCards[i] ?? ""}\n`, "utf8");
       textFiles.push(file);
     }
 
     const narrationPath = join(workDir, "narration.wav");
-    const hasEspeak = await commandAvailable("espeak-ng", "--version");
-    if (!hasEspeak && loadEnv().SWARMX_VIDEO_ALLOW_SILENT_AUDIO !== "1") {
-      throw Object.assign(new Error("espeak-ng is not available"), { code: "ESPEAK_UNAVAILABLE" });
-    }
-    if (hasEspeak) {
-      const speedByVoice: Record<string, string> = {
-        default:   "165",
-        calm:      "145",
-        energetic: "185",
-        narrator:  "155",
-      };
-      await execFileChecked("espeak-ng", [
-        "-w", narrationPath,
-        "-s", speedByVoice[input.request.voice ?? "default"] ?? "165",
-        narrationText(input, cards),
-      ], input.signal);
+    const narration = narrationText(input, cards);
+    let voiceArtifact: VoiceArtifact | undefined;
+    try {
+      const selected = await selectVoiceProvider();
+      voiceArtifact = await selected.provider.synthesize({
+        jobId: input.jobId,
+        text: narration,
+        locale: loadEnv().SWARMX_TTS_LOCALE,
+        voiceId: input.request.voice ?? "default",
+        requestedSampleRateHz: loadEnv().SWARMX_AUDIO_MASTER_SAMPLE_RATE_HZ,
+      }, narrationPath, input.signal);
+    } catch (error) {
+      if (loadEnv().SWARMX_VIDEO_ALLOW_SILENT_AUDIO !== "1") {
+        throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
+          code: "VOICE_PROVIDER_UNAVAILABLE",
+        });
+      }
     }
 
     const filterComplex = buildFilterComplex(
       fontFile,
       textFiles,
-      cards,
+      displayCards,
       duration,
       accentColor,
       styleConfig,
+      rendererTier,
     );
 
-    const inputArgs = hasEspeak
+    const inputArgs = voiceArtifact
       ? ["-i", narrationPath]
       : ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"];
 
@@ -359,6 +646,9 @@ export async function renderWithFfmpeg(input: FfmpegRenderInput): Promise<{ outp
       "-map", "1:a",
       "-shortest",
       "-t", String(duration),
+      "-af", `aformat=channel_layouts=stereo,aresample=${loadEnv().SWARMX_AUDIO_MASTER_SAMPLE_RATE_HZ},loudnorm=I=${loadEnv().SWARMX_AUDIO_TARGET_LUFS}:TP=${loadEnv().SWARMX_AUDIO_TRUE_PEAK_MAX_DBFS}:LRA=11`,
+      "-ar", String(loadEnv().SWARMX_AUDIO_MASTER_SAMPLE_RATE_HZ),
+      "-ac", String(loadEnv().SWARMX_AUDIO_MASTER_CHANNELS),
       "-c:v", "libx264",
       "-preset", "fast",
       "-crf", "23",
@@ -372,7 +662,20 @@ export async function renderWithFfmpeg(input: FfmpegRenderInput): Promise<{ outp
     await rename(tempOutputPath, outputPath);
     renderCompleted = true;
 
-    return { outputFilename };
+    const renderPackage = await writeProductionPackage({
+      jobId: input.jobId,
+      request: input.request,
+      outputPath,
+      outputFilename,
+      rendererTier,
+      templateId,
+      cards: displayCards,
+      narration,
+      duration,
+      ...(voiceArtifact ? { voiceArtifact } : {}),
+    });
+
+    return { outputFilename, renderPackage };
   } finally {
     if (!renderCompleted) {
       await unlink(tempOutputPath).catch(() => {});

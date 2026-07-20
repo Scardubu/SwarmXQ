@@ -1,5 +1,8 @@
 import { describe, expect, test } from "vitest";
-import { certifyReadyToPost } from "../src/services/creative-factory-certification.js";
+import {
+  certifyProductionPack,
+  certifyReadyToPost,
+} from "../src/services/creative-factory-certification.js";
 import type { VideoOutputMetadata } from "../src/types/video.js";
 import type {
   AssetRecord,
@@ -123,6 +126,7 @@ describe("certifyReadyToPost", () => {
 
     expect(result.passed).toBe(true);
     expect(result.lifecycleState).toBe("READY_TO_POST");
+    expect(result.certificationTier).toBe("READY_TO_POST");
     expect(result.blockers).toEqual([]);
   });
 
@@ -138,7 +142,67 @@ describe("certifyReadyToPost", () => {
 
     expect(result.passed).toBe(false);
     expect(result.lifecycleState).toBe("REVIEW_REQUIRED");
+    expect(result.certificationTier).toBe("CREATIVE_REVIEW_REQUIRED");
     expect(result.blockers).toContain("Stub media cannot be READY_TO_POST");
     expect(result.blockers).toContain("Asset asset-1 rights state is needs_review");
+  });
+
+  test("separates production-pack validity from READY_TO_POST", () => {
+    const productionOutput: VideoOutputMetadata = {
+      ...output,
+      productionPackageDir: "/tmp/package",
+      renderManifestPath: "/tmp/package/render-manifest.json",
+      transcriptPath: "/tmp/package/transcript.txt",
+      srtPath: "/tmp/package/captions.srt",
+      vttPath: "/tmp/package/captions.vtt",
+      rightsManifestPath: "/tmp/package/rights-provenance.json",
+      platformPackagePath: "/tmp/package/platform-package.json",
+      voiceArtifact: {
+        providerId: "espeak-ng",
+        voiceId: "narrator",
+        displayName: "eSpeak narrator",
+        locale: "en-US",
+        qualityTier: "synthetic_fallback",
+        license: { state: "approved", allowedUses: ["local-render"] },
+        consentRequired: false,
+        consentState: "not_required",
+        textHash: "text-hash",
+        normalizedText: "A clean script.",
+        pronunciationDictionaryVersion: "builtin-v1",
+        requestedSampleRateHz: 48000,
+        actualSampleRateHz: 22050,
+        channels: 1,
+        durationSeconds: 3,
+        outputPath: "/tmp/narration.wav",
+        sha256: "voice-hash",
+        generationLatencyMs: 25,
+        lineage: { sourceKind: "generated", parentAssetIds: [] },
+      },
+      mediaQualityReport: {
+        id: "qc-1",
+        schemaVersion: 1,
+        certificationTier: "PRODUCTION_PACK_VALID",
+        rendererTier: "ffmpeg_kinetic_text",
+        templateId: "kinetic_text_insight_v1",
+        technicalPassed: true,
+        creativePassed: true,
+        accessibilityPassed: true,
+        audioPassed: true,
+        rightsPassed: true,
+        rawDetectorFindings: [],
+        interpretedFindings: [],
+        createdAt: timestamp,
+      },
+    };
+
+    const result = certifyProductionPack({
+      output: productionOutput,
+      subtitleTracks: [],
+      assets: [],
+      qualityReport,
+    });
+
+    expect(result.passed).toBe(true);
+    expect(result.certificationTier).toBe("PRODUCTION_PACK_VALID");
   });
 });

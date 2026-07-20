@@ -62,12 +62,11 @@ code-qwen25-pro-q5km-prod
 │                       │  SWARMX_VIDEO_ARTIFACT_DIR/<jobId>/
 │                       │    manifest.json
 │                       │    render-ready.json  (deferred path)
+│                       │    production package sidecars
 └───────────────────────┘
 ```
 
-The pipeline runs **one job at a time** (sequential queue). Under 8 GB RAM, parallel model
-loads cause OOM. The queue drains FIFO; the orchestrator respects cancellation at every stage
-boundary.
+The pipeline runs **one job at a time** (sequential queue). Under `constrained_cpu_8gb`, parallel heavyweight model, TTS, and render stages are rejected rather than queued into memory pressure. The queue drains FIFO; the orchestrator respects cancellation at every stage boundary.
 
 ---
 
@@ -80,6 +79,9 @@ boundary.
 | `apps/swarmx-api/src/services/video-queue.ts` | In-memory job registry, FIFO processor, and SSE emission. |
 | `apps/swarmx-api/src/services/video-orchestrator.ts` | Pressure-aware pipeline execution, Ollama calls, and ComfyUI dispatch. |
 | `apps/swarmx-api/src/services/video-assets.ts` | File-system helpers for artifact storage and cleanup. |
+| `apps/swarmx-api/src/services/runtime-profiles.ts` | Typed runtime profile resolver for `constrained_cpu_8gb`, `standard_cpu_16gb`, and `accelerated_optional`. |
+| `apps/swarmx-api/src/services/voice-providers.ts` | Server-side voice provider adapters for Kokoro microservice probing, Piper probing, and honest `espeak-ng` fallback synthesis. |
+| `src/swarmx/services/kokoro_tts_server.py` | Optional local Kokoro TTS microservice entrypoint. The module is installed in the repo; install the Python `tts` extra before starting it. |
 | `apps/swarmx-api/src/routes/video.ts` | Fastify route plugin for all `/api/video/*` endpoints. |
 | `apps/swarmx-api/src/server.ts` | Registers `videoRoutes` under `/api/video`. |
 | `apps/swarmx-dashboard/src/lib/video-dashboard.ts` | Dashboard-facing adapter layer that normalizes API payloads into UI-safe video job shapes. |
@@ -122,10 +124,25 @@ SWARMX_VIDEO_TEMP_DIR=./.swarmx/video/tmp
 SWARMX_VIDEO_FFMPEG_TIMEOUT_MS=240000
 SWARMX_VIDEO_FFPROBE_TIMEOUT_MS=15000
 SWARMX_VIDEO_API_TOKEN=replace-me-for-write-routes
+SWARMX_HOST_PROFILE=constrained_cpu_8gb
+SWARMX_TTS_PROVIDER=auto
+SWARMX_TTS_URL=http://127.0.0.1:8888
+SWARMX_TTS_PIPER_MODEL_PATH=/path/to/piper/voice.onnx
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
 SWARMX_DASHBOARD_ORIGIN=http://localhost:3000
 ```
+
+Local renders now produce a production package beside the MP4: transcript, SRT, VTT, render manifest, hashes, technical/creative QC report, rights/provenance manifest, platform metadata, voice lineage, and template lineage. A valid decode can earn `TECHNICALLY_VALID`; postable packages require the stricter tier ladder `PRODUCTION_PACK_VALID` → `READY_TO_POST` → `PUBLISHED_VERIFIED`.
+
+Kokoro support is installed at the application/provider layer. To make it the active neural voice provider on a host, install the optional Python extra and start the local service:
+
+```bash
+.venv/bin/python -m pip install -e '.[tts]'
+SWARMX_TTS_PROVIDER=kokoro .venv/bin/python -m swarmx.services.kokoro_tts_server --port 8888
+```
+
+If the service is not reachable or reports `engine: unavailable`, the API reports a degraded voice capability and falls back according to `SWARMX_TTS_PROVIDER`.
 
 Create or extend your `apps/swarmx-dashboard/.env.local`:
 

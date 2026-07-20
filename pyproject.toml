@@ -45,6 +45,13 @@ strands   = ["strands-agents>=0.1.0"]
 mcp       = ["mcp>=1.0.0"]
 # httpx is used by health-check helpers and the doctor command
 http      = ["httpx>=0.27.0"]
+tts       = [
+  "fastapi>=0.115.0",
+  "uvicorn>=0.30.0",
+  "soundfile>=0.12.1",
+  "numpy>=1.26.0",
+  "kokoro>=0.9.0",
+]
 
 # all: every optional adapter — used by the Docker image build
 all = [

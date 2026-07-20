@@ -1,5 +1,6 @@
 import type {
   AssetRecord,
+  CertificationTier,
   ComplianceReport,
   PublishPackage,
   QualityReport,
@@ -15,6 +16,60 @@ export interface ReadyToPostInput {
   qualityReport: QualityReport | null | undefined;
   complianceReport: ComplianceReport | null | undefined;
   publishPackages: PublishPackage[];
+}
+
+export function certifyProductionPack(input: Pick<ReadyToPostInput, "output"> & Partial<Pick<ReadyToPostInput, "subtitleTracks" | "assets" | "qualityReport">>): {
+  certificationTier: CertificationTier;
+  passed: boolean;
+  blockers: string[];
+} {
+  const blockers: string[] = [];
+  const output = input.output;
+  if (!output) {
+    return {
+      certificationTier: "RENDER_FAILED",
+      passed: false,
+      blockers: ["Final media metadata is missing"],
+    };
+  }
+  if (output.relativePath.startsWith("stub_")) blockers.push("Stub media cannot be production-pack valid");
+  if (output.format !== "mp4") blockers.push(`Expected MP4 container, got ${output.format}`);
+  if (!(output.durationSeconds > 0)) blockers.push("Media duration must be greater than zero");
+  if (!(output.widthPx > 0 && output.heightPx > 0)) blockers.push("Media dimensions are invalid");
+  if (!(output.fps > 0)) blockers.push("Media frame rate is invalid");
+  if (!output.checksum) blockers.push("Stable media hash is missing");
+  if (!output.productionPackageDir) blockers.push("Production package directory is missing");
+  if (!output.renderManifestPath) blockers.push("Render manifest is missing");
+  if (!output.transcriptPath) blockers.push("Transcript is missing");
+  if (!output.srtPath || !output.vttPath) blockers.push("SRT and VTT captions are required");
+  if (!output.rightsManifestPath) blockers.push("Rights and provenance manifest is missing");
+  if (!output.platformPackagePath) blockers.push("Platform package metadata is missing");
+  if (!output.voiceArtifact) blockers.push("Voice artifact lineage is missing");
+  if (!output.mediaQualityReport) blockers.push("Media QC report is missing");
+  if ((input.subtitleTracks ?? []).length === 0 && !output.srtPath && !output.vttPath) {
+    blockers.push("At least one subtitle track is required");
+  }
+  if ((input.assets ?? []).length === 0 && !output.rightsManifestPath) {
+    blockers.push("Asset lineage manifest is empty");
+  }
+  if (input.qualityReport && !input.qualityReport.passed) {
+    blockers.push("Quality report did not pass");
+  }
+
+  if (blockers.length === 0) {
+    return { certificationTier: "PRODUCTION_PACK_VALID", passed: true, blockers };
+  }
+  const technicalOnly = blockers.every((blocker) =>
+    !blocker.includes("Media") &&
+    !blocker.includes("Expected MP4") &&
+    !blocker.includes("Stable media hash") &&
+    !blocker.includes("Stub media")
+  );
+  return {
+    certificationTier: technicalOnly ? "TECHNICALLY_VALID" : "CREATIVE_REVIEW_REQUIRED",
+    passed: false,
+    blockers,
+  };
 }
 
 export function certifyReadyToPost(input: ReadyToPostInput): ReadyToPostCertification {
@@ -80,6 +135,7 @@ export function certifyReadyToPost(input: ReadyToPostInput): ReadyToPostCertific
   }
 
   return {
+    certificationTier: blockers.length === 0 ? "READY_TO_POST" : (output ? "CREATIVE_REVIEW_REQUIRED" : "RENDER_FAILED"),
     lifecycleState: blockers.length === 0 ? "READY_TO_POST" : "REVIEW_REQUIRED",
     passed: blockers.length === 0,
     blockers,

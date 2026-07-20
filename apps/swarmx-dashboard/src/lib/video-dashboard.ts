@@ -1,11 +1,15 @@
 import type {
   OperatorTraceEntry,
   PublishResult,
+  CertificationTier,
+  MediaQualityReport,
+  RendererCapabilityTier,
   VideoArtifacts,
   VideoError,
   VideoExportPlatform,
   VideoJobStatus as CanonicalVideoJobStatus,
   ViralitySignal,
+  VoiceArtifact,
   VideoTone,
 } from "@swarmx/types/video-types";
 import type { SeriesEpisodeContext } from "@swarmx/types/series-types";
@@ -101,6 +105,17 @@ export interface VideoOutputMetadata {
   scriptText?: string;
   storyboardFrames?: string[];
   modelsUsed: Partial<Record<VideoJobStage, string>>;
+  rendererTier?: RendererCapabilityTier;
+  certificationTier?: CertificationTier;
+  voiceArtifact?: VoiceArtifact;
+  mediaQualityReport?: MediaQualityReport;
+  productionPackageDir?: string;
+  renderManifestPath?: string;
+  transcriptPath?: string;
+  srtPath?: string;
+  vttPath?: string;
+  rightsManifestPath?: string;
+  platformPackagePath?: string;
 }
 
 export interface VideoJobError {
@@ -260,6 +275,17 @@ function normalizeOutput(
     modelsUsed,
     ...(output.scriptText ? { scriptText: output.scriptText } : {}),
     ...(output.storyboardFrames ? { storyboardFrames: output.storyboardFrames } : {}),
+    ...(output.rendererTier ? { rendererTier: output.rendererTier } : {}),
+    ...(output.certificationTier ? { certificationTier: output.certificationTier } : {}),
+    ...(output.voiceArtifact ? { voiceArtifact: output.voiceArtifact } : {}),
+    ...(output.mediaQualityReport ? { mediaQualityReport: output.mediaQualityReport } : {}),
+    ...(output.productionPackageDir ? { productionPackageDir: output.productionPackageDir } : {}),
+    ...(output.renderManifestPath ? { renderManifestPath: output.renderManifestPath } : {}),
+    ...(output.transcriptPath ? { transcriptPath: output.transcriptPath } : {}),
+    ...(output.srtPath ? { srtPath: output.srtPath } : {}),
+    ...(output.vttPath ? { vttPath: output.vttPath } : {}),
+    ...(output.rightsManifestPath ? { rightsManifestPath: output.rightsManifestPath } : {}),
+    ...(output.platformPackagePath ? { platformPackagePath: output.platformPackagePath } : {}),
   };
 }
 

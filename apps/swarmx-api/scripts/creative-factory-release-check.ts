@@ -117,7 +117,8 @@ assertIncludes(nextConfigSource, 'source: "/ws/:path*"', "WebSocket rewrite must
 const composeSource = await readRepoFile("docker-compose.yml");
 assertIncludes(composeSource, "dockerfile: apps/swarmx-api/Dockerfile", "API Compose build must use repo-root Docker context");
 for (const requiredDefault of [
-  'OLLAMA_MAX_LOADED_MODELS: "${OLLAMA_MAX_LOADED_MODELS:-2}"',
+  'SWARMX_HOST_PROFILE: "${SWARMX_HOST_PROFILE:-constrained_cpu_8gb}"',
+  'OLLAMA_MAX_LOADED_MODELS: "${OLLAMA_MAX_LOADED_MODELS:-1}"',
   'OLLAMA_NUM_PARALLEL: "${OLLAMA_NUM_PARALLEL:-1}"',
   'OLLAMA_KEEP_ALIVE: "${OLLAMA_KEEP_ALIVE:-0}"',
   'OLLAMA_FLASH_ATTENTION: "${OLLAMA_FLASH_ATTENTION:-0}"',

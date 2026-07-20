@@ -63,17 +63,16 @@ Dashboard: **http://localhost:3000** · API: **http://localhost:3001/health**
 | `NEXT_PUBLIC_SWARMX_API_URL` | `http://127.0.0.1:3001` | Preferred dashboard API endpoint |
 | `NEXT_PUBLIC_API_URL` | `http://127.0.0.1:3001` | Legacy dashboard API fallback |
 | `SWARMX_VIDEO_API_TOKEN` | unset | Write-route token for protected `/api/video/*` mutations |
-| `NEXT_PUBLIC_SWARMX_VIDEO_API_TOKEN` | unset | Optional dashboard token forwarded to video write routes |
 | `SWARM_MODEL_FAST` | `instruct-phi4-pro-q8-prod` | Pilot model override |
 | `SWARM_MODEL_CODE` | `code-qwen25-pro-q5km-prod` | Forge model override |
 | `SWARM_MODEL_REASON` | `reason-deepseekr1-pro-q5km-prod` | Oracle model override |
 | `SWARM_MODEL_ULTRA_ROUTER` | `route-phi4-lite-q4km-prod` | Relay model override |
-| `SWARMX_HOST_PROFILE` | `auto` | Auto-detect `8gb` vs `16gb`; can be pinned explicitly |
-| `OLLAMA_MAX_LOADED_MODELS` | profile-managed | `1` on `8gb`, `2` on `16gb` unless low free RAM forces constrained safeguards |
+| `SWARMX_HOST_PROFILE` | `auto` | Auto-detects `constrained_cpu_8gb` or `standard_cpu_16gb`; legacy `8gb`/`16gb` names are accepted as aliases at startup/API boundaries. |
+| `OLLAMA_MAX_LOADED_MODELS` | profile-managed | `1` on `constrained_cpu_8gb`; `2` only under `standard_cpu_16gb` after host measurement and pressure checks. |
 | `OLLAMA_NUM_PARALLEL` | `1` | One inference slot at a time |
-| `OLLAMA_KEEP_ALIVE` | profile-managed | `0` on `8gb`, `2m` on `16gb` unless low free RAM forces constrained safeguards |
-| `SWARMX_MODEL_STARTUP_PREWARM` | profile-managed | Defaults `0` on `8gb`, `1` on `16gb` |
-| `SWARMX_MODEL_PREDICTIVE_PREWARM` | profile-managed | Defaults `0` on `8gb`, `1` on `16gb` |
+| `OLLAMA_KEEP_ALIVE` | profile-managed | `0` on `constrained_cpu_8gb`; short reuse windows are profile-derived and must not be a universal default. |
+| `SWARMX_MODEL_STARTUP_PREWARM` | profile-managed | Defaults `0` on `constrained_cpu_8gb`; heavyweight startup preload stays off on constrained hosts. |
+| `SWARMX_MODEL_PREDICTIVE_PREWARM` | profile-managed | Defaults `0` on `constrained_cpu_8gb`; standard hosts may opt in after measurement. |
 | `SWARMX_VIDEO_ALLOW_SILENT_AUDIO` | unset | Set to `1` only to permit silent local renders when `espeak-ng` is unavailable |
 
 ---
@@ -116,7 +115,7 @@ The dashboard consumes video API payloads through a local adapter boundary in `a
 5. **Render Assembly** (local FFmpeg by default, ComfyUI optional) — render a bounded MP4 artifact
 6. **Finalizing** (API assets layer) — probe the artifact, write metadata, and publish only after validation
 
-Integrations: FFmpeg/FFprobe, `espeak-ng` voice synthesis, ComfyUI (optional), pressure-aware stage gating, and graceful degradation paths. Dashboard: `/video` route with job list, creative brief controls, and detail timeline. For the exact route and payload contract, see [docs/VIDEO-GENERATION.md](docs/VIDEO-GENERATION.md).
+Integrations: FFmpeg/FFprobe, server-side VoiceProvider adapters (Kokoro microservice support installed in the app, Piper when installed, `espeak-ng` as an explicit fallback), ComfyUI (optional), pressure-aware stage gating, and graceful degradation paths. Dashboard: `/video` route with job list, creative brief controls, package/certification state, and detail timeline. For the exact route and payload contract, see [docs/VIDEO-GENERATION.md](docs/VIDEO-GENERATION.md).
 
 Operational note: the compiled Fastify entrypoint currently resolves to `apps/swarmx-api/dist/apps/swarmx-api/src/server.js` because the API TypeScript build uses the monorepo root as `rootDir`.
 
@@ -135,7 +134,7 @@ qwen-worker-scar       → code-qwen25-pro-q5km-prod   (Forge)
 
 Pre-scar tags (V5 and earlier) also resolve: `phi4-mini`, `deepseek-r1`, `qwen2.5-coder`, etc.
 
-`scripts/startup-enhanced.sh` now auto-detects the host profile from total RAM and applies the matching Ollama defaults automatically. The constrained `8gb` profile clamps `OLLAMA_NUM_PARALLEL=1`, `OLLAMA_MAX_LOADED_MODELS=1`, and `OLLAMA_KEEP_ALIVE=0`; the `16gb` profile keeps `OLLAMA_NUM_PARALLEL=1` but raises `OLLAMA_MAX_LOADED_MODELS=2`, sets `OLLAMA_KEEP_ALIVE=2m`, and enables startup and predictive prewarm by default. Set `SWARMX_HOST_PROFILE=8gb` or `SWARMX_HOST_PROFILE=16gb` in `.env.local` to pin the profile explicitly.
+`scripts/startup-enhanced.sh` now auto-detects the host profile from total RAM and applies the matching Ollama defaults automatically. The constrained `constrained_cpu_8gb` profile clamps `OLLAMA_NUM_PARALLEL=1`, `OLLAMA_MAX_LOADED_MODELS=1`, and `OLLAMA_KEEP_ALIVE=0`; `standard_cpu_16gb` keeps `OLLAMA_NUM_PARALLEL=1` and may allow two resident models only after measurement and pressure checks. Set `SWARMX_HOST_PROFILE=constrained_cpu_8gb` or `SWARMX_HOST_PROFILE=standard_cpu_16gb` in `.env.local` to pin the profile explicitly.
 
 ### Legacy r7 migration
 

@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import { readFileSync } from "node:fs";
 import { getAvailableModels, fastHealthProbe } from "../services/ollama.js";
 import { getSwarmHealthSummary } from "../services/swarm-pressure-monitor.js";
+import { resolveRuntimeProfile } from "../services/runtime-profiles.js";
 import { loadEnv } from "../lib/env.js";
 
 const execFileAsync = promisify(execFile);
@@ -198,11 +199,16 @@ export async function systemRouter(server: FastifyInstance): Promise<void> {
       ? `Low available memory (${memGb.availableGb.toFixed(1)} GB free) — model loading may fail`
       : null;
 
-    const status = !ollamaReachable ? "degraded"
+    const swarm = getSwarmHealthSummary();
+    const runtimeProfile = resolveRuntimeProfile({
+      totalRamMb: Math.floor(mem.total / 1024 ** 2),
+      availableRamMb: Math.floor(mem.available / 1024 ** 2),
+    });
+    const status = runtimeProfile.blockers.length > 0 ? "degraded"
+      : !ollamaReachable ? "degraded"
       : !allReady           ? "degraded"
       : vramWarning         ? "warning"
       : "ok";
-    const swarm = getSwarmHealthSummary();
 
     // [V6.1-FIX-19] Always return HTTP 200 from /api/system/health.
     // HTTP 503 means the API SERVICE is unavailable — but the API is running fine.
@@ -221,7 +227,24 @@ export async function systemRouter(server: FastifyInstance): Promise<void> {
       swarm,
       memory: memGb,
       warmup: readWarmupStatus(),
-      ...(vramWarning ? { warnings: [vramWarning] } : {}),
+      runtimeProfile: {
+        id: runtimeProfile.profile.id,
+        label: runtimeProfile.profile.label,
+        source: runtimeProfile.source,
+        requested: runtimeProfile.requested,
+        totalRamMb: runtimeProfile.totalRamMb,
+        availableRamMb: runtimeProfile.availableRamMb,
+        blockers: runtimeProfile.blockers,
+        warnings: runtimeProfile.warnings,
+        capabilities: {
+          allowSecondResidentModel: runtimeProfile.profile.allowSecondResidentModel,
+          allowAcceleratedAdapters: runtimeProfile.profile.allowAcceleratedAdapters,
+          startupHeavyPreload: runtimeProfile.profile.startupHeavyPreload,
+        },
+      },
+      ...(vramWarning || runtimeProfile.warnings.length > 0
+        ? { warnings: [...(vramWarning ? [vramWarning] : []), ...runtimeProfile.warnings] }
+        : {}),
       config: (({ e }) => ({
         healthProbeTimeoutMs: livenessTimeoutMs,
         healthModelProbeTimeoutMs: modelProbeTimeoutMs,

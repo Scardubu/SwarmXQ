@@ -58,10 +58,12 @@ services:
     image: ollama/ollama:0.6.2
     restart: unless-stopped
     environment:
-      # CPU-safe defaults mirror startup-enhanced.sh: no speculative global
-      # keep-alive, one inference slot, f16 KV cache, and flash attention off.
+      # CPU-safe default is the constrained profile because Compose cannot
+      # measure the target host before interpolation. Use env.local to opt into
+      # standard_cpu_16gb after preflight.
+      SWARMX_HOST_PROFILE: "${SWARMX_HOST_PROFILE:-constrained_cpu_8gb}"
       OLLAMA_KEEP_ALIVE: "${OLLAMA_KEEP_ALIVE:-0}"
-      OLLAMA_MAX_LOADED_MODELS: "${OLLAMA_MAX_LOADED_MODELS:-2}"
+      OLLAMA_MAX_LOADED_MODELS: "${OLLAMA_MAX_LOADED_MODELS:-1}"
       OLLAMA_NUM_PARALLEL: "${OLLAMA_NUM_PARALLEL:-1}"
       OLLAMA_FLASH_ATTENTION: "${OLLAMA_FLASH_ATTENTION:-0}"
       OLLAMA_KV_CACHE_TYPE: "${OLLAMA_KV_CACHE_TYPE:-f16}"

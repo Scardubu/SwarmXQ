@@ -109,7 +109,7 @@ import { generateCaptionDraftWithValidation } from "./caption-generator.js";
 import { generateOllamaText } from "./ollama.js";
 import { log } from "../lib/logger.js";
 import { tracer, SpanStatusCode, trace } from "../lib/tracer.js";
-import { renderWithFfmpeg } from "./ffmpeg-video-renderer.js";
+import { renderWithFfmpeg, type FfmpegRenderPackage } from "./ffmpeg-video-renderer.js";
 import { sanitizeReasoningOutput } from "./reasoning-sanitizer.js";
 import {
   resolveVideoModelTag,
@@ -612,7 +612,7 @@ async function stageStoryboardGeneration(
 async function stageRenderAssembly(
   ctx:    OrchestratorContext,
   frames: string[]
-): Promise<{ outputFilename: string }> {
+): Promise<{ outputFilename: string; renderPackage?: FfmpegRenderPackage }> {
   const startedAt = new Date().toISOString();
   const controller = stageController(ctx, "render_assembly");
 
@@ -730,7 +730,8 @@ async function stageFinalizing(
   ctx:            OrchestratorContext,
   scriptText:     string,
   frames:         string[],
-  outputFilename: string
+  outputFilename: string,
+  renderPackage?: FfmpegRenderPackage
 ): Promise<VideoOutputMetadata> {
   // stageFinalizing calls no model — no modelsUsed entry, no acquireModel().
   const startedAt = new Date().toISOString();
@@ -753,6 +754,7 @@ async function stageFinalizing(
     storyboardFrames: frames,
     modelsUsed:       ctx.modelsUsed as Record<string, string>,
     request:          ctx.job.request,
+    ...(renderPackage ? { renderPackage } : {}),
   });
 }
 
@@ -937,14 +939,16 @@ export async function runOrchestration(
     });
 
     let outputFilename = "";
+    let renderPackage: FfmpegRenderPackage | undefined;
     await runStage(ctx, "render_assembly", 75, 95, async () => {
       const result = await stageRenderAssembly(ctx, frames);
       outputFilename = result.outputFilename;
+      renderPackage = result.renderPackage;
     });
 
     let output: VideoOutputMetadata | undefined;
     await runStage(ctx, "finalizing", 95, 100, async () => {
-      output = await stageFinalizing(ctx, scriptText, frames, outputFilename);
+      output = await stageFinalizing(ctx, scriptText, frames, outputFilename, renderPackage);
     });
 
     await stageViralityAndCaption(ctx);
@@ -958,6 +962,8 @@ export async function runOrchestration(
     }
     ctx.job.outputArtifacts.outputPath = output.absolutePath;
     ctx.job.outputArtifacts.outputPublicUrl = output.publicUrl;
+    if (output.renderManifestPath) ctx.job.outputArtifacts.manifestPath = output.renderManifestPath;
+    if (output.srtPath) ctx.job.outputArtifacts.captionPath = output.srtPath;
 
     rootSpan.setAttribute("swarmx.job.total_duration_ms", Date.now() - ctx.startedAt);
     rootSpan.setAttribute("swarmx.job.output_size_bytes", output.fileSizeBytes ?? 0);

@@ -157,8 +157,8 @@ export function sanitizeApiError(err: unknown, fallback = "Something went wrong.
         return "Missing: ffmpeg — install with: sudo apt install ffmpeg";
       case "ffprobe_unavailable":
         return "Missing: ffprobe — install with: sudo apt install ffmpeg";
-      case "espeak_unavailable":
-        return "Missing: espeak-ng — install with: sudo apt install espeak-ng";
+      case "voice_provider_unavailable":
+        return "Voice Provider Unavailable — start Kokoro TTS, configure Piper, or install espeak-ng for local fallback narration.";
       case "unauthorized":
         return "Video write access is not authorized. Configure SWARMX_VIDEO_API_TOKEN on the dashboard and API server.";
       case "queue_error":

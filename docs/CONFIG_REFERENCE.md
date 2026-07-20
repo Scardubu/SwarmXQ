@@ -18,18 +18,18 @@
 
 ## Ollama And Host Runtime Profiles
 
-Set these before starting Ollama or the SwarmX stack. The startup script auto-detects `8gb` vs `16gb` by total RAM, but you can pin the behavior explicitly.
+Set these before starting Ollama or the SwarmX stack. The startup script auto-detects `constrained_cpu_8gb` vs `standard_cpu_16gb` by total RAM, but you can pin the behavior explicitly. Legacy `8gb`, `16gb`, `constrained_cpu`, and `standard_cpu` values are accepted only as compatibility aliases.
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `SWARMX_HOST_PROFILE` | `auto` | Auto-detects `8gb` or `16gb`; pin one explicitly when you need stable behavior across restarts. |
-| `OLLAMA_MAX_LOADED_MODELS` | profile-managed | `1` on `8gb`, `2` on `16gb`. Low free RAM forces constrained safeguards even on a 16 GB host. |
+| `SWARMX_HOST_PROFILE` | `auto` | Auto-detects `constrained_cpu_8gb` or `standard_cpu_16gb`; pin one explicitly when you need stable behavior across restarts. |
+| `OLLAMA_MAX_LOADED_MODELS` | profile-managed | `1` on `constrained_cpu_8gb`; `2` only on `standard_cpu_16gb` when measured safe. Low free RAM forces constrained safeguards even on a 16 GB host. |
 | `OLLAMA_NUM_PARALLEL` | `1` | One inference slot prevents duplicate heavyweight loads. |
 | `OLLAMA_KEEP_ALIVE` | `0` | Global keep-alive stays off on CPU-only hosts; SwarmX still sends request-level `keep_alive` where safe. |
 | `OLLAMA_FLASH_ATTENTION` | `0` | Conservative CPU default because Q8 Phi-4 flash-attention has shown host-specific instability. GPU operators may override after validation. |
 | `OLLAMA_KV_CACHE_TYPE` | `f16` | Conservative CPU default paired with flash-attention off. |
-| `SWARMX_MODEL_STARTUP_PREWARM` | profile-managed | Defaults `0` on `8gb`, `1` on `16gb`. |
-| `SWARMX_MODEL_PREDICTIVE_PREWARM` | profile-managed | Defaults `0` on `8gb`, `1` on `16gb`. |
+| `SWARMX_MODEL_STARTUP_PREWARM` | profile-managed | Defaults `0` on `constrained_cpu_8gb`; standard prewarm is opt-in/profile-derived after measurement. |
+| `SWARMX_MODEL_PREDICTIVE_PREWARM` | profile-managed | Defaults `0` on `constrained_cpu_8gb`; standard prewarm is opt-in/profile-derived after measurement. |
 | `SWARMX_OLLAMA_URL` | `http://127.0.0.1:11434` | Canonical Ollama API URL for SwarmX. |
 | `SWARMX_OLLAMA_PROBE_TIMEOUT_MS` | `5000` | General `/api/version` probe budget for startup and discovery paths. |
 | `SWARMX_SYSTEM_HEALTH_PROBE_TIMEOUT_MS` | `1500` | Liveness budget for `/api/system/health`; bounded to 250–10000 ms. When liveness fails, the route returns degraded health without model discovery. |
@@ -47,7 +47,12 @@ decisions use physical `MemAvailable` and report ZRAM separately.
 | `SWARMX_VIDEO_TEMP_DIR` | `.swarmx/video/tmp` | Per-render FFmpeg workspaces, removed after each render. |
 | `SWARMX_VIDEO_FFMPEG_TIMEOUT_MS` | `240000` | Local render command timeout, bounded to 30–900 seconds. |
 | `SWARMX_VIDEO_FFPROBE_TIMEOUT_MS` | `15000` | Artifact validation timeout, bounded to 5–60 seconds. |
-| `SWARMX_VIDEO_ALLOW_SILENT_AUDIO` | unset | Set `1` only for deliberate silent renders when `espeak-ng` is unavailable; FFmpeg writes an AAC silence track. |
+| `SWARMX_VIDEO_ALLOW_SILENT_AUDIO` | unset | Set `1` only for deliberate silent test renders when every configured VoiceProvider is unavailable; production runs fail instead of silently masking narration loss. |
+| `SWARMX_TTS_PROVIDER` | `auto` | Server-side voice provider selection: `auto`, `kokoro`, `piper`, `espeak`, or `silent_fixture`. `silent_fixture` is for explicit tests only. |
+| `SWARMX_TTS_URL` | `http://127.0.0.1:8888` | Kokoro TTS microservice URL. The provider is installed in the app; the host still must have the optional Python `tts` extra installed and the service running. |
+| `SWARMX_TTS_PIPER_MODEL_PATH` | unset | Piper voice model path. Piper reports degraded/unavailable when the binary or model path is missing. |
+| `SWARMX_AUDIO_TARGET_LUFS` | `-16` | Local mastering loudness target for rendered short-form narration packages. |
+| `SWARMX_AUDIO_TRUE_PEAK_MAX_DBFS` | `-1.5` | Local mastering true-peak cap. |
 | `SWARMX_VIDEO_ALLOW_UNSTRUCTURED_INTENT` | unset | Set `1` only to continue when intent classification is not valid structured output. |
 | `SWARMX_VIDEO_LOW_RAM_MODE` | unset | Set `1` to force all video text stages through the 2.5 GB Pilot-lite profile; requires at least 3300 MB available RAM. |
 | `SWARMX_VIDEO_API_TOKEN` | unset | Server-only bearer/API-key token for video and series write routes. Production writes fail closed when unset. Never expose through `NEXT_PUBLIC_*`. |

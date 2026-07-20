@@ -5,17 +5,21 @@
  */
 
 import type {
+  CertificationTier,
+  MediaQualityReport,
   VideoHealthEventData,
   VideoJobEventData,
   VideoJob as CanonicalVideoJob,
   VideoExportPlatform,
   VideoJobStatus as CanonicalVideoJobStatus,
   VideoArtifacts,
+  RendererCapabilityTier,
   OperatorTraceEntry,
   ViralitySignal,
   VideoError,
   PublishResult,
   VideoTone,
+  VoiceArtifact,
 } from "@swarmx/types/video-types";
 import type { SeriesEpisodeContext } from "@swarmx/types/series-types";
 
@@ -127,6 +131,22 @@ export interface VideoOutputMetadata {
   storyboardFrames?: string[];
   /** Ollama model tags actually used per stage. */
   modelsUsed: Partial<Record<VideoJobStage, string>>;
+  /** V3 renderer tier used to create this artifact. */
+  rendererTier?: RendererCapabilityTier;
+  /** V3 certification level after deterministic package checks. */
+  certificationTier?: CertificationTier;
+  /** Voice/provider lineage for the narration artifact. */
+  voiceArtifact?: VoiceArtifact;
+  /** Deterministic media QC report generated during render/finalize. */
+  mediaQualityReport?: MediaQualityReport;
+  /** Directory containing transcript, captions, manifest, QC, rights, and platform package files. */
+  productionPackageDir?: string;
+  renderManifestPath?: string;
+  transcriptPath?: string;
+  srtPath?: string;
+  vttPath?: string;
+  rightsManifestPath?: string;
+  platformPackagePath?: string;
 }
 
 // ─── Full Job Record ──────────────────────────────────────────────────────────
@@ -191,6 +211,7 @@ export type VideoErrorCode =
   | "FFMPEG_UNAVAILABLE"
   | "FFPROBE_UNAVAILABLE"
   | "ESPEAK_UNAVAILABLE"
+  | "VOICE_PROVIDER_UNAVAILABLE"
   | "FONT_UNAVAILABLE"
   | "FRAME_BUDGET_EXCEEDED"
   | "comfyui_ram_budget_exceeded"

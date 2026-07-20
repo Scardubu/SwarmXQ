@@ -9,12 +9,21 @@ import {
   LOW_RAM_VIDEO_MODEL,
   VIDEO_TEXT_STAGES,
 } from "../src/services/video-runtime-config.js";
+import {
+  normalizeRuntimeProfileId,
+  resolveRuntimeProfile,
+} from "../src/services/runtime-profiles.js";
 
 beforeEach(() => {
   resetEnvForTesting();
   delete process.env["VIDEO_INTENT_CLASSIFY_TIMEOUT_MS"];
   delete process.env["SWARMX_VIDEO_LOW_RAM_MODE"];
   delete process.env["TEST_BOUNDED_INT"];
+  delete process.env["SWARMX_HOST_PROFILE"];
+  delete process.env["OLLAMA_NUM_PARALLEL"];
+  delete process.env["OLLAMA_MAX_LOADED_MODELS"];
+  delete process.env["OLLAMA_KEEP_ALIVE"];
+  delete process.env["SWARMX_MODEL_STARTUP_PREWARM"];
 });
 
 afterEach(() => {
@@ -22,6 +31,11 @@ afterEach(() => {
   delete process.env["VIDEO_INTENT_CLASSIFY_TIMEOUT_MS"];
   delete process.env["SWARMX_VIDEO_LOW_RAM_MODE"];
   delete process.env["TEST_BOUNDED_INT"];
+  delete process.env["SWARMX_HOST_PROFILE"];
+  delete process.env["OLLAMA_NUM_PARALLEL"];
+  delete process.env["OLLAMA_MAX_LOADED_MODELS"];
+  delete process.env["OLLAMA_KEEP_ALIVE"];
+  delete process.env["SWARMX_MODEL_STARTUP_PREWARM"];
 });
 
 describe("isTextVideoStage", () => {
@@ -101,5 +115,44 @@ describe("videoModelTagsForRequest", () => {
       expect(typeof tag).toBe("string");
       expect(tag.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("runtime profile resolution", () => {
+  test("normalizes legacy profile aliases to V3 IDs", () => {
+    expect(normalizeRuntimeProfileId("constrained_cpu")).toBe("constrained_cpu_8gb");
+    expect(normalizeRuntimeProfileId("standard_cpu")).toBe("standard_cpu_16gb");
+    expect(normalizeRuntimeProfileId("8gb")).toBe("constrained_cpu_8gb");
+    expect(normalizeRuntimeProfileId("16gb")).toBe("standard_cpu_16gb");
+  });
+
+  test("auto-selects constrained profile below 12 GB total RAM", () => {
+    const result = resolveRuntimeProfile({
+      requested: "auto",
+      totalRamMb: 8_000,
+      availableRamMb: 4_000,
+      ollamaNumParallel: 1,
+      ollamaMaxLoadedModels: 1,
+      ollamaKeepAlive: "0",
+      startupPrewarm: "0",
+    });
+    expect(result.profile.id).toBe("constrained_cpu_8gb");
+    expect(result.blockers).toEqual([]);
+  });
+
+  test("rejects unsafe constrained Ollama residency settings", () => {
+    const result = resolveRuntimeProfile({
+      requested: "constrained_cpu_8gb",
+      totalRamMb: 8_000,
+      availableRamMb: 4_000,
+      ollamaNumParallel: 2,
+      ollamaMaxLoadedModels: 2,
+      ollamaKeepAlive: "3m",
+      startupPrewarm: "1",
+    });
+    expect(result.blockers).toContain("OLLAMA_NUM_PARALLEL must be 1 on CPU profiles");
+    expect(result.blockers).toContain("constrained_cpu_8gb requires OLLAMA_MAX_LOADED_MODELS=1");
+    expect(result.blockers).toContain("constrained_cpu_8gb requires OLLAMA_KEEP_ALIVE=0");
+    expect(result.blockers).toContain("constrained_cpu_8gb prohibits heavyweight startup preload");
   });
 });

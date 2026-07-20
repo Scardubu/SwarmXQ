@@ -195,10 +195,52 @@ export default function VideoJobDetailPage() {
                 <>
                   <div><span className="text-text-muted">Size:</span> {(job.output.fileSizeBytes / 1024 / 1024).toFixed(1)} MB</div>
                   <div><span className="text-text-muted">Duration:</span> {job.output.durationSeconds.toFixed(1)}s</div>
+                  <div><span className="text-text-muted">Renderer:</span> {(job.output.rendererTier ?? "ffmpeg_text_smoke").replace(/_/g, " ")}</div>
+                  <div><span className="text-text-muted">Certification:</span> {(job.output.certificationTier ?? "TECHNICALLY_VALID").replace(/_/g, " ")}</div>
                 </>
               )}
             </div>
           </div>
+
+          {job.output && (
+            <div className="rounded border border-border bg-bg-elevated p-4" role="status" aria-live="polite">
+              <p className="text-[10px] text-text-muted font-mono uppercase tracking-wider">Production Package</p>
+              <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-text-secondary sm:grid-cols-2">
+                <div>
+                  <span className="text-text-muted">Voice provider:</span>{" "}
+                  {job.output.voiceArtifact?.providerId ?? "pending"}
+                </div>
+                <div>
+                  <span className="text-text-muted">Voice tier:</span>{" "}
+                  {job.output.voiceArtifact?.qualityTier?.replace(/_/g, " ") ?? "pending"}
+                </div>
+                <div>
+                  <span className="text-text-muted">Template QC:</span>{" "}
+                  {job.output.mediaQualityReport?.certificationTier?.replace(/_/g, " ") ?? "pending"}
+                </div>
+                <div>
+                  <span className="text-text-muted">Rights:</span>{" "}
+                  {job.output.rightsManifestPath ? "manifest available" : "pending"}
+                </div>
+                <div className="sm:col-span-2">
+                  <span className="text-text-muted">Package:</span>{" "}
+                  <span className="break-all">{job.output.productionPackageDir ?? "pending"}</span>
+                </div>
+              </div>
+              {job.output.mediaQualityReport?.interpretedFindings?.length ? (
+                <ul className="mt-3 space-y-1 text-xs text-text-secondary" aria-label="Template-aware quality findings">
+                  {job.output.mediaQualityReport.interpretedFindings.slice(0, 3).map((finding, index) => (
+                    <li key={`${finding.detector}-${index}`} className="rounded border border-border bg-bg-surface px-2 py-1">
+                      <span className="font-medium text-text-primary">
+                        {finding.detector.replace(/_/g, " ")} {finding.interpretedStatus}
+                      </span>
+                      <span className="text-text-muted"> · {finding.message}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          )}
 
           {(job.output?.scriptText || job.output?.storyboardFrames?.length) && (
             <div className="rounded border border-border bg-bg-elevated p-4">

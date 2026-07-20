@@ -54,6 +54,7 @@ describe("creative factory workflow DAG", () => {
       idempotencyKey: "brief-001",
     });
     expect(second.id).toBe(first.id);
+    expect(first.profile).toBe("constrained_cpu_8gb");
   });
 
   test("persists checkpoints and hydrates them after reset", () => {
@@ -79,6 +80,7 @@ describe("creative factory workflow DAG", () => {
       idempotencyKey: "brief-002",
     });
     expect(existing.id).toBe(run.id);
+    expect(existing.profile).toBe("standard_cpu_16gb");
     expect(existing.checkpoints.INTAKE_VALIDATE?.outputRef).toBe("brief.json");
   });
 });

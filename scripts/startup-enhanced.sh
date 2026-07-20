@@ -119,23 +119,26 @@ resolve_host_profile() {
   case "$normalized" in
     ""|auto)
       if [[ "$total_mb" -ge 12288 ]]; then
-        echo "16gb"
+        echo "standard_cpu_16gb"
       else
-        echo "8gb"
+        echo "constrained_cpu_8gb"
       fi
       ;;
-    8gb|8g|constrained)
-      echo "8gb"
+    8gb|8g|constrained|constrained_cpu|constrained_cpu_8gb)
+      echo "constrained_cpu_8gb"
       ;;
-    16gb|16g|standard)
-      echo "16gb"
+    16gb|16g|standard|standard_cpu|standard_cpu_16gb)
+      echo "standard_cpu_16gb"
+      ;;
+    accelerated|accelerated_optional)
+      echo "accelerated_optional"
       ;;
     *)
       log_warning "Unknown SWARMX_HOST_PROFILE=$requested; falling back to auto detection"
       if [[ "$total_mb" -ge 12288 ]]; then
-        echo "16gb"
+        echo "standard_cpu_16gb"
       else
-        echo "8gb"
+        echo "constrained_cpu_8gb"
       fi
       ;;
   esac
@@ -188,8 +191,8 @@ setup_ollama_runtime_tuning() {
   local inherited_keep_alive="${OLLAMA_KEEP_ALIVE:-}"
   if [[ "$avail_mb" -gt 0 && "$avail_mb" -lt 2200 ]]; then
     constrained=true
-    if [[ "$requested_profile" == "16gb" ]]; then
-      effective_profile="8gb"
+    if [[ "$requested_profile" == "standard_cpu_16gb" ]]; then
+      effective_profile="constrained_cpu_8gb"
     fi
   fi
 
@@ -207,12 +210,12 @@ setup_ollama_runtime_tuning() {
   export SWARMX_HOST_PROFILE="$requested_profile"
   export SWARMX_EFFECTIVE_HOST_PROFILE="$effective_profile"
 
-  if [[ "$effective_profile" == "16gb" ]]; then
+  if [[ "$effective_profile" == "standard_cpu_16gb" || "$effective_profile" == "accelerated_optional" ]]; then
     if [[ -n "$inherited_max_models" && "$inherited_max_models" != "2" ]]; then
-      log_warning "Overriding OLLAMA_MAX_LOADED_MODELS=$inherited_max_models to 2 for the 16 GB profile"
+      log_warning "Overriding OLLAMA_MAX_LOADED_MODELS=$inherited_max_models to 2 for the standard_cpu_16gb profile"
     fi
     if [[ -n "$inherited_num_parallel" && "$inherited_num_parallel" != "1" ]]; then
-      log_warning "Overriding OLLAMA_NUM_PARALLEL=$inherited_num_parallel to 1 for the 16 GB profile"
+      log_warning "Overriding OLLAMA_NUM_PARALLEL=$inherited_num_parallel to 1 for the standard_cpu_16gb profile"
     fi
     if [[ -n "$inherited_keep_alive" && "$inherited_keep_alive" != "0" && "$inherited_keep_alive" != "0s" ]]; then
       log_warning "Overriding OLLAMA_KEEP_ALIVE=$inherited_keep_alive to 0 — request-level keep_alive policy (PILOT_S=300) stays authoritative"
@@ -224,14 +227,14 @@ setup_ollama_runtime_tuning() {
     export SWARMX_MODEL_STARTUP_PREWARM="${SWARMX_MODEL_STARTUP_PREWARM:-1}"
     export SWARMX_MODEL_PREDICTIVE_PREWARM="${SWARMX_MODEL_PREDICTIVE_PREWARM:-1}"
   else
-    if [[ "$requested_profile" == "16gb" && "$constrained" == true ]]; then
+    if [[ "$requested_profile" == "standard_cpu_16gb" && "$constrained" == true ]]; then
       log_warning "Low available RAM detected (${avail_mb} MB). Temporarily falling back to constrained safeguards despite 16 GB host profile."
     fi
     if [[ -n "$inherited_max_models" && "$inherited_max_models" != "1" ]]; then
-      log_warning "Overriding OLLAMA_MAX_LOADED_MODELS=$inherited_max_models to 1 for the 8 GB profile"
+      log_warning "Overriding OLLAMA_MAX_LOADED_MODELS=$inherited_max_models to 1 for the constrained_cpu_8gb profile"
     fi
     if [[ -n "$inherited_num_parallel" && "$inherited_num_parallel" != "1" ]]; then
-      log_warning "Overriding OLLAMA_NUM_PARALLEL=$inherited_num_parallel to 1 for the 8 GB profile"
+      log_warning "Overriding OLLAMA_NUM_PARALLEL=$inherited_num_parallel to 1 for the constrained_cpu_8gb profile"
     fi
     if [[ -n "$inherited_keep_alive" && "$inherited_keep_alive" != "0" && "$inherited_keep_alive" != "0s" ]]; then
       log_warning "Overriding OLLAMA_KEEP_ALIVE=$inherited_keep_alive to 0 so request-level lifecycle policy stays authoritative"

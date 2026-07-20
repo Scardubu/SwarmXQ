@@ -26,6 +26,7 @@ import {
   listPerformanceSnapshots,
   recordPerformanceSnapshot,
 } from "../services/creative-factory-analytics.js";
+import { normalizeRuntimeProfileId } from "../services/runtime-profiles.js";
 import { requireVideoWriteAuth } from "../services/video-auth.js";
 
 const CapabilityRequirementSchema = z.object({
@@ -38,7 +39,13 @@ const CapabilityRequirementSchema = z.object({
 
 const WorkflowRunBodySchema = z.object({
   mode: z.enum(["PLAN_ONLY", "PRODUCTION_PACK", "FULL_RENDER", "PUBLISH_BUNDLE", "PUBLISH_AND_LEARN"]),
-  profile: z.enum(["constrained_cpu", "standard_cpu", "accelerated_optional"]),
+  profile: z.enum([
+    "constrained_cpu_8gb",
+    "standard_cpu_16gb",
+    "accelerated_optional",
+    "constrained_cpu",
+    "standard_cpu",
+  ]),
   idempotencyKey: z.string().min(1).max(160),
   capabilityRequirements: z.array(CapabilityRequirementSchema).optional(),
 });
@@ -129,9 +136,10 @@ export async function creativeFactoryRoutes(server: FastifyInstance): Promise<vo
     async (request, reply) => {
       const parsed = WorkflowRunBodySchema.safeParse(request.body);
       if (!parsed.success) return sendParseError(reply, parsed.error);
+      const normalizedProfile = normalizeRuntimeProfileId(parsed.data.profile);
       const run = createWorkflowRun({
         mode: parsed.data.mode,
-        profile: parsed.data.profile,
+        profile: normalizedProfile === "auto" ? "constrained_cpu_8gb" : normalizedProfile,
         idempotencyKey: parsed.data.idempotencyKey,
         ...(parsed.data.capabilityRequirements !== undefined
           ? {

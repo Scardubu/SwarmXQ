@@ -67,10 +67,31 @@ export type CreativeFactoryExecutionMode =
   | "PUBLISH_BUNDLE"
   | "PUBLISH_AND_LEARN";
 
-export type CreativeFactoryProfile =
-  | "constrained_cpu"
-  | "standard_cpu"
+export type RuntimeProfileId =
+  | "constrained_cpu_8gb"
+  | "standard_cpu_16gb"
   | "accelerated_optional";
+
+export type LegacyCreativeFactoryProfile =
+  | "constrained_cpu"
+  | "standard_cpu";
+
+export type CreativeFactoryProfile = RuntimeProfileId | LegacyCreativeFactoryProfile;
+
+export type CertificationTier =
+  | "RENDER_FAILED"
+  | "TECHNICALLY_VALID"
+  | "CREATIVE_REVIEW_REQUIRED"
+  | "PRODUCTION_PACK_VALID"
+  | "READY_TO_POST"
+  | "PUBLISHED_VERIFIED";
+
+export type RendererCapabilityTier =
+  | "ffmpeg_text_smoke"
+  | "ffmpeg_kinetic_text"
+  | "ffmpeg_faceless_broll"
+  | "ffmpeg_cinematic_explainer"
+  | "optional_adapter";
 
 export type EpisodeLifecycleState =
   | "DRAFT"
@@ -172,6 +193,17 @@ export interface VideoBlueprint {
   durationSeconds: number;
   templateId: string;
   captionStyle: "bold_center" | "lower_third" | "minimal";
+  rendererTier?: RendererCapabilityTier;
+  certificationEligible?: boolean;
+  maxStaticIntervalSeconds?: number;
+  minVisualEventsPerMinute?: number;
+  safeZones?: {
+    topPct: number;
+    bottomPct: number;
+    sidePct: number;
+  };
+  requiredAssetKinds?: AssetSourceKind[];
+  audioProfileId?: string;
   requiredCapabilityIds: string[];
   createdAt: string;
   updatedAt: string;
@@ -288,6 +320,7 @@ export interface RenderRecipe {
   id: string;
   schemaVersion: 1;
   profile: CreativeFactoryProfile;
+  rendererTier?: RendererCapabilityTier;
   widthPx: number;
   heightPx: number;
   fps: number;
@@ -296,6 +329,100 @@ export interface RenderRecipe {
   videoCodec: "h264";
   templateId: string;
   assetIds: string[];
+  createdAt: string;
+}
+
+export type VoiceQualityTier = "neural_local" | "synthetic_fallback" | "silent_fixture";
+export type VoiceProviderState = "available" | "degraded" | "unavailable";
+
+export interface VoiceCapability {
+  providerId: string;
+  state: VoiceProviderState;
+  qualityTier: VoiceQualityTier;
+  supportsStreaming: boolean;
+  supportsCancellation: boolean;
+  requiresExternalDownload: boolean;
+  reason?: string;
+  action?: string;
+  probedAt: string;
+}
+
+export interface VoiceDescriptor {
+  providerId: string;
+  voiceId: string;
+  displayName: string;
+  locale: string;
+  qualityTier: VoiceQualityTier;
+  license: AssetLicense;
+  consentRequired: boolean;
+}
+
+export interface VoiceSynthesisRequest {
+  jobId: string;
+  text: string;
+  locale: string;
+  voiceId: string;
+  speakingRate?: number;
+  sentencePauseMs?: number;
+  requestedSampleRateHz: number;
+}
+
+export interface VoiceArtifact {
+  providerId: string;
+  providerVersion?: string;
+  voiceId: string;
+  displayName: string;
+  locale: string;
+  qualityTier: VoiceQualityTier;
+  license: AssetLicense;
+  consentRequired: boolean;
+  consentState: "not_required" | "approved" | "missing";
+  textHash: string;
+  normalizedText: string;
+  pronunciationDictionaryVersion: string;
+  requestedSampleRateHz: number;
+  actualSampleRateHz: number;
+  channels: number;
+  durationSeconds: number;
+  peakDbfs?: number;
+  integratedLufs?: number;
+  outputPath: string;
+  sha256: string;
+  generationLatencyMs: number;
+  peakRssMb?: number;
+  fallbackReason?: string;
+  lineage: AssetLineage;
+}
+
+export interface AudioProfile {
+  id: string;
+  sampleRateHz: number;
+  channels: 1 | 2;
+  targetIntegratedLufs: number;
+  truePeakDbfsMax: number;
+  speechCompression: "off" | "gentle";
+}
+
+export interface MediaDetectorFinding {
+  detector: "ffprobe" | "ebur128" | "silencedetect" | "blackdetect" | "freezedetect" | "template";
+  raw: string;
+  interpretedStatus: "pass" | "review" | "fail";
+  message: string;
+}
+
+export interface MediaQualityReport {
+  id: string;
+  schemaVersion: 1;
+  certificationTier: CertificationTier;
+  rendererTier: RendererCapabilityTier;
+  templateId: string;
+  technicalPassed: boolean;
+  creativePassed: boolean;
+  accessibilityPassed: boolean;
+  audioPassed: boolean;
+  rightsPassed: boolean;
+  rawDetectorFindings: MediaDetectorFinding[];
+  interpretedFindings: MediaDetectorFinding[];
   createdAt: string;
 }
 
@@ -390,6 +517,7 @@ export interface LearningRecord {
 
 export interface ReadyToPostCertification {
   lifecycleState: EpisodeLifecycleState;
+  certificationTier?: CertificationTier;
   passed: boolean;
   blockers: string[];
   certifiedAt: string;

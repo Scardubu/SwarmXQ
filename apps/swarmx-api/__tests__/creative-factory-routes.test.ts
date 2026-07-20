@@ -58,6 +58,7 @@ describe("creative factory routes", () => {
     expect(first.statusCode).toBe(201);
     expect(second.statusCode).toBe(201);
     expect(second.json().id).toBe(first.json().id);
+    expect(first.json().profile).toBe("constrained_cpu_8gb");
     await server.close();
   });
 

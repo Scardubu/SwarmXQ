@@ -39,6 +39,7 @@ import {
 } from "../services/video-publishers.js";
 import type { PublishResult } from "@swarmx/types/video-types";
 import { recordVideoPerformance } from "../services/video-assets.js";
+import { selectVoiceProvider } from "../services/voice-providers.js";
 import { resolveCanonicalTag } from "@swarmx/types/operator-map";
 import type { CaptionDraft } from "@swarmx/types/video-types";
 import { loadEnv } from "../lib/env.js";
@@ -387,11 +388,12 @@ export async function videoRoutes(
           });
         }
         if (loadEnv().SWARMX_VIDEO_ALLOW_SILENT_AUDIO !== "1") {
-          const hasEspeak = await commandAvailable("espeak-ng", "--version");
-          if (!hasEspeak) {
+          try {
+            await selectVoiceProvider();
+          } catch {
             return reply.status(503).send({
-              error: "espeak_unavailable",
-              message: "espeak-ng is required for voiced renders. Install it with: sudo apt install espeak-ng, or set SWARMX_VIDEO_ALLOW_SILENT_AUDIO=1 for silent test renders.",
+              error: "voice_provider_unavailable",
+              message: "A local voice provider is required for voiced renders. Configure Piper or install espeak-ng, or set SWARMX_VIDEO_ALLOW_SILENT_AUDIO=1 for explicit silent test renders.",
             });
           }
         }

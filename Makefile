@@ -12,7 +12,7 @@
         logs-dashboard ps health health-quick migrate db-check ollama-pull \
         ollama-list install lint typecheck-py typecheck-ts test test-cov \
         test-ts clean purge check-env dev check-phase1 dry-run \
-        test-brain test-memory test-agents test-evolution test-fast \
+        test-brain test-memory test-agents test-evolution test-fast verify-release \
         validate-imports check-v58
 
 # ── Configuration ─────────────────────────────────────────────────────────────
@@ -208,6 +208,9 @@ typecheck-ts: ## Run TypeScript type check across all packages
 
 test-ts: ## Run dashboard and package tests (vitest)
 	pnpm run test
+
+verify-release: ## Run non-destructive release verification gates
+	@bash scripts/verify-release.sh
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 

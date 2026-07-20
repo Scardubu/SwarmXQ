@@ -62,11 +62,13 @@ describe("sanitizeApiError", () => {
     expect(msg).toContain("apt install");
   });
 
-  it("maps espeak_unavailable to a Missing: espeak-ng message with install command", () => {
-    const err = new ApiError(503, "espeak not found", "espeak_unavailable");
+  it("maps voice_provider_unavailable to provider guidance without exposing internals", () => {
+    const err = new ApiError(503, "voice provider not found", "voice_provider_unavailable");
     const msg = sanitizeApiError(err);
-    expect(msg).toContain("Missing: espeak-ng");
-    expect(msg).toContain("apt install");
+    expect(msg).toContain("Voice Provider Unavailable");
+    expect(msg).toContain("Kokoro");
+    expect(msg).toContain("Piper");
+    expect(msg).toContain("espeak-ng");
   });
 
   it("maps unauthorized to a token guidance message", () => {

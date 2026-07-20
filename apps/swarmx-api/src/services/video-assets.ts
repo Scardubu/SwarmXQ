@@ -14,6 +14,7 @@ import { copyFile, stat, unlink, writeFile, mkdir } from "node:fs/promises";
 import { basename, join, resolve, sep } from "node:path";
 import { createReadStream, existsSync } from "node:fs";
 import type { VideoOutputMetadata, VideoJobRequest, VideoJobStage } from "../types/video.js";
+import type { FfmpegRenderPackage } from "./ffmpeg-video-renderer.js";
 import type { VideoPerformanceMetrics } from "@swarmx/types/video-types";
 import { loadEnv } from "../lib/env.js";
 
@@ -43,6 +44,7 @@ export interface BuildMetadataInput {
   storyboardFrames?: string[];
   modelsUsed: Record<string, string>;
   request: VideoJobRequest;
+  renderPackage?: FfmpegRenderPackage;
 }
 
 // ─── Path Resolution ──────────────────────────────────────────────────────────
@@ -130,6 +132,21 @@ export async function buildOutputMetadata(
     ...(input.scriptText !== undefined ? { scriptText: input.scriptText } : {}),
     ...(input.storyboardFrames !== undefined ? { storyboardFrames: input.storyboardFrames } : {}),
     modelsUsed: input.modelsUsed,
+    ...(input.renderPackage
+      ? {
+        rendererTier: input.renderPackage.rendererTier,
+        certificationTier: input.renderPackage.mediaQualityReport.certificationTier,
+        voiceArtifact: input.renderPackage.voiceArtifact,
+        mediaQualityReport: input.renderPackage.mediaQualityReport,
+        productionPackageDir: input.renderPackage.packageDir,
+        renderManifestPath: input.renderPackage.renderManifestPath,
+        transcriptPath: input.renderPackage.transcriptPath,
+        srtPath: input.renderPackage.srtPath,
+        vttPath: input.renderPackage.vttPath,
+        rightsManifestPath: input.renderPackage.rightsManifestPath,
+        platformPackagePath: input.renderPackage.platformPackagePath,
+      }
+      : {}),
   };
 }
 

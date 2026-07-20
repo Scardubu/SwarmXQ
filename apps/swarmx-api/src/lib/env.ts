@@ -46,9 +46,20 @@ const schema = z.object({
   OLLAMA_FLASH_ATTENTION: z.enum(["0", "1"]).default("0"),
   OLLAMA_KV_CACHE_TYPE: z.string().default("f16"),
   OLLAMA_NUM_THREADS: z.coerce.number().int().min(1).default(4),
+  OLLAMA_KEEP_ALIVE: z.string().default("0"),
   // Pilot keep-alive in seconds. startup-enhanced.sh exports 300 (5 min) on 16 GB hosts
   // so the model stays resident between the intent stage and the post-pipeline virality call.
   OLLAMA_KEEP_ALIVE_PILOT_S: z.coerce.number().int().min(0).default(300),
+  SWARMX_HOST_PROFILE: z.enum([
+    "auto",
+    "constrained_cpu_8gb",
+    "standard_cpu_16gb",
+    "accelerated_optional",
+    "constrained_cpu",
+    "standard_cpu",
+    "8gb",
+    "16gb",
+  ]).default("auto"),
 
   // ── Redis ─────────────────────────────────────────────────────────────────
   REDIS_URL: z.string().url().default("redis://127.0.0.1:6379"),
@@ -143,6 +154,17 @@ const schema = z.object({
   SWARMX_VIDEO_MAX_FRAME_BUDGET_MB: positiveInt.default(7600),
   SWARMX_VIDEO_COMFY_POLL_INTERVAL_MS: positiveInt.default(2000),
   SWARMX_VIDEO_COMFY_POLL_MAX_ATTEMPTS: positiveInt.default(180),
+
+  // ── Local voice / audio rendering ─────────────────────────────────────────
+  SWARMX_TTS_PROVIDER: z.enum(["auto", "kokoro", "piper", "espeak", "silent_fixture"]).default("auto"),
+  SWARMX_TTS_URL: z.string().url().default("http://127.0.0.1:8888"),
+  SWARMX_TTS_PIPER_MODEL_PATH: z.string().optional(),
+  SWARMX_TTS_LOCALE: z.string().min(2).default("en-US"),
+  SWARMX_TTS_PRONUNCIATION_DICTIONARY_VERSION: z.string().default("builtin-v1"),
+  SWARMX_AUDIO_MASTER_SAMPLE_RATE_HZ: positiveInt.default(48_000),
+  SWARMX_AUDIO_MASTER_CHANNELS: z.coerce.number().int().min(1).max(2).default(2),
+  SWARMX_AUDIO_TARGET_LUFS: z.coerce.number().default(-16),
+  SWARMX_AUDIO_TRUE_PEAK_MAX_DBFS: z.coerce.number().default(-1.5),
 
   // ── ComfyUI ───────────────────────────────────────────────────────────────
   SWARMX_COMFYUI_URL: z.string().url().default("http://127.0.0.1:8188"),

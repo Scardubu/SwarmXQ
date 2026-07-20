@@ -10,6 +10,7 @@ import type {
   WorkflowStageStatus,
 } from "@swarmx/types/video-types";
 import { appendStateEvent, readSnapshot, writeSnapshot } from "./local-state-store.js";
+import { normalizeRuntimeProfileId } from "./runtime-profiles.js";
 
 export const CREATIVE_FACTORY_STAGE_ORDER = [
   "INTAKE_VALIDATE",
@@ -129,11 +130,12 @@ export function createWorkflowRun(input: {
   if (existing) return existing;
 
   const createdAt = now();
+  const normalizedProfile = normalizeRuntimeProfileId(input.profile);
   const run: CreativeFactoryWorkflowRun = {
     id: randomUUID(),
     schemaVersion: 1,
     mode: input.mode,
-    profile: input.profile,
+    profile: normalizedProfile === "auto" ? "constrained_cpu_8gb" : normalizedProfile,
     status: "queued",
     idempotencyKey: input.idempotencyKey,
     capabilityRequirements: input.capabilityRequirements ?? [],

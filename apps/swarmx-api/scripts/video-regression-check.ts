@@ -235,7 +235,7 @@ for (const stage of ["stageIntentClassification", "stagePlanning", "stageScripti
 }
 
 // ── Preflight checks regression (Phase-2 fix) ─────────────────────────────────
-// The video route must check ffmpeg, ffprobe, and espeak-ng before enqueuing.
+// The video route must check ffmpeg, ffprobe, and a VoiceProvider before enqueuing.
 const routesSourceV2 = await readFile(new URL("../src/routes/video.ts", import.meta.url), "utf8");
 assert.ok(
   routesSourceV2.includes("ffmpeg_unavailable"),
@@ -246,8 +246,17 @@ assert.ok(
   "video route must return 503 ffprobe_unavailable when ffprobe is absent",
 );
 assert.ok(
-  routesSourceV2.includes("espeak_unavailable"),
-  "video route must return 503 espeak_unavailable when espeak-ng is absent",
+  routesSourceV2.includes("voice_provider_unavailable"),
+  "video route must return 503 voice_provider_unavailable when no configured VoiceProvider is usable",
+);
+const rendererVoiceProviderSource = await readFile(new URL("../src/services/voice-providers.ts", import.meta.url), "utf8");
+assert.ok(
+  rendererVoiceProviderSource.includes("KOKORO_VOICE_MAP"),
+  "VoiceProvider architecture must include Kokoro tone-to-voice resolution",
+);
+assert.ok(
+  rendererVoiceProviderSource.includes("SWARMX_TTS_URL"),
+  "Kokoro VoiceProvider must probe SWARMX_TTS_URL from validated env",
 );
 // The preflight block must come before queue.enqueue() so jobs are not created on failure
 const preflightPos = routesSourceV2.indexOf("ffmpeg_unavailable");

@@ -176,5 +176,5 @@ def test_startup_enhanced_keeps_16gb_single_inference_policy(tmp_path: Path) -> 
     assert "Overriding OLLAMA_MAX_LOADED_MODELS=1 to 2" in combined_output
     assert "Overriding OLLAMA_NUM_PARALLEL=2 to 1" in combined_output
     assert "Overriding OLLAMA_KEEP_ALIVE=3m to 0" in combined_output
-    assert "HOST_PROFILE=16gb EFFECTIVE_PROFILE=16gb" in combined_output
+    assert "HOST_PROFILE=standard_cpu_16gb EFFECTIVE_PROFILE=standard_cpu_16gb" in combined_output
     assert "PARALLEL=1 MAX_MODELS=2 KEEP_ALIVE=0" in combined_output
