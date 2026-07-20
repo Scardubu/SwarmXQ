@@ -8,10 +8,16 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
-from swarmx.startup import StartupSummary, _warmup_models, format_startup_banner, load_startup_summary, run_startup_autopilot
+from swarmx.startup import (
+    StartupSummary,
+    _warmup_models,
+    format_startup_banner,
+    load_startup_summary,
+    run_startup_autopilot,
+)
 
 
 class _FakeCfg:
@@ -107,7 +113,7 @@ def test_format_startup_banner_accepts_serialised_dict() -> None:
     assert "Evolver staged" in banner
 
 
-def test_startup_enhanced_clamps_unsafe_ollama_env(tmp_path: Path) -> None:
+def test_startup_enhanced_clamps_constrained_ollama_env(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     startup_script = repo_root / "scripts" / "startup-enhanced.sh"
     startup_log = tmp_path / "startup-enhanced.log"
@@ -117,6 +123,7 @@ def test_startup_enhanced_clamps_unsafe_ollama_env(tmp_path: Path) -> None:
         {
             "OLLAMA_MAX_LOADED_MODELS": "2",
             "OLLAMA_KEEP_ALIVE": "3m",
+            "SWARMX_HOST_PROFILE": "8gb",
             "SWARMX_START_OLLAMA_IF_DOWN": "0",
             "STARTUP_LOG": str(startup_log),
         }
@@ -136,3 +143,38 @@ def test_startup_enhanced_clamps_unsafe_ollama_env(tmp_path: Path) -> None:
     assert "Overriding OLLAMA_MAX_LOADED_MODELS=2 to 1" in combined_output
     assert "Overriding OLLAMA_KEEP_ALIVE=3m to 0" in combined_output
     assert "MAX_MODELS=1 KEEP_ALIVE=0" in combined_output
+
+
+def test_startup_enhanced_keeps_16gb_single_inference_policy(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    startup_script = repo_root / "scripts" / "startup-enhanced.sh"
+    startup_log = tmp_path / "startup-enhanced.log"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "OLLAMA_MAX_LOADED_MODELS": "1",
+            "OLLAMA_NUM_PARALLEL": "2",
+            "OLLAMA_KEEP_ALIVE": "3m",
+            "SWARMX_HOST_PROFILE": "16gb",
+            "SWARMX_START_OLLAMA_IF_DOWN": "0",
+            "STARTUP_LOG": str(startup_log),
+        }
+    )
+
+    result = subprocess.run(
+        ["bash", str(startup_script), "--check-only"],
+        cwd=repo_root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    combined_output = f"{result.stdout}\n{result.stderr}"
+
+    assert "Overriding OLLAMA_MAX_LOADED_MODELS=1 to 2" in combined_output
+    assert "Overriding OLLAMA_NUM_PARALLEL=2 to 1" in combined_output
+    assert "Overriding OLLAMA_KEEP_ALIVE=3m to 0" in combined_output
+    assert "HOST_PROFILE=16gb EFFECTIVE_PROFILE=16gb" in combined_output
+    assert "PARALLEL=1 MAX_MODELS=2 KEEP_ALIVE=0" in combined_output

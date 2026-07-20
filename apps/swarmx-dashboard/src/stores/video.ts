@@ -98,11 +98,7 @@ function isApiVideoLifecycleEvent(event: SwarmXEvent): event is VideoEvent {
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_SWARMX_API_URL?.trim() ||
-  process.env.NEXT_PUBLIC_API_URL?.trim() ||
-  "http://127.0.0.1:3001";
-const VIDEO_API_TOKEN = process.env.NEXT_PUBLIC_SWARMX_VIDEO_API_TOKEN?.trim() ?? "";
+const API_BASE = "";
 
 /** Structured error thrown by apiFetch so callers can map error codes. Exported for testing. */
 export class ApiError extends Error {
@@ -122,12 +118,6 @@ async function apiFetch<T>(
   const res = await fetch(`${API_BASE}${path}`, {
     headers: {
       "Content-Type": "application/json",
-      ...(VIDEO_API_TOKEN
-        ? {
-            Authorization: `Bearer ${VIDEO_API_TOKEN}`,
-            "x-video-api-key": VIDEO_API_TOKEN,
-          }
-        : {}),
       ...init?.headers,
     },
     ...init,
@@ -170,7 +160,7 @@ export function sanitizeApiError(err: unknown, fallback = "Something went wrong.
       case "espeak_unavailable":
         return "Missing: espeak-ng — install with: sudo apt install espeak-ng";
       case "unauthorized":
-        return "Video write access is not authorized. Check that NEXT_PUBLIC_SWARMX_VIDEO_API_TOKEN matches the API token.";
+        return "Video write access is not authorized. Configure SWARMX_VIDEO_API_TOKEN on the dashboard and API server.";
       case "queue_error":
         return "The video queue could not accept this job. Wait a moment and try again.";
       case "not_found":

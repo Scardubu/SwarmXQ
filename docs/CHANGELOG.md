@@ -4,6 +4,34 @@
 
 ---
 
+## Unreleased — Creative Video Factory Safety Baseline (2026-07-20)
+
+### Dashboard/API — server-only video write auth
+
+- Added a Next.js `/api/*` server proxy that injects `SWARMX_VIDEO_API_TOKEN`
+  only on server-side mutating requests.
+- Removed browser-side public video write-token env usage; the token must never
+  enter client bundles or browser storage.
+
+### API — durable local workflow state
+
+- Added atomic JSON snapshots plus append-only JSONL event journals for video
+  jobs, series, and Creative Factory workflow runs under `SWARMX_HOME/state`.
+- API startup now hydrates video, series, and workflow registries before serving
+  route state.
+- Series episode pre-production no longer marks an episode `complete` when the
+  mandatory quality gate fails.
+- Episode pre-production failures now include typed `errorCode` values so the
+  dashboard and recovery tooling can distinguish invalid JSON, execution
+  failures, missing roadmap entries, and mandatory quality-gate failures.
+- Added an executable Creative Factory release invariant script and wired it
+  into the API regression/CI path.
+- Aligned Docker Compose and env examples with the verified CPU-safe Ollama
+  defaults: `OLLAMA_NUM_PARALLEL=1`, `OLLAMA_KEEP_ALIVE=0`,
+  `OLLAMA_FLASH_ATTENTION=0`, and `OLLAMA_KV_CACHE_TYPE=f16`.
+
+---
+
 ## V6.2.21 — Observability & Env Fail-Fast (2026-07-17)
 
 ### API — structured logging sweep

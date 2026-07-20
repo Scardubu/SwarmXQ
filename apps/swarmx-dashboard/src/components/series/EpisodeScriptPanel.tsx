@@ -13,8 +13,6 @@ const SECTIONS = [
   { key: "transitionBridge"as const, label: "Transition Bridge",icon: ArrowRight,defaultOpen: false },
 ] as const;
 
-type SectionKey = (typeof SECTIONS)[number]["key"];
-
 function ScriptSection({
   label,
   icon: Icon,

@@ -177,7 +177,12 @@ export default function EpisodePreProductionPage() {
               role="alert"
             >
               <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              Pre-production failed: {preProduction.error}
+              <span>
+                {preProduction.errorCode && (
+                  <span className="mr-1 font-mono text-[10px]">{preProduction.errorCode}</span>
+                )}
+                Pre-production failed: {preProduction.error}
+              </span>
             </div>
           )}
 

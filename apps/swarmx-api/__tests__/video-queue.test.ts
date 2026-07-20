@@ -1,4 +1,7 @@
-import { vi, describe, test, expect, beforeEach } from "vitest";
+import { vi, describe, test, expect, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { VideoJobError } from "../src/types/video.js";
 
 // Mock BullMQ before any import that pulls in video-queue (which imports Queue at module level)
@@ -26,7 +29,10 @@ import {
   dequeueNext,
   runningCount,
   queuedCount,
+  hydrateVideoQueueFromDisk,
 } from "../src/services/video-queue.js";
+
+let tempHome: string | undefined;
 
 const nonRetryableError: VideoJobError = {
   code: "RENDER_FAILED",
@@ -40,9 +46,21 @@ const retryableError: VideoJobError = {
 };
 
 beforeEach(() => {
+  if (tempHome) rmSync(tempHome, { recursive: true, force: true });
+  tempHome = mkdtempSync(join(tmpdir(), "swarmx-video-queue-test-"));
+  process.env["SWARMX_HOME"] = tempHome;
   resetEnvForTesting();
   _resetRegistryForTesting();
   setBullMQRuntimeEnabled(false);
+});
+
+afterEach(() => {
+  if (tempHome) {
+    rmSync(tempHome, { recursive: true, force: true });
+    tempHome = undefined;
+  }
+  delete process.env["SWARMX_HOME"];
+  resetEnvForTesting();
 });
 
 describe("enqueue", () => {
@@ -89,6 +107,16 @@ describe("getJob", () => {
 
   test("returns undefined for unknown id", () => {
     expect(getJob("non-existent-id")).toBeUndefined();
+  });
+});
+
+describe("durable state", () => {
+  test("hydrates jobs from the local snapshot after registry reset", () => {
+    const job = enqueue({ prompt: "persist me", clientRequestId: "persist-1" });
+    _resetRegistryForTesting();
+    const restored = hydrateVideoQueueFromDisk();
+    expect(restored).toBe(1);
+    expect(getJob(job.id)?.clientRequestId).toBe("persist-1");
   });
 });
 

@@ -5,13 +5,10 @@ import type { NextConfig } from "next";
 const API_URL = process.env.SWARMX_API_URL ?? "http://127.0.0.1:3001";
 
 const nextConfig: NextConfig = {
-  // Proxy all /api/* and /ws/* requests to the Fastify backend on Linux
+  // /api/* is handled by src/app/api/[...path]/route.ts so server-only
+  // credentials can be injected for write routes without entering the browser.
   async rewrites() {
     return [
-      {
-        source: "/api/:path*",
-        destination: `${API_URL}/api/:path*`,
-      },
       {
         source: "/ws/:path*",
         destination: `${API_URL}/ws/:path*`,

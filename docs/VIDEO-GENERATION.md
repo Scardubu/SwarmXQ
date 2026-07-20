@@ -130,12 +130,13 @@ SWARMX_DASHBOARD_ORIGIN=http://localhost:3000
 Create or extend your `apps/swarmx-dashboard/.env.local`:
 
 ```bash
-NEXT_PUBLIC_SWARMX_API_URL=http://localhost:3001
-NEXT_PUBLIC_API_URL=http://localhost:3001
-NEXT_PUBLIC_SWARMX_VIDEO_API_TOKEN=replace-me-if-write-routes-are-protected
+SWARMX_API_URL=http://localhost:3001
+SWARMX_VIDEO_API_TOKEN=replace-me-for-write-routes
 ```
 
-The dashboard store prefers `NEXT_PUBLIC_SWARMX_API_URL`, falls back to `NEXT_PUBLIC_API_URL`, and normalizes all video route payloads through `src/lib/video-dashboard.ts` before state is written.
+The dashboard proxies `/api/*` through its Next.js server. Browser code never
+receives `SWARMX_VIDEO_API_TOKEN`; the server-side proxy injects it only for
+mutating requests. Do not configure a `NEXT_PUBLIC_*` write token.
 
 ### Local media binary requirements
 
@@ -244,7 +245,10 @@ or:
 -H "x-video-api-key: $SWARMX_VIDEO_API_TOKEN"
 ```
 
-If `SWARMX_VIDEO_API_TOKEN` is unset, the write routes remain open for local development.
+If `SWARMX_VIDEO_API_TOKEN` is unset in production, write routes fail closed
+with `401 unauthorized`. In development, local API writes remain open for
+operator convenience, but the dashboard should still use the server-side proxy
+when a token is configured.
 
 ### Prewarm the Pilot text model (CPU-only hosts)
 

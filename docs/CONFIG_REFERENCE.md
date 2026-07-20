@@ -25,7 +25,9 @@ Set these before starting Ollama or the SwarmX stack. The startup script auto-de
 | `SWARMX_HOST_PROFILE` | `auto` | Auto-detects `8gb` or `16gb`; pin one explicitly when you need stable behavior across restarts. |
 | `OLLAMA_MAX_LOADED_MODELS` | profile-managed | `1` on `8gb`, `2` on `16gb`. Low free RAM forces constrained safeguards even on a 16 GB host. |
 | `OLLAMA_NUM_PARALLEL` | `1` | One inference slot prevents duplicate heavyweight loads. |
-| `OLLAMA_KEEP_ALIVE` | profile-managed | `0` on `8gb`, `2m` on `16gb`; SwarmX still sends request-level `keep_alive`. |
+| `OLLAMA_KEEP_ALIVE` | `0` | Global keep-alive stays off on CPU-only hosts; SwarmX still sends request-level `keep_alive` where safe. |
+| `OLLAMA_FLASH_ATTENTION` | `0` | Conservative CPU default because Q8 Phi-4 flash-attention has shown host-specific instability. GPU operators may override after validation. |
+| `OLLAMA_KV_CACHE_TYPE` | `f16` | Conservative CPU default paired with flash-attention off. |
 | `SWARMX_MODEL_STARTUP_PREWARM` | profile-managed | Defaults `0` on `8gb`, `1` on `16gb`. |
 | `SWARMX_MODEL_PREDICTIVE_PREWARM` | profile-managed | Defaults `0` on `8gb`, `1` on `16gb`. |
 | `SWARMX_OLLAMA_URL` | `http://127.0.0.1:11434` | Canonical Ollama API URL for SwarmX. |
@@ -48,7 +50,7 @@ decisions use physical `MemAvailable` and report ZRAM separately.
 | `SWARMX_VIDEO_ALLOW_SILENT_AUDIO` | unset | Set `1` only for deliberate silent renders when `espeak-ng` is unavailable; FFmpeg writes an AAC silence track. |
 | `SWARMX_VIDEO_ALLOW_UNSTRUCTURED_INTENT` | unset | Set `1` only to continue when intent classification is not valid structured output. |
 | `SWARMX_VIDEO_LOW_RAM_MODE` | unset | Set `1` to force all video text stages through the 2.5 GB Pilot-lite profile; requires at least 3300 MB available RAM. |
-| `SWARMX_VIDEO_API_TOKEN` | unset | Optional bearer/API-key token for video write routes. |
+| `SWARMX_VIDEO_API_TOKEN` | unset | Server-only bearer/API-key token for video and series write routes. Production writes fail closed when unset. Never expose through `NEXT_PUBLIC_*`. |
 | `SWARMX_VIDEO_JOB_LIMIT_PER_HOUR` | `10` | Max video job submissions per connection per hour (sliding window). Returns 429 when exceeded. |
 | `SWARMX_VIDEO_EXPORT_TTL_DAYS` | `7` | Days after which rendered exports and artifacts are eligible for cleanup. Minimum 1. |
 | `SWARMX_VIDEO_CLEANUP_INTERVAL_MS` | `21600000` | How often the cleanup service scans for stale exports (ms). Minimum 60000. First run fires 30 s after startup. |
@@ -57,12 +59,12 @@ decisions use physical `MemAvailable` and report ZRAM separately.
 
 | Variable | V6.2.15 default | Ceiling (max) | Floor (min) |
 | --- | --- | --- | --- |
-| `VIDEO_INTENT_CLASSIFY_TIMEOUT_MS` | `30000` | `90000` | `1000` |
-| `VIDEO_PLANNING_TIMEOUT_MS` | `60000` | `180000` | `5000` |
-| `VIDEO_SCRIPTING_TIMEOUT_MS` | `90000` | `240000` | `10000` |
-| `VIDEO_STORYBOARD_TIMEOUT_MS` | `120000` | `300000` | `10000` |
-| `VIDEO_RENDER_TIMEOUT_MS` | `240000` | `900000` | `30000` |
-| `VIDEO_FINALIZING_TIMEOUT_MS` | `15000` | `60000` | `5000` |
+| `VIDEO_INTENT_CLASSIFY_TIMEOUT_MS` | `120000` | `600000` | `1000` |
+| `VIDEO_PLANNING_TIMEOUT_MS` | `300000` | `900000` | `5000` |
+| `VIDEO_SCRIPTING_TIMEOUT_MS` | `600000` | `1800000` | `10000` |
+| `VIDEO_STORYBOARD_TIMEOUT_MS` | `600000` | `1200000` | `10000` |
+| `VIDEO_RENDER_TIMEOUT_MS` | `1800000` | `7200000` | `30000` |
+| `VIDEO_FINALIZING_TIMEOUT_MS` | `120000` | `600000` | `5000` |
 
 **LOW_RAM_MODE auto-detection (V6.2.15)** — `SWARMX_VIDEO_LOW_RAM_MODE` is auto-enabled at API startup when `MemAvailable < 6170 MB` and the operator has not set an explicit value. Explicit `SWARMX_VIDEO_LOW_RAM_MODE=1` or `=0` always wins. When auto-enabled, the API also fires a fire-and-forget prewarm of `instruct-phi4-lite-q4km-prod` so the first user submission finds a warm model. A one-line startup log summarises the resolved mode: `{ lowRamMode, availableMb, videoModel }`.
 

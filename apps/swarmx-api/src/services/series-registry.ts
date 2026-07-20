@@ -18,6 +18,7 @@ import type {
 } from "@swarmx/types/series-types";
 import { log } from "../lib/logger.js";
 import { loadEnv } from "../lib/env.js";
+import { appendStateEvent, readSnapshot, writeSnapshot } from "./local-state-store.js";
 
 const TTL_DAYS = loadEnv().SWARMX_VIDEO_EXPORT_TTL_DAYS; // reuse video TTL setting
 const TTL_MS   = TTL_DAYS * 24 * 60 * 60 * 1000;
@@ -28,6 +29,12 @@ const CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const registry = new Map<string, SeriesJob>();
 
 let cleanupTimer: NodeJS.Timeout | undefined;
+let hydrated = false;
+
+function persistSeries(event: string, series: SeriesJob): void {
+  appendStateEvent("series", event, series);
+  writeSnapshot("series", [...registry.values()]);
+}
 
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
 
@@ -42,6 +49,7 @@ export function createSeries(brief: SeriesBrief): SeriesJob {
     updatedAt: now,
   };
   registry.set(job.id, job);
+  persistSeries("create", job);
   log.info({ seriesId: job.id, tone: brief.tone, episodes: brief.seriesLength }, "series created");
   return job;
 }
@@ -67,6 +75,7 @@ export function updateSeries(id: string, patch: Partial<Omit<SeriesJob, "id" | "
     updatedAt: new Date().toISOString(),
   };
   registry.set(id, updated);
+  persistSeries("update", updated);
   return updated;
 }
 
@@ -86,7 +95,11 @@ export function recordEpisodeJobId(seriesId: string, episodeNumber: number, jobI
 }
 
 export function deleteSeries(id: string): boolean {
-  return registry.delete(id);
+  const deleted = registry.delete(id);
+  if (deleted) {
+    writeSnapshot("series", [...registry.values()]);
+  }
+  return deleted;
 }
 
 // ─── Pre-production CRUD (V2.0) ───────────────────────────────────────────────
@@ -106,7 +119,9 @@ export function setPreProduction(
   const series = registry.get(seriesId);
   if (!series) return;
   const preProduction = { ...(series.preProduction ?? {}), [episodeNumber]: data };
-  registry.set(seriesId, { ...series, preProduction, updatedAt: new Date().toISOString() });
+  const updated = { ...series, preProduction, updatedAt: new Date().toISOString() };
+  registry.set(seriesId, updated);
+  persistSeries("preproduction_set", updated);
 }
 
 export function patchPreProduction(
@@ -120,7 +135,9 @@ export function patchPreProduction(
   if (!existing) return;
   const updated: EpisodePreProduction = { ...existing, ...patch };
   const preProduction = { ...(series.preProduction ?? {}), [episodeNumber]: updated };
-  registry.set(seriesId, { ...series, preProduction, updatedAt: new Date().toISOString() });
+  const updatedSeries = { ...series, preProduction, updatedAt: new Date().toISOString() };
+  registry.set(seriesId, updatedSeries);
+  persistSeries("preproduction_patch", updatedSeries);
 }
 
 export function updatePreProductionStatus(
@@ -143,11 +160,13 @@ export function updateSeriesPassStatus(
   const current = series.planningPassStatus ?? {
     pass1: "idle", pass2: "idle", pass3: "idle", pass4: "idle",
   };
-  registry.set(id, {
+  const updated: SeriesJob = {
     ...series,
     planningPassStatus: { ...current, [pass]: status },
     updatedAt: new Date().toISOString(),
-  });
+  };
+  registry.set(id, updated);
+  persistSeries("planning_pass_status", updated);
 }
 
 export function updateEpisodePassStatus(
@@ -168,7 +187,25 @@ export function updateEpisodePassStatus(
     passStatus: { ...current, [pass]: status },
   };
   const preProduction = { ...(series.preProduction ?? {}), [episodeNumber]: updated };
-  registry.set(seriesId, { ...series, preProduction, updatedAt: new Date().toISOString() });
+  const updatedSeries = { ...series, preProduction, updatedAt: new Date().toISOString() };
+  registry.set(seriesId, updatedSeries);
+  persistSeries("episode_pass_status", updatedSeries);
+}
+
+export function hydrateSeriesRegistryFromDisk(): number {
+  if (hydrated) return registry.size;
+  const records = readSnapshot<SeriesJob>("series");
+  let restored = 0;
+  for (const record of records) {
+    if (!record?.id || !record.brief || !record.status) continue;
+    registry.set(record.id, record);
+    restored++;
+  }
+  hydrated = true;
+  if (restored > 0) {
+    log.info({ restored }, "series-registry: restored series from durable snapshot");
+  }
+  return restored;
 }
 
 // ─── Cleanup ─────────────────────────────────────────────────────────────────
@@ -183,6 +220,7 @@ function runCleanup(): void {
     }
   }
   if (removed > 0) {
+    writeSnapshot("series", [...registry.values()]);
     log.info({ removed }, "series-registry: evicted expired series");
   }
 }
@@ -206,6 +244,7 @@ export function stopSeriesCleanup(): void {
 
 export function _clearSeriesRegistryForTesting(): void {
   registry.clear();
+  hydrated = false;
 }
 
 export function _runCleanupForTesting(): void {

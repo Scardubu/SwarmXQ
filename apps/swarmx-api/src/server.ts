@@ -71,8 +71,13 @@ import { startPyEventsPoller } from "./services/pyevents.js";
 import { startAgentSeedService } from "./services/agentSeed.js";
 import { startSwarmMonitor } from "./services/swarm-pressure-monitor.js";
 import { startVideoCleanup, stopVideoCleanup } from "./services/video-cleanup.js";
-import { startSeriesCleanup, stopSeriesCleanup } from "./services/series-registry.js";
-import { setBullMQRuntimeEnabled } from "./services/video-queue.js";
+import {
+  hydrateSeriesRegistryFromDisk,
+  startSeriesCleanup,
+  stopSeriesCleanup,
+} from "./services/series-registry.js";
+import { hydrateVideoQueueFromDisk, setBullMQRuntimeEnabled } from "./services/video-queue.js";
+import { hydrateWorkflowRunsFromDisk } from "./services/creative-factory-workflow.js";
 import { startVideoWorker, stopVideoWorker } from "./workers/video-worker.js";
 import { ModelOrchestrator } from "./services/model-orchestrator.js";
 import {
@@ -220,6 +225,14 @@ await server.register(metricsRouter,   { prefix: "/api/metrics" });
 await server.register(videoRoutes,     { prefix: "/api/video" });
 await server.register(seriesRoutes,    { prefix: "/api/video/series" });
 await registerModelsRoutes(server);
+
+const restoredVideoJobs = hydrateVideoQueueFromDisk();
+const restoredSeries = hydrateSeriesRegistryFromDisk();
+const restoredWorkflowRuns = hydrateWorkflowRunsFromDisk();
+server.log.info(
+  { restoredVideoJobs, restoredSeries, restoredWorkflowRuns },
+  "durable-state: API registries hydrated",
+);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 // Probed by docker-compose healthcheck and Kubernetes liveness probes.

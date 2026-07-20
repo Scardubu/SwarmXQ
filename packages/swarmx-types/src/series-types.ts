@@ -300,6 +300,19 @@ export type EpisodePreProductionStatus =
   | "complete"
   | "failed";
 
+export type EpisodePreProductionErrorCode =
+  | "EPISODE_NOT_FOUND"
+  | "PASS_A_INVALID_JSON"
+  | "PASS_A_EXECUTION_FAILED"
+  | "PASS_B_INVALID_JSON"
+  | "PASS_B_EXECUTION_FAILED"
+  | "PASS_C_INVALID_JSON"
+  | "PASS_C_EXECUTION_FAILED"
+  | "PASS_D_INVALID_JSON"
+  | "PASS_D_EXECUTION_FAILED"
+  | "QUALITY_GATE_FAILED"
+  | "PREPRODUCTION_PIPELINE_FAILED";
+
 export interface EpisodePreProduction {
   episodeNumber: number;
   status: EpisodePreProductionStatus;
@@ -317,6 +330,7 @@ export interface EpisodePreProduction {
     passC: SeriesPassStatus;
     passD: SeriesPassStatus;
   };
+  errorCode?: EpisodePreProductionErrorCode;
   error?: string;
   startedAt?: string;
   completedAt?: string;

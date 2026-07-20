@@ -1,4 +1,7 @@
 import { vi, describe, test, expect, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { resetEnvForTesting } from "../src/lib/env.js";
 import {
   _clearSeriesRegistryForTesting,
@@ -16,8 +19,11 @@ import {
   updatePreProductionStatus,
   updateSeriesPassStatus,
   updateEpisodePassStatus,
+  hydrateSeriesRegistryFromDisk,
 } from "../src/services/series-registry.js";
 import type { SeriesBrief, EpisodePreProduction } from "@swarmx/types/series-types";
+
+let tempHome: string | undefined;
 
 const minimalBrief: SeriesBrief = {
   storyTheme: "test theme",
@@ -38,8 +44,20 @@ const minimalPreProd: EpisodePreProduction = {
 };
 
 beforeEach(() => {
+  if (tempHome) rmSync(tempHome, { recursive: true, force: true });
+  tempHome = mkdtempSync(join(tmpdir(), "swarmx-series-registry-test-"));
+  process.env["SWARMX_HOME"] = tempHome;
   resetEnvForTesting();
   _clearSeriesRegistryForTesting();
+});
+
+afterEach(() => {
+  if (tempHome) {
+    rmSync(tempHome, { recursive: true, force: true });
+    tempHome = undefined;
+  }
+  delete process.env["SWARMX_HOME"];
+  resetEnvForTesting();
 });
 
 // ─── createSeries ─────────────────────────────────────────────────────────────
@@ -91,6 +109,16 @@ describe("getSeries", () => {
     const found = getSeries(s.id);
     expect(found).toBeDefined();
     expect(found?.id).toBe(s.id);
+  });
+});
+
+describe("durable state", () => {
+  test("hydrates series from the local snapshot after registry reset", () => {
+    const series = createSeries(minimalBrief);
+    _clearSeriesRegistryForTesting();
+    const restored = hydrateSeriesRegistryFromDisk();
+    expect(restored).toBe(1);
+    expect(getSeries(series.id)?.brief.storyTheme).toBe("test theme");
   });
 });
 

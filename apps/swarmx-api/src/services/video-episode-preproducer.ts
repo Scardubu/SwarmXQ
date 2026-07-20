@@ -731,6 +731,7 @@ export async function runPassAScript(seriesId: string, episodeNumber: number): P
     log.warn({ seriesId, episodeNumber }, "passA: episode not in roadmap");
     patchPreProduction(seriesId, episodeNumber, {
       status: "failed",
+      errorCode: "EPISODE_NOT_FOUND",
       error: `Episode ${episodeNumber} not found in series roadmap`,
     });
     return false;
@@ -745,7 +746,7 @@ export async function runPassAScript(seriesId: string, episodeNumber: number): P
     if (!parsed.success) {
       const msg = `Pass A JSON invalid: ${parsed.error.message}`;
       log.error({ seriesId, episodeNumber, error: msg }, "preproducer: Pass A failed");
-      patchPreProduction(seriesId, episodeNumber, { status: "failed", error: msg });
+      patchPreProduction(seriesId, episodeNumber, { status: "failed", errorCode: "PASS_A_INVALID_JSON", error: msg });
       updateEpisodePassStatus(seriesId, episodeNumber, "passA", "failed");
       return false;
     }
@@ -755,7 +756,7 @@ export async function runPassAScript(seriesId: string, episodeNumber: number): P
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     log.error({ seriesId, episodeNumber, err: msg }, "preproducer: Pass A error");
-    patchPreProduction(seriesId, episodeNumber, { status: "failed", error: msg });
+    patchPreProduction(seriesId, episodeNumber, { status: "failed", errorCode: "PASS_A_EXECUTION_FAILED", error: msg });
     updateEpisodePassStatus(seriesId, episodeNumber, "passA", "failed");
     return false;
   }
@@ -782,7 +783,7 @@ export async function runPassBPrompts(seriesId: string, episodeNumber: number): 
     if (!parsed.success) {
       const msg = `Pass B JSON invalid: ${parsed.error.message}`;
       log.error({ seriesId, episodeNumber, error: msg }, "preproducer: Pass B failed");
-      patchPreProduction(seriesId, episodeNumber, { status: "failed", error: msg });
+      patchPreProduction(seriesId, episodeNumber, { status: "failed", errorCode: "PASS_B_INVALID_JSON", error: msg });
       updateEpisodePassStatus(seriesId, episodeNumber, "passB", "failed");
       return false;
     }
@@ -796,7 +797,7 @@ export async function runPassBPrompts(seriesId: string, episodeNumber: number): 
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     log.error({ seriesId, episodeNumber, err: msg }, "preproducer: Pass B error");
-    patchPreProduction(seriesId, episodeNumber, { status: "failed", error: msg });
+    patchPreProduction(seriesId, episodeNumber, { status: "failed", errorCode: "PASS_B_EXECUTION_FAILED", error: msg });
     updateEpisodePassStatus(seriesId, episodeNumber, "passB", "failed");
     return false;
   }
@@ -823,7 +824,7 @@ export async function runPassCAudioAssets(seriesId: string, episodeNumber: numbe
     if (!parsed.success) {
       const msg = `Pass C JSON invalid: ${parsed.error.message}`;
       log.error({ seriesId, episodeNumber, error: msg }, "preproducer: Pass C failed");
-      patchPreProduction(seriesId, episodeNumber, { status: "failed", error: msg });
+      patchPreProduction(seriesId, episodeNumber, { status: "failed", errorCode: "PASS_C_INVALID_JSON", error: msg });
       updateEpisodePassStatus(seriesId, episodeNumber, "passC", "failed");
       return false;
     }
@@ -835,7 +836,7 @@ export async function runPassCAudioAssets(seriesId: string, episodeNumber: numbe
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     log.error({ seriesId, episodeNumber, err: msg }, "preproducer: Pass C error");
-    patchPreProduction(seriesId, episodeNumber, { status: "failed", error: msg });
+    patchPreProduction(seriesId, episodeNumber, { status: "failed", errorCode: "PASS_C_EXECUTION_FAILED", error: msg });
     updateEpisodePassStatus(seriesId, episodeNumber, "passC", "failed");
     return false;
   }
@@ -868,7 +869,7 @@ export async function runPassDScoring(seriesId: string, episodeNumber: number): 
     if (!parsed.success) {
       const msg = `Pass D JSON invalid: ${parsed.error.message}`;
       log.error({ seriesId, episodeNumber, error: msg }, "preproducer: Pass D failed");
-      patchPreProduction(seriesId, episodeNumber, { status: "failed", error: msg });
+      patchPreProduction(seriesId, episodeNumber, { status: "failed", errorCode: "PASS_D_INVALID_JSON", error: msg });
       updateEpisodePassStatus(seriesId, episodeNumber, "passD", "failed");
       return;
     }
@@ -892,24 +893,30 @@ export async function runPassDScoring(seriesId: string, episodeNumber: number): 
     const continuityReport = buildContinuityReport(
       seriesFinal, episodeNumber, script, scenePrompts, audioPlan,
     );
+    const gateFailure = qualityGateResult.passed
+      ? undefined
+      : "Mandatory episode quality gate failed. Review qualityGateResult before re-running revision.";
 
     patchPreProduction(seriesId, episodeNumber, {
       viralityScore,
       qualityGateResult,
       continuityReport,
-      status: "complete",
-      completedAt: new Date().toISOString(),
+      status: qualityGateResult.passed ? "complete" : "failed",
+      ...(gateFailure ? { errorCode: "QUALITY_GATE_FAILED", error: gateFailure } : {}),
+      ...(qualityGateResult.passed ? { completedAt: new Date().toISOString() } : {}),
     });
-    updateEpisodePassStatus(seriesId, episodeNumber, "passD", "complete");
+    updateEpisodePassStatus(seriesId, episodeNumber, "passD", qualityGateResult.passed ? "complete" : "failed");
 
     log.info(
       { seriesId, episodeNumber, overall: viralityScore.overall, gatePassed: qualityGateResult.passed },
-      "preproducer: episode pre-production complete",
+      qualityGateResult.passed
+        ? "preproducer: episode pre-production complete"
+        : "preproducer: episode pre-production failed quality gate",
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     log.error({ seriesId, episodeNumber, err: msg }, "preproducer: Pass D error");
-    patchPreProduction(seriesId, episodeNumber, { status: "failed", error: msg });
+    patchPreProduction(seriesId, episodeNumber, { status: "failed", errorCode: "PASS_D_EXECUTION_FAILED", error: msg });
     updateEpisodePassStatus(seriesId, episodeNumber, "passD", "failed");
   }
 }
@@ -933,6 +940,7 @@ export async function runEpisodePreProduction(
     log.warn({ seriesId, episodeNumber }, "preproducer: episode not in roadmap");
     patchPreProduction(seriesId, episodeNumber, {
       status: "failed",
+      errorCode: "EPISODE_NOT_FOUND",
       error: `Episode ${episodeNumber} not found in series roadmap`,
     });
     return;
@@ -946,6 +954,6 @@ export async function runEpisodePreProduction(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     log.error({ seriesId, episodeNumber, err: msg }, "preproducer: pipeline error");
-    patchPreProduction(seriesId, episodeNumber, { status: "failed", error: msg });
+    patchPreProduction(seriesId, episodeNumber, { status: "failed", errorCode: "PREPRODUCTION_PIPELINE_FAILED", error: msg });
   }
 }

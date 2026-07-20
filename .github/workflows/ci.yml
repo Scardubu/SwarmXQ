@@ -133,6 +133,9 @@ jobs:
       - name: Gate 6b — regression suite (adaptive-timeout, eviction, system-health, reasoning-sanitizer, series)
         run: pnpm --filter @swarmx/api run test:regression
 
+      - name: Gate 6c — Creative Factory release invariants
+        run: pnpm --filter @swarmx/api run test:factory
+
       # ── Invariants (ms-fast; run before expensive next build) ─────────────
 
       - name: Invariant — console.* zero tolerance (services + routes)
@@ -177,6 +180,20 @@ jobs:
             exit 1
           fi
           echo "PASS: $COUNT process.env[ reads (≤10 required)"
+
+      - name: Invariant — no public video write token
+        run: |
+          TOKEN_NAME='NEXT_PUBLIC_''SWARMX_VIDEO_API_TOKEN'
+          if grep -rn "$TOKEN_NAME" \
+            apps/swarmx-dashboard/src \
+            apps/swarmx-dashboard/__tests__ \
+            docs/VIDEO-GENERATION.md \
+            docs/CONFIG_REFERENCE.md \
+            2>/dev/null; then
+            echo "FAIL: video write token must never be exposed through public dashboard env"
+            exit 1
+          fi
+          echo "PASS: no public dashboard video write-token references"
 
       # ── Gate 7 · Dashboard next build (≥14 routes, 0 build errors) ────────
 

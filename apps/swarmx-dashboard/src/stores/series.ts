@@ -21,8 +21,8 @@ import type {
 
 // ─── API base ─────────────────────────────────────────────────────────────────
 // Use relative paths so all requests route through the Next.js server.
-// The Next.js middleware (middleware.ts) injects SWARMX_VIDEO_API_TOKEN
-// server-side — the token never reaches the browser bundle.
+// The Next.js /api/* route proxy injects SWARMX_VIDEO_API_TOKEN server-side;
+// the token never reaches the browser bundle.
 const API_BASE = "";
 
 class SeriesApiError extends Error {

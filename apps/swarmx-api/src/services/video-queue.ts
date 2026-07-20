@@ -25,6 +25,7 @@ import type {
 import { isTerminalStatus, VIDEO_JOB_STAGE_ORDER } from "../types/video.js";
 import type { SwarmXEvent } from "../types/events.js";
 import { subscribeToEvents } from "../plugins/sse.js";
+import { appendStateEvent, readSnapshot, writeSnapshot } from "./local-state-store.js";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -64,6 +65,12 @@ export function isBullMQEnabled(): boolean {
 
 const registry = new Map<string, VideoJob>();
 let bullQueue: Queue<VideoJobRequest> | null = null;
+let hydrated = false;
+
+function persistJob(event: string, job: VideoJob): void {
+  appendStateEvent("video-jobs", event, job);
+  writeSnapshot("video-jobs", [...registry.values()]);
+}
 
 function getBullQueue(): Queue<VideoJobRequest> {
   if (!bullQueue) {
@@ -136,6 +143,7 @@ export function enqueue(request: VideoJobRequest): VideoJob {
   };
 
   registry.set(job.id, job);
+  persistJob("enqueue", job);
 
   if (isBullMQEnabled()) {
     void getBullQueue().add("video-job", request, {
@@ -202,6 +210,7 @@ export function startJob(id: string): VideoJob | null {
   job.status = "running";
   job.startedAt = now();
   job.updatedAt = now();
+  persistJob("start", job);
   return job;
 }
 
@@ -221,6 +230,7 @@ export function recordStageProgress(
   job.currentStage = stage;
   job.overallProgress = progress.overallProgress;
   job.updatedAt = now();
+  persistJob("stage_progress", job);
   return job;
 }
 
@@ -257,6 +267,7 @@ export function completeStage(
   };
   job.overallProgress = overallProgress;
   job.updatedAt = now();
+  persistJob("stage_complete", job);
   return job;
 }
 
@@ -279,6 +290,7 @@ export function completeJob(
   job.completedAt = now();
   job.updatedAt = now();
   delete job.currentStage;
+  persistJob("complete", job);
   return job;
 }
 
@@ -301,6 +313,7 @@ export function failJob(id: string, error: VideoJobError): VideoJob {
     job.stages = {};
     job.overallProgress = 0;
     job.updatedAt = now();
+    persistJob("retry", job);
     return job;
   }
 
@@ -309,6 +322,7 @@ export function failJob(id: string, error: VideoJobError): VideoJob {
   job.completedAt = now();
   job.updatedAt = now();
   delete job.currentStage;
+  persistJob("fail", job);
   return job;
 }
 
@@ -324,6 +338,7 @@ export function cancelJob(id: string): boolean {
   job.completedAt = now();
   job.updatedAt = now();
   delete job.currentStage;
+  persistJob("cancel", job);
   return true;
 }
 
@@ -375,6 +390,7 @@ export async function reprioritizeQueue(orderedIds: string[]): Promise<void> {
     registry.delete(job.id);
     registry.set(job.id, job);
   }
+  writeSnapshot("video-jobs", [...registry.values()]);
 
   if (isBullMQEnabled()) {
     const q = getBullQueue();
@@ -421,6 +437,7 @@ export function resumeJob(id: string, fromStage: VideoJobStage): VideoJob {
   job.updatedAt = now();
   delete job.error;
   delete job.completedAt;
+  persistJob("resume", job);
   return job;
 }
 
@@ -447,7 +464,25 @@ export function restoreJobFromBullMQ(
   };
   registry.set(id, job);
   scheduleCleanup(id);
+  persistJob("restore_bullmq", job);
   return job;
+}
+
+export function hydrateVideoQueueFromDisk(): number {
+  if (hydrated) return registry.size;
+  const records = readSnapshot<VideoJob>("video-jobs");
+  let restored = 0;
+  for (const record of records) {
+    if (!record?.id || !record.request || !record.status) continue;
+    registry.set(record.id, record);
+    scheduleCleanup(record.id);
+    restored++;
+  }
+  hydrated = true;
+  if (restored > 0) {
+    log.info({ restored }, "video-queue: restored jobs from durable snapshot");
+  }
+  return restored;
 }
 
 export function subscribeToJob(jobId: string): AsyncIterable<SwarmXEvent> {
@@ -537,6 +572,7 @@ function scheduleCleanup(id: string): void {
     const job = registry.get(id);
     if (job && isTerminalStatus(job.status)) {
       registry.delete(id);
+      writeSnapshot("video-jobs", [...registry.values()]);
     }
   }, JOB_TTL_MS);
 }
@@ -546,4 +582,5 @@ export function _resetRegistryForTesting(): void {
   registry.clear();
   bullQueue = null;
   _bullmqOverride = null;
+  hydrated = false;
 }

@@ -73,6 +73,8 @@ describe("sanitizeApiError", () => {
     const err = new ApiError(401, "Unauthorized", "unauthorized");
     const msg = sanitizeApiError(err);
     expect(msg.toLowerCase()).toContain("token");
+    expect(msg).toContain("SWARMX_VIDEO_API_TOKEN");
+    expect(msg).not.toContain(`NEXT_PUBLIC_${"SWARMX_VIDEO_API_TOKEN"}`);
   });
 
   it("maps generic 503 to a service-unavailable message", () => {
