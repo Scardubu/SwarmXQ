@@ -9,9 +9,9 @@ Subcommands:
 """
 from __future__ import annotations
 
-import structlog
 from typing import Annotated
 
+import structlog
 import typer
 
 from swarmx.console.compat import is_json_mode

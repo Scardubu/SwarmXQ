@@ -66,8 +66,6 @@ import concurrent.futures
 import hashlib
 import json
 import os
-import structlog
-import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -76,6 +74,8 @@ from pathlib import Path
 from typing import Any
 from urllib import request
 from urllib.error import URLError
+
+import structlog
 
 from .config import SwarmConfig
 

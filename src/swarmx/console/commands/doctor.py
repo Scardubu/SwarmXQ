@@ -6,12 +6,12 @@ network connectivity (optional), and key module imports.
 from __future__ import annotations
 
 import importlib
-import structlog
 import platform
 import sys
 from pathlib import Path
 from typing import Annotated
 
+import structlog
 import typer
 
 from swarmx.console.compat import is_json_mode

@@ -12,13 +12,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-import structlog
 import shutil
 import tarfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
+import structlog
 import typer
 
 from swarmx.console.compat import is_json_mode

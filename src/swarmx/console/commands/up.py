@@ -6,7 +6,6 @@ server. Respects the SWARMX_HOME runtime directory and the config at
 """
 from __future__ import annotations
 
-import structlog
 import os
 import shutil
 import signal
@@ -15,6 +14,7 @@ import sys
 from pathlib import Path
 from typing import Annotated
 
+import structlog
 import typer
 
 from swarmx.console.compat import is_json_mode

@@ -23,12 +23,12 @@ APEX-17 r7 changes from r6:
 from __future__ import annotations
 
 import os
-import structlog
 from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+import structlog
 import yaml
 
 from .operator_map import (

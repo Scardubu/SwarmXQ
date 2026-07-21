@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import structlog
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+import structlog
 
 from .config import SwarmConfig
 from .planner import build_plan, detect_stack

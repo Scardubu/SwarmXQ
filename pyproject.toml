@@ -129,6 +129,15 @@ warn_return_any      = true
 # make their compatibility comments appear unused during static analysis.
 warn_unused_ignores  = false
 ignore_missing_imports = true
+no_site_packages = true
+
+[[tool.mypy.overrides]]
+module = [
+  "numpy",
+  "numpy.*",
+]
+follow_imports = "skip"
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = [

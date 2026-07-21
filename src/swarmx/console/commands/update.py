@@ -6,11 +6,11 @@ prompts the user, then runs pip upgrade with a rollback prompt on failure.
 from __future__ import annotations
 
 import importlib.metadata
-import structlog
 import subprocess
 import sys
 from typing import Annotated
 
+import structlog
 import typer
 
 from swarmx.console.compat import is_json_mode

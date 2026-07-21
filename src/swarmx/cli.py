@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import structlog
 import threading
 import webbrowser
 from datetime import UTC, datetime
@@ -11,6 +10,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
+import structlog
 from rich.console import Console
 from rich.table import Table
 

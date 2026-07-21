@@ -33,12 +33,13 @@ CHANGES V5.9 (this revision):
 from __future__ import annotations
 
 import os
-import structlog
 import sys
 from collections import Counter, defaultdict
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
+
+import structlog
 
 from .journal import append_event, load_events
 

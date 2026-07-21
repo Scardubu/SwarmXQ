@@ -23,9 +23,10 @@ Usage::
 
 from __future__ import annotations
 
-import structlog
 from pathlib import Path
 from typing import Any
+
+import structlog
 
 from .config import SwarmConfig
 from .event_bus import EventKind, publish

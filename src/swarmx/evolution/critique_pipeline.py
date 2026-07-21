@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import structlog
 from pathlib import Path
 from typing import Any
+
+import structlog
 
 from ..storage import payload_sha256, write_audit_log
 from .critic_agent import CriticAgent, CriticVerdict

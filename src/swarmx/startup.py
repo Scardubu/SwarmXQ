@@ -151,7 +151,7 @@ async def _check_health(cfg: Any) -> bool:
         async with asyncio.timeout(probe_timeout_s):
             async with httpx.AsyncClient(timeout=httpx.Timeout(probe_timeout_s)) as client:
                 resp = await client.get(f"{ollama_url}/api/version")
-                return resp.status_code == 200
+                return bool(resp.status_code == 200)
     except Exception:
         return False
 

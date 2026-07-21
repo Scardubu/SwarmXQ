@@ -8,9 +8,10 @@ Bug fixes vs v0.2.0:
 """
 from __future__ import annotations
 
-import structlog
 from pathlib import Path
 from typing import Any
+
+import structlog
 
 from swarmx.evolver import apply_proposals, build_evolution_proposals
 

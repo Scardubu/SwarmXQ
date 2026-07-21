@@ -5,10 +5,10 @@ Bug fix vs v0.2.0:
 """
 from __future__ import annotations
 
-import structlog
 from pathlib import Path
 from typing import Annotated
 
+import structlog
 import typer
 from rich.live import Live
 

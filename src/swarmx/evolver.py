@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 import secrets
-import structlog
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import structlog
 import yaml
 
 from .config import SwarmConfig

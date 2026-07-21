@@ -6,10 +6,10 @@ and optionally tails it in real time. Supports JSON, level, and agent filters.
 from __future__ import annotations
 
 import json
-import structlog
 import time
 from typing import Annotated
 
+import structlog
 import typer
 
 from swarmx.console.compat import is_json_mode

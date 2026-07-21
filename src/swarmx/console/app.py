@@ -11,11 +11,11 @@ CHANGES:
 """
 from __future__ import annotations
 
-import structlog
 import sys
 from pathlib import Path
 from typing import Annotated
 
+import structlog
 import typer
 
 from swarmx import __version__
