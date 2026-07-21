@@ -125,12 +125,14 @@ db-check: ## Run SQLite integrity check on the runtime database
 
 # ── Models ────────────────────────────────────────────────────────────────────
 
-ollama-pull: ## Pull the full triadic model set into Ollama
-	@echo "$(YELLOW)Pulling LLM model triad...$(RESET)"
-	OLLAMA_HOST="$(OLLAMA_HOST)" ollama pull phi4-mini
-	OLLAMA_HOST="$(OLLAMA_HOST)" ollama pull qwen2.5-coder
-	OLLAMA_HOST="$(OLLAMA_HOST)" ollama pull deepseek-r1:7b
-	@echo "$(GREEN)All models pulled$(RESET)"
+ollama-pull: ## Pull the canonical APEX operator model set into Ollama
+	@echo "$(YELLOW)Pulling canonical APEX operator models...$(RESET)"
+	OLLAMA_HOST="$(OLLAMA_HOST)" ollama pull route-phi4-lite-q4km-prod
+	OLLAMA_HOST="$(OLLAMA_HOST)" ollama pull instruct-phi4-pro-q8-prod
+	OLLAMA_HOST="$(OLLAMA_HOST)" ollama pull plan-qwen25-pro-q5km-prod
+	OLLAMA_HOST="$(OLLAMA_HOST)" ollama pull code-qwen25-pro-q5km-prod
+	OLLAMA_HOST="$(OLLAMA_HOST)" ollama pull reason-deepseekr1-pro-q5km-prod
+	@echo "$(GREEN)Canonical APEX models pulled$(RESET)"
 
 ollama-list: ## List models currently loaded in Ollama
 	@curl -sf $(OLLAMA_HOST)/api/tags | python3 -m json.tool

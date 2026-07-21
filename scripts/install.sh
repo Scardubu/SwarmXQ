@@ -2,8 +2,8 @@
 # SwarmX · scripts/install.sh · v2.2 · IEP-ELITE-MAX
 #
 # CHANGELOG:
-#   v2.2 [MODEL-04]    Installer triad updated to canonical tags (phi4-fast,
-#                      deepseek-reasoner, qwen-worker) to match runtime config.
+#   v2.3 [MODEL-07]    Installer defaults updated to canonical APEX operator tags.
+#   v2.2 [MODEL-04]    Installer triad updated to canonical tags.
 #        [MODEL-05]    Ollama pulls now skip when canonical tags already exist,
 #                      avoiding duplicate downloads on re-install.
 #        [MODEL-06]    RC-file exports updated to canonical SWARM_MODEL_* values.
@@ -32,8 +32,8 @@ CYAN()  { printf '\033[0;36m%s\033[0m' "$1"; }
 BOLD()  { printf '\033[1m%s\033[0m' "$1"; }
 
 echo ""
-echo "$(BOLD 'SwarmX Installer') · v2.2 · IEP-ELITE-MAX"
-echo "Model triad: $(CYAN 'phi4-fast') (router) · $(CYAN 'deepseek-reasoner') (reason) · $(CYAN 'qwen-worker') (code)"
+echo "$(BOLD 'SwarmX Installer') · v2.3 · IEP-ELITE-MAX"
+echo "APEX models: $(CYAN 'instruct-phi4-pro-q8-prod') (Pilot) · $(CYAN 'reason-deepseekr1-pro-q5km-prod') (Oracle) · $(CYAN 'code-qwen25-pro-q5km-prod') (Forge)"
 echo "──────────────────────────────────────────────────────────"
 
 # ── Pre-flight checks ────────────────────────────────────────────────────────
@@ -117,13 +117,13 @@ RC_BLOCK=$(cat <<'RCBLOCK'
 # ── SwarmX v2.0 ────────────────────────────────────────────
 export SWARM_HOME="$HOME/.swarmx"
 export PATH="$HOME/.local/bin:$PATH"
-# Model triad: phi4-fast (orchestrator) · deepseek-reasoner (reason) · qwen-worker (code)
-export MODEL_FAST="phi4-fast"
-export MODEL_REASON="deepseek-reasoner"
-export MODEL_CODE="qwen-worker"
-export SWARM_MODEL_FAST="phi4-fast"
-export SWARM_MODEL_REASON="deepseek-reasoner"
-export SWARM_MODEL_CODE="qwen-worker"
+# APEX model defaults: Pilot · Oracle · Forge
+export MODEL_FAST="instruct-phi4-pro-q8-prod"
+export MODEL_REASON="reason-deepseekr1-pro-q5km-prod"
+export MODEL_CODE="code-qwen25-pro-q5km-prod"
+export SWARM_MODEL_FAST="instruct-phi4-pro-q8-prod"
+export SWARM_MODEL_REASON="reason-deepseekr1-pro-q5km-prod"
+export SWARM_MODEL_CODE="code-qwen25-pro-q5km-prod"
 # ─────────────────────────────────────────────────────────────────
 RCBLOCK
 )
@@ -140,15 +140,15 @@ for RC in "$HOME/.zshrc" "$HOME/.bashrc"; do
       echo "  $(GREEN '[OK]') Patched $RC (backup saved)"
     else
       # Already patched — only update the model vars if they've changed
-      sed -i 's/MODEL_FAST=.*/MODEL_FAST="phi4-fast"/' "$RC" 2>/dev/null || true
-      sed -i 's/MODEL_REASON=.*/MODEL_REASON="deepseek-reasoner"/' "$RC" 2>/dev/null || true
-      sed -i 's/MODEL_CODE=.*/MODEL_CODE="qwen-worker"/' "$RC" 2>/dev/null || true
-      sed -i 's/SWARM_MODEL_FAST=.*/SWARM_MODEL_FAST="phi4-fast"/' "$RC" 2>/dev/null || true
-      sed -i 's/SWARM_MODEL_REASON=.*/SWARM_MODEL_REASON="deepseek-reasoner"/' "$RC" 2>/dev/null || true
-      sed -i 's/SWARM_MODEL_CODE=.*/SWARM_MODEL_CODE="qwen-worker"/' "$RC" 2>/dev/null || true
+      sed -i 's/MODEL_FAST=.*/MODEL_FAST="instruct-phi4-pro-q8-prod"/' "$RC" 2>/dev/null || true
+      sed -i 's/MODEL_REASON=.*/MODEL_REASON="reason-deepseekr1-pro-q5km-prod"/' "$RC" 2>/dev/null || true
+      sed -i 's/MODEL_CODE=.*/MODEL_CODE="code-qwen25-pro-q5km-prod"/' "$RC" 2>/dev/null || true
+      sed -i 's/SWARM_MODEL_FAST=.*/SWARM_MODEL_FAST="instruct-phi4-pro-q8-prod"/' "$RC" 2>/dev/null || true
+      sed -i 's/SWARM_MODEL_REASON=.*/SWARM_MODEL_REASON="reason-deepseekr1-pro-q5km-prod"/' "$RC" 2>/dev/null || true
+      sed -i 's/SWARM_MODEL_CODE=.*/SWARM_MODEL_CODE="code-qwen25-pro-q5km-prod"/' "$RC" 2>/dev/null || true
       if ! grep -q 'MODEL_REASON' "$RC"; then
-        echo 'export MODEL_REASON="deepseek-reasoner"' >> "$RC"
-        echo 'export SWARM_MODEL_REASON="deepseek-reasoner"' >> "$RC"
+        echo 'export MODEL_REASON="reason-deepseekr1-pro-q5km-prod"' >> "$RC"
+        echo 'export SWARM_MODEL_REASON="reason-deepseekr1-pro-q5km-prod"' >> "$RC"
       fi
       echo "  $(YELLOW '[UPDATED]') $RC — model vars refreshed (no duplicate block added)"
     fi
@@ -162,17 +162,17 @@ if [[ -d "$ROOT/configs" ]]; then
   echo "  $(GREEN '[OK]') Configs copied to $SWARM_HOME_DIR/configs/"
 fi
 
-# ── Pull Ollama model triad ──────────────────────────────────────────────────
+# ── Pull Ollama APEX operator models ─────────────────────────────────────────
 echo ""
-echo "$(CYAN '[6/6]') Pulling Ollama model triad"
+echo "$(CYAN '[6/6]') Pulling Ollama APEX operator models"
 
 install_models() {
   if ! command -v ollama >/dev/null 2>&1; then
     echo "  $(YELLOW '[SKIP]') Ollama not found. Install from https://ollama.ai"
     echo "          Then pull models manually:"
-    echo "            ollama pull phi4-fast"
-    echo "            ollama pull deepseek-reasoner"
-    echo "            ollama pull qwen-worker"
+    echo "            ollama pull instruct-phi4-pro-q8-prod"
+    echo "            ollama pull reason-deepseekr1-pro-q5km-prod"
+    echo "            ollama pull code-qwen25-pro-q5km-prod"
     return
   fi
 
@@ -197,9 +197,11 @@ install_models() {
     fi
   }
 
-  _ensure_model "phi4-fast" "orchestrator / router brain"
-  _ensure_model "deepseek-reasoner" "reasoning engine"
-  _ensure_model "qwen-worker" "execution engine"
+  _ensure_model "route-phi4-lite-q4km-prod" "Relay router"
+  _ensure_model "instruct-phi4-pro-q8-prod" "Pilot classifier and captioner"
+  _ensure_model "plan-qwen25-pro-q5km-prod" "Architect planner"
+  _ensure_model "code-qwen25-pro-q5km-prod" "Forge code agent"
+  _ensure_model "reason-deepseekr1-pro-q5km-prod" "Oracle reasoner"
 }
 
 install_models
@@ -211,10 +213,10 @@ echo "$(GREEN 'Installation complete.') Restart your shell or:"
 echo "  source ~/.zshrc   # zsh"
 echo "  source ~/.bashrc  # bash"
 echo ""
-echo "Model triad status:"
-echo "  $(CYAN 'phi4-fast')          → MODEL_FAST / orchestrator"
-echo "  $(CYAN 'deepseek-reasoner') → MODEL_REASON / reasoning engine"
-echo "  $(CYAN 'qwen-worker')       → MODEL_CODE  / execution engine"
+echo "APEX model status:"
+echo "  $(CYAN 'instruct-phi4-pro-q8-prod')        → MODEL_FAST / Pilot"
+echo "  $(CYAN 'reason-deepseekr1-pro-q5km-prod')  → MODEL_REASON / Oracle"
+echo "  $(CYAN 'code-qwen25-pro-q5km-prod')        → MODEL_CODE / Forge"
 echo ""
 echo "Verify with: swarm doctor"
 echo "Gate check:  ./swarm-gate.sh --gate all --models"
