@@ -21,7 +21,12 @@ export type DurableCollection =
   | "publish-packages"
   | "performance-snapshots"
   | "experiments"
-  | "learning-records";
+  | "learning-records"
+  | "creative-dna"
+  | "concept-tournaments"
+  | "variant-records"
+  | "creative-agent-specs"
+  | "creative-blackboard";
 
 interface SnapshotEnvelope<T> {
   schemaVersion: 1;

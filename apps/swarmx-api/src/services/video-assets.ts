@@ -145,6 +145,7 @@ export async function buildOutputMetadata(
         vttPath: input.renderPackage.vttPath,
         rightsManifestPath: input.renderPackage.rightsManifestPath,
         platformPackagePath: input.renderPackage.platformPackagePath,
+        thumbnailPath: input.renderPackage.thumbnailPath,
       }
       : {}),
   };

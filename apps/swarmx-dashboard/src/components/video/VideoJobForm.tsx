@@ -276,6 +276,8 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
             { value: "contrarian", label: "Contrarian" },
             { value: "cinematic", label: "Cinematic" },
             { value: "minimal", label: "Minimal" },
+            { value: "faceless_broll", label: "Faceless B-roll" },
+            { value: "kinetic_text", label: "Kinetic Text" },
           ]}
         />
         <Select

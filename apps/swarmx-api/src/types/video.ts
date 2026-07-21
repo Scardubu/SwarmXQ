@@ -147,6 +147,7 @@ export interface VideoOutputMetadata {
   vttPath?: string;
   rightsManifestPath?: string;
   platformPackagePath?: string;
+  thumbnailPath?: string;
 }
 
 // ─── Full Job Record ──────────────────────────────────────────────────────────

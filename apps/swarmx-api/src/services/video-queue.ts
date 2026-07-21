@@ -204,6 +204,7 @@ export function startJob(id: string): VideoJob | null {
   job.status = "running";
   job.startedAt = now();
   job.updatedAt = now();
+  delete job.error;
   persistJob("start", job);
   return job;
 }
@@ -284,6 +285,7 @@ export function completeJob(
   job.completedAt = now();
   job.updatedAt = now();
   delete job.currentStage;
+  delete job.error;
   persistJob("complete", job);
   return job;
 }

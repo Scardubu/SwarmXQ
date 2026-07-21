@@ -262,7 +262,16 @@ const VideoJobRequestSchema = {
     audience: { type: "string", minLength: 1, maxLength: 160 },
     tone: {
       type: "string",
-      enum: ["educational", "urgent", "warm", "contrarian", "cinematic", "minimal"],
+      enum: [
+        "educational",
+        "urgent",
+        "warm",
+        "contrarian",
+        "cinematic",
+        "minimal",
+        "faceless_broll",
+        "kinetic_text",
+      ],
     },
     style: {
       type: "string",
@@ -1021,7 +1030,14 @@ export async function videoRoutes(
       }
 
       const ext = filename.split(".").pop()?.toLowerCase();
-      const contentType = ext === "webm" ? "video/webm" : "video/mp4";
+      const contentTypeByExtension: Record<string, string> = {
+        mp4: "video/mp4",
+        webm: "video/webm",
+      };
+      const contentType = ext ? contentTypeByExtension[ext] : undefined;
+      if (!contentType) {
+        return reply.status(415).send({ error: "unsupported_media_type" });
+      }
 
       let fileSize: number;
       try {

@@ -22,6 +22,18 @@ const RENDER_COMMAND_TIMEOUT_MS = Math.min(
 const COMMAND_MAX_BUFFER_BYTES = 1024 * 1024;
 const RENDER_TEMP_DIR = resolve(_ffenv.SWARMX_VIDEO_TEMP_DIR);
 
+async function moveFileAcrossDevices(source: string, destination: string): Promise<void> {
+  try {
+    await rename(source, destination);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EXDEV") {
+      throw error;
+    }
+    await copyFile(source, destination);
+    await unlink(source);
+  }
+}
+
 interface FfmpegRenderInput {
   jobId: string;
   request: VideoJobRequest;
@@ -40,6 +52,10 @@ export interface FfmpegRenderPackage {
   vttPath: string;
   rightsManifestPath: string;
   platformPackagePath: string;
+  qualityReportPath: string;
+  thumbnailPath: string;
+  voiceLineagePath: string;
+  templateLineagePath: string;
   mediaQualityReport: MediaQualityReport;
   voiceArtifact?: VoiceArtifact;
 }
@@ -239,6 +255,7 @@ function narrationText(input: FfmpegRenderInput, cards: string[]): string {
 function rendererTierForRequest(request: VideoJobRequest): RendererCapabilityTier {
   if (request.style === "faceless_broll" || request.tone === "faceless_broll") return "ffmpeg_faceless_broll";
   if (request.style === "kinetic_text" || request.tone === "kinetic_text") return "ffmpeg_kinetic_text";
+  if (request.tone === "cinematic") return "ffmpeg_cinematic_explainer";
   return "ffmpeg_kinetic_text";
 }
 
@@ -432,6 +449,7 @@ async function writeProductionPackage(input: {
   narration: string;
   duration: number;
   voiceArtifact?: VoiceArtifact;
+  signal?: AbortSignal;
 }): Promise<FfmpegRenderPackage> {
   const packageDir = resolve(loadEnv().SWARMX_VIDEO_ARTIFACT_DIR, input.jobId);
   await mkdir(packageDir, { recursive: true });
@@ -439,10 +457,13 @@ async function writeProductionPackage(input: {
   const transcriptPath = join(packageDir, "transcript.txt");
   const srtPath = join(packageDir, "captions.srt");
   const vttPath = join(packageDir, "captions.vtt");
-  const rightsManifestPath = join(packageDir, "rights-provenance.json");
-  const platformPackagePath = join(packageDir, "platform-package.json");
+  const rightsManifestPath = join(packageDir, "rights-manifest.json");
+  const platformPackagePath = join(packageDir, "platform-manifest.json");
   const renderManifestPath = join(packageDir, "render-manifest.json");
-  const qcPath = join(packageDir, "technical-creative-qc.json");
+  const qcPath = join(packageDir, "quality-report.json");
+  const thumbnailPath = join(packageDir, "thumbnail.jpg");
+  const voiceLineagePath = join(packageDir, "voice-lineage.json");
+  const templateLineagePath = join(packageDir, "template-lineage.json");
   const packagedVoicePath = join(packageDir, "narration.wav");
   let voiceArtifact = input.voiceArtifact;
 
@@ -474,6 +495,16 @@ async function writeProductionPackage(input: {
     voice: voiceArtifact ?? null,
   };
   await writeFile(rightsManifestPath, `${JSON.stringify(rights, null, 2)}\n`, "utf8");
+  await writeFile(join(packageDir, "rights-provenance.json"), `${JSON.stringify(rights, null, 2)}\n`, "utf8");
+
+  await execFileChecked("ffmpeg", [
+    "-y",
+    "-ss", "0.5",
+    "-i", input.outputPath,
+    "-frames:v", "1",
+    "-q:v", "3",
+    thumbnailPath,
+  ], input.signal);
 
   const platformPackage = {
     schemaVersion: 1,
@@ -490,8 +521,10 @@ async function writeProductionPackage(input: {
     },
     aiDisclosure: "AI-assisted local video package; no external publication attempted.",
     subtitleTracks: [srtPath, vttPath],
+    thumbnailPath,
   };
   await writeFile(platformPackagePath, `${JSON.stringify(platformPackage, null, 2)}\n`, "utf8");
+  await writeFile(join(packageDir, "platform-package.json"), `${JSON.stringify(platformPackage, null, 2)}\n`, "utf8");
 
   const rawDetectorFindings = [
     await collectDetectorFinding(input.outputPath, "blackdetect", "blackdetect=d=0.5:pix_th=0.10", input.templateId),
@@ -520,6 +553,27 @@ async function writeProductionPackage(input: {
     createdAt: new Date().toISOString(),
   };
   await writeFile(qcPath, `${JSON.stringify(mediaQualityReport, null, 2)}\n`, "utf8");
+  await writeFile(join(packageDir, "technical-creative-qc.json"), `${JSON.stringify(mediaQualityReport, null, 2)}\n`, "utf8");
+
+  const voiceLineage = {
+    schemaVersion: 1,
+    providerId: voiceArtifact?.providerId ?? "unavailable",
+    qualityTier: voiceArtifact?.qualityTier ?? "none",
+    outputPath: voiceArtifact?.outputPath ?? null,
+    sha256: voiceArtifact?.sha256 ?? null,
+    createdAt: new Date().toISOString(),
+  };
+  await writeFile(voiceLineagePath, `${JSON.stringify(voiceLineage, null, 2)}\n`, "utf8");
+
+  const templateLineage = {
+    schemaVersion: 1,
+    rendererTier: input.rendererTier,
+    templateId: input.templateId,
+    source: "local-ffmpeg-template",
+    motionSystem: "drawbox-motion-layers",
+    createdAt: new Date().toISOString(),
+  };
+  await writeFile(templateLineagePath, `${JSON.stringify(templateLineage, null, 2)}\n`, "utf8");
 
   const manifest = {
     schemaVersion: 1,
@@ -539,6 +593,10 @@ async function writeProductionPackage(input: {
     vttPath,
     rightsManifestPath,
     platformPackagePath,
+    qualityReportPath: qcPath,
+    thumbnailPath,
+    voiceLineagePath,
+    templateLineagePath,
     qcPath,
     voiceArtifact: voiceArtifact ?? null,
     createdAt: new Date().toISOString(),
@@ -555,6 +613,10 @@ async function writeProductionPackage(input: {
     vttPath,
     rightsManifestPath,
     platformPackagePath,
+    qualityReportPath: qcPath,
+    thumbnailPath,
+    voiceLineagePath,
+    templateLineagePath,
     mediaQualityReport,
     ...(voiceArtifact ? { voiceArtifact } : {}),
   };
@@ -659,7 +721,7 @@ export async function renderWithFfmpeg(input: FfmpegRenderInput): Promise<{ outp
       tempOutputPath,
     ], input.signal);
 
-    await rename(tempOutputPath, outputPath);
+    await moveFileAcrossDevices(tempOutputPath, outputPath);
     renderCompleted = true;
 
     const renderPackage = await writeProductionPackage({
@@ -673,6 +735,7 @@ export async function renderWithFfmpeg(input: FfmpegRenderInput): Promise<{ outp
       narration,
       duration,
       ...(voiceArtifact ? { voiceArtifact } : {}),
+      ...(input.signal ? { signal: input.signal } : {}),
     });
 
     return { outputFilename, renderPackage };

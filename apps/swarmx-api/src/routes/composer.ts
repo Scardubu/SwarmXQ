@@ -671,7 +671,7 @@ function fallbackForSimplePrompt(message: string): string | null {
       "  return `Hello, ${name}!`;",
       "}",
       "",
-      "console.log(greet(\"SwarmX\"));",
+      "process.stdout.write(`${greet(\"SwarmX\")}\\n`);",
       "```",
     ].join("\n");
   }
@@ -690,11 +690,11 @@ function fallbackForSimplePrompt(message: string): string | null {
       "  value: number;",
       "}",
       "",
-      "function process(cfg: Config): string {",
+      "function formatConfig(cfg: Config): string {",
       "  return `${cfg.name}: ${cfg.value}`;" ,
       "}",
       "",
-      "console.log(process({ name: \"SwarmX\", value: 42 }));",
+      "process.stdout.write(`${formatConfig({ name: \"SwarmX\", value: 42 })}\\n`);",
       "```",
       "",
       "Start Ollama and pull a model for a task-specific response:",
