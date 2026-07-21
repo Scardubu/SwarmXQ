@@ -515,6 +515,100 @@ export interface LearningRecord {
   createdAt: string;
 }
 
+export interface CreativeDNA {
+  id: string;
+  schemaVersion: 1;
+  name: string;
+  audiencePromise: string;
+  coreEmotion: string;
+  centralTension: string;
+  noveltyMechanism: string;
+  hookFamily: string;
+  narrativeShape: string;
+  visualGrammar: string;
+  motionGrammar: string;
+  soundSignature: string;
+  captionPersonality: string;
+  CTAStyle: string;
+  loopMechanism: string;
+  forbiddenCliches: string[];
+  brandConstraints: string[];
+  platformAdaptations: Partial<Record<VideoExportPlatform, string>>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConceptCandidate {
+  id: string;
+  title: string;
+  premise: string;
+  hookFamily: string;
+  visualLanguage: string;
+  emotionalArc: string;
+  CTAStyle: string;
+  feasibility: number;
+  originality: number;
+  confidence: number;
+}
+
+export interface ConceptTournament {
+  id: string;
+  schemaVersion: 1;
+  creativeDnaId: string;
+  candidates: ConceptCandidate[];
+  winnerId: string;
+  backupId: string;
+  scoringVersion: string;
+  rationale: string;
+  diversityWarnings: string[];
+  createdAt: string;
+}
+
+export interface VariantRecord {
+  id: string;
+  schemaVersion: 1;
+  parentPackageId: string;
+  changedVariable: "hook" | "first_frame" | "opening_motion" | "caption_first_line" | "cta" | "cover" | "duration" | "pacing" | "visual_metaphor" | "voice" | "music_intensity";
+  hypothesis: string;
+  targetMetric: string;
+  lineage: string[];
+  productionStatus: "draft" | "rendered" | "review_required" | "approved" | "blocked";
+  publishingStatus: "not_requested" | "draft_handoff" | "published_verified" | "blocked";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreativeAgentSpec {
+  id: string;
+  schemaVersion: 1;
+  purpose: string;
+  inputs: string[];
+  outputs: string[];
+  allowedTools: string[];
+  forbiddenTools: string[];
+  operatorPolicy: string;
+  profileRequirements: RuntimeProfileId[];
+  timeoutMs: number;
+  retryPolicy: "none" | "bounded_once" | "bounded_twice";
+  validation: string[];
+  confidenceRequired: number;
+  humanApprovalBoundary: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreativeBlackboardRecord {
+  id: string;
+  schemaVersion: 1;
+  workflowRunId: string;
+  agentId: string;
+  artifactKind: string;
+  artifactRef: string;
+  evidenceRefs: string[];
+  confidence: number;
+  createdAt: string;
+}
+
 export interface ReadyToPostCertification {
   lifecycleState: EpisodeLifecycleState;
   certificationTier?: CertificationTier;
