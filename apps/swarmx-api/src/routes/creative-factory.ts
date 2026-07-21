@@ -3,7 +3,11 @@ import { z } from "zod";
 import type {
   AudiencePersona,
   BrandKit,
+  ConceptTournament,
+  CreativeAgentSpec,
+  CreativeDNA,
   CreativeFactoryStage,
+  VariantRecord,
   VideoBlueprint,
 } from "@swarmx/types/video-types";
 import {
@@ -247,6 +251,22 @@ export async function creativeFactoryRoutes(server: FastifyInstance): Promise<vo
 
   server.get("/blueprints", async () => ({
     blueprints: listRegistryRecords<VideoBlueprint>("video-blueprints"),
+  }));
+
+  server.get("/creative-dna", async () => ({
+    records: listRegistryRecords<CreativeDNA>("creative-dna"),
+  }));
+
+  server.get("/concept-tournaments", async () => ({
+    tournaments: listRegistryRecords<ConceptTournament>("concept-tournaments"),
+  }));
+
+  server.get("/variants", async () => ({
+    variants: listRegistryRecords<VariantRecord>("variant-records"),
+  }));
+
+  server.get("/agents", async () => ({
+    agents: listRegistryRecords<CreativeAgentSpec>("creative-agent-specs"),
   }));
 
   server.get("/analytics/performance", async () => ({

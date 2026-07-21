@@ -1,7 +1,7 @@
 # Creative Factory Release Status
 
 Date: 2026-07-20
-Certification level: `CODE_VALIDATED` target in progress
+Certification level: `CODE_VALIDATED` for V4 closeout changes; live workflow certification still pending
 
 ## Implemented In This Baseline
 
@@ -24,6 +24,26 @@ Certification level: `CODE_VALIDATED` target in progress
 - Series Engine now persists the generated `seriesTitle` and enforces roadmap count, contiguous episode numbering, Chekhov payoff bounds, solo-format character rules, palette size, AI-seed length, scene prompt count/labels, and exact character seed preservation.
 - `READY_TO_POST` certification is executable and blocks stub media, missing subtitles, unresolved rights, failed QC/compliance, and incomplete platform packages.
 - Observed analytics now persist as `PerformanceSnapshot` records separated from predicted virality and learning recommendations remain approval-gated.
+- `POST /api/video/jobs` accepts all eight canonical tones:
+  `contrarian`, `urgent`, `educational`, `cinematic`, `warm`, `minimal`,
+  `faceless_broll`, and `kinetic_text`.
+- `/api/video/files/:filename` is allowlisted to `.mp4` and `.webm`; unsupported
+  extensions return `415 unsupported_media_type`.
+- Canonical APEX model setup instructions now use `route-phi4-lite-q4km-prod`,
+  `instruct-phi4-pro-q8-prod`, `plan-qwen25-pro-q5km-prod`,
+  `code-qwen25-pro-q5km-prod`, and `reason-deepseekr1-pro-q5km-prod`.
+- A non-mutating model registry/Modelfile gate validates directive-required
+  metadata, profile eligibility, canonical tag resolution, Modelfile presence,
+  and executable legacy-reference drift.
+- Creative Factory registry now includes typed `CreativeDNA`,
+  `ConceptTournament`, `VariantRecord`, `CreativeAgentSpec`, and blackboard
+  collections using the existing snapshot/JSONL persistence path.
+- Creative Factory API now exposes `/creative-dna`, `/concept-tournaments`,
+  `/variants`, and `/agents` read endpoints.
+- Production FFmpeg packages now emit directive names:
+  `quality-report.json`, `rights-manifest.json`, `platform-manifest.json`,
+  `voice-lineage.json`, `template-lineage.json`, and `thumbnail.jpg`, plus
+  compatibility copies for older QC/provenance consumers.
 
 ## Validation Executed On 2026-07-20
 
@@ -38,6 +58,7 @@ Certification level: `CODE_VALIDATED` target in progress
 - `pnpm --filter @swarmx/api run test:regression` passed outside the sandbox.
 - `pnpm --filter @swarmx/api run test:video` passed outside the sandbox.
 - `pnpm --filter @swarmx/api run test:factory` passed outside the sandbox.
+- `pnpm --filter @swarmx/api run test:models` passed outside the sandbox.
 - `pnpm --filter @swarmx/api run test:video:smoke` passed outside the sandbox and generated a 204,377-byte MP4.
 - `.venv/bin/python -m pytest` passed: 236 tests.
 - `.venv/bin/python -m ruff check tests/test_startup.py` passed.

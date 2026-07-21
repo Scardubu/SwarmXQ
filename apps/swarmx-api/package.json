@@ -10,11 +10,12 @@
     "start": "node dist/apps/swarmx-api/src/server.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:video": "tsx scripts/video-regression-check.ts",
-    "test:video:smoke": "tsx scripts/video-render-smoke.ts",
-    "test:series": "tsx scripts/series-regression.ts",
-    "test:factory": "tsx scripts/creative-factory-release-check.ts",
-    "test:regression": "tsx scripts/eviction-metric-regression.ts && tsx scripts/system-health-regression.ts && tsx scripts/reasoning-sanitizer-regression.ts && tsx scripts/adaptive-timeout-regression.ts && tsx scripts/series-regression.ts && tsx scripts/creative-factory-release-check.ts"
+    "test:video": "node --import tsx scripts/video-regression-check.ts",
+    "test:video:smoke": "node --import tsx scripts/video-render-smoke.ts",
+    "test:series": "node --import tsx scripts/series-regression.ts",
+    "test:models": "node --import tsx scripts/model-registry-modelfile-check.ts",
+    "test:factory": "node --import tsx scripts/creative-factory-release-check.ts",
+    "test:regression": "node --import tsx scripts/eviction-metric-regression.ts && node --import tsx scripts/system-health-regression.ts && node --import tsx scripts/reasoning-sanitizer-regression.ts && node --import tsx scripts/adaptive-timeout-regression.ts && node --import tsx scripts/model-registry-modelfile-check.ts && node --import tsx scripts/series-regression.ts && node --import tsx scripts/creative-factory-release-check.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",
