@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -57,6 +57,23 @@ try {
   assert.ok(metadata.durationSeconds > 0, "smoke video must have duration");
   assert.equal(metadata.widthPx, 720);
   assert.equal(metadata.heightPx, 1280);
+  assert.ok(result.renderPackage, "smoke render must include a production package");
+
+  for (const requiredPath of [
+    result.renderPackage.thumbnailPath,
+    result.renderPackage.rightsManifestPath,
+    result.renderPackage.qualityReportPath,
+    result.renderPackage.platformPackagePath,
+    result.renderPackage.voiceLineagePath,
+    result.renderPackage.templateLineagePath,
+  ]) {
+    await access(requiredPath);
+  }
+
+  const platformManifest = JSON.parse(await readFile(result.renderPackage.platformPackagePath, "utf8")) as {
+    thumbnailPath?: string;
+  };
+  assert.equal(platformManifest.thumbnailPath, result.renderPackage.thumbnailPath);
 
   console.log(`video render smoke passed: ${metadata.relativePath} ${metadata.fileSizeBytes} bytes`);
 } finally {

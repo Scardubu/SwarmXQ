@@ -141,6 +141,17 @@ describe("startJob", () => {
   test("returns null for non-existent job id", () => {
     expect(startJob("no-such-id")).toBeNull();
   });
+
+  test("clears stale retry errors when a queued retry starts", () => {
+    const job = enqueue({ prompt: "retry cleanly" });
+    startJob(job.id);
+    const requeued = failJob(job.id, retryableError);
+    expect(requeued.error?.code).toBe("TIMEOUT");
+
+    const restarted = startJob(job.id);
+    expect(restarted?.status).toBe("running");
+    expect(restarted?.error).toBeUndefined();
+  });
 });
 
 describe("completeJob", () => {
@@ -152,6 +163,18 @@ describe("completeJob", () => {
     expect(done.overallProgress).toBe(100);
     expect(done.completedAt).toBeDefined();
     expect(done.currentStage).toBeUndefined();
+  });
+
+  test("does not expose stale retry errors after successful completion", () => {
+    const job = enqueue({ prompt: "finish after retry" });
+    startJob(job.id);
+    failJob(job.id, retryableError);
+    startJob(job.id);
+
+    const done = completeJob(job.id, undefined);
+
+    expect(done.status).toBe("completed");
+    expect(done.error).toBeUndefined();
   });
 });
 

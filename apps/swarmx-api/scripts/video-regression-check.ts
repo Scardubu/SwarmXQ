@@ -301,6 +301,14 @@ assert.ok(
   routesSourceV2.includes("range_not_satisfiable"),
   "video file route must return 416 Range Not Satisfiable for invalid ranges",
 );
+assert.ok(
+  routesSourceV2.includes("unsupported_media_type"),
+  "video file route must reject unsupported media extensions instead of defaulting to video/mp4",
+);
+assert.ok(
+  routesSourceV2.includes("faceless_broll") && routesSourceV2.includes("kinetic_text"),
+  "video route schema must accept all production tone variants used by renderer/templates",
+);
 
 // ── V6.2.16 — FFmpeg renderer: tone palette and script-section extraction ────
 const rendererSource = await readFile(new URL("../src/services/ffmpeg-video-renderer.ts", import.meta.url), "utf8");
