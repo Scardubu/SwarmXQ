@@ -62,7 +62,7 @@ async function callPilotModel(prompt: string): Promise<string> {
 
   const modelRequest = await orchestrator.requestModel(callConfig.modelTag);
   try {
-    const raw = await withTimeout(
+    const { text } = await withTimeout(
       generateOllamaText({
         model: modelRequest.modelTag,
         prompt: [
@@ -81,7 +81,6 @@ async function callPilotModel(prompt: string): Promise<string> {
       "caption_generator_fast_chat",
     );
     recordSuccess(modelRequest.modelTag);
-    const { text } = sanitizeReasoningOutput(raw);
     return text;
   } catch (error) {
     recordFailure(modelRequest.modelTag);

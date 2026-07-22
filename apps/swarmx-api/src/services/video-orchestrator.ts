@@ -200,6 +200,8 @@ function recordOperatorTrace(
   model: string,
   startedAt: string,
   success: boolean,
+  tokenCount = 0,
+  latencyMs = 0,
 ): void {
   pushOperatorTrace(ctx.job, {
     stage: toPublicStatus(stage),
@@ -208,8 +210,8 @@ function recordOperatorTrace(
     operator: traceOperatorFor(model),
     startedAt,
     completedAt: new Date().toISOString(),
-    latencyMs: 0,
-    tokenCount: 0,
+    latencyMs,
+    tokenCount,
     success,
     timestamp: startedAt,
   });
@@ -343,14 +345,32 @@ async function ollamaGenerate(
   maxTokens = 1024,
   overrides: ModelOverrides = {},
   keepAlive?: string,
-): Promise<string> {
-  return generateOllamaText({
-    model,
-    prompt,
-    signal,
-    maxTokens,
-    overrides,
-    ...(keepAlive !== undefined ? { keepAlive } : {}),
+): Promise<{ text: string; tokenCount: number; latencyMs: number }> {
+  return tracer.startActiveSpan("swarmx.ollama.generate", async (span) => {
+    span.setAttribute("swarmx.model.tag", model);
+    span.setAttribute("swarmx.ollama.max_tokens", maxTokens);
+    const t0 = Date.now();
+    try {
+      const result = await generateOllamaText({
+        model,
+        prompt,
+        signal,
+        maxTokens,
+        overrides,
+        ...(keepAlive !== undefined ? { keepAlive } : {}),
+      });
+      const latencyMs = Date.now() - t0;
+      span.setAttribute("swarmx.ollama.latency_ms", latencyMs);
+      span.setAttribute("swarmx.ollama.token_count", result.tokenCount);
+      span.setStatus({ code: SpanStatusCode.OK });
+      return { text: result.text, tokenCount: result.tokenCount, latencyMs };
+    } catch (err) {
+      span.recordException(err as Error);
+      span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
+      throw err;
+    } finally {
+      span.end();
+    }
   });
 }
 
@@ -427,7 +447,7 @@ async function stageIntentClassification(
     // [VOT-03] Pass overrides to ollamaGenerate
     // [VOT-13] Sanitize raw output before parsing so DeepSeek <think> blocks
     //          never corrupt intent JSON. Safe no-op on phi4/qwen outputs.
-    const rawIntent = await ollamaGenerate(
+    const { text: rawIntent, tokenCount: intentTokens, latencyMs: intentLatency } = await ollamaGenerate(
       model,
       `Analyze this video generation brief and extract its creative strategy.
 
@@ -445,14 +465,14 @@ complexity: 0.0 = simple topic, minimal narrative arc; 1.0 = nuanced multi-beat 
     const { text: raw } = sanitizeReasoningOutput(rawIntent);
     try {
       const parsed = parseIntentClassification(raw);
-      recordOperatorTrace(ctx, "intent_classification", model, startedAt, true);
+      recordOperatorTrace(ctx, "intent_classification", model, startedAt, true, intentTokens, intentLatency);
       return parsed;
     } catch (err) {
       if (loadEnv().SWARMX_VIDEO_ALLOW_UNSTRUCTURED_INTENT === "1") {
-        recordOperatorTrace(ctx, "intent_classification", model, startedAt, true);
+        recordOperatorTrace(ctx, "intent_classification", model, startedAt, true, intentTokens, intentLatency);
         return { intent: raw.slice(0, 200), complexity: 0.5 };
       }
-      recordOperatorTrace(ctx, "intent_classification", model, startedAt, false);
+      recordOperatorTrace(ctx, "intent_classification", model, startedAt, false, intentTokens, intentLatency);
       throw Object.assign(
         new Error(`Intent classification did not return valid JSON: ${err instanceof Error ? err.message : String(err)}`),
         { code: "INTENT_VALIDATION_FAILED" },
@@ -478,7 +498,7 @@ async function stagePlanning(
   try {
     // [VOT-13] Sanitize output before parsing so <think> blocks never
     //          produce hallucinated plan lines.
-    const rawPlan = await ollamaGenerate(
+    const { text: rawPlan, tokenCount: planTokens, latencyMs: planLatency } = await ollamaGenerate(
       model,
       buildPlanningPrompt(ctx.job.request, intent),
       controller.signal,
@@ -496,18 +516,7 @@ async function stagePlanning(
         ? lines
         : ["Generate visuals", "Add narration", "Assemble final video"],
     };
-    pushOperatorTrace(ctx.job, {
-      stage: toPublicStatus("planning"),
-      operatorTag: model,
-      modelTag: model,
-      operator: traceOperatorFor(model),
-      startedAt,
-      completedAt: new Date().toISOString(),
-      latencyMs: 0,
-      tokenCount: 0,
-      success: true,
-      timestamp: startedAt,
-    });
+    recordOperatorTrace(ctx, "planning", model, startedAt, true, planTokens, planLatency);
     return result;
   } finally {
     controller.abort();
@@ -529,7 +538,7 @@ async function stageScripting(
   try {
     // [VOT-13] Sanitize output so <think> artifacts never appear in the
     //          generated script that feeds the storyboard and render stages.
-    const rawScript = await ollamaGenerate(
+    const { text: rawScript, tokenCount: scriptTokens, latencyMs: scriptLatency } = await ollamaGenerate(
       model,
       buildScriptingPrompt(ctx.job.request, plan),
       controller.signal,
@@ -538,18 +547,7 @@ async function stageScripting(
       keepAlive,
     );
     const { text: scriptText } = sanitizeReasoningOutput(rawScript);
-    pushOperatorTrace(ctx.job, {
-      stage: toPublicStatus("scripting"),
-      operatorTag: model,
-      modelTag: model,
-      operator: traceOperatorFor(model),
-      startedAt,
-      completedAt: new Date().toISOString(),
-      latencyMs: 0,
-      tokenCount: 0,
-      success: true,
-      timestamp: startedAt,
-    });
+    recordOperatorTrace(ctx, "scripting", model, startedAt, true, scriptTokens, scriptLatency);
     return { scriptText };
   } finally {
     controller.abort();
@@ -571,7 +569,7 @@ async function stageStoryboardGeneration(
   try {
     // [VOT-13] Sanitize raw output before frame extraction so DeepSeek
     //          <think> content never becomes a storyboard frame description.
-    const rawStoryboard = await ollamaGenerate(
+    const { text: rawStoryboard, tokenCount: sbTokens, latencyMs: sbLatency } = await ollamaGenerate(
       model,
       buildStoryboardPrompt(ctx.job.request, scriptText),
       controller.signal,
@@ -590,18 +588,7 @@ async function stageStoryboardGeneration(
         ? frames
         : ["Abstract cinematic opener", "Key message frame", "CTA closing frame"],
     };
-    pushOperatorTrace(ctx.job, {
-      stage: toPublicStatus("storyboard_generation"),
-      operatorTag: model,
-      modelTag: model,
-      operator: traceOperatorFor(model),
-      startedAt,
-      completedAt: new Date().toISOString(),
-      latencyMs: 0,
-      tokenCount: 0,
-      success: true,
-      timestamp: startedAt,
-    });
+    recordOperatorTrace(ctx, "storyboard_generation", model, startedAt, true, sbTokens, sbLatency);
     return result;
   } finally {
     controller.abort();
@@ -672,6 +659,7 @@ async function stageRenderAssembly(
         },
       });
 
+      const comfyStartMs = Date.now();
       const outputFilename = await assets.importComfyOutput(run.outputFilename);
       pushOperatorTrace(ctx.job, {
         stage: toPublicStatus("render_assembly"),
@@ -680,7 +668,7 @@ async function stageRenderAssembly(
         operator: "System",
         startedAt,
         completedAt: new Date().toISOString(),
-        latencyMs: 0,
+        latencyMs: Date.now() - comfyStartMs,
         tokenCount: 0,
         success: true,
         timestamp: startedAt,
@@ -701,12 +689,26 @@ async function stageRenderAssembly(
       });
     }
 
-    const rendered = await renderWithFfmpeg({
-      jobId: ctx.job.id,
-      request: ctx.job.request,
-      storyboardFrames: frames,
-      signal: controller.signal,
-      ...(ctx.scriptText !== undefined ? { scriptText: ctx.scriptText } : {}),
+    const ffmpegStartMs = Date.now();
+    const rendered = await tracer.startActiveSpan("swarmx.render.ffmpeg", async (span) => {
+      span.setAttribute("swarmx.job.id", ctx.job.id);
+      try {
+        const result = await renderWithFfmpeg({
+          jobId: ctx.job.id,
+          request: ctx.job.request,
+          storyboardFrames: frames,
+          signal: controller.signal,
+          ...(ctx.scriptText !== undefined ? { scriptText: ctx.scriptText } : {}),
+        });
+        span.setStatus({ code: SpanStatusCode.OK });
+        return result;
+      } catch (err) {
+        span.recordException(err as Error);
+        span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
+        throw err;
+      } finally {
+        span.end();
+      }
     });
     pushOperatorTrace(ctx.job, {
       stage: toPublicStatus("render_assembly"),
@@ -715,7 +717,7 @@ async function stageRenderAssembly(
       operator: "System",
       startedAt,
       completedAt: new Date().toISOString(),
-      latencyMs: 0,
+      latencyMs: Date.now() - ffmpegStartMs,
       tokenCount: 0,
       success: true,
       timestamp: startedAt,

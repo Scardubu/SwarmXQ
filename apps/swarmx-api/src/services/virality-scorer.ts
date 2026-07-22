@@ -136,7 +136,7 @@ async function callOracle(prompt: string): Promise<string> {
   const modelRequest = await orchestrator.requestModel(callConfig.modelTag);
 
   try {
-    const raw = await withTimeout(
+    const { text: raw } = await withTimeout(
       generateOllamaText({
         model: modelRequest.modelTag,
         prompt: [

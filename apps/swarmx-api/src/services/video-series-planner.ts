@@ -189,7 +189,7 @@ async function runPlannerPass(
   const mo = ModelOrchestrator.getInstance();
   const { modelTag: resolvedTag, keepAlive, overrides } = await mo.requestModel(modelTag);
   try {
-    const raw = await generateOllamaText({
+    const { text } = await generateOllamaText({
       model: resolvedTag,
       prompt,
       maxTokens,
@@ -197,7 +197,6 @@ async function runPlannerPass(
       overrides,
       signal,
     });
-    const { text } = sanitizeReasoningOutput(raw);
     return text;
   } finally {
     mo.onModelCallComplete(resolvedTag);

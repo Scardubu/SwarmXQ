@@ -317,7 +317,12 @@ export function buildOllamaGenerateBody(request: OllamaGenerateRequest): Record<
   };
 }
 
-export async function generateOllamaText(request: OllamaGenerateRequest): Promise<string> {
+export interface OllamaGenerateResult {
+  text: string;
+  tokenCount: number;
+}
+
+export async function generateOllamaText(request: OllamaGenerateRequest): Promise<OllamaGenerateResult> {
   const baseUrl = await getOllamaBaseUrl();
 
   const res = await fetch(`${baseUrl}/api/generate`, {
@@ -334,9 +339,10 @@ export async function generateOllamaText(request: OllamaGenerateRequest): Promis
     );
   }
 
-  const data = (await res.json()) as { response?: string };
+  const data = (await res.json()) as { response?: string; eval_count?: number; prompt_eval_count?: number };
   const { text } = sanitizeReasoningOutput(data.response ?? "");
-  return text.trim();
+  const tokenCount = (data.eval_count ?? 0) + (data.prompt_eval_count ?? 0);
+  return { text: text.trim(), tokenCount };
 }
 
 export async function getAvailableModels(): Promise<string[]> {
