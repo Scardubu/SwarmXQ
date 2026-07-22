@@ -43,6 +43,7 @@ run_gate "pnpm run lint" pnpm run lint
 run_gate "pnpm run test" pnpm run test
 run_gate "pnpm run build" pnpm run build
 run_gate "api regression" pnpm --filter @swarmx/api run test:regression
+run_gate "api model registry and Modelfile validation" pnpm --filter @swarmx/api run test:models
 run_gate "api video regression" pnpm --filter @swarmx/api run test:video
 run_gate "api factory regression" pnpm --filter @swarmx/api run test:factory
 if [[ -x ".venv/bin/python" ]]; then

@@ -2,7 +2,7 @@
 # SwarmX · scripts/verify.sh · v2.0 · IEP-ELITE-MAX
 #
 # CHANGES vs apex13:
-#   [CHECK-01] Model triad verification: phi4-mini + deepseek-r1:7b + qwen2.5-coder
+#   [CHECK-01] Canonical APEX model verification
 #   [CHECK-02] MODEL_REASON env var presence check added
 #
 # Runs 6 checks. Exits 0 if all pass (or only soft warnings).
@@ -93,15 +93,17 @@ else
   echo "  $(YELLOW '[WARN]') workflows/ directory not found"
 fi
 
-# ── [6/6] Model triad verification ──────────────────────────────────────────
+# ── [6/6] Canonical APEX model verification ─────────────────────────────────
 echo ""
-echo "$(CYAN '[6/6]') Model triad: phi4-fast · deepseek-reasoner · qwen-worker"
+echo "$(CYAN '[6/6]') Canonical APEX models: Relay · Pilot · Architect · Forge · Oracle"
 if command -v ollama >/dev/null 2>&1; then
   MODELS=$(ollama list 2>/dev/null | awk 'NR>1 {print $1}' || echo "")
   for spec in \
-    "phi4-fast:phi4-fast|phi4-mini" \
-    "deepseek-reasoner:deepseek-reasoner|deepseek-r1|deepseek-r1:7b" \
-    "qwen-worker:qwen-worker|qwen2.5-coder"
+    "Relay:route-phi4-lite-q4km-prod" \
+    "Pilot:instruct-phi4-pro-q8-prod" \
+    "Architect:plan-qwen25-pro-q5km-prod" \
+    "Forge:code-qwen25-pro-q5km-prod" \
+    "Oracle:reason-deepseekr1-pro-q5km-prod"
   do
     model="${spec%%:*}"
     patterns="${spec#*:}"
@@ -113,7 +115,7 @@ raise SystemExit(0 if any(any(p.lower() in model.lower() for p in patterns) for 
 "; then
       echo "  $(GREEN '[OK]') $model — present"
     else
-      echo "  $(YELLOW '[WARN]') $model — not found. Register the canonical tag or a listed legacy alias."
+      echo "  $(YELLOW '[WARN]') $model — canonical tag not found."
     fi
   done
 else
@@ -139,9 +141,11 @@ if [[ $FAIL -eq 0 ]]; then
   echo "$(GREEN 'Verification complete.') v2.0 / IEP-ELITE 2026.4"
   echo ""
   echo "Model routing:"
-  echo "  $(CYAN 'phi4-fast')           → orchestrator (always-on router brain)"
-  echo "  $(CYAN 'deepseek-reasoner')  → reasoning engine (planning, logic chains)"
-  echo "  $(CYAN 'qwen-worker')        → execution engine (coding, tool-use, agents)"
+  echo "  $(CYAN 'route-phi4-lite-q4km-prod')        → Relay router"
+  echo "  $(CYAN 'instruct-phi4-pro-q8-prod')        → Pilot classifier and captioner"
+  echo "  $(CYAN 'plan-qwen25-pro-q5km-prod')        → Architect planning"
+  echo "  $(CYAN 'code-qwen25-pro-q5km-prod')        → Forge code and tool agent"
+  echo "  $(CYAN 'reason-deepseekr1-pro-q5km-prod')  → Oracle reasoning"
 else
   echo "$(RED 'Verification FAILED.') Fix the errors above before running swarm commands."
   exit 1

@@ -15,3 +15,5 @@
 - project_v6234.md — 2026-07-19 — V6.2.31 commit (de23e8e): Series Engine V2.1 — SOLO FORMAT, LOOP_BRIDGE, DialogueNote, modular pass architecture, PassStatusRow, rerun endpoints
 - project_v6236.md — 2026-07-19 — V6.2.36: Python structlog migration complete — 25 files, all logging.getLogger removed, canonical swarmx.* logger names, 5 debug calls updated to keyword args
 - project_v6238.md — 2026-07-19 — V6.2.37+38: agent idempotency (stable memory IDs in learn_from_run/evolver); Ollama perf vars in env.ts + /health + boot log; all 4 medium items closed
+- project_v6242.md — 2026-07-19 — V6.2.42: CPU-realistic timeout bounds; first video generated (98df291a, 4m9s, 328KB); CPU governor + Ollama flash-attn + swarmxq-video-model discoveries
+- project_v6244.md — 2026-07-19 — V6.2.43+44: all 6 milestones closed; startup-enhanced.sh CPU governor + video model + flash-attn fix; bare-metal confirmed

@@ -133,7 +133,13 @@ SWARMX_TTS_PIPER_MODEL_PATH=/path/to/piper/voice.onnx
 SWARMX_DASHBOARD_ORIGIN=http://localhost:3000
 ```
 
-Local renders now produce a production package beside the MP4: transcript, SRT, VTT, render manifest, hashes, technical/creative QC report, rights/provenance manifest, platform metadata, voice lineage, and template lineage. A valid decode can earn `TECHNICALLY_VALID`; postable packages require the stricter tier ladder `PRODUCTION_PACK_VALID` → `READY_TO_POST` → `PUBLISHED_VERIFIED`.
+Local renders now produce a production package beside the MP4: transcript, SRT,
+VTT, render manifest, hashes, `quality-report.json`, `rights-manifest.json`,
+`platform-manifest.json`, `voice-lineage.json`, `template-lineage.json`, and
+`thumbnail.jpg`. Compatibility copies of the older QC/provenance filenames are
+also emitted for downstream tools that have not migrated yet. A valid decode can
+earn `TECHNICALLY_VALID`; postable packages require the stricter tier ladder
+`PRODUCTION_PACK_VALID` → `READY_TO_POST` → `PUBLISHED_VERIFIED`.
 
 Kokoro support is installed at the application/provider layer. To make it the active neural voice provider on a host, install the optional Python extra and start the local service:
 
@@ -179,7 +185,9 @@ valid, but it does not synthesize narration or honor the selected `voice`.
 Pull the required models before starting the API:
 
 ```bash
+ollama pull route-phi4-lite-q4km-prod
 ollama pull instruct-phi4-pro-q8-prod
+ollama pull plan-qwen25-pro-q5km-prod
 ollama pull reason-deepseekr1-pro-q5km-prod
 ollama pull code-qwen25-pro-q5km-prod
 ```
@@ -196,7 +204,12 @@ Verify they are available:
 
 ```bash
 ollama list
+pnpm --filter @swarmx/api run test:models
 ```
+
+The model gate is non-mutating. It validates the canonical operator registry,
+directive-required model metadata, Modelfile presence, and executable setup
+references without pulling, creating, or deleting Ollama models.
 
 ---
 
@@ -326,7 +339,7 @@ Create a new video generation job and enqueue it.
   "targetDurationSeconds": "optional; default 30, clamped to 15–180",
   "modelTier": "fast | worker | supervisor | reasoner",
   "audience": "string (optional, <=160 chars)",
-  "tone": "educational | urgent | warm | contrarian | cinematic | minimal",
+  "tone": "educational | urgent | warm | contrarian | cinematic | minimal | faceless_broll | kinetic_text",
   "style": "faceless_broll | kinetic_text | storytime | tutorial | myth_busting",
   "captionStyle": "bold_center | lower_third | minimal",
   "voice": "default | calm | energetic | narrator",
@@ -757,7 +770,23 @@ Current implementation degrades via retryable/terminal failures and pressure-awa
 - Final artifacts are accepted only after the export file exists, has nonzero
   size, and FFprobe reports a valid stream, duration, dimensions, frame rate,
   and format.
+- Final artifacts served by `/api/video/files/:filename` are allowlisted to
+  `.mp4` and `.webm`. Unknown extensions return `415 unsupported_media_type`.
 - Job retry behavior is controlled by queue policy (`VIDEO_MAX_RETRIES`).
+
+### Creative Factory V4 contracts
+
+The Creative Factory registry exposes typed records under `/api/video/factory/*`:
+
+- `/creative-dna` for local creator preferences and constraints.
+- `/concept-tournaments` for scored concept candidates.
+- `/variants` for variant lineage and learning-loop references.
+- `/agents` for typed agent specs such as intake, strategy, tournament, rights,
+  quality council, and analytics evolution.
+
+These records persist through the existing local JSON snapshot/JSONL state
+store. Learning records remain approval-gated; observed analytics are not
+conflated with predicted virality.
 
 ---
 

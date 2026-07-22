@@ -128,9 +128,11 @@ raise SystemExit(0 if found else 1)
     fi
 }
 
-check_model "phi4-fast (router)"         "phi4-fast,phi4-mini"
-check_model "deepseek-reasoner (reason)" "deepseek-reasoner,deepseek-r1,deepseek-r1:7b"
-check_model "qwen-worker (code)"         "qwen-worker,qwen2.5-coder"
+check_model "Relay router"       "route-phi4-lite-q4km-prod"
+check_model "Pilot classifier"   "instruct-phi4-pro-q8-prod"
+check_model "Architect planner"  "plan-qwen25-pro-q5km-prod"
+check_model "Forge code agent"   "code-qwen25-pro-q5km-prod"
+check_model "Oracle reasoner"    "reason-deepseekr1-pro-q5km-prod"
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
