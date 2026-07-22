@@ -17,3 +17,4 @@
 - project_v6238.md — 2026-07-19 — V6.2.37+38: agent idempotency (stable memory IDs in learn_from_run/evolver); Ollama perf vars in env.ts + /health + boot log; all 4 medium items closed
 - project_v6242.md — 2026-07-19 — V6.2.42: CPU-realistic timeout bounds; first video generated (98df291a, 4m9s, 328KB); CPU governor + Ollama flash-attn + swarmxq-video-model discoveries
 - project_v6244.md — 2026-07-19 — V6.2.43+44: all 6 milestones closed; startup-enhanced.sh CPU governor + video model + flash-attn fix; bare-metal confirmed
+- project_v6245.md — 2026-07-22 — V6.2.45: committed 55 uncommitted files from Creative Factory V4 follow-on; APEX operator migration; SYSTEM-PROMPT V3.0; CreativeDNA types; tone enum all 8 variants; 177 API tests
