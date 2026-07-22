@@ -41,6 +41,7 @@ export interface CreativeFactoryState {
   brandKits: BrandKit[];
   audiences: AudiencePersona[];
   blueprints: VideoBlueprint[];
+  selectedRunId: string | null;
   isLoading: boolean;
   error: string | null;
 }
@@ -48,6 +49,10 @@ export interface CreativeFactoryState {
 export interface CreativeFactoryActions {
   fetchFactory: () => Promise<void>;
   createRun: (input: Pick<CreativeFactoryWorkflowRun, "mode" | "profile" | "idempotencyKey">) => Promise<string | null>;
+  upsertBrandKit: (input: { name: string; voicePrinciples: string[] }) => Promise<BrandKit | null>;
+  upsertAudience: (input: { label: string; description: string; pains: string[] }) => Promise<AudiencePersona | null>;
+  fetchRunDetail: (id: string) => Promise<void>;
+  selectRun: (id: string | null) => void;
 }
 
 type CreativeFactoryStore = CreativeFactoryState & CreativeFactoryActions;
@@ -60,6 +65,7 @@ export const useCreativeFactoryStore = create<CreativeFactoryStore>()(
     brandKits: [],
     audiences: [],
     blueprints: [],
+    selectedRunId: null,
     isLoading: false,
     error: null,
 
@@ -104,5 +110,66 @@ export const useCreativeFactoryStore = create<CreativeFactoryStore>()(
         return null;
       }
     },
+
+    upsertBrandKit: async (input) => {
+      try {
+        const kit = await apiFetch<BrandKit>("/api/video/factory/brand-kits", {
+          method: "POST",
+          body: JSON.stringify({
+            name: input.name,
+            voicePrinciples: input.voicePrinciples,
+            colorTokens: {},
+            typographyTokens: {},
+            visualMotifs: [],
+            forbiddenClaims: [],
+          }),
+        });
+        set({
+          brandKits: [kit, ...get().brandKits.filter((b) => b.id !== kit.id)],
+        }, false, "factory/upsertBrandKit");
+        return kit;
+      } catch (err) {
+        set({ error: err instanceof Error ? err.message : "Failed to save brand kit." });
+        return null;
+      }
+    },
+
+    upsertAudience: async (input) => {
+      try {
+        const persona = await apiFetch<AudiencePersona>("/api/video/factory/audiences", {
+          method: "POST",
+          body: JSON.stringify({
+            label: input.label,
+            description: input.description,
+            pains: input.pains,
+            desiredOutcomes: [],
+            platformHabits: {},
+            languageLocale: "en-US",
+          }),
+        });
+        set({
+          audiences: [persona, ...get().audiences.filter((a) => a.id !== persona.id)],
+        }, false, "factory/upsertAudience");
+        return persona;
+      } catch (err) {
+        set({ error: err instanceof Error ? err.message : "Failed to save audience." });
+        return null;
+      }
+    },
+
+    fetchRunDetail: async (id) => {
+      try {
+        const run = await apiFetch<CreativeFactoryWorkflowRun>(`/api/video/factory/runs/${id}`);
+        const existing = get().runs;
+        const updated = existing.some((r) => r.id === id)
+          ? existing.map((r) => (r.id === id ? run : r))
+          : [run, ...existing];
+        set({ runs: updated, selectedRunId: id }, false, "factory/fetchRunDetail");
+      } catch (err) {
+        set({ error: err instanceof Error ? err.message : "Failed to fetch run detail." });
+      }
+    },
+
+    selectRun: (id) => set({ selectedRunId: id }, false, "factory/selectRun"),
   }), { name: "creative-factory-store" }),
 );
