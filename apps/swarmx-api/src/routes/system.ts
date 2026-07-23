@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { getAvailableModels, fastHealthProbe } from "../services/ollama.js";
 import { getSwarmHealthSummary } from "../services/swarm-pressure-monitor.js";
 import { resolveRuntimeProfile } from "../services/runtime-profiles.js";
+import { readVoiceBenchmarkReport } from "../services/voice-benchmark-report.js";
 import { loadEnv } from "../lib/env.js";
 
 const execFileAsync = promisify(execFile);
@@ -176,9 +177,10 @@ export async function systemRouter(server: FastifyInstance): Promise<void> {
     // Ollama is reachable, then only inspect installed models when it is. This
     // keeps a down Ollama daemon from triggering redundant `/api/tags` discovery
     // and preserves a bounded response time during degraded startup.
-    const [ollamaHealth, mem] = await Promise.all([
+    const [ollamaHealth, mem, voiceBenchmark] = await Promise.all([
       fastHealthProbe(livenessTimeoutMs),
       si.mem(),
+      readVoiceBenchmarkReport(),
     ]);
     const models = ollamaHealth.reachable
       ? await probeModelsWithin(modelProbeTimeoutMs)
@@ -227,6 +229,27 @@ export async function systemRouter(server: FastifyInstance): Promise<void> {
       swarm,
       memory: memGb,
       warmup: readWarmupStatus(),
+      voice: {
+        preferredProvider: loadEnv().SWARMX_TTS_PROVIDER,
+        benchmark: voiceBenchmark
+          ? {
+            generatedAt: voiceBenchmark.report.generatedAt,
+            ageHours: +voiceBenchmark.ageHours.toFixed(2),
+            stale: voiceBenchmark.stale,
+            recommendedProviderId: voiceBenchmark.report.recommendedProviderId,
+            recommendationReason: voiceBenchmark.report.recommendationReason,
+            providers: voiceBenchmark.report.measurements.map((m) => ({
+              id: m.providerId,
+              qualityTier: m.qualityTier,
+              probeState: m.probeState,
+              realTimeFactor: m.realTimeFactor,
+              warmLatencyMs: m.warmLatencyMs,
+              coldLatencyMs: m.coldLatencyMs,
+              failures: m.failures,
+            })),
+          }
+          : null,
+      },
       runtimeProfile: {
         id: runtimeProfile.profile.id,
         label: runtimeProfile.profile.label,

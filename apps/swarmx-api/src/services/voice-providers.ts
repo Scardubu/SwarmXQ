@@ -13,6 +13,7 @@ import type {
   VoiceQualityTier,
 } from "@swarmx/types/video-types";
 import { loadEnv } from "../lib/env.js";
+import { rankAvailableProviders, readVoiceBenchmarkReport } from "./voice-benchmark-report.js";
 
 const VOICE_COMMAND_TIMEOUT_MS = 120_000;
 const COMMAND_MAX_BUFFER_BYTES = 1024 * 1024;
@@ -498,16 +499,19 @@ export function voiceProviders(): VoiceProvider[] {
   return [new KokoroVoiceProvider(), new PiperVoiceProvider(), new EspeakVoiceProvider()];
 }
 
-export async function selectVoiceProvider(): Promise<{ provider: VoiceProvider; capability: VoiceCapability; fallbackReason?: string }> {
+export async function selectVoiceProvider(): Promise<{ provider: VoiceProvider; capability: VoiceCapability; fallbackReason?: string; benchmarkAppliedProviderId?: string }> {
   const env = loadEnv();
   const providers = voiceProviders();
   const preferred = env.SWARMX_TTS_PROVIDER;
   const preferredProviderId = preferred === "espeak" ? "espeak-ng" : preferred;
-  const ordered = preferred === "auto"
-    ? providers
-    : providers.filter((provider) => provider.id === preferredProviderId);
 
-  for (const provider of ordered) {
+  if (preferred !== "auto") {
+    const provider = providers.find((p) => p.id === preferredProviderId);
+    if (!provider) {
+      throw Object.assign(new Error(`Requested voice provider ${preferredProviderId} not registered`), {
+        code: "VOICE_PROVIDER_UNAVAILABLE",
+      });
+    }
     const capability = await provider.probe();
     if (capability.state === "available") {
       const fallbackReason = provider.id === "espeak-ng"
@@ -515,10 +519,34 @@ export async function selectVoiceProvider(): Promise<{ provider: VoiceProvider; 
         : undefined;
       return { provider, capability, ...(fallbackReason ? { fallbackReason } : {}) };
     }
-    if (preferred !== "auto") {
-      throw Object.assign(new Error(capability.reason ?? `${provider.id} unavailable`), {
-        code: "VOICE_PROVIDER_UNAVAILABLE",
-      });
+    throw Object.assign(new Error(capability.reason ?? `${provider.id} unavailable`), {
+      code: "VOICE_PROVIDER_UNAVAILABLE",
+    });
+  }
+
+  const loadedBenchmark = await readVoiceBenchmarkReport();
+  const defaultOrder = providers.map((p) => p.id);
+  const rankedIds = rankAvailableProviders(loadedBenchmark, defaultOrder);
+  const rankedProviders = rankedIds
+    .map((id) => providers.find((p) => p.id === id))
+    .filter((p): p is VoiceProvider => p !== undefined);
+  const orderChanged = rankedIds.join(",") !== defaultOrder.join(",");
+  const benchmarkAppliedProviderId = orderChanged && loadedBenchmark
+    ? loadedBenchmark.report.recommendedProviderId ?? rankedIds[0]
+    : undefined;
+
+  for (const provider of rankedProviders) {
+    const capability = await provider.probe();
+    if (capability.state === "available") {
+      const fallbackReason = provider.id === "espeak-ng"
+        ? "Kokoro/Piper neural providers unavailable; using explicit espeak-ng fallback"
+        : undefined;
+      return {
+        provider,
+        capability,
+        ...(fallbackReason ? { fallbackReason } : {}),
+        ...(benchmarkAppliedProviderId ? { benchmarkAppliedProviderId } : {}),
+      };
     }
   }
 
