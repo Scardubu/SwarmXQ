@@ -84,7 +84,11 @@ export type CertificationTier =
   | "CREATIVE_REVIEW_REQUIRED"
   | "PRODUCTION_PACK_VALID"
   | "READY_TO_POST"
-  | "PUBLISHED_VERIFIED";
+  | "PUBLISHING"
+  | "PUBLISHED_VERIFIED"
+  | "PUBLISH_FAILED"
+  | "BLOCKED"
+  | "NEEDS_REVISION";
 
 export type RendererCapabilityTier =
   | "ffmpeg_text_smoke"
