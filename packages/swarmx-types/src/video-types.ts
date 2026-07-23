@@ -820,3 +820,131 @@ export interface VideoHealthEventData {
   pressureLevel: string;
   renderCapable: boolean;
 }
+
+// ============================================================================
+// RETENTION MAP — time-coded drop-off risk per narrative beat
+// ============================================================================
+
+export type BeatLabel =
+  | "HOOK"
+  | "ORIENTATION"
+  | "ESCALATION"
+  | "INSIGHT"
+  | "PROOF"
+  | "PAYOFF"
+  | "CTA_OR_LOOP";
+
+export type DropOffRisk = "LOW" | "MEDIUM" | "HIGH";
+
+export interface RetentionBeat {
+  timestamp: number;
+  beatLabel: BeatLabel;
+  viewerQuestion: string;
+  newInformation: string;
+  visualEvent: string;
+  microReward: string | null;
+  dropOffRisk: DropOffRisk;
+  plannedRecovery: string | null;
+}
+
+export interface RetentionMap {
+  schemaVersion: 1;
+  beats: RetentionBeat[];
+  overallRisk: DropOffRisk;
+  highRiskCount: number;
+  /** HIGH beats with plannedRecovery === null — surfaces as stageValidationTrace warn */
+  unrecoveredHighRiskCount: number;
+  generatedAt: string;
+}
+
+// ============================================================================
+// SCENE COMPOSITION DSL — declarative scene spec compiled to safe FFmpeg args
+// Model output never reaches raw filter graphs; compiler is the validation boundary
+// ============================================================================
+
+export type MotionPreset =
+  | "static"
+  | "ken_burns_slow"
+  | "ken_burns_fast"
+  | "zoom_in"
+  | "zoom_out"
+  | "slide_left"
+  | "slide_right";
+
+export type TransitionPreset =
+  | "cut"
+  | "fade_black"
+  | "fade_white"
+  | "dissolve"
+  | "wipe_left";
+
+export type SafeZone =
+  | "tiktok_standard"
+  | "reels_standard"
+  | "shorts_standard"
+  | "full_bleed";
+
+export type ColorGrade =
+  | "natural"
+  | "warm"
+  | "cool"
+  | "high_contrast"
+  | "desaturated"
+  | "cinematic_lut_01";
+
+export interface BackgroundSpec {
+  type: "gradient" | "solid" | "asset_ref";
+  /** gradient: CSS-like stop string; solid: hex color; asset_ref: SHA-256 hash */
+  value: string;
+}
+
+export interface TextLayerSpec {
+  text: string;
+  style: "title" | "body" | "caption" | "label";
+  position: "top" | "middle" | "bottom";
+  colorToken: string;
+}
+
+export interface AssetLayerSpec {
+  /** SHA-256 hex hash of the registered asset */
+  assetHash: string;
+  fit: "contain" | "cover" | "fill";
+  opacity: number;
+}
+
+export interface CaptionSpec {
+  /** Absolute path validated by render-recipe-compiler before use */
+  srtPath: string;
+  style: "default" | "kinetic" | "minimal";
+}
+
+export interface AudioEventSpec {
+  type: "fade_in" | "fade_out" | "duck" | "restore";
+  atSec: number;
+  durationSec: number;
+}
+
+export interface SceneSpec {
+  durationSec: number;
+  background: BackgroundSpec;
+  assets: AssetLayerSpec[];
+  text: TextLayerSpec[];
+  caption: CaptionSpec | null;
+  motion: MotionPreset;
+  transition: TransitionPreset | null;
+  colorTreatment: ColorGrade | null;
+  audioEvents: AudioEventSpec[];
+  safeZone: SafeZone;
+}
+
+export interface ValidatedRenderRecipe {
+  schemaVersion: 1;
+  scenes: SceneSpec[];
+  totalDurationSec: number;
+  rendererTier: RendererCapabilityTier;
+  /** Per-scene validated FFmpeg -i args — never raw filter graph strings */
+  safeInputArgs: string[][];
+  /** Filter tokens derived exclusively from enum values, never from free-text SceneSpec fields */
+  safeFilterTokens: string[];
+  compiledAt: string;
+}

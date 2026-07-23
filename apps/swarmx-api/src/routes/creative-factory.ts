@@ -3,6 +3,7 @@ import { z } from "zod";
 import type {
   AudiencePersona,
   BrandKit,
+  ConceptCandidate,
   ConceptTournament,
   CreativeAgentSpec,
   CreativeDNA,
@@ -24,6 +25,7 @@ import {
   listRegistryRecords,
   upsertRegistryRecord,
 } from "../services/creative-factory-registry.js";
+import { runConceptTournament } from "../services/creative-tournament.js";
 import {
   createLearningRecord,
   listLearningRecords,
@@ -103,6 +105,25 @@ const LearningRecordBodySchema = z.object({
   recommendation: z.string().min(1).max(1000),
   evidence: z.string().min(1).max(1000),
   approvalState: z.enum(["pending", "approved", "rejected"]).optional(),
+});
+
+const ConceptCandidateSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1).max(200),
+  premise: z.string().min(1).max(1000),
+  hookFamily: z.string().min(1).max(80),
+  visualLanguage: z.string().min(1).max(200),
+  emotionalArc: z.string().min(1).max(200),
+  CTAStyle: z.string().min(1).max(200),
+  feasibility: z.number().min(0).max(1),
+  originality: z.number().min(0).max(1),
+  confidence: z.number().min(0).max(1),
+});
+
+const ConceptTournamentBodySchema = z.object({
+  runId: z.string().min(1).optional(),
+  creativeDnaId: z.string().min(1),
+  candidates: z.array(ConceptCandidateSchema).min(2).max(12),
 });
 
 function sendParseError(reply: FastifyReply, error: z.ZodError): FastifyReply {
@@ -260,6 +281,37 @@ export async function creativeFactoryRoutes(server: FastifyInstance): Promise<vo
   server.get("/concept-tournaments", async () => ({
     tournaments: listRegistryRecords<ConceptTournament>("concept-tournaments"),
   }));
+
+  server.post<{ Body: unknown }>(
+    "/concept-tournaments",
+    { preHandler: requireVideoWriteAuth },
+    async (request, reply) => {
+      const parsed = ConceptTournamentBodySchema.safeParse(request.body);
+      if (!parsed.success) return sendParseError(reply, parsed.error);
+      let tournament: ConceptTournament;
+      try {
+        tournament = runConceptTournament(
+          parsed.data.candidates as ConceptCandidate[],
+          parsed.data.creativeDnaId,
+        );
+      } catch (err) {
+        return reply.status(422).send({
+          error: "tournament_failed",
+          message: err instanceof Error ? err.message : "Tournament execution failed",
+        });
+      }
+      upsertRegistryRecord<ConceptTournament>("concept-tournaments", tournament);
+      if (parsed.data.runId) {
+        checkpointWorkflowStage(parsed.data.runId, {
+          stage: "CONCEPT_TOURNAMENT",
+          status: "complete",
+          revision: 1,
+          outputRef: tournament.id,
+        });
+      }
+      return reply.status(201).send(tournament);
+    },
+  );
 
   server.get("/variants", async () => ({
     variants: listRegistryRecords<VariantRecord>("variant-records"),

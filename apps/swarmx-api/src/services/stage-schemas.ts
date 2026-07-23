@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { VideoJobStage } from "../types/video.js";
 import type { StageValidationEntry } from "../types/video.js";
+import type { RetentionMap } from "@swarmx/types/video-types";
 
 export const PlanningResultSchema = z.object({
   plan: z.array(z.string().trim().min(3).max(240)).min(1).max(12),
@@ -35,6 +36,38 @@ const STAGE_SCHEMAS = {
   scripting: ScriptingResultSchema,
   storyboard_generation: StoryboardResultSchema,
 } as const;
+
+const RetentionBeatSchema = z.object({
+  timestamp: z.number().nonnegative(),
+  beatLabel: z.enum(["HOOK", "ORIENTATION", "ESCALATION", "INSIGHT", "PROOF", "PAYOFF", "CTA_OR_LOOP"]),
+  viewerQuestion: z.string().min(1),
+  newInformation: z.string().min(1),
+  visualEvent: z.string().min(1),
+  microReward: z.string().nullable(),
+  dropOffRisk: z.enum(["LOW", "MEDIUM", "HIGH"]),
+  plannedRecovery: z.string().nullable(),
+});
+
+export const RetentionMapSchema = z.object({
+  schemaVersion: z.literal(1),
+  beats: z.array(RetentionBeatSchema).min(1).max(14),
+  overallRisk: z.enum(["LOW", "MEDIUM", "HIGH"]),
+  highRiskCount: z.number().int().nonnegative(),
+  unrecoveredHighRiskCount: z.number().int().nonnegative(),
+  generatedAt: z.string().min(1),
+});
+
+export type RetentionMapValidated = z.infer<typeof RetentionMapSchema>;
+
+export function validateRetentionMap(candidate: unknown): { valid: boolean; data: RetentionMap | null; issues: string[] } {
+  const result = RetentionMapSchema.safeParse(candidate);
+  if (result.success) return { valid: true, data: result.data as RetentionMap, issues: [] };
+  return {
+    valid: false,
+    data: null,
+    issues: result.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`),
+  };
+}
 
 export function validateStageResult<S extends ValidatedStage>(
   stage: S,
