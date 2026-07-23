@@ -1,0 +1,68 @@
+# ── Secrets — NEVER send to the Docker daemon ─────────────────────────────────
+env.local
+.env
+.env.*
+*.pem
+*.key
+*.p12
+secrets/
+
+# ── Version control ────────────────────────────────────────────────────────────
+.git
+.gitignore
+.github/
+
+# ── Python byte-code and caches ────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.egg
+
+# ── Node / pnpm build artefacts ────────────────────────────────────────────────
+node_modules/
+apps/*/node_modules/
+packages/*/node_modules/
+apps/*/.next/
+apps/*/dist/
+pnpm-lock.yaml
+
+# ── Test outputs and coverage ──────────────────────────────────────────────────
+.coverage
+coverage/
+htmlcov/
+*.lcov
+junit.xml
+
+# ── IDE and OS noise ───────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.directory
+
+# ── Docs and archive (not needed at runtime) ───────────────────────────────────
+docs/
+dashboard-legacy/
+*.md
+CHECKSUMS.sha256
+MANIFEST.txt
+
+# ── Local runtime state (bind-mounted separately) ─────────────────────────────
+# These paths are volume-mounted at runtime — including them in the image
+# would bake stale state and waste layer space.
+.swarmx/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+traces/
+checkpoints/

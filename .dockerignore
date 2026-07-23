@@ -1,0 +1,68 @@
+# ── Secrets — NEVER include in Docker build context ───────────────────────────
+.env
+.env.*
+env.local
+*.pem
+*.key
+*.p12
+secrets/
+
+# ── Version control ────────────────────────────────────────────────────────────
+.git/
+.gitignore
+.github/
+
+# ── Python byte-code and caches ────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.egg-info/
+build/
+.venv/
+venv/
+*.egg
+
+# ── Node / pnpm build artefacts ────────────────────────────────────────────────
+node_modules/
+apps/*/node_modules/
+packages/*/node_modules/
+apps/*/.next/
+apps/*/dist/
+
+# ── Test outputs and coverage ──────────────────────────────────────────────────
+.coverage
+coverage/
+htmlcov/
+*.lcov
+junit.xml
+
+# ── IDE and OS noise ───────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# ── Docs (not needed at runtime) ──────────────────────────────────────────────
+docs/
+*.md
+CHECKSUMS.sha256
+MANIFEST.txt
+
+# ── Local media / model / runtime state (volume-mounted separately) ────────────
+media/
+exports/
+models/
+.ollama/
+.swarmx/
+traces/
+checkpoints/
+*.sqlite
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.db

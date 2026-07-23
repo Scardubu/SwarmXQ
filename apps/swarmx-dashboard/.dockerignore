@@ -1,0 +1,16 @@
+apps/swarmx-dashboard/node_modules/
+apps/swarmx-dashboard/.next/
+apps/swarmx-dashboard/dist/
+apps/swarmx-dashboard/*.log
+apps/swarmx-dashboard/.env
+apps/swarmx-dashboard/.env.*
+apps/swarmx-dashboard/coverage/
+apps/swarmx-dashboard/__tests__/
+apps/swarmx-dashboard/vitest.config.ts
+node_modules/
+.git/
+.github/
+env.local
+*.DS_Store
+docs/
+dashboard-legacy/
