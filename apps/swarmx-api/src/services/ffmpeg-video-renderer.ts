@@ -12,6 +12,7 @@ import type {
 import type { VideoJobRequest } from "../types/video.js";
 import { outputDir, resolveOutputPath } from "./video-assets.js";
 import { loadEnv } from "../lib/env.js";
+import { clampCertificationTier } from "./renderer-certification.js";
 import { normalizeScriptForSpeech, selectVoiceProvider } from "./voice-providers.js";
 
 const _ffenv = loadEnv();
@@ -535,7 +536,10 @@ async function writeProductionPackage(input: {
   const mediaQualityReport: MediaQualityReport = {
     id: `qc-${input.jobId}`,
     schemaVersion: 1,
-    certificationTier: productionRenderer && voiceEligible ? "PRODUCTION_PACK_VALID" : "CREATIVE_REVIEW_REQUIRED",
+    certificationTier: clampCertificationTier(
+      productionRenderer && voiceEligible ? "PRODUCTION_PACK_VALID" : "CREATIVE_REVIEW_REQUIRED",
+      input.rendererTier,
+    ),
     rendererTier: input.rendererTier,
     templateId: input.templateId,
     technicalPassed: true,

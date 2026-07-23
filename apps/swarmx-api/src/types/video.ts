@@ -181,10 +181,18 @@ export interface VideoJob {
   publishHistory?: PublishResult[];
   errorLog?: VideoError[];
   scriptQualityWarnings?: ScriptQualityWarning[];
+  stageValidationTrace?: StageValidationEntry[];
 }
 
 // Re-export for downstream consumers of the API bridge.
 export type { ScriptQualityWarning };
+
+export interface StageValidationEntry {
+  schemaVersion: 1;
+  stage: VideoJobStage;
+  passed: boolean;
+  issues?: string[];
+}
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
 
@@ -222,6 +230,7 @@ export type VideoErrorCode =
   | "FRAME_BUDGET_EXCEEDED"
   | "comfyui_ram_budget_exceeded"
   | "INTENT_VALIDATION_FAILED"
+  | "SCRIPT_SCHEMA_INVALID"
   | "CANCELLED_BY_USER"
   | "UNKNOWN";
 

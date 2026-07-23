@@ -111,6 +111,8 @@ import { log } from "../lib/logger.js";
 import { tracer, SpanStatusCode, trace } from "../lib/tracer.js";
 import { renderWithFfmpeg, type FfmpegRenderPackage } from "./ffmpeg-video-renderer.js";
 import { sanitizeReasoningOutput } from "./reasoning-sanitizer.js";
+import { validateStageResult, type ValidatedStage } from "./stage-schemas.js";
+import type { StageValidationEntry } from "../types/video.js";
 import {
   resolveVideoModelTag,
   stageTimeoutMs,
@@ -192,6 +194,31 @@ function pushOperatorTrace(
     job.operatorTrace = [];
   }
   job.operatorTrace.push(entry);
+}
+
+function pushStageValidation(job: VideoJob, entry: StageValidationEntry): void {
+  if (!job.stageValidationTrace) {
+    job.stageValidationTrace = [];
+  }
+  job.stageValidationTrace.push(entry);
+  if (!entry.passed) {
+    log.warn({
+      code: "STAGE_SCHEMA_INVALID",
+      jobId: job.id,
+      stage: entry.stage,
+      issues: entry.issues,
+    }, "stage schema validation failed — falling back to safe default");
+  }
+}
+
+function runStageValidation<S extends ValidatedStage>(
+  job: VideoJob,
+  stage: S,
+  candidate: unknown,
+): ReturnType<typeof validateStageResult<S>>["data"] {
+  const { entry, data } = validateStageResult(stage, candidate);
+  pushStageValidation(job, entry);
+  return data;
 }
 
 function recordOperatorTrace(
@@ -511,10 +538,9 @@ async function stagePlanning(
       .split("\n")
       .map((l) => l.replace(/^\s*[\d.-]+[\s.)]*/, "").trim())
       .filter(Boolean);
-    const result = {
-      plan: lines.length > 0
-        ? lines
-        : ["Generate visuals", "Add narration", "Assemble final video"],
+    const validated = runStageValidation(ctx.job, "planning", { plan: lines });
+    const result = validated ?? {
+      plan: ["Generate visuals", "Add narration", "Assemble final video"],
     };
     recordOperatorTrace(ctx, "planning", model, startedAt, true, planTokens, planLatency);
     return result;
@@ -547,12 +573,20 @@ async function stageScripting(
       keepAlive,
     );
     const { text: scriptText } = sanitizeReasoningOutput(rawScript);
-    const scriptWarnings = validateScriptSections(scriptText, ctx.job.id, model);
+    const validated = runStageValidation(ctx.job, "scripting", { scriptText });
+    if (!validated) {
+      recordOperatorTrace(ctx, "scripting", model, startedAt, false, scriptTokens, scriptLatency);
+      throw Object.assign(
+        new Error("Scripting output did not satisfy the stage schema"),
+        { code: "SCRIPT_SCHEMA_INVALID" },
+      );
+    }
+    const scriptWarnings = validateScriptSections(validated.scriptText, ctx.job.id, model);
     if (scriptWarnings.length > 0) {
       ctx.job.scriptQualityWarnings = [...(ctx.job.scriptQualityWarnings ?? []), ...scriptWarnings];
     }
     recordOperatorTrace(ctx, "scripting", model, startedAt, true, scriptTokens, scriptLatency);
-    return { scriptText };
+    return { scriptText: validated.scriptText };
   } finally {
     controller.abort();
     ModelOrchestrator.getInstance().onModelCallComplete(model);
@@ -587,10 +621,9 @@ async function stageStoryboardGeneration(
       .filter((l) => l.trim().startsWith("-") || /^\d+\./.test(l.trim()))
       .map((l)    => l.replace(/^[-\d.]+\s*/, "").trim())
       .filter(Boolean);
-    const result = {
-      frames: frames.length > 0
-        ? frames
-        : ["Abstract cinematic opener", "Key message frame", "CTA closing frame"],
+    const validated = runStageValidation(ctx.job, "storyboard_generation", { frames });
+    const result = validated ?? {
+      frames: ["Abstract cinematic opener", "Key message frame", "CTA closing frame"],
     };
     recordOperatorTrace(ctx, "storyboard_generation", model, startedAt, true, sbTokens, sbLatency);
     return result;

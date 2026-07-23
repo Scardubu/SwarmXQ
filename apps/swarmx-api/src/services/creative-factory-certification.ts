@@ -5,9 +5,15 @@ import type {
   PublishPackage,
   QualityReport,
   ReadyToPostCertification,
+  RendererCapabilityTier,
   SubtitleTrack,
 } from "@swarmx/types/video-types";
 import type { VideoOutputMetadata } from "../types/video.js";
+import { clampCertificationTier } from "./renderer-certification.js";
+
+function resolveRendererTier(output: VideoOutputMetadata | null | undefined): RendererCapabilityTier | undefined {
+  return output?.mediaQualityReport?.rendererTier ?? output?.rendererTier;
+}
 
 export interface ReadyToPostInput {
   output: VideoOutputMetadata | null | undefined;
@@ -56,8 +62,12 @@ export function certifyProductionPack(input: Pick<ReadyToPostInput, "output"> & 
     blockers.push("Quality report did not pass");
   }
 
+  const rendererTier = resolveRendererTier(output);
   if (blockers.length === 0) {
-    return { certificationTier: "PRODUCTION_PACK_VALID", passed: true, blockers };
+    const tier: CertificationTier = rendererTier
+      ? clampCertificationTier("PRODUCTION_PACK_VALID", rendererTier)
+      : "PRODUCTION_PACK_VALID";
+    return { certificationTier: tier, passed: tier === "PRODUCTION_PACK_VALID", blockers };
   }
   const technicalOnly = blockers.every((blocker) =>
     !blocker.includes("Media") &&
@@ -65,8 +75,9 @@ export function certifyProductionPack(input: Pick<ReadyToPostInput, "output"> & 
     !blocker.includes("Stable media hash") &&
     !blocker.includes("Stub media")
   );
+  const desired: CertificationTier = technicalOnly ? "TECHNICALLY_VALID" : "CREATIVE_REVIEW_REQUIRED";
   return {
-    certificationTier: technicalOnly ? "TECHNICALLY_VALID" : "CREATIVE_REVIEW_REQUIRED",
+    certificationTier: rendererTier ? clampCertificationTier(desired, rendererTier) : desired,
     passed: false,
     blockers,
   };
@@ -134,11 +145,20 @@ export function certifyReadyToPost(input: ReadyToPostInput): ReadyToPostCertific
     }
   }
 
+  const rendererTier = resolveRendererTier(output);
+  const desired: CertificationTier = blockers.length === 0
+    ? "READY_TO_POST"
+    : (output ? "CREATIVE_REVIEW_REQUIRED" : "RENDER_FAILED");
+  const certificationTier = rendererTier ? clampCertificationTier(desired, rendererTier) : desired;
+  const passed = certificationTier === "READY_TO_POST";
+  const additionalBlockers = passed || certificationTier === desired
+    ? blockers
+    : [...blockers, `Renderer ${rendererTier ?? "unknown"} caps certification at ${certificationTier}`];
   return {
-    certificationTier: blockers.length === 0 ? "READY_TO_POST" : (output ? "CREATIVE_REVIEW_REQUIRED" : "RENDER_FAILED"),
-    lifecycleState: blockers.length === 0 ? "READY_TO_POST" : "REVIEW_REQUIRED",
-    passed: blockers.length === 0,
-    blockers,
+    certificationTier,
+    lifecycleState: passed ? "READY_TO_POST" : "REVIEW_REQUIRED",
+    passed,
+    blockers: additionalBlockers,
     certifiedAt: new Date().toISOString(),
   };
 }
