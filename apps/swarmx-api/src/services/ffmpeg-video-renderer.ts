@@ -6,6 +6,7 @@ import { copyFile, mkdir, mkdtemp, rename, rm, unlink, writeFile } from "node:fs
 import { join, resolve } from "node:path";
 import type {
   MediaQualityReport,
+  RawQcFinding,
   RendererCapabilityTier,
   VoiceArtifact,
 } from "@swarmx/types/video-types";
@@ -14,6 +15,7 @@ import { outputDir, resolveOutputPath } from "./video-assets.js";
 import { loadEnv } from "../lib/env.js";
 import { clampCertificationTier } from "./renderer-certification.js";
 import { normalizeScriptForSpeech, selectVoiceProvider } from "./voice-providers.js";
+import { runTemplateQc } from "./template-aware-qc.js";
 
 const _ffenv = loadEnv();
 const RENDER_COMMAND_TIMEOUT_MS = Math.min(
@@ -410,6 +412,38 @@ function hashFile(path: string): Promise<string> {
   });
 }
 
+/**
+ * Extract structured intervals from FFmpeg blackdetect/freezedetect stderr.
+ * Returns one RawQcFinding per detected interval; empty array when no intervals present.
+ */
+function parseDetectorIntervals(
+  raw: string,
+  detector: "blackdetect" | "freezedetect",
+): RawQcFinding[] {
+  const type: RawQcFinding["type"] = detector === "blackdetect" ? "BLACK_FRAME" : "FREEZE_FRAME";
+  const prefix = detector === "blackdetect" ? "black" : "freeze";
+  // Match "start:X" and optional "duration:Y" on the same line-neighborhood.
+  // Handles both "black_start:1.2 black_end:1.5 black_duration:0.3" and the
+  // parametric "lavfi.freeze_start=5.0 ... lavfi.freeze_duration=2.5" forms.
+  const intervals: RawQcFinding[] = [];
+  const startRe = new RegExp(`${prefix}_start[:=]\\s*([0-9]+(?:\\.[0-9]+)?)`, "g");
+  const durationRe = new RegExp(`${prefix}_duration[:=]\\s*([0-9]+(?:\\.[0-9]+)?)`, "g");
+  const starts = [...raw.matchAll(startRe)]
+    .map((m) => (m[1] !== undefined ? parseFloat(m[1]) : NaN))
+    .filter((n) => Number.isFinite(n));
+  const durations = [...raw.matchAll(durationRe)]
+    .map((m) => (m[1] !== undefined ? parseFloat(m[1]) : NaN))
+    .filter((n) => Number.isFinite(n));
+  for (let i = 0; i < starts.length; i += 1) {
+    const startSec = starts[i] ?? 0;
+    const durationSec = durations[i] ?? 0;
+    const severity: RawQcFinding["severity"] =
+      durationSec >= 5 ? "HIGH" : durationSec >= 1 ? "MEDIUM" : "LOW";
+    intervals.push({ type, startSec, durationSec, severity });
+  }
+  return intervals;
+}
+
 async function collectDetectorFinding(
   outputPath: string,
   detector: "blackdetect" | "freezedetect",
@@ -527,33 +561,63 @@ async function writeProductionPackage(input: {
   await writeFile(platformPackagePath, `${JSON.stringify(platformPackage, null, 2)}\n`, "utf8");
   await writeFile(join(packageDir, "platform-package.json"), `${JSON.stringify(platformPackage, null, 2)}\n`, "utf8");
 
-  const rawDetectorFindings = [
-    await collectDetectorFinding(input.outputPath, "blackdetect", "blackdetect=d=0.5:pix_th=0.10", input.templateId),
-    await collectDetectorFinding(input.outputPath, "freezedetect", "freezedetect=n=-60dB:d=0.5", input.templateId),
+  const blackFinding = await collectDetectorFinding(
+    input.outputPath, "blackdetect", "blackdetect=d=0.5:pix_th=0.10", input.templateId,
+  );
+  const freezeFinding = await collectDetectorFinding(
+    input.outputPath, "freezedetect", "freezedetect=n=-60dB:d=0.5", input.templateId,
+  );
+  const rawDetectorFindings = [blackFinding, freezeFinding];
+
+  // Template-aware interpretation: parse structured intervals from each detector's
+  // stderr, then let template-aware-qc apply per-renderer-tier context.
+  const structuredFindings: RawQcFinding[] = [
+    ...parseDetectorIntervals(blackFinding.raw, "blackdetect"),
+    ...parseDetectorIntervals(freezeFinding.raw, "freezedetect"),
   ];
+  const qcResult = runTemplateQc(structuredFindings, input.rendererTier);
+
   const productionRenderer = input.rendererTier !== "ffmpeg_text_smoke";
   const voiceEligible = voiceArtifact !== undefined && voiceArtifact.qualityTier !== "silent_fixture";
+  // A blocker from template-aware QC downgrades certification.
+  const templateQcBlocked = qcResult.blockers.length > 0;
+  const desiredTier =
+    productionRenderer && voiceEligible && !templateQcBlocked
+      ? "PRODUCTION_PACK_VALID"
+      : "CREATIVE_REVIEW_REQUIRED";
   const mediaQualityReport: MediaQualityReport = {
     id: `qc-${input.jobId}`,
     schemaVersion: 1,
-    certificationTier: clampCertificationTier(
-      productionRenderer && voiceEligible ? "PRODUCTION_PACK_VALID" : "CREATIVE_REVIEW_REQUIRED",
-      input.rendererTier,
-    ),
+    certificationTier: clampCertificationTier(desiredTier, input.rendererTier),
     rendererTier: input.rendererTier,
     templateId: input.templateId,
-    technicalPassed: true,
+    technicalPassed: !templateQcBlocked,
     creativePassed: productionRenderer,
     accessibilityPassed: true,
     audioPassed: voiceEligible,
     rightsPassed: true,
     rawDetectorFindings,
-    interpretedFindings: rawDetectorFindings.map((finding) => ({
-      detector: "template",
-      raw: finding.raw,
-      interpretedStatus: finding.interpretedStatus === "fail" ? "fail" : "pass",
-      message: `${input.templateId} treats dark backgrounds and short static holds as valid only with visible foreground text, motion layers, captions, and package lineage.`,
-    })),
+    // If no structured intervals were parsed (raw text but no matches), fall back to
+    // one "template" finding per raw detector so the report still shows something.
+    interpretedFindings: qcResult.interpretations.length > 0
+      ? qcResult.interpretations.map((i) => ({
+          detector: "template",
+          raw: i.notes,
+          interpretedStatus: i.isExpected
+            ? "pass"
+            : i.interpretedSeverity === "HIGH"
+              ? "fail"
+              : "review",
+          message: i.plannedEvent
+            ? `${input.templateId} · ${i.plannedEvent} (${i.notes})`
+            : `${input.templateId} · ${i.notes}`,
+        }))
+      : rawDetectorFindings.map((finding) => ({
+          detector: "template" as const,
+          raw: finding.raw,
+          interpretedStatus: finding.interpretedStatus === "fail" ? "fail" as const : "pass" as const,
+          message: `${input.templateId} · no structured intervals detected — template baseline holds`,
+        })),
     createdAt: new Date().toISOString(),
   };
   await writeFile(qcPath, `${JSON.stringify(mediaQualityReport, null, 2)}\n`, "utf8");

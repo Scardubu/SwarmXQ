@@ -10,6 +10,8 @@ import { Server, MemoryStick, Cpu, HardDrive } from "lucide-react";
 import type { CgroupScopeMetrics } from "@swarmx/types";
 import { useApiHealth } from "@/hooks/useApiHealth";
 import { RouteDegradedBanner } from "@/components/layout/RouteDegradedBanner";
+import { RuntimeCapabilityStrip } from "@/components/layout/RuntimeCapabilityStrip";
+import { RetentionMapPanel } from "@/components/video/RetentionMapPanel";
 
 const SYSTEMD_SKELETON_KEYS = ["sd-1", "sd-2", "sd-3", "sd-4", "sd-5", "sd-6", "sd-7", "sd-8"] as const;
 const SYSTEM_CARD_SKELETON_KEYS = ["card-1", "card-2", "card-3", "card-4", "card-5", "card-6"] as const;
@@ -500,6 +502,7 @@ export default function SystemPage() {
           ollamaOnline={ollamaOnline}
         />
       </div>
+      <RuntimeCapabilityStrip />
 
       <div className="flex-1 overflow-hidden">
         <Tabs defaultValue="overview" className="flex flex-col h-full">
@@ -508,6 +511,7 @@ export default function SystemPage() {
             <TabsTrigger value="cgroup">cgroup v2 Tree</TabsTrigger>
             <TabsTrigger value="systemd">systemd Units</TabsTrigger>
             <TabsTrigger value="v5metrics">V5 Metrics</TabsTrigger>
+            <TabsTrigger value="retention">Retention Lab</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="flex-1 overflow-auto">
@@ -529,6 +533,12 @@ export default function SystemPage() {
           <TabsContent value="v5metrics" className="flex-1 overflow-hidden">
             <ScrollArea className="h-full">
               <V5MetricsPanel />
+            </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="retention" className="flex-1 overflow-hidden">
+            <ScrollArea className="h-full">
+              <RetentionMapPanel />
             </ScrollArea>
           </TabsContent>
         </Tabs>

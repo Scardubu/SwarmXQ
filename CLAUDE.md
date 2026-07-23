@@ -1,6 +1,6 @@
 # AI Engineering Control System (Claude Code)
 # SwarmXQ — Autonomous Multi-Agent AI Orchestration Platform
-# Baseline: V6.2.49 · APEX-17 r8 · Hardware: 16 GB RAM (HP EliteBook 850 G3 · CPU-only · bare-metal Linux)
+# Baseline: V6.2.53 · APEX-17 r8 · Hardware: 16 GB RAM (HP EliteBook 850 G3 · CPU-only · bare-metal Linux)
 # Video Generator Principal Engineer Directive: V3.2.0
 # Lagos precision. Global scale.
 #
@@ -840,7 +840,7 @@ Execute these steps before closing any session where code was written:
 pnpm -F swarmx-api tsc --noEmit
 pnpm -F swarmx-types tsc --noEmit
 pnpm -F swarmx-dashboard tsc --noEmit
-pnpm -F swarmx-api vitest run              # must be ≥248 (as of V6.2.50)
+pnpm -F swarmx-api vitest run              # must be ≥338 (as of V6.2.53)
 pnpm -F swarmx-dashboard vitest run        # must be ≥52
 npx tsx apps/swarmx-api/scripts/video-regression-check.ts
 npx tsx apps/swarmx-api/scripts/system-health-regression.ts
@@ -905,7 +905,7 @@ pnpm -F swarmx-types tsc --noEmit         # zero type errors
 pnpm -F swarmx-dashboard tsc --noEmit     # zero type errors
 
 pnpm -F swarmx-dashboard vitest run       # ≥52 passing
-pnpm -F swarmx-api vitest run             # ≥248 passing (V6.2.50 baseline; grows with V4 slices)
+pnpm -F swarmx-api vitest run             # ≥338 passing (V6.2.53 baseline; grows with V4 slices)
 
 # API regression scripts (no Ollama/Redis needed)
 npx tsx apps/swarmx-api/scripts/adaptive-timeout-regression.ts

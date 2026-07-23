@@ -896,6 +896,7 @@ body::after {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* Named decorative loops — disable entirely */
   .text-shimmer,
   .orbit-ring,
   .orbit-ring-ccw,
@@ -905,7 +906,20 @@ body::after {
   .metric-live {
     animation: none !important;
   }
-  .card-interactive:hover {
-    transform: none;
+  /* Universal fallback: any remaining animation collapses to a single
+     ~10ms cycle so entering elements still appear but nothing pulses
+     indefinitely. Same treatment for CSS transitions. */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* Hover-scale patterns compound with existing transforms; neutralise them */
+  .card-interactive:hover,
+  .card-elevate:hover {
+    transform: none !important;
   }
 }

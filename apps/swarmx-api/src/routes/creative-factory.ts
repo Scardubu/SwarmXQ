@@ -26,6 +26,7 @@ import {
   upsertRegistryRecord,
 } from "../services/creative-factory-registry.js";
 import { runConceptTournament } from "../services/creative-tournament.js";
+import { generateRetentionMap } from "../services/retention-map.js";
 import {
   createLearningRecord,
   listLearningRecords,
@@ -316,6 +317,22 @@ export async function creativeFactoryRoutes(server: FastifyInstance): Promise<vo
   server.get("/variants", async () => ({
     variants: listRegistryRecords<VariantRecord>("variant-records"),
   }));
+
+  // Retention preview — pure function, no persistence. Lets creators feed a draft
+  // script + duration and inspect the generated retention beat map before committing.
+  const RetentionPreviewSchema = z.object({
+    script: z.string().min(1).max(20_000),
+    targetDurationSecs: z.number().int().min(5).max(600),
+  });
+  server.post<{ Body: unknown }>(
+    "/retention-map/preview",
+    async (request, reply) => {
+      const parsed = RetentionPreviewSchema.safeParse(request.body);
+      if (!parsed.success) return sendParseError(reply, parsed.error);
+      const map = generateRetentionMap(parsed.data.script, parsed.data.targetDurationSecs);
+      return reply.status(200).send(map);
+    },
+  );
 
   server.get("/agents", async () => ({
     agents: listRegistryRecords<CreativeAgentSpec>("creative-agent-specs"),
