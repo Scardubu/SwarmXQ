@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm next *)",
+      "Bash(python3 -c \"import yaml; yaml.safe_load\\(open\\('.github/workflows/ci.yml'\\)\\)\")",
+      "Bash(pnpm --filter @swarmx/types typecheck)",
+      "Bash(pnpm --filter @swarmx/api run test:video)",
+      "Bash(sed -n '444,455p' apps/swarmx-api/src/services/video-orchestrator.ts)",
+      "Bash(sed -n '616,630p' apps/swarmx-api/src/services/video-orchestrator.ts)",
+      "Bash(grep -E \"\\\\.\\(md|txt\\)$\")",
+      "Bash(pnpm -F swarmx-dashboard exec tsc --noEmit)",
+      "Bash(pnpm --filter swarmx-dashboard exec tsc --noEmit)",
+      "Bash(pnpm -r --filter \"./apps/swarmx-dashboard\" exec tsc --noEmit)",
+      "Bash(pnpm -F @swarmx/api exec tsc --noEmit)",
+      "Bash(pnpm --filter @swarmx/api exec tsc --noEmit)",
+      "Bash(pnpm --filter @swarmx/types exec tsc --noEmit)",
+      "Bash(pnpm --filter @swarmx/dashboard exec tsc --noEmit)",
+      "Bash(pnpm --filter @swarmx/dashboard vitest run)",
+      "Bash(pnpm --filter swarmx-dashboard vitest run)",
+      "Bash(pnpm -F swarmx-dashboard vitest run)",
+      "Bash(pnpm vitest *)",
+      "Bash(git -C /home/scar/Documents/SwarmXQ status)",
+      "Bash(git -C /home/scar/Documents/SwarmXQ log --oneline -10)",
+      "Bash(pnpm --filter @swarmx/api add @opentelemetry/sdk-trace-node @opentelemetry/exporter-trace-otlp-http @opentelemetry/resources)",
+      "Bash(apps/swarmx-api/node_modules/.bin/tsc --project apps/swarmx-api/tsconfig.json --noEmit)",
+      "Bash(apps/swarmx-api/node_modules/.bin/tsc --project packages/swarmx-types/tsconfig.json --noEmit)",
+      "Bash(apps/swarmx-api/node_modules/.bin/tsc --project apps/swarmx-dashboard/tsconfig.json --noEmit)",
+      "Bash(pnpm --filter \"@swarmx/dashboard\" run test)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
+    ]
+  }
+}
