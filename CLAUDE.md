@@ -8,7 +8,7 @@
 # V3.2.0 (2026-07-23): IEP-ELITE meta-protocol for Claude Code; μ-GATE/BLOCK taxonomy; FREE TOOL INTEGRATION
 #   REGISTRY (Kokoro-82M, Piper, whisper.cpp, Openverse); session-end protocol; INV-18 cert-tier
 #   state-machine wiring constraint; V4 S2–S5 + doctor CLI + JSON-mode milestones; corrected release
-#   gate counts (225 API tests, 14 dashboard routes); SAFE DEFAULTS updated with voice benchmark env vars
+#   gate counts (248 API tests as of V6.2.50, 14 dashboard routes); SAFE DEFAULTS updated with voice benchmark env vars
 # V3.1.0 (V6.2.45): APEX-17 r8 operator migration; SYSTEM-PROMPT V3.0; INV-15/16/17 added
 # V3.0.0 (V6.2.21): Original production control document
 
@@ -840,7 +840,7 @@ Execute these steps before closing any session where code was written:
 pnpm -F swarmx-api tsc --noEmit
 pnpm -F swarmx-types tsc --noEmit
 pnpm -F swarmx-dashboard tsc --noEmit
-pnpm -F swarmx-api vitest run              # must be ≥225 (as of V6.2.49)
+pnpm -F swarmx-api vitest run              # must be ≥248 (as of V6.2.50)
 pnpm -F swarmx-dashboard vitest run        # must be ≥52
 npx tsx apps/swarmx-api/scripts/video-regression-check.ts
 npx tsx apps/swarmx-api/scripts/system-health-regression.ts
@@ -905,7 +905,7 @@ pnpm -F swarmx-types tsc --noEmit         # zero type errors
 pnpm -F swarmx-dashboard tsc --noEmit     # zero type errors
 
 pnpm -F swarmx-dashboard vitest run       # ≥52 passing
-pnpm -F swarmx-api vitest run             # ≥225 passing (V6.2.49 baseline; grows with V4 slices)
+pnpm -F swarmx-api vitest run             # ≥248 passing (V6.2.50 baseline; grows with V4 slices)
 
 # API regression scripts (no Ollama/Redis needed)
 npx tsx apps/swarmx-api/scripts/adaptive-timeout-regression.ts
@@ -981,7 +981,7 @@ Push only after all quality gates pass.
 | ~~1~~ | ~~**BullMQ Default-On**~~ | ✅ V6.2.22+V6.2.40 |
 | ~~2~~ | ~~**GitHub Actions CI**~~ | ✅ V6.2.40 |
 | ~~3~~ | ~~**Env Schema Expansion**~~ | ✅ V6.2.38 — ≤10 process.env hits, all documented |
-| ~~4~~ | ~~**First API Unit Tests**~~ | ✅ V6.2.39 — 225 tests at V6.2.49 |
+| ~~4~~ | ~~**First API Unit Tests**~~ | ✅ V6.2.39 — 228 tests at V6.2.49, 248 at V6.2.50 |
 | ~~5~~ | ~~**16 GB Profile Config**~~ | ✅ V6.2.44 — startup-enhanced.sh complete |
 | ~~6~~ | ~~**TONE_RULES Completeness Audit**~~ | ✅ V6.2.23 — all 8 variants CI-gated |
 | ~~7~~ | ~~**Smoke Renderer Certification Ceiling + Per-Stage Zod Validation**~~ | ✅ V6.2.49 |
@@ -1067,7 +1067,7 @@ Repository code overrides all prior documentation. Grep/read before acting.
 | Renderer certification ceiling | `renderer-certification.ts` clamps all tier assignments; `ffmpeg_text_smoke → TECHNICALLY_VALID` |
 | Voice benchmark infrastructure | `voice-benchmark.ts` CLI + `voice-benchmark-report.ts` reader + `selectVoiceProvider()` report integration + `/api/system/health` `voice.benchmark` block |
 | TONE_RULES all 8 variants | CI grep gate confirms all 8 present: `contrarian`, `urgent`, `educational`, `cinematic`, `warm`, `minimal`, `faceless_broll`, `kinetic_text` |
-| API tests | 225 passing (as of V6.2.49) across 12+ test files |
+| API tests | 228 passing (as of V6.2.49) across 12+ test files; 248 at V6.2.50 across 14 test files |
 | Dashboard build | 14 routes, zero build errors |
 | APEX-17 r8 operator map | Both `operator-map.ts` and `operator_map.py` semantically identical; V5 names eliminated |
 
@@ -1078,7 +1078,7 @@ Repository code overrides all prior documentation. Grep/read before acting.
 | ~~BullMQ disabled by default~~ | ✅ V6.2.22+V6.2.40 | done |
 | ~~Zero CI~~ | ✅ V6.2.40 | done |
 | ~~`process.env[…]` scattered in services~~ | ✅ V6.2.38 — 6 escape hatches remain (≤10) | done |
-| ~~Zero API unit tests~~ | ✅ V6.2.49 — 225 tests | done |
+| ~~Zero API unit tests~~ | ✅ V6.2.49 — 228 tests, 248 at V6.2.50 | done |
 | ~~`startup-enhanced.sh` not wired for 16 GB~~ | ✅ V6.2.44 | done |
 | ~~TONE_RULES completeness unverified~~ | ✅ V6.2.23 | done |
 | Voice benchmark real-provider run | Deferred — Piper not installed this session | Milestone 16 |
