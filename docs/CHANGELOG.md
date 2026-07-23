@@ -4,6 +4,57 @@
 
 ---
 
+## V6.2.47 — Script Quality Bleed Fix + Creative Factory UI Polish (2026-07-23)
+
+### API — Script quality signal
+
+- Added `HOOK_BLOCKLIST` (13 phrases) and `validateScriptSections()` to
+  `video-orchestrator.ts`. Restructured `buildScriptingPrompt()` so writing
+  rules live in a labelled preamble ("do NOT output them") and the output
+  template is a clean four-marker skeleton — closes the phi4-lite instruction
+  bleed where parenthetical guidance was echoed into `[BODY]`.
+- Script warnings now persist on the job (`VideoJob.scriptQualityWarnings`) so
+  they survive across REST/SSE hops. Codes: `hook_blocklist`, `duration_bleed`,
+  `visual_cue_bleed`, `word_count_bleed`, `rule_text_bleed`. Emission is
+  soft-warning only — the pipeline never aborts on a script-quality flag.
+
+### Dashboard — Creative Factory panel polish
+
+- **P0 fix**: replaced object-returning Zustand selector in
+  `CreativeFactoryPanel` with individual scalar selectors — the old pattern
+  triggers React #185 tearing under React 19 + Zustand v5.
+- Added `ListSkeleton` shimmer for BrandKits, Audiences, and Runs tabs during
+  initial load.
+- Runs tab: split-pane now activates at the `sm` breakpoint (not `md`), each
+  pane is independently scrollable (`max-h-[420px]`), and section headers stick
+  to the top of their scroll container.
+- `RunRow` gains a `focus-visible:ring-1` indicator for keyboard nav; the
+  active checkpoint row is now marked `aria-current="step"` inside a semantic
+  `<ol>`.
+
+### Dashboard — VideoJobCard warnings surface
+
+- `VideoJobCard` renders a warning badge (with up to 3 messages plus overflow
+  count) whenever the job carries `scriptQualityWarnings`. `role="status"`,
+  `aria-label` reflects the warning count, and the badge is a soft-warning tone
+  — not a failure state.
+
+### Types — new canonical contract
+
+- `packages/swarmx-types/src/video-types.ts` exports
+  `ScriptQualityWarningCode` and `ScriptQualityWarning`, added as
+  `scriptQualityWarnings?: ScriptQualityWarning[]` on the canonical
+  `VideoJob`. Both bridge types (API and dashboard) re-export the shape and
+  normalize the field.
+
+### Quality gates
+
+All 8 gates green: types tsc · api tsc · dashboard tsc · dashboard vitest
+(52/52) · api vitest (177/177) · 5 API regressions · creative-factory
+invariant · dashboard `next build` (15 routes).
+
+---
+
 ## Unreleased — Creative Video Factory Safety Baseline (2026-07-20)
 
 ### Dashboard/API — server-only video write auth

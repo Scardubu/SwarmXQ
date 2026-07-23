@@ -695,6 +695,19 @@ export interface VideoArtifacts {
   publishHistory?: PublishResult[];
 }
 
+export type ScriptQualityWarningCode =
+  | "hook_blocklist"
+  | "duration_bleed"
+  | "visual_cue_bleed"
+  | "word_count_bleed"
+  | "rule_text_bleed";
+
+export interface ScriptQualityWarning {
+  code: ScriptQualityWarningCode;
+  message: string;
+  stage?: string;
+}
+
 export interface VideoJob {
   id: string;
   mode: VideoMode;
@@ -714,6 +727,7 @@ export interface VideoJob {
   viralitySignal?: ViralitySignal;
   outputArtifacts?: VideoArtifacts;
   errorLog?: VideoError[];
+  scriptQualityWarnings?: ScriptQualityWarning[];
 }
 
 export interface ComfyNode {

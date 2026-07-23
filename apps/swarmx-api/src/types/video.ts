@@ -20,6 +20,7 @@ import type {
   PublishResult,
   VideoTone,
   VoiceArtifact,
+  ScriptQualityWarning,
 } from "@swarmx/types/video-types";
 import type { SeriesEpisodeContext } from "@swarmx/types/series-types";
 
@@ -179,7 +180,11 @@ export interface VideoJob {
   outputArtifacts?: VideoArtifacts;
   publishHistory?: PublishResult[];
   errorLog?: VideoError[];
+  scriptQualityWarnings?: ScriptQualityWarning[];
 }
+
+// Re-export for downstream consumers of the API bridge.
+export type { ScriptQualityWarning };
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
 

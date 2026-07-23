@@ -4,6 +4,7 @@ import type {
   CertificationTier,
   MediaQualityReport,
   RendererCapabilityTier,
+  ScriptQualityWarning,
   VideoArtifacts,
   VideoError,
   VideoExportPlatform,
@@ -148,7 +149,11 @@ export interface VideoJob {
   outputArtifacts?: VideoArtifacts;
   publishHistory?: PublishResult[];
   errorLog?: VideoError[];
+  scriptQualityWarnings?: ScriptQualityWarning[];
 }
+
+// Re-export for downstream dashboard components.
+export type { ScriptQualityWarning };
 
 type RawVideoStageProgress = Partial<VideoStageProgress> & {
   stage?: string;
@@ -362,6 +367,7 @@ export function normalizeVideoJob(raw: RawVideoJob): VideoJob {
     ...(raw.outputArtifacts ? { outputArtifacts: raw.outputArtifacts } : {}),
     ...(publishHistory ? { publishHistory } : {}),
     ...(raw.errorLog ? { errorLog: raw.errorLog } : {}),
+    ...(raw.scriptQualityWarnings ? { scriptQualityWarnings: raw.scriptQualityWarnings } : {}),
   };
 }
 

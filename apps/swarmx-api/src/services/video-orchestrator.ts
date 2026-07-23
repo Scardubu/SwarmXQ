@@ -86,7 +86,7 @@ import type {
   VideoOutputMetadata,
   VideoJobRequest,
 } from "../types/video.js";
-import type { OperatorTraceEntry } from "@swarmx/types/video-types";
+import type { OperatorTraceEntry, ScriptQualityWarning } from "@swarmx/types/video-types";
 // [VOT-01] Removed: VIDEO_JOB_STAGE_ORDER, stageIndex, computeOverallProgress
 // were imported but never used — caused TypeScript "no exported member" errors.
 import type { SwarmXEvent } from "../types/events.js";
@@ -547,7 +547,10 @@ async function stageScripting(
       keepAlive,
     );
     const { text: scriptText } = sanitizeReasoningOutput(rawScript);
-    validateScriptSections(scriptText, ctx.job.id, model);
+    const scriptWarnings = validateScriptSections(scriptText, ctx.job.id, model);
+    if (scriptWarnings.length > 0) {
+      ctx.job.scriptQualityWarnings = [...(ctx.job.scriptQualityWarnings ?? []), ...scriptWarnings];
+    }
     recordOperatorTrace(ctx, "scripting", model, startedAt, true, scriptTokens, scriptLatency);
     return { scriptText };
   } finally {
@@ -1320,7 +1323,12 @@ const HOOK_BLOCKLIST: ReadonlyArray<string> = [
   "We're going to",
 ];
 
-function validateScriptSections(scriptText: string, jobId: string, model: string): void {
+function validateScriptSections(
+  scriptText: string,
+  jobId: string,
+  model: string,
+): ScriptQualityWarning[] {
+  const warnings: ScriptQualityWarning[] = [];
   const hookContent =
     (scriptText.match(/\[HOOK\]([\s\S]*?)(?=\[BODY\]|\[RESOLUTION\]|\[CTA\]|$)/) ?? [])[1]?.trim() ?? "";
   const bodyContent =
@@ -1331,19 +1339,26 @@ function validateScriptSections(scriptText: string, jobId: string, model: string
   );
   if (hookViolations.length > 0) {
     log.warn({ jobId, model, violations: hookViolations }, "[script-quality] HOOK_BLOCKLIST violation");
+    warnings.push({
+      code: "hook_blocklist",
+      message: `Hook opens with a blocked phrase: ${hookViolations.join(", ")}`,
+      stage: "scripting",
+    });
   }
 
-  const bleedPatterns: Array<[RegExp, string]> = [
-    [/\(\d+-\d+[-\s]second/i, "duration-instruction bleed"],
-    [/\(insert \[visual/i, "visual-cue instruction bleed"],
-    [/\(\d+-\d+\s*words?\b/i, "word-count instruction bleed"],
-    [/each (?:sentence )?increases stakes/i, "rule-text bleed"],
+  const bleedPatterns: Array<[RegExp, ScriptQualityWarning["code"], string]> = [
+    [/\(\d+-\d+[-\s]second/i, "duration_bleed", "Body echoes duration instruction (e.g. '30-second section')"],
+    [/\(insert \[visual/i, "visual_cue_bleed", "Body echoes '[VISUAL:' instruction template"],
+    [/\(\d+-\d+\s*words?\b/i, "word_count_bleed", "Body echoes word-count instruction"],
+    [/each (?:sentence )?increases stakes/i, "rule_text_bleed", "Body echoes rule text ('each sentence increases stakes')"],
   ];
-  for (const [pattern, label] of bleedPatterns) {
+  for (const [pattern, code, message] of bleedPatterns) {
     if (pattern.test(bodyContent)) {
-      log.warn({ jobId, model, bleedType: label }, "[script-quality] Instruction bleed detected in [BODY]");
+      log.warn({ jobId, model, code }, "[script-quality] Instruction bleed detected in [BODY]");
+      warnings.push({ code, message, stage: "scripting" });
     }
   }
+  return warnings;
 }
 
 function buildSeriesContextPreamble(req: VideoJobRequest): string {

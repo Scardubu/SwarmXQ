@@ -213,6 +213,24 @@ function AudienceSheet({ onCreated }: { onCreated: () => void }) {
   );
 }
 
+// ─── Loading skeleton for list tabs ───────────────────────────────────────────
+
+function ListSkeleton({ rows = 3 }: { rows?: number }) {
+  return (
+    <div className="divide-y divide-border" role="status" aria-label="Loading">
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="flex items-center justify-between gap-3 px-4 py-3">
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <div className="h-3 w-2/5 animate-pulse rounded bg-bg-input" />
+            <div className="h-2.5 w-3/5 animate-pulse rounded bg-bg-input/60" />
+          </div>
+          <div className="h-3 w-8 animate-pulse rounded bg-bg-input" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── BrandKit row ─────────────────────────────────────────────────────────────
 
 function BrandKitRow({ kit }: { kit: BrandKit }) {
@@ -269,6 +287,7 @@ function RunRow({
       className={cn(
         "flex w-full items-center justify-between gap-3 border-b border-border px-4 py-3 text-left last:border-b-0",
         "transition-colors duration-(--duration-micro) hover:bg-bg-surface/60",
+        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent focus-visible:ring-offset-0",
         selected && "bg-bg-surface/80",
       )}
       aria-pressed={selected}
@@ -307,57 +326,49 @@ function RunDetail({ run }: { run: CreativeFactoryWorkflowRun }) {
   }
 
   return (
-    <div className="divide-y divide-border">
-      {checkpoints.map(([stage, cp]) => (
-        <div key={stage} className="flex items-center justify-between gap-2 px-4 py-2">
-          <span className="font-mono text-[10px] text-text-secondary">{stage}</span>
-          <span className={cn(
-            "rounded border px-1.5 py-0.5 font-mono text-[10px]",
-            cp?.status === "complete" ? "border-status-success/30 bg-status-success/10 text-status-success" :
-            cp?.status === "failed" ? "border-status-error/30 bg-status-error/10 text-status-error" :
-            cp?.status === "running" ? "border-accent/30 bg-accent/10 text-accent" :
-            "border-border text-text-muted",
-          )}>
-            {cp?.status ?? "unknown"}
-          </span>
-        </div>
-      ))}
-    </div>
+    <ol className="divide-y divide-border">
+      {checkpoints.map(([stage, cp]) => {
+        const isActive = cp?.status === "running";
+        return (
+          <li
+            key={stage}
+            className="flex items-center justify-between gap-2 px-4 py-2"
+            {...(isActive ? { "aria-current": "step" as const } : {})}
+          >
+            <span className="font-mono text-[10px] text-text-secondary">{stage}</span>
+            <span className={cn(
+              "rounded border px-1.5 py-0.5 font-mono text-[10px]",
+              cp?.status === "complete" ? "border-status-success/30 bg-status-success/10 text-status-success" :
+              cp?.status === "failed" ? "border-status-error/30 bg-status-error/10 text-status-error" :
+              cp?.status === "running" ? "border-accent/30 bg-accent/10 text-accent" :
+              "border-border text-text-muted",
+            )}>
+              {cp?.status ?? "unknown"}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
 // ─── Main panel ───────────────────────────────────────────────────────────────
 
 export function CreativeFactoryPanel() {
-  const {
-    stages,
-    runs,
-    capabilities,
-    brandKits,
-    audiences,
-    blueprints,
-    selectedRunId,
-    isLoading,
-    error,
-    fetchFactory,
-    createRun,
-    fetchRunDetail,
-    selectRun,
-  } = useCreativeFactoryStore((state) => ({
-    stages: state.stages,
-    runs: state.runs,
-    capabilities: state.capabilities,
-    brandKits: state.brandKits,
-    audiences: state.audiences,
-    blueprints: state.blueprints,
-    selectedRunId: state.selectedRunId,
-    isLoading: state.isLoading,
-    error: state.error,
-    fetchFactory: state.fetchFactory,
-    createRun: state.createRun,
-    fetchRunDetail: state.fetchRunDetail,
-    selectRun: state.selectRun,
-  }));
+  // Scalar selectors — Zustand v5 + React 19 tears on object-returning selectors (React #185).
+  const stages = useCreativeFactoryStore((s) => s.stages);
+  const runs = useCreativeFactoryStore((s) => s.runs);
+  const capabilities = useCreativeFactoryStore((s) => s.capabilities);
+  const brandKits = useCreativeFactoryStore((s) => s.brandKits);
+  const audiences = useCreativeFactoryStore((s) => s.audiences);
+  const blueprints = useCreativeFactoryStore((s) => s.blueprints);
+  const selectedRunId = useCreativeFactoryStore((s) => s.selectedRunId);
+  const isLoading = useCreativeFactoryStore((s) => s.isLoading);
+  const error = useCreativeFactoryStore((s) => s.error);
+  const fetchFactory = useCreativeFactoryStore((s) => s.fetchFactory);
+  const fetchRunDetail = useCreativeFactoryStore((s) => s.fetchRunDetail);
+  const selectRun = useCreativeFactoryStore((s) => s.selectRun);
+  const createRun = useCreativeFactoryStore((s) => s.createRun);
 
   useEffect(() => {
     void fetchFactory();
@@ -505,7 +516,9 @@ export function CreativeFactoryPanel() {
             </div>
             <BrandKitSheet onCreated={fetchFactory} />
           </div>
-          {brandKits.length === 0 ? (
+          {isLoading && brandKits.length === 0 ? (
+            <ListSkeleton />
+          ) : brandKits.length === 0 ? (
             <div className="px-4 py-8 text-center text-xs text-text-muted">
               No brand kits yet. Click &ldquo;New&rdquo; to define your first brand identity.
             </div>
@@ -525,7 +538,9 @@ export function CreativeFactoryPanel() {
             </div>
             <AudienceSheet onCreated={fetchFactory} />
           </div>
-          {audiences.length === 0 ? (
+          {isLoading && audiences.length === 0 ? (
+            <ListSkeleton />
+          ) : audiences.length === 0 ? (
             <div className="px-4 py-8 text-center text-xs text-text-muted">
               No audience personas yet. Click &ldquo;New&rdquo; to define your first audience.
             </div>
@@ -538,13 +553,15 @@ export function CreativeFactoryPanel() {
 
         {/* ── Runs ── */}
         <TabsContent value="runs">
-          <div className="grid gap-0 md:grid-cols-2 md:divide-x md:divide-border">
-            <div>
-              <div className="flex items-center gap-2 border-b border-border px-4 py-2.5 text-text-muted">
+          <div className="grid gap-0 sm:grid-cols-2 sm:divide-x sm:divide-border">
+            <div className="sm:max-h-[420px] sm:overflow-y-auto">
+              <div className="sticky top-0 z-[1] flex items-center gap-2 border-b border-border bg-bg-elevated/95 px-4 py-2.5 text-text-muted backdrop-blur">
                 <Activity className="h-3.5 w-3.5" aria-hidden="true" />
                 <span className="font-mono text-[10px] uppercase tracking-wide">Workflow Runs</span>
               </div>
-              {runs.length === 0 ? (
+              {isLoading && runs.length === 0 ? (
+                <ListSkeleton />
+              ) : runs.length === 0 ? (
                 <div className="px-4 py-8 text-center text-xs text-text-muted">
                   No runs yet. Click &ldquo;Start Run&rdquo; to begin a workflow.
                 </div>
@@ -561,8 +578,8 @@ export function CreativeFactoryPanel() {
                 </div>
               )}
             </div>
-            <div>
-              <div className="flex items-center gap-2 border-b border-border px-4 py-2.5 text-text-muted">
+            <div className="sm:max-h-[420px] sm:overflow-y-auto">
+              <div className="sticky top-0 z-[1] flex items-center gap-2 border-b border-border bg-bg-elevated/95 px-4 py-2.5 text-text-muted backdrop-blur">
                 <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
                 <span className="font-mono text-[10px] uppercase tracking-wide">
                   {selectedRun ? `Checkpoints — ${selectedRun.mode}` : "Select a run"}

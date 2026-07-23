@@ -18,3 +18,5 @@
 - project_v6242.md — 2026-07-19 — V6.2.42: CPU-realistic timeout bounds; first video generated (98df291a, 4m9s, 328KB); CPU governor + Ollama flash-attn + swarmxq-video-model discoveries
 - project_v6244.md — 2026-07-19 — V6.2.43+44: all 6 milestones closed; startup-enhanced.sh CPU governor + video model + flash-attn fix; bare-metal confirmed
 - project_v6245.md — 2026-07-22 — V6.2.45: committed 55 uncommitted files from Creative Factory V4 follow-on; APEX operator migration; SYSTEM-PROMPT V3.0; CreativeDNA types; tone enum all 8 variants; 177 API tests
+- project_v6246.md — 2026-07-22 — V6.2.46: Gate 7 wrapper; real tokenCount/latencyMs in operatorTrace; OTel swarmx.ollama.generate + swarmx.render.ffmpeg spans; Creative Factory dashboard UI (4-tab BrandKit/Audience/Run management)
+- project_v6247.md — 2026-07-23 — V6.2.47: script quality bleed fix (HOOK_BLOCKLIST + validateScriptSections + prompt restructure); Creative Factory UI polish (Zustand tearing P0 fix, skeletons, responsive Runs, focus/aria); ScriptQualityWarning end-to-end surface on VideoJobCard

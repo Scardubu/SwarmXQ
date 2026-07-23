@@ -9,7 +9,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Download, RefreshCw, X } from "lucide-react";
+import { AlertTriangle, Download, RefreshCw, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useVideoStore } from "../../stores/video";
 import { VideoJobTimeline } from "./VideoJobTimeline";
@@ -315,6 +315,34 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
         <VideoJobTimeline job={job} compact />
 
         <PublishSummary job={job} />
+
+        {/* Script-quality warnings — surfaced from validateScriptSections() in the API orchestrator.
+            Soft signal only; the job succeeds regardless. Users see this to know a script was
+            technically valid but leaked instruction text or opened with a blocked hook phrase. */}
+        {job.scriptQualityWarnings && job.scriptQualityWarnings.length > 0 && (
+          <div
+            className="rounded border border-status-warning/30 bg-status-warning/10 px-2.5 py-1.5"
+            role="status"
+            aria-label={`${job.scriptQualityWarnings.length} script quality warning${job.scriptQualityWarnings.length === 1 ? "" : "s"}`}
+          >
+            <div className="flex items-center gap-1.5 text-[10px] font-medium text-status-warning">
+              <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+              <span>Script quality · {job.scriptQualityWarnings.length} warning{job.scriptQualityWarnings.length === 1 ? "" : "s"}</span>
+            </div>
+            <ul className="mt-1 space-y-0.5 pl-4 text-[10px] text-text-secondary">
+              {job.scriptQualityWarnings.slice(0, 3).map((w, i) => (
+                <li key={`${w.code}-${i}`} className="list-disc marker:text-status-warning/60">
+                  {w.message}
+                </li>
+              ))}
+              {job.scriptQualityWarnings.length > 3 && (
+                <li className="list-none pl-0 font-mono text-text-muted">
+                  +{job.scriptQualityWarnings.length - 3} more
+                </li>
+              )}
+            </ul>
+          </div>
+        )}
 
         {/* Loading Model hint — shown when model cold-start is likely (>30 s at first stage).
             V6.2.26: ETA sourced from /api/system/health warmup marker instead of a hardcoded 140. */}
