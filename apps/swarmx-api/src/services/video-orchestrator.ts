@@ -108,6 +108,7 @@ import { scoreVirality } from "./virality-scorer.js";
 import { generateCaptionDraftWithValidation } from "./caption-generator.js";
 import { generateOllamaText } from "./ollama.js";
 import { log } from "../lib/logger.js";
+import { HOOK_BLOCKLIST, findHookBlocklistViolations } from "../lib/creative-quality.js";
 import { tracer, SpanStatusCode, trace } from "../lib/tracer.js";
 import { renderWithFfmpeg, type FfmpegRenderPackage } from "./ffmpeg-video-renderer.js";
 import { sanitizeReasoningOutput } from "./reasoning-sanitizer.js";
@@ -1340,22 +1341,6 @@ const TONE_RULES: Record<string, string> = {
   kinetic_text: "Text-forward, minimal narration. Each idea renders as a high-impact on-screen phrase. Maximum 7 words per visual moment. Strong rhythm — punch-cut cadence. Narration sparse or absent. Think: title card sequence.",
 };
 
-const HOOK_BLOCKLIST: ReadonlyArray<string> = [
-  "In today's video",
-  "Welcome to",
-  "Hi everyone",
-  "Today we",
-  "I'm going to",
-  "Let's ",
-  "In this video",
-  "My name is",
-  "Before we start",
-  "Make sure to",
-  "Don't forget to",
-  "This video",
-  "We're going to",
-];
-
 function validateScriptSections(
   scriptText: string,
   jobId: string,
@@ -1367,9 +1352,7 @@ function validateScriptSections(
   const bodyContent =
     (scriptText.match(/\[BODY\]([\s\S]*?)(?=\[RESOLUTION\]|\[CTA\]|$)/) ?? [])[1]?.trim() ?? "";
 
-  const hookViolations = HOOK_BLOCKLIST.filter((p) =>
-    hookContent.toLowerCase().startsWith(p.toLowerCase().trimEnd()),
-  );
+  const hookViolations = findHookBlocklistViolations(hookContent);
   if (hookViolations.length > 0) {
     log.warn({ jobId, model, violations: hookViolations }, "[script-quality] HOOK_BLOCKLIST violation");
     warnings.push({

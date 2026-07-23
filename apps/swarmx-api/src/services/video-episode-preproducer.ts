@@ -28,6 +28,7 @@ import {
   updateEpisodePassStatus,
 } from "./series-registry.js";
 import { log } from "../lib/logger.js";
+import { matchesHookBlocklistPrefix } from "../lib/creative-quality.js";
 import type {
   SeriesJob,
   EpisodeScript,
@@ -64,14 +65,8 @@ const NARRATION_STYLE_BY_TONE: Record<string, AudioPlan["narrationStyle"][]> = {
 };
 
 // ─── Hook quality constraints ─────────────────────────────────────────────────
-
-const HOOK_BLOCKLIST = [
-  "welcome back", "in this video", "make sure to", "don't forget to", "stay tuned",
-  "as i mentioned", "like i said", "before we begin", "quick disclaimer",
-  "in today's episode", "you're not going to believe",
-  "in today's video", "welcome to", "hi everyone", "today we", "let's",
-  "we're going to",
-];
+// HOOK_BLOCKLIST + matchesHookBlocklistPrefix live in ../lib/creative-quality.ts
+// (unified with the single-video orchestrator).
 
 // ─── LLM runner (mirrors planSeries pattern) ─────────────────────────────────
 
@@ -456,10 +451,9 @@ export function evaluateQualityGate(
   check("CREATIVE_QUALITY", `Hook ≤ 18 words (actual: ${hookWords})`, hookWords <= 18,
     hookWords > 18 ? `Hook is ${hookWords} words — must be trimmed to ≤ 18` : undefined);
 
-  const hookLower = script.hook.trim().toLowerCase();
-  const blockedPhrase = HOOK_BLOCKLIST.find((phrase) => hookLower.startsWith(phrase));
-  check("CREATIVE_QUALITY", "Hook passes HOOK_BLOCKLIST", !blockedPhrase,
-    blockedPhrase ? `Hook starts with blocked phrase: "${blockedPhrase}"` : undefined);
+  const hookMatch = matchesHookBlocklistPrefix(script.hook);
+  check("CREATIVE_QUALITY", "Hook passes HOOK_BLOCKLIST", !hookMatch.blocked,
+    hookMatch.matched ? `Hook starts with blocked phrase: "${hookMatch.matched}"` : undefined);
 
   const primaryAsset = assets.find((a) => a.platform === series.brief.platformPrimary);
   const ctaWords = primaryAsset ? primaryAsset.cta.trim().split(/\s+/).length : 0;
