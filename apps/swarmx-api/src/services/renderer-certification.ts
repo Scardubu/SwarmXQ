@@ -72,3 +72,93 @@ export function canPromoteTo(
   const ceilingRank = SUCCESS_CHAIN_RANK[CERTIFICATION_CEILING[tier]] ?? 0;
   return targetRank <= ceilingRank;
 }
+
+// ─── INV-18: lateral cert-tier transitions ───────────────────────────────────
+// PUBLISH_FAILED / BLOCKED / NEEDS_REVISION are off-ladder tiers — they are not
+// part of the SUCCESS_CHAIN_RANK monotone success ladder because modeling them
+// as ranks would corrupt clampCertificationTier() semantics (a "BLOCKED clamp
+// against a renderer ceiling" is meaningless). Instead, entering these tiers
+// requires calling an explicit transition function that validates the source
+// tier + captures an audit reason.
+//
+// PUBLISHING is on the success chain (rank 5) but is fenced behind
+// transitionToPublishing() so upload attempts are logged consistently.
+//
+// Callers MUST NOT write these four tiers via direct assignment — the plan
+// gate `grep -rn 'certificationTier\s*=' ... | grep -v transitionTo|clamp...`
+// enforces this by convention. A lint rule is a future P2 item.
+
+const LATERAL_TERMINAL_TIERS = new Set<CertificationTier>([
+  "PUBLISHED_VERIFIED",
+  "PUBLISH_FAILED",
+  "BLOCKED",
+  "RENDER_FAILED",
+]);
+
+export type CertTierTransition = { ok: true } | { ok: false; reason: string };
+
+function accept(from: CertificationTier, to: CertificationTier, reason?: string): CertTierTransition {
+  log.info({
+    code: "CERT_TIER_TRANSITION",
+    from,
+    to,
+    ...(reason ? { transitionReason: reason } : {}),
+  }, "certification tier transition accepted");
+  return { ok: true };
+}
+
+function reject(from: CertificationTier, to: CertificationTier, reason: string): CertTierTransition {
+  log.warn({
+    code: "CERT_TIER_TRANSITION_REJECTED",
+    from,
+    to,
+    reason,
+  }, "certification tier transition rejected");
+  return { ok: false, reason };
+}
+
+export function transitionToPublishing(current: CertificationTier): CertTierTransition {
+  if (current !== "READY_TO_POST") {
+    return reject(current, "PUBLISHING", `publish requires READY_TO_POST, was ${current}`);
+  }
+  return accept(current, "PUBLISHING");
+}
+
+export function transitionToPublishFailed(current: CertificationTier): CertTierTransition {
+  if (current !== "PUBLISHING") {
+    return reject(current, "PUBLISH_FAILED", `publish-failed requires PUBLISHING, was ${current}`);
+  }
+  return accept(current, "PUBLISH_FAILED");
+}
+
+export function transitionToBlocked(
+  current: CertificationTier,
+  reason: string,
+): CertTierTransition {
+  if (!reason || reason.trim().length === 0) {
+    return reject(current, "BLOCKED", "block reason is required");
+  }
+  if (LATERAL_TERMINAL_TIERS.has(current)) {
+    return reject(current, "BLOCKED", `cannot block from terminal tier ${current}`);
+  }
+  return accept(current, "BLOCKED", reason);
+}
+
+export function transitionToNeedsRevision(
+  current: CertificationTier,
+  failedDomain: string,
+): CertTierTransition {
+  if (!failedDomain || failedDomain.trim().length === 0) {
+    return reject(current, "NEEDS_REVISION", "failedDomain is required");
+  }
+  const currentRank = SUCCESS_CHAIN_RANK[current];
+  const threshold = SUCCESS_CHAIN_RANK["CREATIVE_REVIEW_REQUIRED"] ?? 2;
+  if (currentRank === undefined || currentRank < threshold) {
+    return reject(
+      current,
+      "NEEDS_REVISION",
+      `needs-revision requires >=CREATIVE_REVIEW_REQUIRED, was ${current}`,
+    );
+  }
+  return accept(current, "NEEDS_REVISION", `failedDomain=${failedDomain}`);
+}
