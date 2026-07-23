@@ -61,6 +61,7 @@ export type VideoDegradeMode =
   | "intent_only";
 
 export type CreativeFactoryExecutionMode =
+  | "QUICK_DRAFT"
   | "PLAN_ONLY"
   | "PRODUCTION_PACK"
   | "FULL_RENDER"

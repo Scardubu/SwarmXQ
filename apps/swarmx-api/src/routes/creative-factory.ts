@@ -35,14 +35,14 @@ import { requireVideoWriteAuth } from "../services/video-auth.js";
 
 const CapabilityRequirementSchema = z.object({
   capability: z.string().min(1),
-  requiredFor: z.array(z.enum(["PLAN_ONLY", "PRODUCTION_PACK", "FULL_RENDER", "PUBLISH_BUNDLE", "PUBLISH_AND_LEARN"])).min(1),
+  requiredFor: z.array(z.enum(["QUICK_DRAFT", "PLAN_ONLY", "PRODUCTION_PACK", "FULL_RENDER", "PUBLISH_BUNDLE", "PUBLISH_AND_LEARN"])).min(1),
   state: z.enum(["available", "degraded", "unavailable"]),
   reason: z.string().optional(),
   action: z.string().optional(),
 });
 
 const WorkflowRunBodySchema = z.object({
-  mode: z.enum(["PLAN_ONLY", "PRODUCTION_PACK", "FULL_RENDER", "PUBLISH_BUNDLE", "PUBLISH_AND_LEARN"]),
+  mode: z.enum(["QUICK_DRAFT", "PLAN_ONLY", "PRODUCTION_PACK", "FULL_RENDER", "PUBLISH_BUNDLE", "PUBLISH_AND_LEARN"]),
   profile: z.enum([
     "constrained_cpu_8gb",
     "standard_cpu_16gb",

@@ -1,4 +1,8 @@
-import type { CertificationTier, RendererCapabilityTier } from "@swarmx/types/video-types";
+import type {
+  CertificationTier,
+  CreativeFactoryExecutionMode,
+  RendererCapabilityTier,
+} from "@swarmx/types/video-types";
 import { log } from "../lib/logger.js";
 
 const SUCCESS_CHAIN_RANK: Partial<Record<CertificationTier, number>> = {
@@ -18,8 +22,24 @@ const CERTIFICATION_CEILING: Record<RendererCapabilityTier, CertificationTier> =
   optional_adapter: "PRODUCTION_PACK_VALID",
 };
 
+// Per-mode cert ceiling. QUICK_DRAFT tops out at TECHNICALLY_VALID by design
+// (proxy render, no production polish). Higher modes let the renderer ceiling
+// dominate.
+const MODE_CERT_CEILING: Record<CreativeFactoryExecutionMode, CertificationTier> = {
+  QUICK_DRAFT: "TECHNICALLY_VALID",
+  PLAN_ONLY: "CREATIVE_REVIEW_REQUIRED",
+  PRODUCTION_PACK: "PRODUCTION_PACK_VALID",
+  FULL_RENDER: "READY_TO_POST",
+  PUBLISH_BUNDLE: "READY_TO_POST",
+  PUBLISH_AND_LEARN: "PUBLISHED_VERIFIED",
+};
+
 export function getRendererCertificationCeiling(tier: RendererCapabilityTier): CertificationTier {
   return CERTIFICATION_CEILING[tier];
+}
+
+export function getModeCertificationCeiling(mode: CreativeFactoryExecutionMode): CertificationTier {
+  return MODE_CERT_CEILING[mode];
 }
 
 export function clampCertificationTier(

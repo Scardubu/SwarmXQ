@@ -72,10 +72,10 @@ function now(): string {
 function requiredModesFor(stage: CreativeFactoryStage): CreativeFactoryExecutionMode[] {
   const index = CREATIVE_FACTORY_STAGE_ORDER.indexOf(stage);
   if (index <= CREATIVE_FACTORY_STAGE_ORDER.indexOf("EPISODE_SCRIPT_VALIDATE")) {
-    return ["PLAN_ONLY", "PRODUCTION_PACK", "FULL_RENDER", "PUBLISH_BUNDLE", "PUBLISH_AND_LEARN"];
+    return ["QUICK_DRAFT", "PLAN_ONLY", "PRODUCTION_PACK", "FULL_RENDER", "PUBLISH_BUNDLE", "PUBLISH_AND_LEARN"];
   }
   if (index <= CREATIVE_FACTORY_STAGE_ORDER.indexOf("ASSET_PLAN")) {
-    return ["PRODUCTION_PACK", "FULL_RENDER", "PUBLISH_BUNDLE", "PUBLISH_AND_LEARN"];
+    return ["QUICK_DRAFT", "PRODUCTION_PACK", "FULL_RENDER", "PUBLISH_BUNDLE", "PUBLISH_AND_LEARN"];
   }
   if (index <= CREATIVE_FACTORY_STAGE_ORDER.indexOf("HUMAN_REVIEW")) {
     return ["FULL_RENDER", "PUBLISH_BUNDLE", "PUBLISH_AND_LEARN"];
