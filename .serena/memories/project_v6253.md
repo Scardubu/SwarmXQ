@@ -102,11 +102,57 @@ Not modified this session.
 
 Kokoro back online at :8888 with 6 voices — benchmark still stale (last run failed in V6.2.51). Next session should rerun `voice-benchmark.ts` before M9.
 
+## Live Verification (end of session)
+
+After commit + push + dashboard restart, ran end-to-end probes against `http://127.0.0.1:3001`:
+
+- ✅ API server healthy on :3001 (`SwarmX API ready`)
+- ✅ Dashboard on :3000 (Next.js 16 Turbopack, first `/system` render 2.9s)
+- ✅ `/api/system/health` returns `status:degraded` — API responsive, Ollama probe timed out
+- ✅ `POST /api/video/factory/retention-map/preview` returns 7-beat map (`overallRisk:HIGH`, `highRiskCount:2`, `unrecoveredHighRiskCount:0`) confirming the new endpoint works end-to-end
+- ✅ Voice benchmark refreshed (age 1.0h, `stale:false`)
+- ⚠️ Voice benchmark recommends **espeak-ng** because Kokoro was excluded from the last run (failed then). Kokoro server is now healthy at :8888 with 6 voices — a rerun will elevate Kokoro back to `neural_local`
+- ⚠️ 3 restored video jobs are stuck at `intent_classification` — Ollama probe not returning ready
+- ⚠️ Available RAM 3.7 GB / 15.5 GB — below `FULL_PIPELINE_MIN_AVAILABLE_MB=6170`
+
+## M9 Next-Session Runbook
+
+```bash
+# 1. Cancel or drain the 3 stuck jobs (or accept they will fail)
+curl -X POST http://127.0.0.1:3001/api/video/jobs/8577c37b-fa99-4a13-a33c-6c2e4bf0ce37/cancel \
+  -H "authorization: Bearer $SWARMX_VIDEO_API_TOKEN"
+# ...repeat for 01f1d7eb, 154c45e6
+
+# 2. Warm Ollama with the ultra-router first (Pilot: instruct-phi4-pro-q8-prod)
+curl http://127.0.0.1:11434/api/generate -d '{"model":"instruct-phi4-pro-q8-prod","prompt":"warm","stream":false,"options":{"num_predict":1}}'
+
+# 3. Rerun voice benchmark with Kokoro healthy at :8888
+export SWARMX_VOICE_BENCHMARK_FILE=/tmp/swarmxq-voice-benchmark.json
+export SWARMX_TTS_URL=http://localhost:8888
+pnpm --filter @swarmx/api exec tsx scripts/voice-benchmark.ts
+
+# 4. Verify Kokoro is now recommended
+curl -s http://127.0.0.1:3001/api/system/health | python3 -c "import json,sys; b=json.load(sys.stdin)['voice']['benchmark']; print(b['recommendedProviderId'])"
+# → expect: kokoro (or kokoro-http)
+
+# 5. Submit a fresh production job (kinetic_text OR faceless_broll — not smoke)
+curl -X POST http://127.0.0.1:3001/api/video/jobs -H "authorization: Bearer $SWARMX_VIDEO_API_TOKEN" -H "content-type: application/json" \
+  -d '{"topic":"why 3-second hooks work","tone":"kinetic_text","platform":"tiktok","clientRequestId":"m9-golden-path-1"}'
+
+# 6. Watch the pipeline
+# Web UI: http://localhost:3000/video/<jobId>
+# API:    curl http://127.0.0.1:3001/api/video/jobs/<jobId>
+
+# 7. Verify cert tier reaches PRODUCTION_PACK_VALID or PUBLISHED_VERIFIED
+# Check quality-report.json in the artifact directory contains templateQc interpretations
+# from the V6.2.53 wire-in
+```
+
 ## Remaining Work
 
 | Priority | Item | Status |
 |---|---|---|
-| **Next** | M9 golden-path re-cert — warm Ollama, rerun voice-benchmark.ts with fresh Kokoro, generate real MP4 | Deferred to runtime session |
+| **Next** | M9 golden-path re-cert — see runbook above | Requires runtime intervention |
 | P1 | Audio-mastering two-pass wire-in (needs AUDIO_MASTER stage split + WAV output in `masterAudio`) | Deferred |
 | 12 | Ollama JSON-mode migration | Not started |
 | P2 | Dashboard tournament UI (routes + fetch + panel) | Not started |
