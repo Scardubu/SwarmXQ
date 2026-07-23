@@ -1,0 +1,79 @@
+{
+  "// SwarmXQ Copilot Settings — V6.2.22": "Merge into .vscode/settings.json",
+  "// These settings optimize GitHub Copilot for the SwarmXQ project.": "",
+
+  "github.copilot.enable": {
+    "*": true,
+    "markdown": true,
+    "yaml": true,
+    "shellscript": true
+  },
+
+  "github.copilot.editor.enableAutoCompletions": true,
+
+  "github.copilot.chat.codeGeneration.useInstructionFiles": true,
+
+  "github.copilot.chat.localeOverride": "en",
+
+  "github.copilot.chat.scopeSelection": true,
+
+  "github.copilot.renameSuggestions.triggerAutomatically": false,
+
+  "chat.instructionsFilesLocations": {
+    ".github/copilot-instructions.md": true,
+    ".github/copilot-context.md": true
+  },
+
+  "github.copilot.chat.codeGeneration.instructions": [
+    {
+      "file": ".github/copilot-instructions.md"
+    },
+    {
+      "file": ".github/copilot-context.md"
+    }
+  ],
+
+  "github.copilot.chat.commitMessageGeneration.instructions": [
+    {
+      "text": "Use Conventional Commits format: feat(scope) | fix(scope) | perf(scope) | refactor(scope) | test(scope) | chore(scope) | docs | ci(scope). SwarmXQ scopes: video | model | startup | creative | agent | dashboard | ci. One-line subject, imperative mood, ≤72 chars. Example: feat(video): add faceless_broll tone variant to TONE_RULES"
+    }
+  ],
+
+  "github.copilot.chat.pullRequestDescriptionGeneration.instructions": [
+    {
+      "text": "SwarmXQ PR template: ## Changes, ## Quality Gates (list all 8 gates with pass/skip/reason), ## Invariants Checked (console.* | resolveCanonicalTag | sanitizeReasoningOutput | TONE_RULES completeness), ## Risk Notes"
+    }
+  ],
+
+  "editor.inlineSuggest.suppressSuggestions": false,
+
+  "typescript.preferences.importModuleSpecifier": "project-relative",
+
+  "editor.codeActionsOnSave": {
+    "source.organizeImports": "explicit"
+  },
+
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/.next": true,
+    "**/dist": true,
+    "**/.turbo": true,
+    "**/coverage": true
+  },
+
+  "files.associations": {
+    "*.modelfile": "dockerfile",
+    "AGENTS.md": "markdown",
+    "CLAUDE.md": "markdown",
+    "NEXUS.md": "markdown",
+    "copilot-instructions.md": "markdown"
+  },
+
+  "github.copilot.chat.experimental.variables": {
+    "swarmxq.modelRegistry": "packages/swarmx-types/src/operator-map.ts",
+    "swarmxq.videoPipeline": "apps/swarmx-api/src/services/video-orchestrator.ts",
+    "swarmxq.envSchema": "apps/swarmx-api/src/lib/env.ts",
+    "swarmxq.claude": "CLAUDE.md",
+    "swarmxq.nexus": "NEXUS.md"
+  }
+}
