@@ -547,6 +547,7 @@ async function stageScripting(
       keepAlive,
     );
     const { text: scriptText } = sanitizeReasoningOutput(rawScript);
+    validateScriptSections(scriptText, ctx.job.id, model);
     recordOperatorTrace(ctx, "scripting", model, startedAt, true, scriptTokens, scriptLatency);
     return { scriptText };
   } finally {
@@ -1303,6 +1304,48 @@ const TONE_RULES: Record<string, string> = {
   kinetic_text: "Text-forward, minimal narration. Each idea renders as a high-impact on-screen phrase. Maximum 7 words per visual moment. Strong rhythm — punch-cut cadence. Narration sparse or absent. Think: title card sequence.",
 };
 
+const HOOK_BLOCKLIST: ReadonlyArray<string> = [
+  "In today's video",
+  "Welcome to",
+  "Hi everyone",
+  "Today we",
+  "I'm going to",
+  "Let's ",
+  "In this video",
+  "My name is",
+  "Before we start",
+  "Make sure to",
+  "Don't forget to",
+  "This video",
+  "We're going to",
+];
+
+function validateScriptSections(scriptText: string, jobId: string, model: string): void {
+  const hookContent =
+    (scriptText.match(/\[HOOK\]([\s\S]*?)(?=\[BODY\]|\[RESOLUTION\]|\[CTA\]|$)/) ?? [])[1]?.trim() ?? "";
+  const bodyContent =
+    (scriptText.match(/\[BODY\]([\s\S]*?)(?=\[RESOLUTION\]|\[CTA\]|$)/) ?? [])[1]?.trim() ?? "";
+
+  const hookViolations = HOOK_BLOCKLIST.filter((p) =>
+    hookContent.toLowerCase().startsWith(p.toLowerCase().trimEnd()),
+  );
+  if (hookViolations.length > 0) {
+    log.warn({ jobId, model, violations: hookViolations }, "[script-quality] HOOK_BLOCKLIST violation");
+  }
+
+  const bleedPatterns: Array<[RegExp, string]> = [
+    [/\(\d+-\d+[-\s]second/i, "duration-instruction bleed"],
+    [/\(insert \[visual/i, "visual-cue instruction bleed"],
+    [/\(\d+-\d+\s*words?\b/i, "word-count instruction bleed"],
+    [/each (?:sentence )?increases stakes/i, "rule-text bleed"],
+  ];
+  for (const [pattern, label] of bleedPatterns) {
+    if (pattern.test(bodyContent)) {
+      log.warn({ jobId, model, bleedType: label }, "[script-quality] Instruction bleed detected in [BODY]");
+    }
+  }
+}
+
 function buildSeriesContextPreamble(req: VideoJobRequest): string {
   const ctx = req.seriesContext;
   if (!ctx) return "";
@@ -1333,6 +1376,11 @@ function buildScriptingPrompt(req: VideoJobRequest, plan: string[]): string {
   const dur = req.targetDurationSeconds ?? 60;
   const toneInstruction = TONE_RULES[req.tone ?? "educational"] ?? TONE_RULES["educational"];
   const seriesPreamble = buildSeriesContextPreamble(req);
+  const bodyTargetSecs = Math.round(dur * 0.6);
+  const hookBlocklist = HOOK_BLOCKLIST.slice(0, 6)
+    .map((p) => `"${p.trim()}"`)
+    .join(", ");
+
   return `You are an expert short-form video scriptwriter for ${req.platform ?? "tiktok"}.
 ${seriesPreamble}Niche: ${req.niche ?? "general"} | Tone: ${req.tone ?? "educational"} | Style: ${req.style ?? "faceless_broll"} | Voice: ${req.voice ?? "default"}
 Audience: ${req.audience ?? "general viewers"}
@@ -1341,23 +1389,20 @@ Original brief: "${req.prompt}"
 Production plan:
 ${plan.map((p, i) => `${i + 1}. ${p}`).join("\n")}
 
-Tone instruction: ${toneInstruction}
+Tone: ${toneInstruction}
 
-Write a ${dur}-second narration script using EXACTLY this structure with section markers:
+WRITING RULES — follow these; do NOT output them:
+[HOOK]: At most 18 words. One sentence. Pattern-interrupt opening — contrast, claim, or question. No preamble. Never start with ${hookBlocklist} or similar.
+[BODY]: ${bodyTargetSecs} seconds of content. 3–4 sentences; each must increase stakes or deepen understanding. Active voice. After any sentence that implies a visual, add on the next line: [VISUAL: subject + motion + setting + mood + quality keywords].
+[RESOLUTION]: 1–2 sentences. Actionable — resolves the hook's tension. Not a summary.
+[CTA]: 5–8 words. Specific to this audience. Never "like and subscribe".
+
+Write the script now. Output ONLY the four sections below. No commentary, no rule text, no explanations.
 
 [HOOK]
-(12-18 words maximum. The single most pattern-interrupting sentence. No preamble. Start with the contrast, claim, or question.)
-
 [BODY]
-(${Math.round(dur * 0.6)}-second section. 3-4 sentences. Each increases stakes or deepens understanding. Insert [VISUAL: abstract description] cues after sentences needing visual emphasis.)
-
 [RESOLUTION]
-(8-10 seconds. Land the specific takeaway in 1-2 concrete, actionable sentences.)
-
-[CTA]
-(5-8 words. Direct and specific. Avoid 'like and subscribe'.)
-
-Output the full script with section markers intact. No other text.`;
+[CTA]`;
 }
 
 function buildStoryboardPrompt(req: VideoJobRequest, scriptText: string): string {
