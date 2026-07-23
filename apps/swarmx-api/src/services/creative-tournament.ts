@@ -11,10 +11,24 @@ export const SCORING_VERSION = "v1" as const;
 
 /**
  * Structural fingerprint used for diversity comparison.
- * Combines the three axes most predictive of viewer fatigue across episodes.
+ * Encodes all 11 SCAR-X concept axes so diversity scoring catches more sameness patterns.
+ * Optional axes fall back to "" — absent fields still contribute a delimiter, preventing
+ * collisions between candidates that set different subsets of optional axes.
  */
 export function fingerprintCandidate(c: ConceptCandidate): string {
-  return [c.hookFamily, c.emotionalArc, c.CTAStyle]
+  return [
+    c.hookFamily,
+    c.emotionalArc,
+    c.CTAStyle,
+    c.visualLanguage,
+    c.premise,
+    c.narrativeStructure ?? "",
+    c.proofMechanism ?? "",
+    c.soundStyle ?? "",
+    c.pacing ?? "",
+    c.productionComplexity ?? "",
+    c.pointOfView ?? "",
+  ]
     .map((s) => s.trim().toLowerCase())
     .join("|");
 }

@@ -62,6 +62,13 @@ function validateSrtPath(path: string, field: string): void {
       field,
     );
   }
+  if (path.split("/").some((segment) => segment === "..")) {
+    throw new RenderRecipeCompilationError(
+      `Caption path in field "${field}" contains directory traversal sequence`,
+      "RENDER_UNSAFE_SRT_PATH",
+      field,
+    );
+  }
 }
 
 const MOTION_FILTER_TOKENS: Record<MotionPreset, string> = {

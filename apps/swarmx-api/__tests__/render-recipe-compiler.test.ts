@@ -130,6 +130,18 @@ describe("compileSceneSpec", () => {
     expect(() => compileSceneSpec([scene], "ffmpeg_text_smoke")).not.toThrow();
   });
 
+  it("rejects srtPath containing directory traversal sequence", () => {
+    for (const traversal of ["../etc/passwd", "/tmp/../../sensitive", "subs/../../../etc"]) {
+      const scene = makeScene({ caption: { srtPath: traversal, style: "default" } });
+      try {
+        compileSceneSpec([scene], "ffmpeg_text_smoke");
+        expect.fail(`expected throw for path: ${traversal}`);
+      } catch (err) {
+        expect((err as RenderRecipeCompilationError).code).toBe("RENDER_UNSAFE_SRT_PATH");
+      }
+    }
+  });
+
   it("accepts a safe srtPath without throwing", () => {
     const scene = makeScene({
       caption: { srtPath: "/tmp/captions/video-001.srt", style: "kinetic" },

@@ -554,6 +554,13 @@ export interface ConceptCandidate {
   feasibility: number;
   originality: number;
   confidence: number;
+  // Extended diversity axes (optional for backwards-compatibility)
+  pointOfView?: string;         // narrator, character, observer, second-person…
+  narrativeStructure?: string;  // problem-solution, revelation, transformation, comparison…
+  proofMechanism?: string;      // statistic, example, demo, testimony, visual-proof…
+  soundStyle?: string;          // ambient, rhythmic, silence, dramatic-sting, lo-fi…
+  pacing?: string;              // fast-cut, slow-burn, medium, variable…
+  productionComplexity?: string; // minimal, moderate, high
 }
 
 export interface ConceptTournament {
@@ -947,4 +954,58 @@ export interface ValidatedRenderRecipe {
   /** Filter tokens derived exclusively from enum values, never from free-text SceneSpec fields */
   safeFilterTokens: string[];
   compiledAt: string;
+}
+
+// ─── Audio Mastering ──────────────────────────────────────────────────────────
+
+/** Platform targets for EBU R128 loudness normalization.
+ *  Runtime values live in audio-mastering.ts (AUDIO_PLATFORM_PROFILES const) — only
+ *  the type union is exported from here to avoid requiring a built dist/ for test resolution. */
+export type AudioPlatform = "youtube" | "tiktok" | "reels" | "shorts" | "broadcast";
+
+export interface AudioMasteringRequest {
+  inputPath: string;
+  outputPath: string;
+  platform: AudioPlatform;
+  sampleRate?: 48000 | 44100;
+  channels?: 1 | 2;
+  bitrate?: number;
+}
+
+export interface AudioMasteringResult {
+  outputPath: string;
+  measuredInputLUFS: number;
+  measuredOutputLUFS: number;
+  measuredTruePeak: number;
+  platform: AudioPlatform;
+  ffmpegExitCode: number;
+}
+
+// ─── Template-Aware QC ────────────────────────────────────────────────────────
+
+export interface RawQcFinding {
+  type: "BLACK_FRAME" | "FREEZE_FRAME" | "SILENCE" | "MISSING_AUDIO" | "FIRST_FRAME_EMPTY";
+  startSec: number;
+  durationSec: number;
+  severity: "LOW" | "MEDIUM" | "HIGH";
+}
+
+export interface QcFindingInterpretation {
+  raw: RawQcFinding;
+  rendererTier: RendererCapabilityTier;
+  plannedEvent: string | null;
+  isExpected: boolean;
+  interpretedSeverity: "NONE" | "LOW" | "MEDIUM" | "HIGH";
+  notes: string;
+}
+
+export interface TemplateQcResult {
+  pass: boolean;
+  rendererTier: RendererCapabilityTier;
+  rawFindings: RawQcFinding[];
+  interpretations: QcFindingInterpretation[];
+  /** Non-expected HIGH-severity interpretations — each blocks PRODUCTION_PACK_VALID progression */
+  blockers: QcFindingInterpretation[];
+  /** Non-expected MEDIUM-severity interpretations — surfaced as warnings, do not block */
+  warnings: QcFindingInterpretation[];
 }

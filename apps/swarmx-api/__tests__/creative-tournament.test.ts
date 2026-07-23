@@ -33,13 +33,34 @@ describe("scoreCandidate", () => {
 });
 
 describe("fingerprintCandidate", () => {
-  it("joins hookFamily, emotionalArc, CTAStyle pipe-separated and lowercased", () => {
+  it("encodes all 11 axes pipe-separated and lowercased", () => {
     const c = makeCandidate("a", {
       hookFamily: "Curiosity-Gap",
       emotionalArc: "Tension-Resolution",
       CTAStyle: "Subscribe Now",
+      narrativeStructure: "Problem-Solution",
+      proofMechanism: "Statistic",
+      soundStyle: "Rhythmic",
+      pacing: "Fast-Cut",
+      productionComplexity: "Moderate",
+      pointOfView: "Narrator",
     });
-    expect(fingerprintCandidate(c)).toBe("curiosity-gap|tension-resolution|subscribe now");
+    // Order: hookFamily|emotionalArc|CTAStyle|visualLanguage|premise|narrativeStructure|proofMechanism|soundStyle|pacing|productionComplexity|pointOfView
+    expect(fingerprintCandidate(c)).toBe(
+      "curiosity-gap|tension-resolution|subscribe now|cinematic|premise for a|problem-solution|statistic|rhythmic|fast-cut|moderate|narrator",
+    );
+  });
+
+  it("uses empty string for absent optional axes — distinct from set axes", () => {
+    const withProof = makeCandidate("a", { proofMechanism: "statistic" });
+    const withoutProof = makeCandidate("b");
+    expect(fingerprintCandidate(withProof)).not.toBe(fingerprintCandidate(withoutProof));
+  });
+
+  it("candidates differing only on a new optional axis get distinct fingerprints", () => {
+    const a = makeCandidate("a", { proofMechanism: "statistic" });
+    const b = makeCandidate("b", { proofMechanism: "demo" });
+    expect(fingerprintCandidate(a)).not.toBe(fingerprintCandidate(b));
   });
 });
 
