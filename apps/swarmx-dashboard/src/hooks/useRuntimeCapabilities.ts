@@ -6,7 +6,13 @@ export interface RuntimeCapabilities {
   status: "ok" | "degraded" | "warning" | "critical";
   ts: string;
   ollama: { url: string; reachable: boolean; latencyMs: number | null };
-  models: Array<{ tag: string; state: string; runningSince?: string | null }>;
+  models: Array<{
+    role: string;
+    tag: string;
+    gguf?: string;
+    status: "ready" | "missing" | "error";
+    error?: string;
+  }>;
   memory: { totalGb: number; availableGb: number; usedGb: number };
   warmup: { done: boolean; coldStartEtaSecs: number; source: "file" | "default" } | null;
   voice: {

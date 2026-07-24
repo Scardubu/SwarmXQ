@@ -115,6 +115,8 @@ import { sanitizeReasoningOutput } from "./reasoning-sanitizer.js";
 import { validateStageResult, type ValidatedStage } from "./stage-schemas.js";
 import type { StageValidationEntry } from "../types/video.js";
 import {
+  LOW_RAM_VIDEO_MODEL,
+  PILOT_VIDEO_MODEL,
   resolveVideoModelTag,
   stageTimeoutMs,
   type TextVideoJobStage,
@@ -336,9 +338,10 @@ async function readPressure(): Promise<GovernorSnapshot> {
  */
 async function acquireModel(
   stage: TextVideoJobStage,
-  request: VideoJobRequest
+  request: VideoJobRequest,
+  requestedTag?: string,
 ): Promise<{ modelTag: string; keepAlive: string; overrides: ModelOverrides }> {
-  const tag = resolveModelTag(request, stage);
+  const tag = requestedTag ?? resolveModelTag(request, stage);
   const mo  = ModelOrchestrator.getInstance();
   const { modelTag: resolvedTag, keepAlive, evictedModels, overrides } = await mo.requestModel(tag);
 
@@ -462,13 +465,93 @@ async function comfyRunWorkflow(
 async function stageIntentClassification(
   ctx: OrchestratorContext
 ): Promise<{ intent: string; complexity: number }> {
+  const initialModelOverride = hasPriorIntentPilotFailure(ctx.job) ? LOW_RAM_VIDEO_MODEL : undefined;
+  if (initialModelOverride) {
+    log.warn({
+      jobId: ctx.job.id,
+      stage: "intent_classification",
+      model: PILOT_VIDEO_MODEL,
+      fallbackModel: initialModelOverride,
+    }, "prior Q8 Pilot intent failure detected — starting retry with Pilot-lite");
+    ctx.broadcast({
+      type: "video:stream",
+      timestamp: new Date().toISOString(),
+      data: {
+        jobId: ctx.job.id,
+        stage: "intent_classification",
+        pct: 5,
+        operatorTag: initialModelOverride,
+        message: "Previous Q8 Pilot attempt failed; starting retry with Pilot-lite.",
+      },
+    });
+  }
+
   // [VOT-04] Destructure modelTag + overrides from acquireModel
-  const { modelTag: model, keepAlive, overrides } = await acquireModel("intent_classification", ctx.job.request);
-  const startedAt = new Date().toISOString();
+  const { modelTag: model, keepAlive, overrides } = await acquireModel(
+    "intent_classification",
+    ctx.job.request,
+    initialModelOverride,
+  );
   // [VOT-10] Record actual resolved tag immediately — not re-derived later
   ctx.modelsUsed["intent_classification"] = model;
   trace.getActiveSpan()?.setAttribute("swarmx.model.tag", model);
   const controller = stageController(ctx, "intent_classification");
+
+  try {
+    return await classifyIntentWithModel(ctx, model, keepAlive, overrides, controller.signal);
+  } catch (err) {
+    if (!shouldFallbackIntentToPilotLite(model, err)) {
+      throw err;
+    }
+
+    const errorCode = errorCodeOf(err);
+    log.warn({
+      jobId: ctx.job.id,
+      stage: "intent_classification",
+      model,
+      fallbackModel: LOW_RAM_VIDEO_MODEL,
+      errorCode,
+    }, "intent classification primary model failed — retrying with Pilot-lite");
+    ctx.broadcast({
+      type: "video:stream",
+      timestamp: new Date().toISOString(),
+      data: {
+        jobId: ctx.job.id,
+        stage: "intent_classification",
+        pct: 5,
+        operatorTag: LOW_RAM_VIDEO_MODEL,
+        message: "Q8 Pilot unavailable; retrying intent classification with Pilot-lite.",
+      },
+    });
+
+    await ModelOrchestrator.getInstance().unloadModel(model);
+    const fallback = await acquireModel("intent_classification", ctx.job.request, LOW_RAM_VIDEO_MODEL);
+    ctx.modelsUsed["intent_classification"] = fallback.modelTag;
+    trace.getActiveSpan()?.setAttribute("swarmx.model.tag", fallback.modelTag);
+    return await classifyIntentWithModel(
+      ctx,
+      fallback.modelTag,
+      fallback.keepAlive,
+      fallback.overrides,
+      controller.signal,
+    );
+  } finally {
+    controller.abort();
+    const completedModel = ctx.modelsUsed["intent_classification"] ?? model;
+    ModelOrchestrator.getInstance().onModelCallComplete(completedModel);
+  }
+}
+
+async function classifyIntentWithModel(
+  ctx: OrchestratorContext,
+  model: string,
+  keepAlive: string,
+  overrides: ModelOverrides,
+  signal: AbortSignal,
+): Promise<{ intent: string; complexity: number }> {
+  const startedAt = new Date().toISOString();
+  const attemptStartedMs = Date.now();
+  let traceRecorded = false;
 
   try {
     // [VOT-03] Pass overrides to ollamaGenerate
@@ -483,9 +566,9 @@ Brief: "${ctx.job.request.prompt}"
 Respond as strict JSON only, no other text:
 {"intent": "HOOK: [one-sentence contrarian or surprising angle] | ARC: [what viewer feels start→middle→end] | TAKEAWAY: [specific actionable conclusion]", "complexity": 0.0}
 
-complexity: 0.0 = simple topic, minimal narrative arc; 1.0 = nuanced multi-beat storytelling with strong identity challenge required.`,
-      controller.signal,
-      192,
+      complexity: 0.0 = simple topic, minimal narrative arc; 1.0 = nuanced multi-beat storytelling with strong identity challenge required.`,
+      signal,
+      256,
       overrides,
       keepAlive,
     );
@@ -493,29 +576,134 @@ complexity: 0.0 = simple topic, minimal narrative arc; 1.0 = nuanced multi-beat 
     try {
       const parsed = parseIntentClassification(raw);
       recordOperatorTrace(ctx, "intent_classification", model, startedAt, true, intentTokens, intentLatency);
+      traceRecorded = true;
       return parsed;
     } catch (err) {
       if (loadEnv().SWARMX_VIDEO_ALLOW_UNSTRUCTURED_INTENT === "1") {
         recordOperatorTrace(ctx, "intent_classification", model, startedAt, true, intentTokens, intentLatency);
+        traceRecorded = true;
         return { intent: raw.slice(0, 200), complexity: 0.5 };
       }
       recordOperatorTrace(ctx, "intent_classification", model, startedAt, false, intentTokens, intentLatency);
+      traceRecorded = true;
       throw Object.assign(
         new Error(`Intent classification did not return valid JSON: ${err instanceof Error ? err.message : String(err)}`),
         { code: "INTENT_VALIDATION_FAILED" },
       );
     }
-  } finally {
-    controller.abort();
-    ModelOrchestrator.getInstance().onModelCallComplete(model);
+  } catch (err) {
+    if (!traceRecorded) {
+      recordOperatorTrace(
+        ctx,
+        "intent_classification",
+        model,
+        startedAt,
+        false,
+        0,
+        Date.now() - attemptStartedMs,
+      );
+    }
+    throw err;
   }
+}
+
+function errorCodeOf(err: unknown): string {
+  return typeof err === "object" && err !== null && "code" in err
+    ? String((err as { code?: unknown }).code ?? "")
+    : "";
+}
+
+function shouldFallbackIntentToPilotLite(model: string, err: unknown): boolean {
+  if (model !== PILOT_VIDEO_MODEL) {
+    return false;
+  }
+  const code = errorCodeOf(err);
+  return code === "OLLAMA_UNAVAILABLE" || code === "TIMEOUT";
+}
+
+function hasPriorIntentPilotFailure(job: VideoJob): boolean {
+  return (job.operatorTrace ?? []).some(
+    (entry) =>
+      entry.stage === toPublicStatus("intent_classification") &&
+      entry.modelTag === PILOT_VIDEO_MODEL &&
+      entry.success === false,
+  );
+}
+
+function recoveryModelForTextStage(
+  ctx: OrchestratorContext,
+  stage: Exclude<TextVideoJobStage, "intent_classification">,
+): string | undefined {
+  const recoveredIntent =
+    ctx.modelsUsed["intent_classification"] === LOW_RAM_VIDEO_MODEL ||
+    hasPriorIntentPilotFailure(ctx.job);
+  if (!recoveredIntent) {
+    return undefined;
+  }
+
+  log.warn({
+    jobId: ctx.job.id,
+    stage,
+    fallbackModel: LOW_RAM_VIDEO_MODEL,
+  }, "video text stage using Pilot-lite recovery profile");
+  return LOW_RAM_VIDEO_MODEL;
+}
+
+function normalizeStoryboardFrame(text: string): string {
+  return text
+    .replace(/^\s*(?:[-*]|\d+[.)])\s*/, "")
+    .replace(/^\s*\[SCENE\s+\d+\s*\|\s*([^\]]+)\]\s*/i, "$1: ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function appendStoryboardFrame(frames: string[], frame: string): void {
+  const normalized = normalizeStoryboardFrame(frame);
+  if (normalized.length < 8 || normalized.length > 260) {
+    return;
+  }
+  if (!frames.some((existing) => existing.toLowerCase() === normalized.toLowerCase())) {
+    frames.push(normalized);
+  }
+}
+
+function extractStoryboardFrames(rawStoryboard: string, scriptText: string): string[] {
+  const frames: string[] = [];
+  for (const line of rawStoryboard.split("\n")) {
+    const trimmed = line.trim();
+    if (/^(?:[-*]|\d+[.)])\s+/.test(trimmed) || /^\[SCENE\s+\d+\s*\|/i.test(trimmed)) {
+      appendStoryboardFrame(frames, trimmed);
+    }
+  }
+
+  if (frames.length === 0) {
+    const visualTagPattern = /\[VISUAL:\s*([^\]]+)\]/gi;
+    for (const source of [rawStoryboard, scriptText]) {
+      let match: RegExpExecArray | null;
+      while ((match = visualTagPattern.exec(source)) !== null) {
+        appendStoryboardFrame(frames, match[1] ?? "");
+      }
+    }
+  }
+
+  if (frames.length === 0) {
+    for (const chunk of rawStoryboard.split(/[.!?]\s+|\n+/)) {
+      appendStoryboardFrame(frames, chunk);
+    }
+  }
+
+  return frames.slice(0, 7);
 }
 
 async function stagePlanning(
   ctx:    OrchestratorContext,
   intent: string
 ): Promise<{ plan: string[] }> {
-  const { modelTag: model, keepAlive, overrides } = await acquireModel("planning", ctx.job.request);
+  const { modelTag: model, keepAlive, overrides } = await acquireModel(
+    "planning",
+    ctx.job.request,
+    recoveryModelForTextStage(ctx, "planning"),
+  );
   const startedAt = new Date().toISOString();
   // [VOT-10] Record actual resolved tag immediately — not re-derived later
   ctx.modelsUsed["planning"] = model;
@@ -529,7 +717,7 @@ async function stagePlanning(
       model,
       buildPlanningPrompt(ctx.job.request, intent),
       controller.signal,
-      512,
+      320,
       overrides,
       keepAlive,
     );
@@ -554,7 +742,11 @@ async function stageScripting(
   ctx:  OrchestratorContext,
   plan: string[]
 ): Promise<{ scriptText: string }> {
-  const { modelTag: model, keepAlive, overrides } = await acquireModel("scripting", ctx.job.request);
+  const { modelTag: model, keepAlive, overrides } = await acquireModel(
+    "scripting",
+    ctx.job.request,
+    recoveryModelForTextStage(ctx, "scripting"),
+  );
   const startedAt = new Date().toISOString();
   // [VOT-10] Record actual resolved tag immediately — not re-derived later
   ctx.modelsUsed["scripting"] = model;
@@ -597,7 +789,11 @@ async function stageStoryboardGeneration(
   ctx:        OrchestratorContext,
   scriptText: string
 ): Promise<{ frames: string[] }> {
-  const { modelTag: model, keepAlive, overrides } = await acquireModel("storyboard_generation", ctx.job.request);
+  const { modelTag: model, keepAlive, overrides } = await acquireModel(
+    "storyboard_generation",
+    ctx.job.request,
+    recoveryModelForTextStage(ctx, "storyboard_generation"),
+  );
   const startedAt = new Date().toISOString();
   // [VOT-10] Record actual resolved tag immediately — not re-derived later
   ctx.modelsUsed["storyboard_generation"] = model;
@@ -616,11 +812,7 @@ async function stageStoryboardGeneration(
       keepAlive,
     );
     const { text: raw } = sanitizeReasoningOutput(rawStoryboard);
-    const frames = raw
-      .split("\n")
-      .filter((l) => l.trim().startsWith("-") || /^\d+\./.test(l.trim()))
-      .map((l)    => l.replace(/^[-\d.]+\s*/, "").trim())
-      .filter(Boolean);
+    const frames = extractStoryboardFrames(raw, scriptText);
     const validated = runStageValidation(ctx.job, "storyboard_generation", { frames });
     const result = validated ?? {
       frames: ["Abstract cinematic opener", "Key message frame", "CTA closing frame"],
@@ -1208,7 +1400,7 @@ function stageController(
  * Resolve the model tag for a given stage and request.
  *
  * [VOT-07] resolveCanonicalTag() applied as final pass to normalize any
- * legacy -scar tag that may be supplied via request.modelTier during the
+ * legacy alias that may be supplied via request.modelTier during the
  * migration cutover window. The tierMap keys are human-readable tier names
  * ("fast", "worker", "supervisor", "reasoner") — unknown keys fall through
  * to the STAGE_MODEL_TAG default, which is already canonical. The

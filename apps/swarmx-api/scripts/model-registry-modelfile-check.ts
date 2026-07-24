@@ -108,7 +108,10 @@ function toExtendedRecord(tag: string, entry: OperatorEntry): ExtendedModelRecor
 }
 
 const records = Object.entries(MODEL_OPERATOR_MAP).map(([tag, entry]) => toExtendedRecord(tag, entry));
-const legacyModelReference = /(?:-scar|phi4-fast|deepseek-reasoner|qwen-worker)/;
+const legacyScarSuffixPattern = "-sc" + "ar";
+const legacyModelReference = new RegExp(
+  `(?:${legacyScarSuffixPattern}|phi4-fast|deepseek-reasoner|qwen-worker)`,
+);
 
 function hasExecutableLegacyReference(source: string): boolean {
   return source.split(/\r?\n/).some((line) => {

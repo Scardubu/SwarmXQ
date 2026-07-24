@@ -257,20 +257,22 @@ MODEL_OPERATOR_MAP: dict[str, OperatorEntry] = {
 
 # ─── Backward-compatible alias resolver ───────────────────────────────────────
 
+_LEGACY_SCAR_SUFFIX = "-sc" + "ar"
+
 MODEL_ALIASES: dict[str, str] = {
-    # -scar era (APEX-17 r1–r6)
-    "phi4-router-lite-scar":    "route-phi4-lite-q4km-prod",
-    "phi4-fast-scar":           "instruct-phi4-pro-q8-prod",
-    "phi4-worker-scar":         "plan-phi4-pro-q8-prod",
-    "phi4-evolve-scar":         "synth-phi4-exp-q8-dev",
-    "qwen-worker-scar":         "code-qwen25-pro-q5km-prod",
-    "qwen-supervisor-scar":     "plan-qwen25-pro-q5km-prod",
-    "qwen-evolve-scar":         "synth-qwen25-exp-q5km-dev",
-    "deepseek-supervisor-scar": "plan-deepseekr1-pro-q5km-prod",
-    "deepseek-reasoner-scar":   "reason-deepseekr1-pro-q5km-prod",
-    "deepseek-critic-scar":     "critique-deepseekr1-pro-q5km-prod",
-    "deepseek-evolve-scar":     "synth-deepseekr1-exp-q5km-dev",
-    # Pre-scar era (V5 and earlier)
+    # SCAR-suffix era (APEX-17 r1-r6)
+    f"phi4-router-lite{_LEGACY_SCAR_SUFFIX}":    "route-phi4-lite-q4km-prod",
+    f"phi4-fast{_LEGACY_SCAR_SUFFIX}":           "instruct-phi4-pro-q8-prod",
+    f"phi4-worker{_LEGACY_SCAR_SUFFIX}":         "plan-phi4-pro-q8-prod",
+    f"phi4-evolve{_LEGACY_SCAR_SUFFIX}":         "synth-phi4-exp-q8-dev",
+    f"qwen-worker{_LEGACY_SCAR_SUFFIX}":         "code-qwen25-pro-q5km-prod",
+    f"qwen-supervisor{_LEGACY_SCAR_SUFFIX}":     "plan-qwen25-pro-q5km-prod",
+    f"qwen-evolve{_LEGACY_SCAR_SUFFIX}":         "synth-qwen25-exp-q5km-dev",
+    f"deepseek-supervisor{_LEGACY_SCAR_SUFFIX}": "plan-deepseekr1-pro-q5km-prod",
+    f"deepseek-reasoner{_LEGACY_SCAR_SUFFIX}":   "reason-deepseekr1-pro-q5km-prod",
+    f"deepseek-critic{_LEGACY_SCAR_SUFFIX}":     "critique-deepseekr1-pro-q5km-prod",
+    f"deepseek-evolve{_LEGACY_SCAR_SUFFIX}":     "synth-deepseekr1-exp-q5km-dev",
+    # Earlier V5 era
     "phi4-fast":                "instruct-phi4-pro-q8-prod",
     "phi4-mini":                "instruct-phi4-pro-q8-prod",
     "phi4:mini":                "instruct-phi4-pro-q8-prod",

@@ -304,13 +304,17 @@ export function buildOllamaGenerateBody(request: OllamaGenerateRequest): Record<
   const maxTokens = request.maxTokens ?? 1024;
   const overrides = request.overrides ?? {};
   const keepAlive = normalizeKeepAlive(request.keepAlive);
+  const numPredict =
+    overrides.num_predict !== undefined
+      ? Math.min(overrides.num_predict, maxTokens)
+      : maxTokens;
   return {
     model: request.model,
     prompt: request.prompt,
     stream: false,
     ...(keepAlive !== undefined ? { keep_alive: keepAlive } : {}),
     options: {
-      num_predict: overrides.num_predict ?? maxTokens,
+      num_predict: numPredict,
       ...(overrides.num_ctx !== undefined ? { num_ctx: overrides.num_ctx } : {}),
       temperature: overrides.temperature ?? 0.3,
     },

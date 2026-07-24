@@ -7,10 +7,11 @@
  *   2. modelsUsed populated (≥4 text stages)
  *   3. certificationTier ≥ PRODUCTION_PACK_VALID
  *   4. /api/system/health exposes voice.benchmark + runtimeProfile
- *   5. QC report present in artifact package
+ *   5. QC report present in completed job output
  *
  * Requires:
- *   - API server running at SWARMX_API_BASE_URL (default http://localhost:3000)
+ *   - Fastify API server running at SWARMX_API_BASE_URL / SWARMX_API_URL
+ *     (default http://127.0.0.1:3001)
  *   - SWARMX_VIDEO_API_TOKEN env var set
  *   - Ollama + Redis + Kokoro online
  *
@@ -24,10 +25,21 @@ import { fileURLToPath } from "node:url";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const API_BASE = (process.env["SWARMX_API_BASE_URL"] ?? "http://localhost:3000").replace(/\/$/, "");
+function resolveApiBase(): string {
+  const explicit = process.env["SWARMX_API_BASE_URL"] ?? process.env["SWARMX_API_URL"];
+  if (explicit?.trim()) {
+    return explicit.trim().replace(/\/$/, "");
+  }
+  const host = process.env["SWARMX_API_HOST"] ?? "127.0.0.1";
+  const port = process.env["SWARMX_API_PORT"] ?? "3001";
+  return `http://${host}:${port}`.replace(/\/$/, "");
+}
+
+const API_BASE = resolveApiBase();
 const API_TOKEN = process.env["SWARMX_VIDEO_API_TOKEN"] ?? "";
 const POLL_INTERVAL_MS = 10_000;
 const JOB_TIMEOUT_MS = 30 * 60 * 1_000; // 30 minutes
+const FULL_PIPELINE_MIN_AVAILABLE_MB = 6_170;
 
 const CERT_RANK: Record<string, number> = {
   TECHNICALLY_VALID: 1,
@@ -52,7 +64,12 @@ interface VideoJob {
   modelsUsed?: Record<string, string>;
   certificationTier?: string;
   renderPackage?: { qualityReport?: unknown };
-  error?: string;
+  output?: {
+    modelsUsed?: Record<string, string>;
+    certificationTier?: string;
+    mediaQualityReport?: unknown;
+  };
+  error?: unknown;
   errorCode?: string;
   overallProgress?: number;
   currentStage?: string;
@@ -60,8 +77,15 @@ interface VideoJob {
 
 interface HealthResponse {
   status: string;
+  ollama?: { reachable?: boolean };
+  models?: Array<{ role?: string; tag?: string; status?: string; error?: string }>;
   voice?: { benchmark?: { recommendedProviderId?: string } };
-  runtimeProfile?: { id?: string };
+  runtimeProfile?: {
+    id?: string;
+    availableRamMb?: number;
+    blockers?: string[];
+    warnings?: string[];
+  };
 }
 
 interface CertAssertion {
@@ -108,10 +132,87 @@ function assert_cert(assertions: CertAssertion[], name: string, passed: boolean,
   else process.stdout.write(`  ✓ ${name}\n`);
 }
 
+function formatErrorForOutput(error: unknown): string {
+  if (typeof error === "string") return error;
+  if (error == null) return "";
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
+function collectPreflightFailures(health: HealthResponse): string[] {
+  const failures: string[] = [];
+
+  if (health.status === "degraded") {
+    failures.push("system health status is degraded");
+  } else if (health.status !== "ok" && health.status !== "warning") {
+    failures.push(`system health status is ${health.status}`);
+  }
+
+  if (health.ollama?.reachable !== true) {
+    failures.push("Ollama is not reachable");
+  }
+
+  const missingModels = (health.models ?? []).filter((model) => model.status !== "ready");
+  if (missingModels.length > 0) {
+    const summary = missingModels
+      .map((model) => `${model.role ?? "model"}:${model.tag ?? "unknown"}=${model.status ?? "unknown"}`)
+      .join(", ");
+    failures.push(`model readiness failed (${summary})`);
+  }
+
+  const blockers = health.runtimeProfile?.blockers ?? [];
+  if (blockers.length > 0) {
+    failures.push(`runtime profile blockers present (${blockers.join("; ")})`);
+  }
+
+  const availableRamMb = health.runtimeProfile?.availableRamMb;
+  if (availableRamMb == null) {
+    failures.push("runtimeProfile.availableRamMb is missing");
+  } else if (availableRamMb < FULL_PIPELINE_MIN_AVAILABLE_MB) {
+    failures.push(
+      `available RAM ${availableRamMb} MB is below full-pipeline minimum ${FULL_PIPELINE_MIN_AVAILABLE_MB} MB`,
+    );
+  }
+
+  if (health.voice?.benchmark?.recommendedProviderId == null) {
+    failures.push("voice benchmark recommendation is missing");
+  }
+
+  if (health.runtimeProfile?.id == null) {
+    failures.push("runtimeProfile.id is missing");
+  }
+
+  return failures;
+}
+
+function formatProgress(progress: number | undefined): string {
+  if (progress == null) {
+    return "--";
+  }
+  const normalized = progress <= 1 ? progress * 100 : progress;
+  return `${Math.round(normalized)}%`;
+}
+
+function resolveModelsUsed(job: VideoJob): Record<string, string> {
+  return job.modelsUsed ?? job.output?.modelsUsed ?? {};
+}
+
+function resolveCertificationTier(job: VideoJob): string | undefined {
+  return job.certificationTier ?? job.output?.certificationTier;
+}
+
+function hasQualityReport(job: VideoJob): boolean {
+  return job.renderPackage?.qualityReport != null || job.output?.mediaQualityReport != null;
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 process.stdout.write("\n┌─ M13 Live Re-Certification ─────────────────────────────────────┐\n");
 process.stdout.write(`│ API:   ${API_BASE}\n`);
+process.stdout.write("│ Mode:  direct Fastify API validation\n");
 process.stdout.write(`│ Auth:  ${API_TOKEN ? "Bearer ***" : "MISSING — video writes will be blocked"}\n`);
 process.stdout.write("└──────────────────────────────────────────────────────────────────┘\n\n");
 
@@ -134,8 +235,25 @@ try {
 
 const preflightVoice = health.voice?.benchmark?.recommendedProviderId;
 const preflightProfile = health.runtimeProfile?.id;
+const preflightAvailableMb = health.runtimeProfile?.availableRamMb;
+const modelReadyCount = (health.models ?? []).filter((model) => model.status === "ready").length;
+const modelTotalCount = health.models?.length ?? 0;
 process.stdout.write(`  voice.benchmark.recommendedProviderId: ${preflightVoice ?? "null"}\n`);
-process.stdout.write(`  runtimeProfile.id: ${preflightProfile ?? "null"}\n\n`);
+process.stdout.write(`  runtimeProfile.id: ${preflightProfile ?? "null"}\n`);
+process.stdout.write(`  runtimeProfile.availableRamMb: ${preflightAvailableMb ?? "null"}\n`);
+process.stdout.write(`  model readiness: ${modelReadyCount}/${modelTotalCount} ready\n`);
+
+const preflightFailures = collectPreflightFailures(health);
+if (preflightFailures.length > 0) {
+  process.stderr.write("\nERROR: M13 preflight failed. No video job was submitted.\n");
+  for (const failure of preflightFailures) {
+    process.stderr.write(`  - ${failure}\n`);
+  }
+  process.stderr.write("\nRecover the runtime and rerun test:m13.\n");
+  process.exit(1);
+}
+
+process.stdout.write("\n");
 
 // Step 2 — Submit job
 const clientRequestId = `m13-live-cert-${Date.now()}`;
@@ -144,7 +262,7 @@ process.stdout.write(`Step 2 — Submit job (clientRequestId: ${clientRequestId}
 const jobBody = {
   prompt: "Habit formation accelerates when it becomes visible.",
   platform: "tiktok",
-  niche: "productivity",
+  niche: "motivational",
   targetDurationSeconds: 18,
   tone: "kinetic_text",
   style: "kinetic_text",
@@ -171,7 +289,7 @@ while (true) {
   }
 
   job = await getJson<VideoJob>(`/api/video/jobs/${jobId}`);
-  const progress = job.overallProgress != null ? `${(job.overallProgress * 100).toFixed(0)}%` : "--";
+  const progress = formatProgress(job.overallProgress);
   process.stdout.write(`  [${new Date().toISOString()}] status=${job.status} stage=${job.currentStage ?? "?"} progress=${progress}\n`);
 
   if (TERMINAL_STATUSES.has(job.status)) break;
@@ -180,7 +298,8 @@ while (true) {
 
 if (job.status !== "completed") {
   process.stderr.write(`ERROR: Job ended with status=${job.status}\n`);
-  if (job.error) process.stderr.write(`  error: ${job.error}\n`);
+  const formattedError = formatErrorForOutput(job.error);
+  if (formattedError) process.stderr.write(`  error: ${formattedError}\n`);
   if (job.errorCode) process.stderr.write(`  errorCode: ${job.errorCode}\n`);
   process.exit(1);
 }
@@ -195,14 +314,14 @@ const assertions: CertAssertion[] = [];
 const traceLen = job.stageValidationTrace?.length ?? 0;
 assert_cert(assertions, "stageValidationTrace populated (≥3 entries)", traceLen >= 3, "≥3", String(traceLen));
 
-const modelsCount = Object.keys(job.modelsUsed ?? {}).length;
+const modelsCount = Object.keys(resolveModelsUsed(job)).length;
 assert_cert(assertions, "modelsUsed populated (≥4 text stages)", modelsCount >= 4, "≥4", String(modelsCount));
 
-const certTier = job.certificationTier ?? "none";
+const certTier = resolveCertificationTier(job) ?? "none";
 assert_cert(assertions, "certificationTier ≥ PRODUCTION_PACK_VALID", isCertAtLeast(certTier, "PRODUCTION_PACK_VALID"), "≥PRODUCTION_PACK_VALID", certTier);
 
-const hasQcReport = job.renderPackage?.qualityReport != null;
-assert_cert(assertions, "QC report present in renderPackage", hasQcReport, "present", hasQcReport ? "present" : "missing");
+const hasQcReport = hasQualityReport(job);
+assert_cert(assertions, "QC report present in completed job output", hasQcReport, "present", hasQcReport ? "present" : "missing");
 
 // Step 5 — Re-check health post-completion
 process.stdout.write("\nStep 5 — Post-completion health check\n");

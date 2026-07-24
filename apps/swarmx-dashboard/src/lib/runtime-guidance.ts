@@ -1,10 +1,24 @@
 export type RuntimeGuidanceTone = "warning" | "critical";
 
+export interface RuntimeGuidanceModel {
+  role?: string;
+  tag?: string;
+  status?: string;
+  error?: string;
+}
+
 export interface RuntimeGuidanceInput {
   apiOnline: boolean | null;
   ollamaOnline: boolean | null;
   pressureLevel?: string | undefined;
   availableMb?: number | null | undefined;
+  healthStatus?: string | null | undefined;
+  modelReadiness?: RuntimeGuidanceModel[] | null | undefined;
+  runtimeAvailableMb?: number | null | undefined;
+  runtimeBlockers?: string[] | null | undefined;
+  runtimeWarnings?: string[] | null | undefined;
+  voiceBenchmarkRecommendedProviderId?: string | null | undefined;
+  fullPipelineMinAvailableMb?: number | undefined;
 }
 
 export interface RuntimeGuidance {
@@ -12,6 +26,7 @@ export interface RuntimeGuidance {
   title: string;
   detail: string;
   recoveryHint: string;
+  blocksSubmission: boolean;
 }
 
 function formatAvailableMemory(availableMb: number | null | undefined): string {
@@ -20,6 +35,31 @@ function formatAvailableMemory(availableMb: number | null | undefined): string {
   }
 
   return ` (${Math.round(availableMb).toLocaleString()} MB free)`;
+}
+
+const DEFAULT_FULL_PIPELINE_MIN_AVAILABLE_MB = 6_170;
+
+function formatGbFromMb(valueMb: number): string {
+  return `${(valueMb / 1024).toFixed(1)} GB`;
+}
+
+function formatModelLabel(model: RuntimeGuidanceModel): string {
+  return model.role ?? model.tag ?? "model";
+}
+
+function buildModelReadinessDetail(models: RuntimeGuidanceModel[] | null | undefined): string | null {
+  if (!models || models.length === 0) {
+    return null;
+  }
+
+  const missing = models.filter((model) => model.status !== "ready");
+  if (missing.length === 0) {
+    return null;
+  }
+
+  const labels = missing.slice(0, 3).map(formatModelLabel).join(", ");
+  const suffix = missing.length > 3 ? ` +${missing.length - 3} more` : "";
+  return `${missing.length} required model profile${missing.length === 1 ? " is" : "s are"} not ready (${labels}${suffix}).`;
 }
 
 /**
@@ -34,9 +74,26 @@ export function getRuntimeGuidance({
   ollamaOnline,
   pressureLevel,
   availableMb,
+  healthStatus,
+  modelReadiness,
+  runtimeAvailableMb,
+  runtimeBlockers,
+  runtimeWarnings,
+  voiceBenchmarkRecommendedProviderId,
+  fullPipelineMinAvailableMb = DEFAULT_FULL_PIPELINE_MIN_AVAILABLE_MB,
 }: RuntimeGuidanceInput): RuntimeGuidance | null {
   const memorySuffix = formatAvailableMemory(availableMb);
   const memoryConstrained = pressureLevel === "high" || pressureLevel === "critical";
+  const modelReadinessDetail = buildModelReadinessDetail(modelReadiness);
+  const runtimeBelowFullPipeline =
+    runtimeAvailableMb != null &&
+    Number.isFinite(runtimeAvailableMb) &&
+    runtimeAvailableMb < fullPipelineMinAvailableMb;
+  const runtimeBlockerCount = runtimeBlockers?.length ?? 0;
+  const pipelineHealthBlocked =
+    apiOnline === true &&
+    ollamaOnline !== false &&
+    (modelReadinessDetail !== null || runtimeBelowFullPipeline || runtimeBlockerCount > 0);
 
   if (apiOnline === false) {
     return {
@@ -44,6 +101,36 @@ export function getRuntimeGuidance({
       title: "SwarmX API unavailable",
       detail: "The dashboard cannot reach the local API, so live job and runtime state may be stale.",
       recoveryHint: "Confirm the API is running on port 3001, then refresh this dashboard.",
+      blocksSubmission: true,
+    };
+  }
+
+  if (pipelineHealthBlocked) {
+    const details: string[] = [];
+    if (modelReadinessDetail) {
+      details.push(modelReadinessDetail);
+    }
+    if (runtimeBelowFullPipeline && runtimeAvailableMb != null) {
+      details.push(
+        `Available RAM is ${formatGbFromMb(runtimeAvailableMb)}; M13 full-pipeline minimum is ${formatGbFromMb(fullPipelineMinAvailableMb)}.`,
+      );
+    }
+    if (runtimeBlockerCount > 0) {
+      details.push(`${runtimeBlockerCount} runtime profile blocker${runtimeBlockerCount === 1 ? " is" : "s are"} active.`);
+    }
+    if (voiceBenchmarkRecommendedProviderId == null && healthStatus === "degraded") {
+      details.push("Voice benchmark recommendation is missing.");
+    }
+
+    return {
+      tone: "critical",
+      title: "Full video pipeline blocked",
+      detail: details.join(" "),
+      recoveryHint:
+        modelReadinessDetail !== null
+          ? "Install or retag the canonical model set, then free memory before submitting production video jobs."
+          : "Free memory or select a lighter runtime profile before submitting production video jobs.",
+      blocksSubmission: true,
     };
   }
 
@@ -57,6 +144,17 @@ export function getRuntimeGuidance({
           ? ` Memory pressure is also ${pressureLevel}${memorySuffix}.`
           : ""),
       recoveryHint: "Start or restore Ollama with `ollama serve`, then wait for the health indicator to recover.",
+      blocksSubmission: true,
+    };
+  }
+
+  if (apiOnline === true && healthStatus === "warning" && runtimeWarnings && runtimeWarnings.length > 0) {
+    return {
+      tone: "warning",
+      title: "Runtime warnings active",
+      detail: runtimeWarnings.slice(0, 2).join(" "),
+      recoveryHint: "Review the System page before starting a long production render.",
+      blocksSubmission: false,
     };
   }
 
@@ -69,6 +167,7 @@ export function getRuntimeGuidance({
         ? "Model calls are restricted to protect the host from an out-of-memory failure."
         : "Model work is serialized and may take longer while the host preserves headroom.",
       recoveryHint: "Finish or unload memory-heavy processes before starting another model-backed job.",
+      blocksSubmission: isCritical,
     };
   }
 

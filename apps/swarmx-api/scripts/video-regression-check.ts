@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import {
   FULL_PIPELINE_MIN_AVAILABLE_MB,
   LOW_RAM_VIDEO_MODEL,
+  PILOT_VIDEO_MODEL,
   detectAvailableMemoryMb,
   minimumRamRequiredForVideoRequest,
   resolveVideoModelTag,
@@ -58,12 +59,12 @@ process.env["VIDEO_PLANNING_TIMEOUT_MS"] = "999999";
 assert.equal(stageTimeoutMs("planning"), 900_000);
 delete process.env["VIDEO_PLANNING_TIMEOUT_MS"];
 
-// V6.2.42 — defaults sized for 2-core CPU-only (5–6 tok/s, 200–1024 token stages).
+// V6.2.55 — defaults sized for CPU-only cold Q8 Pilot load + inference slack.
 delete process.env["VIDEO_INTENT_CLASSIFY_TIMEOUT_MS"];
 delete process.env["VIDEO_PLANNING_TIMEOUT_MS"];
 delete process.env["VIDEO_SCRIPTING_TIMEOUT_MS"];
 delete process.env["VIDEO_STORYBOARD_TIMEOUT_MS"];
-assert.equal(stageTimeoutMs("intent_classification"), 120_000);
+assert.equal(stageTimeoutMs("intent_classification"), 240_000);
 assert.equal(stageTimeoutMs("planning"), 300_000);
 assert.equal(stageTimeoutMs("scripting"), 600_000);
 assert.equal(stageTimeoutMs("storyboard_generation"), 600_000);
@@ -86,11 +87,29 @@ const body = buildOllamaGenerateBody({
   keepAlive: "30s",
 });
 assert.equal(body.keep_alive, "30s");
+const cappedBody = buildOllamaGenerateBody({
+  model: LOW_RAM_VIDEO_MODEL,
+  prompt: "hello",
+  maxTokens: 192,
+  overrides: { num_predict: 256 },
+});
+assert.equal((cappedBody.options as Record<string, unknown>).num_predict, 192);
 
 const orchestratorSource = await readFile(new URL("../src/services/video-orchestrator.ts", import.meta.url), "utf8");
 assert.ok(orchestratorSource.includes("parseIntentClassification"));
 assert.ok(orchestratorSource.includes("INTENT_VALIDATION_FAILED"));
 assert.ok(orchestratorSource.includes("SWARMX_VIDEO_ALLOW_UNSTRUCTURED_INTENT"));
+assert.ok(orchestratorSource.includes("shouldFallbackIntentToPilotLite"));
+assert.ok(orchestratorSource.includes("hasPriorIntentPilotFailure"));
+assert.ok(orchestratorSource.includes("recoveryModelForTextStage"));
+assert.ok(orchestratorSource.includes("extractStoryboardFrames"));
+assert.ok(orchestratorSource.includes("[VISUAL:"));
+assert.ok(orchestratorSource.includes("starting retry with Pilot-lite"));
+assert.ok(orchestratorSource.includes("retrying with Pilot-lite"));
+assert.ok(orchestratorSource.includes("video text stage using Pilot-lite recovery profile"));
+assert.ok(orchestratorSource.includes("unloadModel(model)"));
+assert.ok(orchestratorSource.includes("PILOT_VIDEO_MODEL"));
+assert.ok(orchestratorSource.includes("LOW_RAM_VIDEO_MODEL"));
 assert.ok(orchestratorSource.includes("videoConfig.SWARMX_COMFYUI_URL"));
 assert.ok(orchestratorSource.includes("videoConfig.SWARMX_VIDEO_HIGH_PRESSURE_DELAY_MS"));
 assert.ok(orchestratorSource.includes("videoConfig.SWARMX_API_INTERNAL"));
@@ -115,6 +134,16 @@ assert.ok(routesSource.includes('event.type === "video:completed"'), "SSE must c
 const serverSource = await readFile(new URL("../src/server.ts", import.meta.url), "utf8");
 assert.ok(serverSource.includes("shouldAutoEnableLowRamMode()"), "server must auto-enable low-RAM mode");
 assert.ok(serverSource.includes("LOW_RAM_VIDEO_MODEL"), "server must reference the video prewarm model");
+
+const m13CertSource = await readFile(new URL("./m13-live-cert.ts", import.meta.url), "utf8");
+assert.ok(m13CertSource.includes('process.env["SWARMX_API_URL"]'), "M13 cert must honor SWARMX_API_URL");
+assert.ok(m13CertSource.includes("FULL_PIPELINE_MIN_AVAILABLE_MB"), "M13 cert must enforce RAM preflight");
+assert.ok(m13CertSource.includes("collectPreflightFailures"), "M13 cert must fail fast on degraded runtime");
+assert.ok(m13CertSource.includes("No video job was submitted"), "M13 cert must avoid doomed job submission");
+assert.ok(m13CertSource.includes("resolveModelsUsed"), "M13 cert must assert models from completed job output");
+assert.ok(m13CertSource.includes("resolveCertificationTier"), "M13 cert must assert certification from completed job output");
+assert.ok(m13CertSource.includes("hasQualityReport"), "M13 cert must assert QC from completed job output");
+assert.ok(m13CertSource.includes("formatProgress"), "M13 cert must display 0–100 job progress correctly");
 
 const composerSource = await readFile(new URL("../src/routes/composer.ts", import.meta.url), "utf8");
 const preloadStart = composerSource.indexOf("function startModelPreload");

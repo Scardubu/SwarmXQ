@@ -271,8 +271,8 @@ class TestLookups:
 class TestMirrorConsistency:
     """Validate that TS and Python sources of truth stay in sync.
 
-    Parses operator-map.ts via regex (no Node.js dependency) and compares
-    the resulting key set against the Python MODEL_OPERATOR_MAP.
+    Parses operator-map.ts via regex (no Node.js dependency) and compares the
+    resulting key sets against the Python maps.
     """
 
     @pytest.fixture
@@ -311,7 +311,21 @@ class TestMirrorConsistency:
         if not match:
             return set()
         block = match.group(1)
-        return set(re.findall(r'"([\w\-:.]+)":\s*"', block))
+        aliases = set(re.findall(r'"([\w\-:.]+)":\s*"', block))
+
+        suffix_match = re.search(
+            r"LEGACY_SCAR_SUFFIX\s*=\s*\"([^\"]+)\"\s*\+\s*\"([^\"]+)\"",
+            content,
+        )
+        if suffix_match:
+            legacy_suffix = "".join(suffix_match.groups())
+            computed_prefixes = re.findall(
+                r"\[`([^`$]+)\$\{LEGACY_SCAR_SUFFIX\}`\]:\s*\"",
+                block,
+            )
+            aliases.update(f"{prefix}{legacy_suffix}" for prefix in computed_prefixes)
+
+        return aliases
 
     def test_canonical_keys_match(self, ts_keys: set[str]) -> None:
         py_keys = set(MODEL_OPERATOR_MAP.keys())
@@ -333,7 +347,7 @@ class TestMirrorConsistency:
 # ─── Tests: Runtime Default Verification ─────────────────────────────────────
 
 class TestRuntimeDefaults:
-    """Ensure no -scar tags leak into runtime default values."""
+    """Ensure no legacy SCAR-suffix tags leak into runtime default values."""
 
     def test_default_canonical_constants(self) -> None:
         defaults = {

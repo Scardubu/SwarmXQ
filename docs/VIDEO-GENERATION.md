@@ -161,7 +161,7 @@ If the service is not reachable or reports `engine: unavailable`, the API report
 Create or extend your `apps/swarmx-dashboard/.env.local`:
 
 ```bash
-SWARMX_API_URL=http://localhost:3001
+SWARMX_API_URL=http://127.0.0.1:3001
 SWARMX_VIDEO_API_TOKEN=replace-me-for-write-routes
 ```
 
@@ -807,6 +807,36 @@ conflated with predicted virality.
 | Scripting | `SWARMX_VIDEO_SCRIPT_MODEL` | `plan-qwen25-pro-q5km-prod` | 60–120 s |
 | Storyboard | `SWARMX_VIDEO_STORYBOARD_MODEL` | `plan-qwen25-pro-q5km-prod` | 120–300 s |
 | Render assembly | `ffmpeg` / `ffprobe` / `espeak-ng` | Local binaries | 15–120 s |
+
+The default intent path still attempts the full Q8 Pilot first. If that model
+returns a retryable Ollama failure during intent classification, the stage
+unloads it and retries once with canonical Pilot-lite
+(`instruct-phi4-lite-q4km-prod`) inside the same stage timeout. The operator
+trace and final `modelsUsed.intent_classification` record the fallback model, so
+the recovery path is visible rather than hidden. If the first attempt exhausts
+the stage budget after recording a Q8 Pilot failure, the job retry starts
+directly on Pilot-lite instead of spending another cold-start cycle on the
+unstable Q8 runner. After intent has recovered to Pilot-lite, planning,
+scripting, and storyboard generation also use the Pilot-lite recovery profile
+for that job so constrained CPU hosts do not reload the heavier planner and
+trip the M13 planning timeout immediately after a successful intent retry.
+
+Stage `maxTokens` values are hard caps over adaptive model profile
+`num_predict`, so shared 7B defaults cannot silently expand short video stages.
+Planning asks for only the five required production beats and is capped at 320
+generated tokens; intent classification keeps a 256-token cap so Pilot-lite can
+return complete strict JSON.
+
+`pnpm --filter @swarmx/api run test:m13` validates the HTTP job detail contract
+against the canonical completed-job `output` metadata. The required production
+evidence is `output.modelsUsed`, `output.certificationTier`, and
+`output.mediaQualityReport`; older top-level mirrors remain accepted by the
+harness only for backwards compatibility.
+
+Storyboard extraction accepts strict numbered/bulleted scene lines first, then
+falls back to `[SCENE N | BEAT]` lines and `[VISUAL: ...]` tags from either the
+storyboard response or the script. Generic safe-default frames are only used when
+no script-specific visual beats can be recovered.
 
 Set `SWARMX_VIDEO_LOW_RAM_MODE=1` to force all four text stages to
 `instruct-phi4-lite-q4km-prod`. Do not send `modelTier` in the first low-RAM

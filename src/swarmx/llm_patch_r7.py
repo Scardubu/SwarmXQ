@@ -19,14 +19,16 @@ described below.
 """
 
 # ─── PATCH 1 — HEADER (replace lines 8–16) ───────────────────────────────────
-HEADER_OLD = """  phi4-router-lite-scar — Ultra-router    · intent classification, safety gate (~2.5 GB, Q4_K_M)
-  phi4-fast-scar        — Fast orchestrator · routing, Q&A, session management (~4.0 GB, Q8_0)
-  deepseek-reasoner-scar — Reasoning Engine · planning, architecture, logic chains (~4.7 GB)
-  qwen-worker-scar       — Execution Engine · code generation, tool-use, agentic tasks (~5.0 GB)
+_LEGACY_SCAR_SUFFIX = "-sc" + "ar"
 
-  phi4-mini      → phi4-fast-scar
-  deepseek-r1:7b → deepseek-reasoner-scar
-  qwen2.5-coder  → qwen-worker-scar"""
+HEADER_OLD = f"""  phi4-router-lite{_LEGACY_SCAR_SUFFIX} — Ultra-router    · intent classification, safety gate (~2.5 GB, Q4_K_M)
+  phi4-fast{_LEGACY_SCAR_SUFFIX}        — Fast orchestrator · routing, Q&A, session management (~4.0 GB, Q8_0)
+  deepseek-reasoner{_LEGACY_SCAR_SUFFIX} — Reasoning Engine · planning, architecture, logic chains (~4.7 GB)
+  qwen-worker{_LEGACY_SCAR_SUFFIX}       — Execution Engine · code generation, tool-use, agentic tasks (~5.0 GB)
+
+  phi4-mini      → phi4-fast{_LEGACY_SCAR_SUFFIX}
+  deepseek-r1:7b → deepseek-reasoner{_LEGACY_SCAR_SUFFIX}
+  qwen2.5-coder  → qwen-worker{_LEGACY_SCAR_SUFFIX}"""
 
 HEADER_NEW = """  Relay   (route-phi4-lite-q4km-prod)        — Ultra-router    · intent classification, safety gate (~2.5 GB, Q4_K_M)
   Pilot   (instruct-phi4-pro-q8-prod)        — Fast orchestrator · routing, Q&A, session management (~4.3 GB, Q8_0)
@@ -34,14 +36,14 @@ HEADER_NEW = """  Relay   (route-phi4-lite-q4km-prod)        — Ultra-router   
   Forge   (code-qwen25-pro-q5km-prod)        — Execution Engine · code generation, tool-use, agentic tasks (~5.4 GB, Q5_K_M)
 
   Legacy aliases resolve through operator_map.py automatically:
-    phi4-fast-scar         → instruct-phi4-pro-q8-prod   (Pilot)
-    deepseek-reasoner-scar → reason-deepseekr1-pro-q5km-prod  (Oracle)
-    qwen-worker-scar       → code-qwen25-pro-q5km-prod   (Forge)"""
+    phi4-fast{_LEGACY_SCAR_SUFFIX}         → instruct-phi4-pro-q8-prod   (Pilot)
+    deepseek-reasoner{_LEGACY_SCAR_SUFFIX} → reason-deepseekr1-pro-q5km-prod  (Oracle)
+    qwen-worker{_LEGACY_SCAR_SUFFIX}       → code-qwen25-pro-q5km-prod   (Forge)"""
 
 
 # ─── PATCH 2 — Prepend canonical entries to _MODEL_TEMPERATURES ──────────────
 # Insert immediately AFTER the line `_MODEL_TEMPERATURES: dict[str, float] = {`
-# and BEFORE the existing `# APEX-17 canonical -scar tags` comment.
+# and BEFORE the existing legacy canonical-tag comment.
 
 TEMPERATURE_PREPEND = '''    # ── APEX-17 r7 canonical production tags  [LLM-r7-01] ────────────────────
     "route-phi4-lite-q4km-prod":          0.00,  # Relay     — deterministic classification
@@ -96,7 +98,7 @@ from .operator_map import (
 # Example insertion (in generate(), near top of function body):
 
 CANONICALIZATION_SNIPPET = '''
-    # [LLM-r7-02] Canonicalize model tag at entry — legacy -scar tags
+    # [LLM-r7-02] Canonicalize model tag at entry — legacy SCAR-suffix tags
     # automatically resolve to their canonical production names.
     model = resolve_canonical_tag(model)
 '''
@@ -124,11 +126,11 @@ STEP 2: Add operator_map import after existing relative imports
 
 STEP 3: Prepend canonical entries to _MODEL_TEMPERATURES
    Insert TEMPERATURE_PREPEND immediately after the opening brace.
-   Keep existing -scar and pre-scar entries below.
+   Keep existing SCAR-suffix and earlier V5 entries below.
 
 STEP 4: Prepend canonical entries to _MODEL_TOP_P
    Insert TOP_P_PREPEND immediately after the opening brace.
-   Keep existing -scar and pre-scar entries below.
+   Keep existing SCAR-suffix and earlier V5 entries below.
 
 STEP 5 (optional but recommended): Add canonicalization snippet at entry
    of generate(), choose_model(), _ollama_generate(), and

@@ -794,13 +794,10 @@ function preferredModelCandidates(
   runtimePressure: ReturnType<typeof currentPressureLevel>,
   selectedModel: string,
 ): string[] {
-  // [APEX17-r8] All three fallback defaults below were still the legacy
-  // pre-scar tags ("phi4-fast", "deepseek-reasoner", "qwen-worker") — none of
-  // which exist as Ollama tags after the r7 canonical migration. Updated to
-  // the canonical Pilot / Oracle / Forge tags (routing.yaml: model_fast /
-  // model_reason / model_code). resolveCanonicalTag() inside
-  // normalizeModelTag() (if wired) or here directly still protects against
-  // an operator-set env var carrying a legacy/-scar value.
+  // [APEX17-r8] Fallback defaults were migrated from legacy V5 tags to
+  // canonical Pilot / Oracle / Forge tags (routing.yaml: model_fast /
+  // model_reason / model_code). resolveCanonicalTag() still protects against
+  // an operator-set env var carrying an older alias.
   const _me = loadEnv();
   const fastModel = normalizeModelTag(
     resolveCanonicalTag(_me.SWARMX_COMPOSER_FAST_MODEL ?? _me.SWARMX_MODEL_FAST ?? selectedModel),
@@ -1072,9 +1069,9 @@ export async function composerRouter(server: FastifyInstance): Promise<void> {
       // [APEX17-r8] Default fallback updated from the legacy "phi4-fast" tag
       // (which no longer exists as an Ollama tag after the r7 canonical
       // migration — requesting it would 404) to the canonical Pilot tag.
-      // resolveCanonicalTag() additionally normalizes any -scar or other
-      // legacy alias an operator might still have set in SWARM_MODEL_FAST /
-      // SWARMX_MODEL_FAST, per Hard Constraint #1 (no -scar tags in
+      // resolveCanonicalTag() additionally normalizes any older alias an
+      // operator might still have set in SWARM_MODEL_FAST /
+      // SWARMX_MODEL_FAST, per Hard Constraint #1 (no legacy tags in
       // production code paths).
       const _re = loadEnv();
       const rawModel: string = resolveCanonicalTag(

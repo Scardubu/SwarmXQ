@@ -24,6 +24,7 @@ describe("getRuntimeGuidance", () => {
     expect(guidance).toMatchObject({
       tone: "critical",
       title: "SwarmX API unavailable",
+      blocksSubmission: true,
     });
     expect(guidance?.recoveryHint).toContain("port 3001");
   });
@@ -39,6 +40,7 @@ describe("getRuntimeGuidance", () => {
     expect(guidance).toMatchObject({
       tone: "warning",
       title: "Ollama backend unavailable",
+      blocksSubmission: true,
     });
     expect(guidance?.detail).toContain("Memory pressure is also high (879 MB free)");
     expect(guidance?.recoveryHint).toContain("ollama serve");
@@ -52,7 +54,11 @@ describe("getRuntimeGuidance", () => {
         pressureLevel: "high",
         availableMb: 1_150,
       }),
-    ).toMatchObject({ tone: "warning", title: "Memory pressure high (1,150 MB free)" });
+    ).toMatchObject({
+      tone: "warning",
+      title: "Memory pressure high (1,150 MB free)",
+      blocksSubmission: false,
+    });
 
     expect(
       getRuntimeGuidance({
@@ -61,6 +67,38 @@ describe("getRuntimeGuidance", () => {
         pressureLevel: "critical",
         availableMb: 879,
       }),
-    ).toMatchObject({ tone: "critical", title: "Memory pressure critical (879 MB free)" });
+    ).toMatchObject({
+      tone: "critical",
+      title: "Memory pressure critical (879 MB free)",
+      blocksSubmission: true,
+    });
+  });
+
+  it("reports full-pipeline blockers from structured API health", () => {
+    const guidance = getRuntimeGuidance({
+      apiOnline: true,
+      ollamaOnline: true,
+      pressureLevel: "normal",
+      availableMb: 7_200,
+      healthStatus: "degraded",
+      modelReadiness: [
+        { role: "router", tag: "route-phi4-lite-q4km-prod", status: "missing" },
+        { role: "reason", tag: "reason-deepseekr1-pro-q5km-prod", status: "missing" },
+        { role: "code", tag: "code-qwen25-pro-q5km-prod", status: "missing" },
+      ],
+      runtimeAvailableMb: 5_695,
+      runtimeBlockers: ["available RAM below full-pipeline minimum"],
+      runtimeWarnings: [],
+      voiceBenchmarkRecommendedProviderId: null,
+    });
+
+    expect(guidance).toMatchObject({
+      tone: "critical",
+      title: "Full video pipeline blocked",
+      blocksSubmission: true,
+    });
+    expect(guidance?.detail).toContain("3 required model profiles are not ready");
+    expect(guidance?.detail).toContain("Available RAM is 5.6 GB");
+    expect(guidance?.recoveryHint).toContain("canonical model set");
   });
 });

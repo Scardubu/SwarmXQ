@@ -8,14 +8,14 @@ Source-of-truth runtime configuration that:
   - Loads bundled YAML defaults (configs/, models/registry.yaml)
   - Routes ALL model identity through operator_map.resolve_canonical_tag()
   - Normalises env-sourced model tags before they reach the orchestrator
-  - Validates that no legacy -scar tag leaks into runtime default fields
+  - Validates that no legacy SCAR-suffix tag leaks into runtime default fields
   - Surfaces dual-layer naming (Operator + canonical tag) in runtime profile
 
 APEX-17 r7 changes from r6:
-  [CFG-r7-01] All -scar default values replaced with canonical production tags
+  [CFG-r7-01] All SCAR-suffix default values replaced with canonical production tags
   [CFG-r7-02] _model_alias_map() now sources from operator_map.MODEL_ALIASES
               as authoritative truth; registry.yaml legacy_aliases auto-merge
-  [CFG-r7-03] _LEGACY_TAGS expanded to flag both pre-scar AND -scar as legacy
+  [CFG-r7-03] _LEGACY_TAGS expanded to flag earlier V5 and SCAR-suffix tags
   [CFG-r7-04] runtime_profile() emits 'operator' alongside 'tag' for dashboards
 ─────────────────────────────────────────────────────────────────────────────
 """
@@ -200,7 +200,7 @@ def _resolved_model_setting(
 
 
 # ─── Canonical default model tags (APEX-17 r7) ───────────────────────────────
-# These are the Layer-1 production canonical tags. Never use -scar here.
+# These are the Layer-1 production canonical tags. Never use legacy SCAR-suffix values here.
 
 _DEFAULT_RELAY:  str = "route-phi4-lite-q4km-prod"
 _DEFAULT_PILOT:  str = "instruct-phi4-pro-q8-prod"
@@ -216,7 +216,7 @@ class SwarmConfig:
     provider: str = field(default_factory=lambda: os.environ.get("SWARM_LLM_PROVIDER", _cfg("routing", "provider", default="ollama")))
     model: str = field(default_factory=lambda: os.environ.get("SWARM_MODEL", ""))
 
-    # [CFG-r7-01] All defaults migrated from -scar to canonical production tags
+    # [CFG-r7-01] All defaults migrated from SCAR-suffix values to canonical production tags
     model_fast: str = field(default_factory=lambda: _resolved_model_setting(
         "SWARM_MODEL_FAST", "MODEL_FAST", "router", "model_fast", _DEFAULT_PILOT))
     model_code: str = field(default_factory=lambda: _resolved_model_setting(
@@ -466,18 +466,8 @@ class SwarmConfig:
                     "configs/swarmx.defaults.yaml."
                 )
 
-        # [CFG-r7-03] _LEGACY_TAGS now includes both pre-scar AND -scar tags
-        _LEGACY_TAGS = {
-            # Pre-scar era
-            "phi4-mini", "deepseek-r1", "deepseek-r1:7b", "qwen2.5-coder",
-            "phi4-fast", "deepseek-reasoner", "qwen-worker", "phi4-worker",
-            "qwen-supervisor", "deepseek-critic",
-            # -scar era (now also legacy as of r7)
-            "phi4-fast-scar", "phi4-router-lite-scar", "phi4-worker-scar",
-            "phi4-evolve-scar", "qwen-worker-scar", "qwen-supervisor-scar",
-            "qwen-evolve-scar", "deepseek-reasoner-scar", "deepseek-critic-scar",
-            "deepseek-supervisor-scar", "deepseek-evolve-scar",
-        }
+        # [CFG-r7-03] MODEL_ALIASES is the authoritative legacy-tag registry.
+        _LEGACY_TAGS = set(_CANONICAL_ALIASES)
         for field_name, tag in _REQUIRED_MODELS.items():
             if tag.lower() in _LEGACY_TAGS:
                 operator = resolve_operator_name(tag)

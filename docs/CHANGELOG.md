@@ -8,6 +8,26 @@
 
 ### API — caption timing aligned to narration length
 
+- Intent classification now has an in-stage recovery path for CPU-only hosts
+  where the default Q8 Pilot runner stops during cold classification. The
+  orchestrator records the failed Q8 attempt, unloads it, and retries once with
+  canonical Pilot-lite inside the same stage timeout; the fallback model is
+  reflected in `modelsUsed.intent_classification` and the operator trace. If the
+  first attempt spends the stage budget before Pilot-lite can complete, the job
+  retry starts directly with Pilot-lite instead of re-burning time on the known
+  failed Q8 runner. Once intent recovers to Pilot-lite, planning, scripting, and
+  storyboard generation stay on the Pilot-lite recovery profile so constrained
+  CPU hosts do not immediately reload the heavier planner and hit the M13
+  planning timeout.
+- Ollama generation requests now treat each stage's `maxTokens` as a hard cap
+  over adaptive model profile `num_predict`, preventing a shared 7B profile from
+  silently expanding short video stages. Planning is capped at 320 generated
+  tokens, matching the required five-beat plan; intent keeps a 256-token cap so
+  Pilot-lite can return complete strict JSON.
+- Storyboard extraction now accepts numbered/bulleted scenes, `[SCENE N | BEAT]`
+  lines, and `[VISUAL: ...]` tags from either storyboard output or the script
+  before using generic safe defaults. This keeps Pilot-lite recovery jobs tied
+  to the actual script beats even when the model omits strict bullet formatting.
 - Added `computeCardTimings(cards, duration)` in `ffmpeg-video-renderer.ts`.
   Card display windows are now weighted by word count so a 17-word body line
   gets ~4.4 s of screen time while a 4-word CTA gets ~2.3 s — approximating
@@ -43,6 +63,21 @@
   720×1280 H.264 @ 30 fps, 18.00 s, ~418 KB (up from 393 KB due to richer
   motion). SRT card boundaries now match card word counts (2.3–4.4 s).
 
+### Dashboard — video runtime readiness
+
+- `/video` now consumes structured `/api/system/health` fields for model
+  readiness, runtime profile blockers, RAM headroom, and voice benchmark state.
+  The workspace surfaces full-pipeline blockers before job submission instead
+  of only showing generic API/Ollama availability.
+- Video submission is now disabled while runtime readiness is explicitly blocked
+  by API/Ollama outage, missing canonical model readiness, critical RAM pressure,
+  or the full-pipeline RAM floor.
+- `/system` now separates Ollama liveness from canonical model readiness instead
+  of treating the health readiness triad as loaded model residency.
+- Queue accessibility was tightened further: list semantics now wrap only
+  actual job cards, and queued jobs advertise both drag and keyboard move
+  controls.
+
 ## V6.2.55 — M13 Golden-Path Live Re-Certification (2026-07-24)
 
 ### API — live pipeline resilience
@@ -61,6 +96,22 @@
   `runtimeProfile`. Writes `m13-cert-report.json` to
   `.swarmx/video/artifacts/m13/`. Requires the API server to be running and
   `SWARMX_VIDEO_API_TOKEN` to be set. Wired as `pnpm test:m13`.
+- Hardened the M13 harness preflight so it refuses to submit a live job while
+  `/api/system/health` is degraded, model readiness is missing, Ollama is
+  unreachable, voice benchmark data is absent, or available RAM is below the
+  6170 MB full-pipeline floor. This prevents doomed intent-stage cold loads from
+  wedging Ollama during certification.
+- The M13 harness now reads `modelsUsed`, `certificationTier`, and QC evidence
+  from the canonical completed-job `output` metadata, while remaining compatible
+  with older top-level mirrors. Poll output also formats the API's 0-100
+  `overallProgress` without multiplying it again.
+
+### Dashboard — video queue accessibility
+
+- Added keyboard-accessible move up/down controls for queued video jobs while
+  preserving drag-and-drop reordering. The `/video` queue now exposes a list
+  structure and no longer requires pointer-only interaction to change queue
+  order.
 
 ### Artifact — improved v3 golden render
 

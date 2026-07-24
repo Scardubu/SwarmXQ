@@ -58,6 +58,7 @@ decisions use physical `MemAvailable` and report ZRAM separately.
 | `SWARMX_AUDIO_TARGET_LUFS` | `-16` | Local mastering loudness target for rendered short-form narration packages. |
 | `SWARMX_AUDIO_TRUE_PEAK_MAX_DBFS` | `-1.5` | Local mastering true-peak cap. |
 | `SWARMX_VIDEO_ALLOW_UNSTRUCTURED_INTENT` | unset | Set `1` only to continue when intent classification is not valid structured output. |
+| `SWARMX_VIDEO_INTENT_MODEL` | `instruct-phi4-pro-q8-prod` | Intent classification model override. The default Q8 Pilot is attempted first; retryable Ollama failures fall back to canonical Pilot-lite inside the same stage timeout. Once intent uses Pilot-lite, later text stages keep the Pilot-lite recovery profile for that job. |
 | `SWARMX_VIDEO_LOW_RAM_MODE` | unset | Set `1` to force all video text stages through the 2.5 GB Pilot-lite profile; requires at least 3300 MB available RAM. |
 | `SWARMX_VIDEO_API_TOKEN` | unset | Server-only bearer/API-key token for video and series write routes. Production writes fail closed when unset. Never expose through `NEXT_PUBLIC_*`. |
 | `SWARMX_VIDEO_JOB_LIMIT_PER_HOUR` | `10` | Max video job submissions per connection per hour (sliding window). Returns 429 when exceeded. |
@@ -69,11 +70,11 @@ decisions use physical `MemAvailable` and report ZRAM separately.
 | `SWARMX_VIDEO_EXPORT_TTL_DAYS` | `7` | Days after which rendered exports and artifacts are eligible for cleanup. Minimum 1. |
 | `SWARMX_VIDEO_CLEANUP_INTERVAL_MS` | `21600000` | How often the cleanup service scans for stale exports (ms). Minimum 60000. First run fires 30 s after startup. |
 
-**Stage timeouts** — since V6.2.15 the defaults are CPU-safe (they cover both cold-load latency on GPU and warm 3.8B Q4_K_M inference on CPU), so most operators do not need to override anything. Bounds still allow tightening for latency-sensitive GPU hosts or raising for very slow CPUs.
+**Stage timeouts** — defaults are CPU-safe and account for cold model-load latency plus inference slack, so most operators do not need to override anything. Bounds still allow tightening for latency-sensitive GPU hosts or raising for very slow CPUs.
 
-| Variable | V6.2.15 default | Ceiling (max) | Floor (min) |
+| Variable | Default | Ceiling (max) | Floor (min) |
 | --- | --- | --- | --- |
-| `VIDEO_INTENT_CLASSIFY_TIMEOUT_MS` | `120000` | `600000` | `1000` |
+| `VIDEO_INTENT_CLASSIFY_TIMEOUT_MS` | `240000` | `600000` | `1000` |
 | `VIDEO_PLANNING_TIMEOUT_MS` | `300000` | `900000` | `5000` |
 | `VIDEO_SCRIPTING_TIMEOUT_MS` | `600000` | `1800000` | `10000` |
 | `VIDEO_STORYBOARD_TIMEOUT_MS` | `600000` | `1200000` | `10000` |

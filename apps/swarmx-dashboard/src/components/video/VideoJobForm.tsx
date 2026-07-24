@@ -53,9 +53,15 @@ function Select<T extends string>({
 
 interface VideoJobFormProps {
   onSubmitted?: (jobId: string) => void;
+  submissionBlocked?: boolean;
+  submissionBlockReason?: string | null;
 }
 
-export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
+export function VideoJobForm({
+  onSubmitted,
+  submissionBlocked = false,
+  submissionBlockReason = null,
+}: VideoJobFormProps) {
   const formId = useId();
   const { submitJob, isSubmitting, submitError, clearErrors } = useVideoStore();
 
@@ -72,11 +78,15 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
   const [lastQueuedId, setLastQueuedId] = useState<string | null>(null);
 
   const trimmedPrompt = prompt.trim();
-  const canSubmit = trimmedPrompt.length > 0 && !isSubmitting;
+  const canSubmit = trimmedPrompt.length > 0 && !isSubmitting && !submissionBlocked;
   const modelTier = modelRoute === "auto" ? undefined : modelRoute;
+  const submitDescriptionId = submissionBlocked ? `${formId}-submit-blocked` : undefined;
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (submissionBlocked) {
+      return;
+    }
     clearErrors();
 
     const jobRequest: VideoJobRequest = {
@@ -123,6 +133,19 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
           {modelRoute === "auto" ? "Auto route" : "Override"}
         </span>
       </div>
+
+      {submissionBlocked && (
+        <div
+          id={`${formId}-submit-blocked`}
+          className="flex items-start gap-2 rounded border border-status-error/35 bg-status-error/10 px-3 py-2 text-xs text-status-error"
+          role="alert"
+        >
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <p>
+            {submissionBlockReason ?? "Video submission is blocked until runtime readiness recovers."}
+          </p>
+        </div>
+      )}
 
       <div className="flex flex-col gap-1.5">
         <label
@@ -332,6 +355,7 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
 
       {/* Submission status region — live for screen readers */}
       <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {submissionBlocked ? "Video job submission is blocked by runtime readiness." : null}
         {isSubmitting ? "Queuing video job…" : null}
         {lastQueuedId && !isSubmitting && !submitError ? "Video job queued successfully. Track progress in the queue below." : null}
       </div>
@@ -358,6 +382,7 @@ export function VideoJobForm({ onSubmitted }: VideoJobFormProps) {
           size="lg"
           disabled={!canSubmit}
           aria-busy={isSubmitting}
+          aria-describedby={submitDescriptionId}
         >
           {isSubmitting ? (
             <>

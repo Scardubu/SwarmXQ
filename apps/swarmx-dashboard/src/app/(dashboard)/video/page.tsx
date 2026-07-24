@@ -19,10 +19,19 @@
 
 import { useEffect, useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Clapperboard, GripVertical, ListVideo, RotateCcw, WifiOff } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  Clapperboard,
+  GripVertical,
+  ListVideo,
+  RotateCcw,
+  WifiOff,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useApiHealth } from "@/hooks/useApiHealth";
-import { getRuntimeGuidance } from "@/lib/runtime-guidance";
+import { getRuntimeGuidance, type RuntimeGuidance } from "@/lib/runtime-guidance";
 import { useEventsStore } from "@/stores/events";
 import { useVideoStore } from "../../../stores/video";
 import { VideoJobForm } from "../../../components/video/VideoJobForm";
@@ -70,44 +79,43 @@ function QueueMetric({ label, value }: { label: string; value: number }) {
 }
 
 function VideoRuntimeBanner({
-  pressureLevel,
-  availableMb,
-  apiOnline,
-  ollamaOnline,
+  guidance,
 }: {
-  pressureLevel: string | undefined;
-  availableMb: number | null;
-  apiOnline: boolean | null;
-  ollamaOnline: boolean | null;
+  guidance: RuntimeGuidance | null;
 }) {
-  const guidance = getRuntimeGuidance({
-    apiOnline,
-    ollamaOnline,
-    pressureLevel,
-    availableMb,
-  });
-
   if (!guidance) {
     return null;
   }
 
   const Icon = guidance.tone === "critical" ? WifiOff : AlertTriangle;
+  const toneClasses =
+    guidance.tone === "critical"
+      ? {
+          container: "border-status-error/35 bg-status-error/10",
+          iconShell: "border-status-error/35 bg-status-error/12",
+          icon: "text-status-error",
+          title: "text-status-error",
+        }
+      : {
+          container: "border-status-warning/35 bg-status-warning/10",
+          iconShell: "border-status-warning/35 bg-status-warning/12",
+          icon: "text-status-warning",
+          title: "text-status-warning",
+        };
 
   return (
     <div
-      className={
-        guidance.tone === "critical"
-          ? "flex items-start gap-3 rounded border border-status-error/35 bg-status-error/10 px-3 py-3"
-          : "flex items-start gap-3 rounded border border-status-warning/35 bg-status-warning/10 px-3 py-3"
-      }
+      className={`flex items-start gap-3 rounded border px-3 py-3 ${toneClasses.container}`}
       role={guidance.tone === "critical" ? "alert" : "status"}
       aria-live={guidance.tone === "critical" ? "assertive" : "polite"}
     >
-      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded border border-status-warning/35 bg-status-warning/12">
-        <Icon className="h-4 w-4 text-status-warning" aria-hidden="true" />
+      <div
+        className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded border ${toneClasses.iconShell}`}
+      >
+        <Icon className={`h-4 w-4 ${toneClasses.icon}`} aria-hidden="true" />
       </div>
       <div className="min-w-0">
-        <p className="text-xs font-semibold text-status-warning">{guidance.title}</p>
+        <p className={`text-xs font-semibold ${toneClasses.title}`}>{guidance.title}</p>
         <p className="mt-1 text-xs leading-5 text-text-secondary">{guidance.detail}</p>
         <p className="mt-1 text-xs leading-5 text-text-muted">{guidance.recoveryHint}</p>
       </div>
@@ -141,9 +149,23 @@ export default function VideoPage() {
   const queuedCount = jobs.filter((j) => j.status === "queued").length;
   const doneCount = jobs.filter((j) => j.status === "completed").length;
   const failedCount = jobs.filter((j) => j.status === "failed").length;
+  const queuedJobIds = jobs.filter((job) => job.status === "queued").map((job) => job.id);
   const pressureLevel = governorState?.pressureLevel ?? startupSummary?.pressureLevel;
   const availableMb = governorState?.availableMb ?? startupSummary?.availableMb ?? null;
   const ollamaOnline = apiHealth.ollamaOnline ?? startupSummary?.ollamaReachable ?? null;
+  const runtimeWarnings = [...apiHealth.warnings, ...(apiHealth.runtimeProfile?.warnings ?? [])];
+  const videoRuntimeGuidance = getRuntimeGuidance({
+    apiOnline: apiHealth.apiOnline,
+    ollamaOnline,
+    pressureLevel,
+    availableMb,
+    healthStatus: apiHealth.apiStatus,
+    modelReadiness: apiHealth.models,
+    runtimeAvailableMb: apiHealth.runtimeProfile?.availableRamMb ?? null,
+    runtimeBlockers: apiHealth.runtimeProfile?.blockers ?? [],
+    runtimeWarnings,
+    voiceBenchmarkRecommendedProviderId: apiHealth.voiceBenchmarkRecommendedProviderId,
+  });
 
   const handleRetry = useCallback(
     async (jobId: string) => {
@@ -189,6 +211,29 @@ export default function VideoPage() {
     [draggedJobId, reorderQueue],
   );
 
+  const handleMoveQueuedJob = useCallback(
+    async (jobId: string, direction: "up" | "down") => {
+      const currentQueued = useVideoStore
+        .getState()
+        .listJobs()
+        .filter((job) => job.status === "queued");
+      const fromIndex = currentQueued.findIndex((job) => job.id === jobId);
+      const toIndex = direction === "up" ? fromIndex - 1 : fromIndex + 1;
+
+      if (fromIndex < 0 || toIndex < 0 || toIndex >= currentQueued.length) {
+        return;
+      }
+
+      const ordered = [...currentQueued];
+      const [moved] = ordered.splice(fromIndex, 1);
+      if (!moved) return;
+
+      ordered.splice(toIndex, 0, moved);
+      await reorderQueue(ordered.map((job) => job.id));
+    },
+    [reorderQueue],
+  );
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="border-b border-border bg-bg-surface/80 px-4 py-4 sm:px-6">
@@ -215,14 +260,13 @@ export default function VideoPage() {
 
       <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(360px,540px)_1fr]">
         <section className="flex min-h-0 flex-col gap-4 overflow-y-auto border-b border-border p-4 sm:p-5 xl:border-b-0 xl:border-r">
-          <VideoJobForm onSubmitted={handleSubmitted} />
-
-          <VideoRuntimeBanner
-            pressureLevel={pressureLevel}
-            availableMb={availableMb}
-            apiOnline={apiHealth.apiOnline}
-            ollamaOnline={ollamaOnline}
+          <VideoJobForm
+            onSubmitted={handleSubmitted}
+            submissionBlocked={videoRuntimeGuidance?.blocksSubmission ?? false}
+            submissionBlockReason={videoRuntimeGuidance?.title ?? null}
           />
+
+          <VideoRuntimeBanner guidance={videoRuntimeGuidance} />
 
           <div className="flex flex-col gap-2" aria-busy={isLoading}>
             <div className="flex items-center justify-between gap-3">
@@ -232,7 +276,7 @@ export default function VideoPage() {
               </div>
               {queuedCount > 1 && (
                 <span className="font-mono text-[10px] uppercase tracking-wide text-text-muted">
-                  Drag queued jobs to reorder
+                  Drag or use move controls to reorder
                 </span>
               )}
             </div>
@@ -256,48 +300,88 @@ export default function VideoPage() {
 
             {!isLoading && !hasJobs && <EmptyJobList />}
 
-            {jobs.map((job) => (
-              <div
-                key={job.id}
-                draggable={job.status === "queued"}
-                onDragStart={() => setDraggedJobId(job.id)}
-                onDragOver={(event) => {
-                  if (job.status === "queued") {
-                    event.preventDefault();
-                  }
-                }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  if (job.status === "queued") {
-                    void handleDropOn(job.id);
-                  }
-                }}
-                aria-label={job.status === "queued" ? `Queued video job: ${job.request.prompt.slice(0, 40)}` : undefined}
-                className={job.status === "queued" ? "cursor-grab" : ""}
-              >
-                <VideoJobCard
-                  job={job}
-                  onSelect={(jobId) => router.push(`/video/${jobId}`)}
-                  isSelected={selectedJobId === job.id}
-                />
-                {job.status === "failed" && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    aria-label={`Retry failed job: ${job.request.prompt.slice(0, 50)}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void handleRetry(job.id);
-                    }}
-                    className="mt-2 w-full border-status-warning/35 bg-status-warning/8 text-status-warning hover:bg-status-warning/15"
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-                    Retry from Failed Stage
-                  </Button>
-                )}
+            {hasJobs && (
+              <div className="flex flex-col gap-2" role="list" aria-label="Video job queue">
+                {jobs.map((job) => {
+                  const queuedIndex = queuedJobIds.indexOf(job.id);
+                  const canMoveQueued = job.status === "queued" && queuedCount > 1;
+
+                  return (
+                    <div
+                      key={job.id}
+                      role="listitem"
+                      draggable={job.status === "queued"}
+                      onDragStart={() => setDraggedJobId(job.id)}
+                      onDragOver={(event) => {
+                        if (job.status === "queued") {
+                          event.preventDefault();
+                        }
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        if (job.status === "queued") {
+                          void handleDropOn(job.id);
+                        }
+                      }}
+                      aria-label={
+                        job.status === "queued"
+                          ? `Queued video job: ${job.request.prompt.slice(0, 40)}`
+                          : undefined
+                      }
+                      className={job.status === "queued" ? "cursor-grab" : ""}
+                    >
+                      <VideoJobCard
+                        job={job}
+                        onSelect={(jobId) => router.push(`/video/${jobId}`)}
+                        isSelected={selectedJobId === job.id}
+                      />
+                      {canMoveQueued && (
+                        <div className="mt-2 grid grid-cols-2 gap-2" aria-label="Queue reorder controls">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={queuedIndex <= 0}
+                            aria-label={`Move queued job up: ${job.request.prompt.slice(0, 50)}`}
+                            onClick={() => void handleMoveQueuedJob(job.id, "up")}
+                          >
+                            <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
+                            Move Up
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={queuedIndex < 0 || queuedIndex >= queuedJobIds.length - 1}
+                            aria-label={`Move queued job down: ${job.request.prompt.slice(0, 50)}`}
+                            onClick={() => void handleMoveQueuedJob(job.id, "down")}
+                          >
+                            <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />
+                            Move Down
+                          </Button>
+                        </div>
+                      )}
+                      {job.status === "failed" && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          aria-label={`Retry failed job: ${job.request.prompt.slice(0, 50)}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleRetry(job.id);
+                          }}
+                          className="mt-2 w-full border-status-warning/35 bg-status-warning/8 text-status-warning hover:bg-status-warning/15"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                          Retry from Failed Stage
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            ))}
+            )}
           </div>
         </section>
 

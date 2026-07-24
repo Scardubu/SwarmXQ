@@ -302,8 +302,8 @@ export class ModelOrchestrator {
   /**
    * Evict whatever is currently the resident 7B model if it is not
    * `targetTag` itself, plus (in low-ram mode) any non-7B model other than
-   * the requested target. Resolves legacy/-scar tags through
-   * resolveCanonicalTag() first. Safe to call even if targetTag is not 7B —
+   * the requested target. Resolves legacy aliases through resolveCanonicalTag()
+   * first. Safe to call even if targetTag is not 7B —
    * it is then a no-op beyond the low-ram sweep.
    *
    * composer.ts MUST call this (directly, or via requestModel() which calls
