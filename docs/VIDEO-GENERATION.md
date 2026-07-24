@@ -17,9 +17,11 @@
 8. [Degradation behavior](#degradation-behavior)
 9. [Model assignment](#model-assignment)
 10. [Dashboard integration](#dashboard-integration)
-11. [ComfyUI render setup](#comfyui-render-setup)
-12. [Troubleshooting](#troubleshooting)
-13. [Known bugs fixed in this release](#known-bugs-fixed-in-this-release)
+11. [M13 live certification](#m13-live-certification)
+12. [Browser verification](#browser-verification)
+13. [ComfyUI render setup](#comfyui-render-setup)
+14. [Troubleshooting](#troubleshooting)
+15. [Known bugs fixed in this release](#known-bugs-fixed-in-this-release)
 
 ---
 
@@ -242,9 +244,9 @@ pnpm --filter @swarmx/dashboard dev
 Verify API availability and video routes:
 
 ```bash
-curl http://localhost:3001/health
-curl http://localhost:3001/api/video/templates
-curl http://localhost:3001/api/video/jobs
+curl http://127.0.0.1:3001/health
+curl http://127.0.0.1:3001/api/video/templates
+curl http://127.0.0.1:3001/api/video/jobs
 ```
 
 Validate package gates before exercising the video UI:
@@ -833,6 +835,15 @@ evidence is `output.modelsUsed`, `output.certificationTier`, and
 `output.mediaQualityReport`; older top-level mirrors remain accepted by the
 harness only for backwards compatibility.
 
+The harness targets the direct Fastify API, not the dashboard proxy. API base
+resolution order is:
+
+```text
+SWARMX_API_BASE_URL
+SWARMX_API_URL
+http://${SWARMX_API_HOST ?? "127.0.0.1"}:${SWARMX_API_PORT ?? "3001"}
+```
+
 Storyboard extraction accepts strict numbered/bulleted scene lines first, then
 falls back to `[SCENE N | BEAT]` lines and `[VISUAL: ...]` tags from either the
 storyboard response or the script. Generic safe-default frames are only used when
@@ -1018,6 +1029,63 @@ via the NavRail at keyboard shortcut `⌘7`.
 - All caption editor form controls have programmatic `<label htmlFor>` associations.
 - Publish status feedback is announced via `aria-live="polite"`.
 - ViralityMeter dimension bars expose `role="progressbar"` with `aria-valuenow`.
+
+---
+
+## M13 live certification
+
+Run M13 only against a healthy local runtime. The harness submits a real job
+through the Fastify API default (`http://127.0.0.1:3001`) unless
+`SWARMX_API_BASE_URL` or `SWARMX_API_URL` is explicitly set.
+
+```bash
+redis-cli ping
+curl -fsS http://127.0.0.1:11434/api/ps
+curl -fsS http://127.0.0.1:8888/health
+pnpm --filter @swarmx/api exec tsx scripts/doctor.ts
+```
+
+Then start the API with `SWARMX_VIDEO_API_TOKEN` set and run:
+
+```bash
+pnpm --filter @swarmx/api run test:m13
+```
+
+The successful path writes
+`.swarmx/video/artifacts/m13/m13-cert-report.json`. Treat the run as certified
+only when that report records all assertions passing and the completed job
+output includes a real non-stub MP4, `modelsUsed`, `stageValidationTrace`,
+`mediaQualityReport`, and at least `PRODUCTION_PACK_VALID`.
+
+---
+
+## Browser verification
+
+After M13 passes and the dashboard is running, verify the operator UI with
+`agent-browser` instead of relying on HTTP status alone:
+
+```bash
+agent-browser doctor
+agent-browser open http://localhost:3000/video
+agent-browser wait --load networkidle
+agent-browser snapshot -i
+agent-browser errors
+agent-browser console
+agent-browser open http://localhost:3000/system
+agent-browser wait --load networkidle
+agent-browser snapshot -i
+agent-browser set viewport 390 844
+agent-browser open http://localhost:3000/video
+agent-browser wait --load networkidle
+agent-browser snapshot -i
+agent-browser close
+```
+
+For a completed video job, also open `/video/<jobId>` at desktop and narrow
+widths. Confirm the video player, certification metadata, timeline, operator
+trace, virality/caption panels, runtime guidance, and queue controls remain
+visible and keyboard reachable. Page errors must be empty; console output should
+not include application errors.
 
 ---
 

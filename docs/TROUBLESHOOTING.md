@@ -182,6 +182,53 @@ For large agent fleets (>50 agents), the virtualized list is active by default. 
 
 ---
 
+### `agent-browser install` cannot download Chrome on Linux
+
+If the CLI prints a Chrome-for-Testing URL and retries the download, first check
+whether the archive already exists:
+
+```bash
+ls -lh ~/.cache/agent-browser/chrome-linux64.zip
+```
+
+When the archive was downloaded manually, extract it under the agent-browser
+cache and point the user-level config at the extracted Chrome binary. For the
+151.0.7922.47 Linux archive, the verified shape is:
+
+```text
+~/.cache/agent-browser/chrome-linux64.zip
+~/.cache/agent-browser/chrome-151.0.7922.47/chrome-linux64/chrome
+~/.agent-browser/config.json
+```
+
+`~/.agent-browser/config.json`:
+
+```json
+{
+  "executablePath": "/home/<user>/.cache/agent-browser/chrome-151.0.7922.47/chrome-linux64/chrome",
+  "args": "--no-sandbox,--disable-dev-shm-usage"
+}
+```
+
+Use the fully expanded absolute home path in JSON. To verify the local launch
+path without relying on persistent config, pass the same values as environment
+variables:
+
+```bash
+AGENT_BROWSER_EXECUTABLE_PATH="$HOME/.cache/agent-browser/chrome-151.0.7922.47/chrome-linux64/chrome" \
+  AGENT_BROWSER_ARGS="--no-sandbox,--disable-dev-shm-usage" \
+  agent-browser open about:blank
+
+agent-browser close
+```
+
+`agent-browser doctor` may still fail its CDN network probe while offline. Treat
+that as an install blocker only if the Chrome check or launch test also fails.
+
+If Linux dependency errors remain, run `agent-browser install --with-deps`.
+
+---
+
 ### Database locked / `SQLITE_BUSY`
 
 Multiple processes are writing to the same SQLite file.

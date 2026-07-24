@@ -79,6 +79,30 @@ The dashboard surfaces:
 - **Live logs** — journald-backed structured log stream
 - **Workflows** — DAG inspection and YAML editing
 
+### Browser-agent verification
+
+Use `agent-browser` for repeatable dashboard checks after starting a local dev
+or production dashboard. It is an operator verification tool only; it is not
+part of the SwarmX runtime.
+
+```bash
+agent-browser doctor
+agent-browser open http://localhost:3000/video
+agent-browser wait --load networkidle
+agent-browser snapshot -i
+agent-browser errors
+agent-browser console
+agent-browser set viewport 390 844
+agent-browser open http://localhost:3000/system
+agent-browser wait --load networkidle
+agent-browser snapshot -i
+agent-browser close
+```
+
+For video closeout, verify `/video`, the certified `/video/<jobId>` detail route,
+and `/system` at desktop and narrow widths. Any page error or application
+console error is a release blocker until investigated.
+
 ## Missions and runs
 
 ```bash

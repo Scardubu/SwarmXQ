@@ -4,6 +4,20 @@
 
 ---
 
+## V6.2.57 — Operator Documentation Closeout (2026-07-24)
+
+### Docs — M13 and browser verification runbooks
+
+- Documented the direct M13 certification flow around the Fastify API default
+  `http://127.0.0.1:3001`, including runtime preflight probes, required
+  `SWARMX_VIDEO_API_TOKEN`, and the `m13-cert-report.json` evidence file.
+- Added the repeatable `agent-browser` verification path for `/video`,
+  `/video/[id]`, and `/system` after a certified run, covering desktop and
+  narrow viewport checks plus console/page-error inspection.
+- Added a Linux offline Chrome recovery note for `agent-browser install` when
+  the Chrome-for-Testing archive has already been manually placed in
+  `~/.cache/agent-browser/chrome-linux64.zip`.
+
 ## V6.2.56 — Voice/Text Sync + Ambient Motion Backgrounds (2026-07-24)
 
 ### API — caption timing aligned to narration length
