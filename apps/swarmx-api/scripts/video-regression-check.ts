@@ -91,6 +91,12 @@ const orchestratorSource = await readFile(new URL("../src/services/video-orchest
 assert.ok(orchestratorSource.includes("parseIntentClassification"));
 assert.ok(orchestratorSource.includes("INTENT_VALIDATION_FAILED"));
 assert.ok(orchestratorSource.includes("SWARMX_VIDEO_ALLOW_UNSTRUCTURED_INTENT"));
+assert.ok(orchestratorSource.includes("videoConfig.SWARMX_COMFYUI_URL"));
+assert.ok(orchestratorSource.includes("videoConfig.SWARMX_VIDEO_HIGH_PRESSURE_DELAY_MS"));
+assert.ok(orchestratorSource.includes("videoConfig.SWARMX_API_INTERNAL"));
+assert.equal(orchestratorSource.includes("process.env.COMFY_HOST"), false);
+assert.equal(orchestratorSource.includes("process.env.HIGH_PRESSURE_DELAY_MS"), false);
+assert.equal(orchestratorSource.includes("process.env.SWARMX_API_INTERNAL"), false);
 const renderStart = orchestratorSource.indexOf("async function stageRenderAssembly");
 const renderEnd = orchestratorSource.indexOf("async function stageFinalizing");
 assert.ok(renderStart > 0 && renderEnd > renderStart);
@@ -362,10 +368,31 @@ assert.ok(
   rendererSource.includes("fontSizeForText"),
   "renderer must scale font size based on card text length",
 );
+assert.ok(
+  rendererSource.includes("lt(t,${end})"),
+  "renderer must use half-open non-final caption intervals to avoid boundary overlap",
+);
+assert.equal(
+  rendererSource.includes("between(t,"),
+  false,
+  "renderer must not use inclusive between() timing for adjacent caption cards",
+);
 // Progress bar drawn via drawbox with time-varying width expression.
 assert.ok(
   rendererSource.includes("drawbox=x=0:y=ih-8"),
   "renderer must emit an animated progress bar via drawbox",
+);
+assert.ok(
+  rendererSource.includes("buildBackgroundMotionLayers"),
+  "renderer must isolate deterministic background motion layers",
+);
+assert.ok(
+  rendererSource.includes("drawgrid=width=90:height=90"),
+  "renderer must render a textured background grid instead of flat-only frames",
+);
+assert.ok(
+  rendererSource.includes("drawgrid-and-drawbox-motion-system"),
+  "template lineage must describe the upgraded local background system",
 );
 
 // ── V6.2.16 — Export cleanup service ─────────────────────────────────────────

@@ -11,9 +11,9 @@ const packageDir = resolve(goldenRoot, "packages");
 await mkdir(exportDir, { recursive: true });
 await mkdir(packageDir, { recursive: true });
 
-process.env["SWARMX_HOST_PROFILE"] = "constrained_cpu_8gb";
+process.env["SWARMX_HOST_PROFILE"] = "standard_cpu_16gb";
 process.env["OLLAMA_NUM_PARALLEL"] = "1";
-process.env["OLLAMA_MAX_LOADED_MODELS"] = "1";
+process.env["OLLAMA_MAX_LOADED_MODELS"] = "2";
 process.env["OLLAMA_KEEP_ALIVE"] = "0";
 process.env["SWARMX_MODEL_STARTUP_PREWARM"] = "0";
 process.env["SWARMX_VIDEO_EXPORT_DIR"] = exportDir;
@@ -28,7 +28,7 @@ const { buildOutputMetadata } = await import("../src/services/video-assets.js");
 const { certifyProductionPack } = await import("../src/services/creative-factory-certification.js");
 
 const request: VideoJobRequest = {
-  prompt: "Create a short kinetic text video titled \"Daily Systems Beat Motivation\".",
+  prompt: "Create a short kinetic text video titled \"Motivation Is A Spark, Systems Are The Switch\".",
   platform: "tiktok",
   niche: "tech",
   targetDurationSeconds: 18,
@@ -36,39 +36,39 @@ const request: VideoJobRequest = {
   style: "kinetic_text",
   captionStyle: "bold_center",
   voice: "narrator",
-  clientRequestId: "golden-path-first-video-v2",
+  clientRequestId: "golden-path-first-video-v3",
 };
 
 const scriptText = [
   "[HOOK]",
-  "Motivation loses by Wednesday. A visible system keeps going.",
+  "Motivation is a spark. Systems are the switch.",
   "[BODY]",
-  "One trigger turns intention into motion. [VISUAL: glowing trigger card snaps into place, kinetic type, dark workspace, high contrast]",
-  "Make the next action impossible to miss. [VISUAL: oversized arrow points to a two-minute task, rapid text reveal, amber accent]",
-  "Track the streak, not the mood. [VISUAL: progress line climbs across five days, punchy motion typography, clean grid]",
+  "Put the trigger where your eyes already land. [VISUAL: amber grid, moving panels, trigger card in the safe zone]",
+  "Shrink the first action until it feels automatic. [VISUAL: two-minute task chip locks onto a pulsing progress line]",
+  "Track the streak, not the feeling. [VISUAL: five-day line climb, kinetic type, layered geometric background]",
   "[RESOLUTION]",
-  "Design the first step before you need discipline. The system carries you when motivation leaves.",
+  "Design the first step before you need discipline. The system keeps moving when the spark fades.",
   "[CTA]",
-  "Build the trigger tonight.",
+  "Build the switch tonight.",
 ].join("\n");
 
 const storyboardFrames = [
-  "Pattern-interrupt hook over black canvas with amber motion type and a progress bar.",
-  "Trigger card snaps into place beside a single highlighted next action.",
-  "Two-minute timer pulses while the arrow points to the first step.",
-  "Five-day streak line climbs with completed task chips.",
-  "Final loop frame repeats the trigger with a concise CTA in safe-zone text.",
+  "Pattern-interrupt hook over amber grid texture, motion panels, and high-contrast kinetic type.",
+  "Trigger card snaps into place beside a single highlighted next action while scan lines sweep behind it.",
+  "Two-minute timer pulses as a task chip locks onto the progress rail.",
+  "Five-day streak line climbs across layered geometric background motion.",
+  "Final loop frame returns to the trigger card with a concise safe-zone CTA.",
 ];
 
 const result = await renderWithFfmpeg({
-  jobId: "first-video-v2",
+  jobId: "first-video-v3",
   request,
   scriptText,
   storyboardFrames,
 });
 
 const metadata = await buildOutputMetadata({
-  jobId: "first-video-v2",
+  jobId: "first-video-v3",
   outputFilename: result.outputFilename,
   scriptText,
   storyboardFrames,

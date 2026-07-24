@@ -124,6 +124,7 @@ SWARMX_VIDEO_PUBLIC_URL_BASE=/api/video/files
 SWARMX_VIDEO_TEMP_DIR=./.swarmx/video/tmp
 SWARMX_VIDEO_FFMPEG_TIMEOUT_MS=240000
 SWARMX_VIDEO_FFPROBE_TIMEOUT_MS=15000
+SWARMX_VIDEO_HIGH_PRESSURE_DELAY_MS=3000
 SWARMX_VIDEO_API_TOKEN=replace-me-for-write-routes
 SWARMX_HOST_PROFILE=constrained_cpu_8gb
 SWARMX_TTS_PROVIDER=auto
@@ -141,6 +142,12 @@ VTT, render manifest, hashes, `quality-report.json`, `rights-manifest.json`,
 also emitted for downstream tools that have not migrated yet. A valid decode can
 earn `TECHNICALLY_VALID`; postable packages require the stricter tier ladder
 `PRODUCTION_PACK_VALID` → `READY_TO_POST` → `PUBLISHED_VERIFIED`.
+
+The local FFmpeg fallback is no longer a flat-color text plate. Production
+tiers render deterministic `drawgrid` texture, layered motion panels, accent
+scan lines, caption cards, and a progress bar directly in FFmpeg, so upgraded
+backgrounds remain reproducible without external media or model-generated
+filter graphs.
 
 Kokoro support is installed at the application/provider layer. To make it the active neural voice provider on a host, install the optional Python extra and start the local service:
 
@@ -860,7 +867,13 @@ Renderer selection is controlled by `SWARMX_VIDEO_RENDER_BACKEND=auto|comfyui|ff
 Production runs should keep `SWARMX_VIDEO_ALLOW_STUB_RENDER=0`. The local FFmpeg
 path is the default production fallback. ComfyUI handoff requires
 `SWARMX_COMFYUI_OUTPUT_DIR`; returned filenames are copied into the SwarmXQ
-export directory before metadata is built.
+export directory before metadata is built. `SWARMX_COMFYUI_URL` controls the
+ComfyUI base URL, with legacy `COMFY_HOST` normalized by the API env schema.
+
+When the Python governor reports high memory pressure, the orchestrator waits
+`SWARMX_VIDEO_HIGH_PRESSURE_DELAY_MS` before probing again. The value defaults
+to 3000 ms, is clamped to 1000–30000 ms, and preserves the legacy
+`HIGH_PRESSURE_DELAY_MS` alias for existing host scripts.
 
 Context windows are scaled down under pressure (`adaptive-timeout-config.ts`):
 

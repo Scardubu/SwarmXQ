@@ -28,7 +28,7 @@
  *            instead of silently passing through. On an 8 GB RAM system, "high"
  *            means between 1500 MB and 2500 MB available — a real signal that
  *            a 7B model load could trigger OOM without sufficient headroom.
- *            Behavior: 3-second delay (overridable via HIGH_PRESSURE_DELAY_MS
+ *            Behavior: 3-second delay (overridable via SWARMX_VIDEO_HIGH_PRESSURE_DELAY_MS
  *            env var), then a re-check. If the re-check is still "high", the
  *            job proceeds (graceful degradation). If it escalated to "critical",
  *            the job fails with PRESSURE_CRITICAL. This adds one network probe
@@ -123,17 +123,16 @@ import { loadEnv } from "../lib/env.js";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const COMFY_BASE  = process.env.COMFY_HOST  ?? "http://localhost:8188";
+const videoConfig = loadEnv();
+const COMFY_BASE = videoConfig.SWARMX_COMFYUI_URL;
+const GOVERNOR_BASE = videoConfig.SWARMX_API_INTERNAL;
 
 /**
  * [VOT-11] Backoff delay (ms) applied when governor reports "high" pressure.
  * Configurable via env so staging can tune without a code change.
  * Default: 3000ms (3 seconds). Acceptable range: 1000–30000 ms.
  */
-const HIGH_PRESSURE_DELAY_MS = Math.min(
-  30_000,
-  Math.max(1_000, parseInt(process.env.HIGH_PRESSURE_DELAY_MS ?? "3000", 10))
-);
+const HIGH_PRESSURE_DELAY_MS = videoConfig.SWARMX_VIDEO_HIGH_PRESSURE_DELAY_MS;
 
 /** Per-stage timeout matrix (ms) — aligned with architecture review §3. */
 const STAGE_TIMEOUT_MS: Record<VideoJobStage, number> = {
@@ -304,7 +303,7 @@ async function readPressure(): Promise<GovernorSnapshot> {
   const timer = setTimeout(() => controller.abort(), 2_000);
   try {
     const res = await fetch(
-      `${process.env.SWARMX_API_INTERNAL ?? "http://localhost:7380"}/api/governor`,
+      `${GOVERNOR_BASE}/api/governor`,
       { signal: controller.signal }
     );
     if (!res.ok) throw new Error(`governor probe: ${res.status}`);

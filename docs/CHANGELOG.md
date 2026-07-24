@@ -19,11 +19,27 @@
 - Video write auth now reads `SWARMX_VIDEO_API_TOKEN` at auth-check time
   instead of caching it at module import, preserving fail-closed production
   behavior while avoiding import-order surprises in scripts/process managers.
+- Video orchestrator ComfyUI, governor, and high-pressure backoff settings now
+  resolve through the centralized env schema. Legacy `COMFY_HOST` and
+  `HIGH_PRESSURE_DELAY_MS` remain compatibility aliases.
+
+### API — local renderer visual upgrade
+
+- Upgraded the deterministic FFmpeg fallback from flat-color motion plates to a
+  layered background system using `drawgrid`, motion panels, accent scan lines,
+  caption cards, and the existing progress bar. Exported template lineage now
+  identifies `drawgrid-and-drawbox-motion-system`.
+- Caption timing now uses half-open intervals for adjacent cards, preventing
+  one-frame text overlap at exact scene boundaries.
+- Updated the golden-path render script to emit `first-video-v3` with refreshed
+  kinetic script beats, background-aware storyboard notes, and the 16 GB host
+  runtime profile.
 
 ### Quality gates
 
 - Extended `video-regression-check.ts` and `system-health-regression.ts` to
-  cover canonical diagnostics plus schema-backed artifact URL/path resolution.
+  cover canonical diagnostics, schema-backed artifact URL/path resolution, and
+  the upgraded local renderer background recipe.
 
 ---
 

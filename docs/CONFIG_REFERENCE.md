@@ -34,6 +34,7 @@ Set these before starting Ollama or the SwarmX stack. The startup script auto-de
 | `SWARMX_OLLAMA_PROBE_TIMEOUT_MS` | `5000` | General `/api/version` probe budget for startup and discovery paths. |
 | `SWARMX_SYSTEM_HEALTH_PROBE_TIMEOUT_MS` | `1500` | Liveness budget for `/api/system/health`; bounded to 250–10000 ms. When liveness fails, the route returns degraded health without model discovery. |
 | `SWARMX_SYSTEM_HEALTH_MODEL_PROBE_TIMEOUT_MS` | `2500` | Readiness budget for model listing after liveness succeeds; bounded to 250–10000 ms. |
+| `SWARMX_API_INTERNAL` | `http://localhost:7380` | Internal Python sidecar base URL used for governor pressure probes. |
 
 ZRAM is compressed swap capacity, not free physical RAM. Runtime pressure
 decisions use physical `MemAvailable` and report ZRAM separately.
@@ -48,6 +49,8 @@ decisions use physical `MemAvailable` and report ZRAM separately.
 | `SWARMX_VIDEO_TEMP_DIR` | `.swarmx/video/tmp` | Per-render FFmpeg workspaces, removed after each render. |
 | `SWARMX_VIDEO_FFMPEG_TIMEOUT_MS` | `240000` | Local render command timeout, bounded to 30–900 seconds. |
 | `SWARMX_VIDEO_FFPROBE_TIMEOUT_MS` | `15000` | Artifact validation timeout, bounded to 5–60 seconds. |
+| `SWARMX_VIDEO_HIGH_PRESSURE_DELAY_MS` | `3000` | Delay before re-checking the Python governor after a high-pressure signal; clamped to 1000–30000 ms. Legacy `HIGH_PRESSURE_DELAY_MS` is still accepted by the env schema. |
+| `SWARMX_COMFYUI_URL` | `http://127.0.0.1:8188` | ComfyUI base URL for availability checks and workflow handoff. Legacy `COMFY_HOST` is still accepted by the env schema. |
 | `SWARMX_VIDEO_ALLOW_SILENT_AUDIO` | unset | Set `1` only for deliberate silent test renders when every configured VoiceProvider is unavailable; production runs fail instead of silently masking narration loss. |
 | `SWARMX_TTS_PROVIDER` | `auto` | Server-side voice provider selection: `auto`, `kokoro`, `piper`, `espeak`, or `silent_fixture`. `silent_fixture` is for explicit tests only. |
 | `SWARMX_TTS_URL` | `http://127.0.0.1:8888` | Kokoro TTS microservice URL. The provider is installed in the app; the host still must have the optional Python `tts` extra installed and the service running. |

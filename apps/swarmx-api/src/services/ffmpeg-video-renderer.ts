@@ -315,6 +315,28 @@ function wrapCardText(text: string, baseFontSize: number): string {
   return lines.slice(0, 4).join("\n");
 }
 
+function buildBackgroundMotionLayers(rendererTier: RendererCapabilityTier, accentRgb: string): string[] {
+  if (rendererTier === "ffmpeg_text_smoke") return [];
+
+  const cinematic = rendererTier === "ffmpeg_cinematic_explainer";
+  const faceless = rendererTier === "ffmpeg_faceless_broll";
+  const gridOpacity = cinematic ? "0.07" : faceless ? "0.09" : "0.13";
+  const panelOpacity = cinematic ? "0.08" : faceless ? "0.10" : "0.15";
+  const lineOpacity = cinematic ? "0.20" : faceless ? "0.24" : "0.34";
+
+  return [
+    `drawgrid=width=90:height=90:thickness=1:color=${accentRgb}@${gridOpacity}`,
+    `drawbox=x='-280+mod(t*44\\,1000)':y=ih*0.10:w=280:h=280:color=${accentRgb}@${panelOpacity}:t=fill`,
+    `drawbox=x='iw-360-mod(t*32\\,1080)':y=ih*0.58:w=360:h=360:color=white@0.055:t=fill`,
+    `drawbox=x='-160+mod(t*120\\,880)':y=120:w=160:h=6:color=${accentRgb}@0.55:t=fill`,
+    `drawbox=x='iw-80-mod(t*90\\,820)':y=ih*0.18:w=80:h=80:color=${accentRgb}@0.18:t=fill`,
+    `drawbox=x=80:y='220+mod(t*75\\,760)':w=5:h=180:color=${accentRgb}@0.45:t=fill`,
+    "drawbox=x=iw-96:y='ih-320-mod(t*60\\,700)':w=8:h=220:color=white@0.22:t=fill",
+    `drawbox=x=0:y='ih*0.28+mod(t*34\\,420)':w=iw:h=2:color=${accentRgb}@${lineOpacity}:t=fill`,
+    `drawbox=x='mod(t*132\\,iw+320)-320':y=ih*0.84:w=320:h=5:color=white@0.16:t=fill`,
+  ];
+}
+
 // Build the filter_complex chain: fade in, per-card drawtext, progress bar, fade out.
 function buildFilterComplex(
   fontFile: string,
@@ -336,6 +358,9 @@ function buildFilterComplex(
 
     const cardText = cardTexts[index] ?? "";
     const fontSize = fontSizeForText(cardText, styleConfig.baseFontSize);
+    const enableExpr = index === textFiles.length - 1
+      ? `gte(t,${start})*lte(t,${end})`
+      : `gte(t,${start})*lt(t,${end})`;
 
     return [
       `drawtext=fontfile=${fontFile}`,
@@ -348,21 +373,14 @@ function buildFilterComplex(
       `boxborderw=${styleConfig.borderW}`,
       "x=(w-text_w)/2",
       `y=${styleConfig.yExpr}`,
-      `enable='between(t,${start},${end})'`,
+      `enable='${enableExpr}'`,
     ].join(":");
   });
 
   // Animated progress bar: grows from left to right over the full duration.
   // Accent color in hex without the 0x prefix for FFmpeg's color syntax.
   const progressBar = `drawbox=x=0:y=ih-8:w=trunc(iw*t/${duration}):h=8:color=${accentRgb}@0.9:t=fill`;
-  const motionLayers = rendererTier === "ffmpeg_text_smoke"
-    ? []
-    : [
-      `drawbox=x='-160+mod(t*120\\,880)':y=120:w=160:h=6:color=${accentRgb}@0.55:t=fill`,
-      `drawbox=x='iw-80-mod(t*90\\,820)':y=ih*0.18:w=80:h=80:color=${accentRgb}@0.18:t=fill`,
-      `drawbox=x=80:y='220+mod(t*75\\,760)':w=5:h=180:color=${accentRgb}@0.45:t=fill`,
-      "drawbox=x=iw-96:y='ih-320-mod(t*60\\,700)':w=8:h=220:color=white@0.22:t=fill",
-    ];
+  const motionLayers = buildBackgroundMotionLayers(rendererTier, accentRgb);
 
   return [
     "format=yuv420p",
@@ -524,7 +542,7 @@ async function writeProductionPackage(input: {
         allowedUses: ["short-form-video", "local-export"],
         attribution: "Generated geometric motion fixtures bundled with SwarmXQ.",
       },
-      transformations: ["ffmpeg drawbox motion layers", "caption text rendering"],
+      transformations: ["ffmpeg drawgrid background texture", "ffmpeg drawbox motion layers", "caption text rendering"],
       reviewStatus: "approved",
     }],
     voice: voiceArtifact ?? null,
@@ -638,7 +656,7 @@ async function writeProductionPackage(input: {
     rendererTier: input.rendererTier,
     templateId: input.templateId,
     source: "local-ffmpeg-template",
-    motionSystem: "drawbox-motion-layers",
+    motionSystem: "drawgrid-and-drawbox-motion-system",
     createdAt: new Date().toISOString(),
   };
   await writeFile(templateLineagePath, `${JSON.stringify(templateLineage, null, 2)}\n`, "utf8");

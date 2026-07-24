@@ -19,6 +19,8 @@
  * Legacy aliases normalized here:
  *   VIDEO_OUTPUT_DIR          → SWARMX_VIDEO_EXPORT_DIR
  *   VIDEO_PUBLIC_URL_BASE     → SWARMX_VIDEO_PUBLIC_URL_BASE
+ *   COMFY_HOST                → SWARMX_COMFYUI_URL
+ *   HIGH_PRESSURE_DELAY_MS    → SWARMX_VIDEO_HIGH_PRESSURE_DELAY_MS
  */
 
 import { z } from "zod";
@@ -35,6 +37,7 @@ const schema = z.object({
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
   SWARMX_API_PORT: port.default(3001),
   SWARMX_API_HOST: z.string().min(1).default("127.0.0.1"),
+  SWARMX_API_INTERNAL: z.string().url().default("http://localhost:7380"),
   SWARMX_DASHBOARD_ORIGIN: z.string().optional(),
 
   // ── Ollama / model connectivity ───────────────────────────────────────────
@@ -162,6 +165,11 @@ const schema = z.object({
     (val) => val ?? path.join(process.cwd(), ".swarmx", "video", "tmp"),
     z.string(),
   ),
+  SWARMX_VIDEO_HIGH_PRESSURE_DELAY_MS: z.preprocess(
+    (val) => val ?? process.env["HIGH_PRESSURE_DELAY_MS"] ?? "3000",
+    z.coerce.number().int()
+      .transform((n) => Math.min(30_000, Math.max(1_000, n))),
+  ),
   SWARMX_VIDEO_MAX_FRAME_BUDGET_MB: positiveInt.default(7600),
   SWARMX_VIDEO_COMFY_POLL_INTERVAL_MS: positiveInt.default(2000),
   SWARMX_VIDEO_COMFY_POLL_MAX_ATTEMPTS: positiveInt.default(180),
@@ -183,7 +191,10 @@ const schema = z.object({
   SWARMX_VOICE_BENCHMARK_MAX_AGE_HOURS: z.coerce.number().int().min(1).max(720).default(168),
 
   // ── ComfyUI ───────────────────────────────────────────────────────────────
-  SWARMX_COMFYUI_URL: z.string().url().default("http://127.0.0.1:8188"),
+  SWARMX_COMFYUI_URL: z.preprocess(
+    (val) => val ?? process.env["COMFY_HOST"],
+    z.string().url().default("http://127.0.0.1:8188"),
+  ),
   SWARMX_COMFYUI_OUTPUT_DIR: z.string().optional(),
   SWARMX_COMFYUI_TEACACHE: boolFlag,
 
