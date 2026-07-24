@@ -14,7 +14,7 @@ export interface RuntimeCapabilities {
     error?: string;
   }>;
   memory: { totalGb: number; availableGb: number; usedGb: number };
-  warmup: { done: boolean; coldStartEtaSecs: number; source: "file" | "default" } | null;
+  warmup: { done: boolean; coldStartEtaSecs: number | null; source: "file" | "default" } | null;
   voice: {
     preferredProvider: string;
     benchmark: {

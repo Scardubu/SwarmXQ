@@ -12,7 +12,7 @@ import { delimiter, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { broadcastEvent } from "../plugins/sse.js";
 import type { RuntimeGovernorSnapshot, StartupSummary } from "../types/events.js";
-import { loadEnv } from "../lib/env.js";
+import { loadEnv, readRawEnv } from "../lib/env.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -52,7 +52,7 @@ function buildPythonPath(repoRoot: string): string {
   const segments = [
     join(repoRoot, "src"),
     repoRoot,
-    process.env["PYTHONPATH"] ?? "",
+    readRawEnv("PYTHONPATH") ?? "",
   ].filter((value) => value.length > 0);
 
   return segments.join(delimiter);

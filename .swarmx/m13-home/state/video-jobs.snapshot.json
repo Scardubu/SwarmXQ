@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "collection": "video-jobs",
+  "savedAt": "2026-07-24T11:20:40.331Z",
+  "records": [
+    {
+      "id": "f4c23de8-cd5c-4001-9b01-c034f84b2455",
+      "status": "queued",
+      "request": {
+        "prompt": "Create a 30-second faceless TikTok video about focus.",
+        "platform": "tiktok",
+        "niche": "tech",
+        "targetDurationSeconds": 30,
+        "clientRequestId": "queue-second"
+      },
+      "stages": {},
+      "overallProgress": 0,
+      "retryCount": 1,
+      "createdAt": "2026-07-24T11:16:40.304Z",
+      "updatedAt": "2026-07-24T11:20:40.322Z",
+      "clientRequestId": "queue-second",
+      "pressureTierAtStart": "normal",
+      "operatorTrace": [
+        {
+          "stage": "classifying",
+          "operatorTag": "instruct-phi4-pro-q8-prod",
+          "modelTag": "instruct-phi4-pro-q8-prod",
+          "operator": "Pilot",
+          "startedAt": "2026-07-24T11:16:40.326Z",
+          "completedAt": "2026-07-24T11:18:51.972Z",
+          "latencyMs": 131646,
+          "tokenCount": 0,
+          "success": false,
+          "timestamp": "2026-07-24T11:16:40.326Z"
+        }
+      ],
+      "error": {
+        "code": "TIMEOUT",
+        "message": "Stage intent_classification timed out after 240000ms",
+        "retryable": true
+      }
+    }
+  ]
+}

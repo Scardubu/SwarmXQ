@@ -4,6 +4,45 @@
 
 ---
 
+## V6.2.58 — Creative Quality Contract + Runtime UI Hardening (2026-07-24)
+
+### API — script quality and env-boundary hardening
+
+- The `scripting` stage now honors the `HOOK_BLOCKLIST` contract end to end:
+  when the first valid script opens with a blocked preamble, the orchestrator
+  retries once with an explicit regeneration instruction before accepting a
+  degraded hook. If the second usable script still violates the blocklist, the
+  job continues with a `scriptQualityWarnings` annotation instead of failing
+  solely for creative softness.
+- Dynamic API secrets and parametric env reads are now centralized through
+  `env.ts` helpers (`readSecretEnv` / `readRawEnv`). Services and routes no
+  longer read `process.env[...]` directly while preserving non-cached token
+  behavior for video write auth and publisher OAuth tokens.
+- `video-regression-check.ts` now guards both contracts: hook regeneration must
+  remain wired, and service-level env access must stay centralized.
+
+### Dashboard — health-driven ETA and visible action errors
+
+- Video job cold-start messaging no longer hardcodes a dashboard fallback ETA.
+  The card renders the value supplied by `/api/system/health`; if health lacks
+  an ETA, the UI says the ETA is unknown rather than inventing a countdown.
+- Failed video actions such as cancel, retry, reorder, publish, and caption
+  rescoring now write sanitized store errors instead of relying on browser
+  console output as the only feedback path.
+- Added a dashboard regression test that blocks reintroducing hardcoded
+  cold-start ETA literals in the health/card path.
+
+### Runtime evidence — M13 re-certification
+
+- Re-ran the live M13 harness against the local Fastify API with Kokoro online.
+  Job `da82bfb8-ff66-4f58-9dd5-c2641d08571c` completed in 862 s with all six
+  assertions passing and `certificationTier: PRODUCTION_PACK_VALID`.
+- Verified the certified MP4 outside the harness: 720x1280 H.264, 30 fps,
+  18.00 s, AAC 48 kHz stereo, SHA-256
+  `056e161b8a54f99e7f5a1961e43456e6210c88b0dec4006349e01427a1d2e2a7`,
+  FFmpeg `mean_volume: -20.0 dB`, `max_volume: -1.3 dB`, package sidecars
+  present, and `/api/video/files/:filename` serving `206 Partial Content`.
+
 ## V6.2.57 — Operator Documentation Closeout (2026-07-24)
 
 ### Docs — M13 and browser verification runbooks

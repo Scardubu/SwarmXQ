@@ -1,8 +1,8 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { loadEnv } from "../lib/env.js";
+import { loadEnv, readSecretEnv } from "../lib/env.js";
 
 function readVideoWriteToken(): string {
-  return process.env["SWARMX_VIDEO_API_TOKEN"]?.trim() ?? "";
+  return readSecretEnv("SWARMX_VIDEO_API_TOKEN");
 }
 
 function readBearerToken(header: string | undefined): string | null {

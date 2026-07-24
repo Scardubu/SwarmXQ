@@ -151,10 +151,11 @@ scan lines, caption cards, and a progress bar directly in FFmpeg, so upgraded
 backgrounds remain reproducible without external media or model-generated
 filter graphs.
 
-Kokoro support is installed at the application/provider layer. To make it the active neural voice provider on a host, install the optional Python extra and start the local service:
+Kokoro support is installed at the application/provider layer. To make it the
+active neural voice provider on a host, start the local service from the repo
+virtualenv. Install the optional Python extra only if import verification fails.
 
 ```bash
-.venv/bin/python -m pip install -e '.[tts]'
 SWARMX_TTS_PROVIDER=kokoro .venv/bin/python -m swarmx.services.kokoro_tts_server --port 8888
 ```
 
@@ -316,16 +317,27 @@ curl -sS http://127.0.0.1:11434/api/generate \
 ```
 
 With a warm model, intent classification completes in ~14 s. Without it, the
-first request eats the cold-load window and will exceed the 90 s ceiling for
-intent classification even at the CEILING value (default is 30 s; V6.2.15
-raised the ceiling to 90 s). Symptom: `TIMEOUT` in the intent stage on the
-first attempt; retry succeeds because the previous cold-load left the model
-partially cached — but only if the retry happens before Ollama's `KEEP_ALIVE`
-window expires (2 min default). Prefer explicit prewarm over relying on retry.
+first request spends part of the current 240 s intent-classification budget on
+the cold-load window. Symptom: a slow first classification followed by a faster
+retry because the previous cold-load left the model partially cached. Prefer
+explicit prewarm over relying on retry.
 
 The dashboard video page shows a **"Loading Model"** notice when a running or
 classifying job has been active for more than 30 seconds — this is the expected
-cold-start indicator, not a failure.
+cold-start indicator, not a failure. The ETA is read from
+`/api/system/health → warmup.coldStartEtaSecs`; when health does not provide an
+ETA, the dashboard shows **ETA unknown** instead of falling back to a local
+constant.
+
+### Script quality guardrails
+
+The scripting stage enforces the shared `HOOK_BLOCKLIST` from
+`apps/swarmx-api/src/lib/creative-quality.ts`. A blocklisted hook is not fatal:
+the first valid script is regenerated once with a reinforced no-preamble
+instruction. If the second usable script still opens with a blocked phrase, the
+job continues and records a `scriptQualityWarnings` entry so the dashboard can
+surface the creative issue without converting a recoverable soft-quality signal
+into a failed render.
 
 ---
 
@@ -1056,6 +1068,19 @@ The successful path writes
 only when that report records all assertions passing and the completed job
 output includes a real non-stub MP4, `modelsUsed`, `stageValidationTrace`,
 `mediaQualityReport`, and at least `PRODUCTION_PACK_VALID`.
+
+Latest local evidence from 2026-07-24:
+
+- Job `da82bfb8-ff66-4f58-9dd5-c2641d08571c` completed in 862 s through the
+  Fastify API with `voice.benchmark.recommendedProviderId: kokoro`.
+- The certified MP4 is
+  `video_da82bfb8-ff66-4f58-9dd5-c2641d08571c.mp4`: 720x1280 H.264, 30 fps,
+  18.00 s, AAC 48 kHz stereo, SHA-256
+  `056e161b8a54f99e7f5a1961e43456e6210c88b0dec4006349e01427a1d2e2a7`.
+- Media/package checks passed outside the harness: FFmpeg volume detect reported
+  `mean_volume: -20.0 dB`, `max_volume: -1.3 dB`; the package contains captions,
+  manifests, QC, rights, transcript, thumbnail, template lineage, and voice
+  lineage; `/api/video/files/:filename` served the MP4 with `206 Partial Content`.
 
 ---
 

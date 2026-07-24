@@ -8,13 +8,17 @@
  *   - Provide typed, defaulted access via `env.X` — all services and routes import
  *     loadEnv() instead of reading process.env directly.
  *
- * Escape hatches (kept as direct process.env reads at call sites — documented here):
- *   SWARMX_VIDEO_API_TOKEN    — secret; must never enter a cached object that could be logged
+ * Dynamic env access that must not be cached is centralized at the bottom of
+ * this module. Services and routes still go through env.ts; secrets are never
+ * copied into the cached loadEnv() object.
+ *
+ * Dynamic keys:
+ *   SWARMX_VIDEO_API_TOKEN     — secret; read at auth-check time
  *   SWARMX_TIKTOK_ACCESS_TOKEN — OAuth secret
  *   SWARMX_INSTAGRAM_ACCESS_TOKEN — OAuth secret
- *   PYTHONPATH                — system variable, not app config
- *   readBoundedEnvInt(name)   — parametric lookup in video-runtime-config.ts
- *   resolveVideoModelTag()    — dynamic stage-keyed lookup in video-runtime-config.ts
+ *   PYTHONPATH                 — inherited system variable
+ *   VIDEO_*_TIMEOUT_MS         — parametric stage timeout overrides
+ *   SWARMX_VIDEO_*_MODEL       — stage-keyed model overrides
  *
  * Legacy aliases normalized here:
  *   VIDEO_OUTPUT_DIR          → SWARMX_VIDEO_EXPORT_DIR
@@ -250,6 +254,11 @@ const schema = z.object({
 
 type Env = z.infer<typeof schema>;
 
+export type SecretEnvKey =
+  | "SWARMX_VIDEO_API_TOKEN"
+  | "SWARMX_TIKTOK_ACCESS_TOKEN"
+  | "SWARMX_INSTAGRAM_ACCESS_TOKEN";
+
 let cached: Env | null = null;
 
 /**
@@ -275,4 +284,20 @@ export function loadEnv(): Env {
  */
 export function resetEnvForTesting(): void {
   cached = null;
+}
+
+/**
+ * Non-cached secret reads. Keep token material out of the parsed env object so
+ * structured logging of config snapshots cannot accidentally disclose secrets.
+ */
+export function readSecretEnv(key: SecretEnvKey): string {
+  return process.env[key]?.trim() ?? "";
+}
+
+/**
+ * Non-cached raw reads for parametric/system env names that cannot be modeled
+ * as one cached schema property, such as stage-specific timeout overrides.
+ */
+export function readRawEnv(key: string): string | undefined {
+  return process.env[key];
 }

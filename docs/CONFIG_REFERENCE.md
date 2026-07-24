@@ -70,6 +70,13 @@ decisions use physical `MemAvailable` and report ZRAM separately.
 | `SWARMX_VIDEO_EXPORT_TTL_DAYS` | `7` | Days after which rendered exports and artifacts are eligible for cleanup. Minimum 1. |
 | `SWARMX_VIDEO_CLEANUP_INTERVAL_MS` | `21600000` | How often the cleanup service scans for stale exports (ms). Minimum 60000. First run fires 30 s after startup. |
 
+Secrets and parametric override reads are centralized in
+`apps/swarmx-api/src/lib/env.ts`. `SWARMX_VIDEO_API_TOKEN`,
+`SWARMX_TIKTOK_ACCESS_TOKEN`, and `SWARMX_INSTAGRAM_ACCESS_TOKEN` are read
+through non-cached secret helpers so they are never copied into logged config
+snapshots; stage-specific timeout/model override names are read through the same
+module rather than directly from services or routes.
+
 **Stage timeouts** — defaults are CPU-safe and account for cold model-load latency plus inference slack, so most operators do not need to override anything. Bounds still allow tightening for latency-sensitive GPU hosts or raising for very slow CPUs.
 
 | Variable | Default | Ceiling (max) | Floor (min) |

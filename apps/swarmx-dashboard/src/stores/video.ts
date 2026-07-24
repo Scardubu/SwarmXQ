@@ -238,7 +238,11 @@ export const useVideoStore = create<VideoStore>()(
             "video/fetchJobDetail",
           );
         } catch (err) {
-          console.error("[VideoStore] fetchJobDetail failed:", err);
+          set(
+            { listError: sanitizeApiError(err, "Unable to refresh video job details.") },
+            false,
+            "video/fetchJobDetail/error",
+          );
         }
       },
 
@@ -307,7 +311,11 @@ export const useVideoStore = create<VideoStore>()(
             "video/cancel"
           );
         } catch (err) {
-          console.error("[VideoStore] cancelJob failed:", err);
+          set(
+            { listError: sanitizeApiError(err, "Unable to cancel this video job.") },
+            false,
+            "video/cancel/error",
+          );
         }
       },
 
@@ -334,7 +342,11 @@ export const useVideoStore = create<VideoStore>()(
 
           return data.result;
         } catch (err) {
-          console.error("[VideoStore] publishJob failed:", err);
+          set(
+            { listError: sanitizeApiError(err, "Unable to publish this video package.") },
+            false,
+            "video/publish/error",
+          );
           return null;
         }
       },
@@ -367,7 +379,11 @@ export const useVideoStore = create<VideoStore>()(
           await get().fetchJobDetail(jobId);
           return true;
         } catch (err) {
-          console.error("[VideoStore] retryFromStage failed:", err);
+          set(
+            { listError: sanitizeApiError(err, "Unable to retry this video job.") },
+            false,
+            "video/retryFromStage/error",
+          );
           return false;
         }
       },
@@ -380,7 +396,11 @@ export const useVideoStore = create<VideoStore>()(
           });
           await get().fetchJobs();
         } catch (err) {
-          console.error("[VideoStore] reorderQueue failed:", err);
+          set(
+            { listError: sanitizeApiError(err, "Unable to reorder the queued video jobs.") },
+            false,
+            "video/reorderQueue/error",
+          );
         }
       },
 
@@ -399,7 +419,11 @@ export const useVideoStore = create<VideoStore>()(
           );
           return response.viralitySignal ?? null;
         } catch (err) {
-          console.error("[VideoStore] scoreCaption failed:", err);
+          set(
+            { listError: sanitizeApiError(err, "Unable to rescore this caption.") },
+            false,
+            "video/scoreCaption/error",
+          );
           return null;
         }
       },

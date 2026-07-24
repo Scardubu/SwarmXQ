@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { MODEL_OPERATOR_MAP, resolveCanonicalTag } from "@swarmx/types/operator-map";
 import type { VideoJobRequest, VideoJobStage } from "../types/video.js";
-import { loadEnv } from "../lib/env.js";
+import { loadEnv, readRawEnv } from "../lib/env.js";
 
 export const LOW_RAM_VIDEO_MODEL = "instruct-phi4-lite-q4km-prod";
 /** Full Pilot model tag used for intent_classification and prewarm on 16 GB hosts. */
@@ -107,7 +107,7 @@ export function readBoundedEnvInt(
   min: number,
   max: number,
 ): number {
-  const raw = process.env[envName];
+  const raw = readRawEnv(envName);
   if (!raw) return fallback;
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed)) return fallback;
@@ -132,7 +132,7 @@ export function resolveVideoModelTag(
     return LOW_RAM_VIDEO_MODEL;
   }
 
-  const envOverride = process.env[TEXT_STAGE_MODEL_ENV[stage]];
+  const envOverride = readRawEnv(TEXT_STAGE_MODEL_ENV[stage]);
   if (envOverride?.trim()) {
     return resolveCanonicalTag(envOverride.trim());
   }

@@ -187,19 +187,16 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
     : null;
   const statusAnnouncement = buildStatusAnnouncement(job);
 
-  // V6.2.26 — cold-start ETA sourced from /api/system/health warmup marker.
-  // When the API's warmup file confirms in-progress warmup, use its live
-  // remaining seconds directly. Otherwise fall back to the historical 140 s
-  // guide with local elapsed subtracted.
   const { warmup } = useApiHealth();
-  const coldStartRemainingSecs: number = warmup?.done
+  const healthEtaSecs = warmup?.coldStartEtaSecs ?? null;
+  const coldStartRemainingSecs: number | null = warmup?.done
     ? 0
-    : warmup?.source === "file"
-      ? Math.max(0, warmup.coldStartEtaSecs)
-      : Math.max(0, 140 - (elapsed ?? 0));
-  const coldStartHintCeilingSecs = warmup?.source === "file"
-    ? Math.max(warmup.coldStartEtaSecs, 30)
-    : 140;
+    : healthEtaSecs !== null
+      ? Math.max(0, healthEtaSecs)
+      : null;
+  const coldStartHint = healthEtaSecs !== null
+    ? `~${Math.max(healthEtaSecs, 30)}s`
+    : "unknown";
 
   return (
     <article
@@ -344,8 +341,7 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
           </div>
         )}
 
-        {/* Loading Model hint — shown when model cold-start is likely (>30 s at first stage).
-            V6.2.26: ETA sourced from /api/system/health warmup marker instead of a hardcoded 140. */}
+        {/* Loading Model hint — shown when model cold-start is likely (>30 s at first stage). */}
         {elapsed != null && elapsed > 30 &&
           (job.status === "classifying" || job.status === "running") && (
             <p
@@ -353,10 +349,12 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
               role="status"
               aria-live="polite"
             >
-              Loading Model — cold Ollama load typically ≤ {coldStartHintCeilingSecs}s.{" "}
-              {coldStartRemainingSecs > 0
+              Loading Model — health ETA {coldStartHint}.{" "}
+              {coldStartRemainingSecs !== null && coldStartRemainingSecs > 0
                 ? <>~<span className="font-mono tabular-nums">{coldStartRemainingSecs}s</span> remaining. Wait; do not cancel.</>
-                : <>Warmup exceeded typical range — first inference should complete shortly.</>}
+                : coldStartRemainingSecs === 0
+                  ? <>Warmup reported ready — first inference should complete shortly.</>
+                  : <>ETA unavailable from system health — wait; do not cancel during cold load.</>}
             </p>
           )}
 

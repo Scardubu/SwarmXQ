@@ -112,7 +112,9 @@ export function RuntimeCapabilityStrip() {
   const warmupValue = caps.warmup
     ? caps.warmup.done
       ? "ready"
-      : `cold (~${caps.warmup.coldStartEtaSecs}s ETA)`
+      : caps.warmup.coldStartEtaSecs !== null
+        ? `cold (~${caps.warmup.coldStartEtaSecs}s ETA)`
+        : "cold (ETA unknown)"
     : "unknown";
 
   return (

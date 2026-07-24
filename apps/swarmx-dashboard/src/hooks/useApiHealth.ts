@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 
 export interface WarmupSnapshot {
   done: boolean;
-  coldStartEtaSecs: number;
+  coldStartEtaSecs: number | null;
   source: "file" | "default";
 }
 
@@ -81,7 +81,7 @@ function parseWarmup(value: unknown): WarmupSnapshot | null {
     return null;
   }
 
-  const coldStartEtaSecs = finiteNumber(value["coldStartEtaSecs"]) ?? 140;
+  const coldStartEtaSecs = finiteNumber(value["coldStartEtaSecs"]) ?? null;
   return {
     done: value["done"] === true,
     coldStartEtaSecs,

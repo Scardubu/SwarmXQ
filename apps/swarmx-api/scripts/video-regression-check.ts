@@ -113,6 +113,11 @@ assert.ok(orchestratorSource.includes("LOW_RAM_VIDEO_MODEL"));
 assert.ok(orchestratorSource.includes("videoConfig.SWARMX_COMFYUI_URL"));
 assert.ok(orchestratorSource.includes("videoConfig.SWARMX_VIDEO_HIGH_PRESSURE_DELAY_MS"));
 assert.ok(orchestratorSource.includes("videoConfig.SWARMX_API_INTERNAL"));
+assert.ok(orchestratorSource.includes("reinforceHookBlocklist"), "scripting prompt must support hook-blocklist regeneration");
+assert.ok(
+  orchestratorSource.includes("regenerating script after HOOK_BLOCKLIST violation"),
+  "scripting stage must retry once before accepting a blocklisted hook",
+);
 assert.equal(orchestratorSource.includes("process.env.COMFY_HOST"), false);
 assert.equal(orchestratorSource.includes("process.env.HIGH_PRESSURE_DELAY_MS"), false);
 assert.equal(orchestratorSource.includes("process.env.SWARMX_API_INTERNAL"), false);
@@ -134,6 +139,20 @@ assert.ok(routesSource.includes('event.type === "video:completed"'), "SSE must c
 const serverSource = await readFile(new URL("../src/server.ts", import.meta.url), "utf8");
 assert.ok(serverSource.includes("shouldAutoEnableLowRamMode()"), "server must auto-enable low-RAM mode");
 assert.ok(serverSource.includes("LOW_RAM_VIDEO_MODEL"), "server must reference the video prewarm model");
+
+// Services/routes must centralize env access through env.ts. Dynamic secrets
+// and parametric overrides still stay non-cached, but not scattered at call sites.
+const envSource = await readFile(new URL("../src/lib/env.ts", import.meta.url), "utf8");
+assert.ok(envSource.includes("function readSecretEnv"), "env.ts must own non-cached secret access");
+assert.ok(envSource.includes("function readRawEnv"), "env.ts must own parametric raw env access");
+const videoAuthSource = await readFile(new URL("../src/services/video-auth.ts", import.meta.url), "utf8");
+assert.ok(videoAuthSource.includes('readSecretEnv("SWARMX_VIDEO_API_TOKEN")'));
+assert.equal(videoAuthSource.includes('process.env["SWARMX_VIDEO_API_TOKEN"]'), false);
+const runtimeConfigSource = await readFile(new URL("../src/services/video-runtime-config.ts", import.meta.url), "utf8");
+assert.ok(runtimeConfigSource.includes("readRawEnv(envName)"));
+assert.ok(runtimeConfigSource.includes("readRawEnv(TEXT_STAGE_MODEL_ENV[stage])"));
+assert.equal(runtimeConfigSource.includes("process.env[envName]"), false);
+assert.equal(runtimeConfigSource.includes("process.env[TEXT_STAGE_MODEL_ENV[stage]]"), false);
 
 const m13CertSource = await readFile(new URL("./m13-live-cert.ts", import.meta.url), "utf8");
 assert.ok(m13CertSource.includes('process.env["SWARMX_API_URL"]'), "M13 cert must honor SWARMX_API_URL");

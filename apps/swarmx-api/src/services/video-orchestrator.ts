@@ -754,31 +754,72 @@ async function stageScripting(
   const controller = stageController(ctx, "scripting");
 
   try {
-    // [VOT-13] Sanitize output so <think> artifacts never appear in the
-    //          generated script that feeds the storyboard and render stages.
-    const { text: rawScript, tokenCount: scriptTokens, latencyMs: scriptLatency } = await ollamaGenerate(
-      model,
-      buildScriptingPrompt(ctx.job.request, plan),
-      controller.signal,
-      1024,
-      overrides,
-      keepAlive,
-    );
-    const { text: scriptText } = sanitizeReasoningOutput(rawScript);
-    const validated = runStageValidation(ctx.job, "scripting", { scriptText });
-    if (!validated) {
-      recordOperatorTrace(ctx, "scripting", model, startedAt, false, scriptTokens, scriptLatency);
+    let selectedScriptText: string | null = null;
+    let selectedWarnings: ScriptQualityWarning[] = [];
+    let firstValidScriptText: string | null = null;
+    let firstValidWarnings: ScriptQualityWarning[] = [];
+    let totalTokens = 0;
+    let totalLatencyMs = 0;
+    let lastValidationFailed = false;
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      // [VOT-13] Sanitize output so <think> artifacts never appear in the
+      //          generated script that feeds the storyboard and render stages.
+      const { text: rawScript, tokenCount: scriptTokens, latencyMs: scriptLatency } = await ollamaGenerate(
+        model,
+        buildScriptingPrompt(ctx.job.request, plan, { reinforceHookBlocklist: attempt > 0 }),
+        controller.signal,
+        1024,
+        overrides,
+        keepAlive,
+      );
+      totalTokens += scriptTokens;
+      totalLatencyMs += scriptLatency;
+
+      const { text: scriptText } = sanitizeReasoningOutput(rawScript);
+      const validated = runStageValidation(ctx.job, "scripting", { scriptText });
+      if (!validated) {
+        lastValidationFailed = true;
+        continue;
+      }
+
+      const scriptWarnings = validateScriptSections(validated.scriptText, ctx.job.id, model);
+      const hookBlocked = scriptWarnings.some((warning) => warning.code === "hook_blocklist");
+      if (attempt === 0 && hookBlocked) {
+        firstValidScriptText = validated.scriptText;
+        firstValidWarnings = scriptWarnings;
+        log.warn(
+          { jobId: ctx.job.id, model, attempt: attempt + 1 },
+          "[script-quality] regenerating script after HOOK_BLOCKLIST violation",
+        );
+        continue;
+      }
+
+      selectedScriptText = validated.scriptText;
+      selectedWarnings = scriptWarnings;
+      break;
+    }
+
+    if (!selectedScriptText && firstValidScriptText) {
+      selectedScriptText = firstValidScriptText;
+      selectedWarnings = firstValidWarnings;
+    }
+
+    if (!selectedScriptText) {
+      recordOperatorTrace(ctx, "scripting", model, startedAt, false, totalTokens, totalLatencyMs);
       throw Object.assign(
-        new Error("Scripting output did not satisfy the stage schema"),
+        new Error(lastValidationFailed
+          ? "Scripting output did not satisfy the stage schema"
+          : "Scripting output unavailable"),
         { code: "SCRIPT_SCHEMA_INVALID" },
       );
     }
-    const scriptWarnings = validateScriptSections(validated.scriptText, ctx.job.id, model);
-    if (scriptWarnings.length > 0) {
-      ctx.job.scriptQualityWarnings = [...(ctx.job.scriptQualityWarnings ?? []), ...scriptWarnings];
+
+    if (selectedWarnings.length > 0) {
+      ctx.job.scriptQualityWarnings = [...(ctx.job.scriptQualityWarnings ?? []), ...selectedWarnings];
     }
-    recordOperatorTrace(ctx, "scripting", model, startedAt, true, scriptTokens, scriptLatency);
-    return { scriptText: validated.scriptText };
+    recordOperatorTrace(ctx, "scripting", model, startedAt, true, totalTokens, totalLatencyMs);
+    return { scriptText: selectedScriptText };
   } finally {
     controller.abort();
     ModelOrchestrator.getInstance().onModelCallComplete(model);
@@ -1594,7 +1635,11 @@ function buildSeriesContextPreamble(req: VideoJobRequest): string {
   return lines.join("\n") + "\n\n";
 }
 
-function buildScriptingPrompt(req: VideoJobRequest, plan: string[]): string {
+function buildScriptingPrompt(
+  req: VideoJobRequest,
+  plan: string[],
+  options: { reinforceHookBlocklist?: boolean } = {},
+): string {
   const dur = req.targetDurationSeconds ?? 60;
   const toneInstruction = TONE_RULES[req.tone ?? "educational"] ?? TONE_RULES["educational"];
   const seriesPreamble = buildSeriesContextPreamble(req);
@@ -1602,6 +1647,9 @@ function buildScriptingPrompt(req: VideoJobRequest, plan: string[]): string {
   const hookBlocklist = HOOK_BLOCKLIST.slice(0, 6)
     .map((p) => `"${p.trim()}"`)
     .join(", ");
+  const regenerationInstruction = options.reinforceHookBlocklist
+    ? "\nREGENERATION NOTE: The previous hook opened like a generic preamble. Replace it with a specific tension, number, named villain, or identity challenge. Do not start with a greeting, setup phrase, or self-reference.\n"
+    : "";
 
   return `You are an expert short-form video scriptwriter for ${req.platform ?? "tiktok"}.
 ${seriesPreamble}Niche: ${req.niche ?? "general"} | Tone: ${req.tone ?? "educational"} | Style: ${req.style ?? "faceless_broll"} | Voice: ${req.voice ?? "default"}
@@ -1612,6 +1660,7 @@ Production plan:
 ${plan.map((p, i) => `${i + 1}. ${p}`).join("\n")}
 
 Tone: ${toneInstruction}
+${regenerationInstruction}
 
 WRITING RULES — follow these; do NOT output them:
 [HOOK]: At most 18 words. One sentence. Pattern-interrupt opening — contrast, claim, or question. No preamble. Never start with ${hookBlocklist} or similar.
