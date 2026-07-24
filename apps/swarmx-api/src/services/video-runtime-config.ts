@@ -37,8 +37,10 @@ const TEXT_STAGE_MODEL_ENV: Record<TextVideoJobStage, string> = {
 // Defaults sized so BOTH GPU (cold model load takes 5–15s) and CPU (warm 3.8B
 // Q4_K_M at ~5 tok/s) can complete each text stage without env overrides. GPU
 // hosts wanting tighter bounds can still override via VIDEO_*_TIMEOUT_MS.
+// intent_classification uses 240 s: cold Q8 Pilot load (30–60 s) + inference
+// (10–30 s) + marshaling leaves under 30 s of slack in 120 s on bare-metal CPU.
 const STAGE_TIMEOUT_DEFAULTS: Record<VideoJobStage, number> = {
-  intent_classification: 120_000,
+  intent_classification: 240_000,
   planning: 300_000,
   scripting: 600_000,
   storyboard_generation: 600_000,

@@ -4,7 +4,42 @@
 
 ---
 
-## Unreleased — M9 Golden-Path Runtime Readiness (2026-07-24)
+## V6.2.55 — M13 Golden-Path Live Re-Certification (2026-07-24)
+
+### API — live pipeline resilience
+
+- `intent_classification` stage default timeout raised from 120 s to 240 s.
+  Cold Q8 Pilot load on CPU (30–60 s) plus inference (10–30 s) plus marshaling
+  was leaving under 30 s of slack in the previous 120 s window — the exact
+  margin where prior `m9-golden-path-*` attempts timed out. Env override
+  `VIDEO_INTENT_CLASSIFY_TIMEOUT_MS` remains available; max bound of 600 s
+  unchanged.
+- Added `scripts/m13-live-cert.ts` — an HTTP-only live certification harness.
+  It submits a real `kinetic_text` job through the running API, polls to
+  completion, and asserts M13 criteria: `stageValidationTrace.length >= 3`,
+  `modelsUsed` count >= 4, `certificationTier >= PRODUCTION_PACK_VALID`,
+  QC report present, and `/api/system/health` exposing `voice.benchmark` +
+  `runtimeProfile`. Writes `m13-cert-report.json` to
+  `.swarmx/video/artifacts/m13/`. Requires the API server to be running and
+  `SWARMX_VIDEO_API_TOKEN` to be set. Wired as `pnpm test:m13`.
+
+### Artifact — improved v3 golden render
+
+- Regenerated `.swarmx/video/artifacts/golden-path/exports/video_first-video-v3.mp4`
+  using the upgraded background system: 720×1280 H.264 at 30 fps, 18.00 s,
+  393 KB; AAC 48 kHz stereo; Kokoro `am_michael` narration; SRT + VTT captions;
+  full production package (render manifest, rights manifest, technical + creative
+  QC report, template lineage, thumbnail, transcript, voice lineage);
+  `PRODUCTION_PACK_VALID` certification tier.
+
+### Environment
+
+- Voice benchmark refreshed against Kokoro (RTF 0.83) and eSpeak-ng (fallback,
+  RTF 0.008); Piper still absent. Recommended provider: `kokoro`.
+- Doctor CLI now passes all 6 checks on this host: env, redis, ollama, ram
+  (6984 MB available), voice-binaries (kokoro), voice-benchmark (fresh).
+
+## V6.2.54 — M9 Golden-Path Runtime Readiness (2026-07-24)
 
 ### API — artifact config schema alignment
 

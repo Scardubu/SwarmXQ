@@ -78,8 +78,8 @@ describe("readBoundedEnvInt", () => {
 });
 
 describe("stageTimeoutMs", () => {
-  test("returns default 120000 for intent_classification with no env override", () => {
-    expect(stageTimeoutMs("intent_classification")).toBe(120_000);
+  test("returns default 240000 for intent_classification with no env override", () => {
+    expect(stageTimeoutMs("intent_classification")).toBe(240_000);
   });
 
   test("env override is clamped to stage max bound (600000 for intent_classification)", () => {
