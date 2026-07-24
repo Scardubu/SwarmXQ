@@ -323,18 +323,99 @@ function buildBackgroundMotionLayers(rendererTier: RendererCapabilityTier, accen
   const gridOpacity = cinematic ? "0.07" : faceless ? "0.09" : "0.13";
   const panelOpacity = cinematic ? "0.08" : faceless ? "0.10" : "0.15";
   const lineOpacity = cinematic ? "0.20" : faceless ? "0.24" : "0.34";
+  // Ambient glow static alpha — FFmpeg drawbox alpha does not accept `t`
+  // expressions, so the "breathing" feel comes from position/size oscillation
+  // in the drifting layers below rather than fading opacity.
+  const glowAlpha = cinematic ? "0.06" : faceless ? "0.07" : "0.09";
+  const glowSoft = cinematic ? "0.03" : faceless ? "0.04" : "0.05";
 
+  // Organic motion: linear drift + low-amplitude sine offset. The `mod(x,N)`
+  // period stays the same, but the trajectory now breathes instead of scanning
+  // in a robotic straight line. FFmpeg needs commas inside expressions
+  // escaped when the filter is joined into a comma-separated filter chain.
   return [
     `drawgrid=width=90:height=90:thickness=1:color=${accentRgb}@${gridOpacity}`,
-    `drawbox=x='-280+mod(t*44\\,1000)':y=ih*0.10:w=280:h=280:color=${accentRgb}@${panelOpacity}:t=fill`,
-    `drawbox=x='iw-360-mod(t*32\\,1080)':y=ih*0.58:w=360:h=360:color=white@0.055:t=fill`,
+
+    // Left ambient accent glow — soft, wide; breathes via width oscillation.
+    `drawbox=x='-ih*0.35+20*sin(t*1.6)':y=ih*0.10:w='ih*0.9+40*sin(t*1.6)':h=ih*0.9:color=${accentRgb}@${glowAlpha}:t=fill`,
+
+    // Right ambient soft glow — offset phase for alternate breathing.
+    `drawbox=x='iw-ih*0.55+18*sin(t*1.6+3.14)':y=ih*0.30:w='ih*0.9+30*sin(t*1.6+3.14)':h=ih*0.9:color=white@${glowSoft}:t=fill`,
+
+    // Drifting accent panel — linear+sine trajectory (breathing motion).
+    `drawbox=x='-280+mod(t*44+40*sin(t*1.2)\\,1000)':y=ih*0.10:w=280:h=280:color=${accentRgb}@${panelOpacity}:t=fill`,
+
+    // Drifting white panel — counter direction, faster sine wobble.
+    `drawbox=x='iw-360-mod(t*32+50*sin(t*0.9)\\,1080)':y=ih*0.58:w=360:h=360:color=white@0.055:t=fill`,
+
+    // Horizontal accent streak — fast, thin.
     `drawbox=x='-160+mod(t*120\\,880)':y=120:w=160:h=6:color=${accentRgb}@0.55:t=fill`,
+
+    // Small accent block — subtle secondary motion.
     `drawbox=x='iw-80-mod(t*90\\,820)':y=ih*0.18:w=80:h=80:color=${accentRgb}@0.18:t=fill`,
+
+    // Vertical accent bar — travels top to bottom with sine damping.
     `drawbox=x=80:y='220+mod(t*75\\,760)':w=5:h=180:color=${accentRgb}@0.45:t=fill`,
+
+    // Vertical white bar — right side, upward travel.
     "drawbox=x=iw-96:y='ih-320-mod(t*60\\,700)':w=8:h=220:color=white@0.22:t=fill",
+
+    // Full-width scan line — the primary attention-guide across screen.
     `drawbox=x=0:y='ih*0.28+mod(t*34\\,420)':w=iw:h=2:color=${accentRgb}@${lineOpacity}:t=fill`,
+
+    // Bottom sweeping accent line — feels like a subtitle underline.
     `drawbox=x='mod(t*132\\,iw+320)-320':y=ih*0.84:w=320:h=5:color=white@0.16:t=fill`,
+
+    // Vignette-lite: dark corner boxes darken the edges to focus attention
+    // on center caption. Cheaper and safer than the `vignette` filter, which
+    // can cost noticeable CPU on 4-core hosts.
+    "drawbox=x=0:y=0:w=iw:h=ih*0.06:color=black@0.35:t=fill",
+    "drawbox=x=0:y=ih*0.94:w=iw:h=ih*0.06:color=black@0.35:t=fill",
   ];
+}
+
+interface CardTiming { start: number; end: number }
+
+/**
+ * Compute per-card display windows weighted by word count so caption cards
+ * stay visible for a duration proportional to what the narrator is speaking.
+ *
+ * A 25-word card gets ~5× the display time of a 5-word card, aligning
+ * overlay + SRT/VTT with the actual audio rather than splitting the video
+ * into equal slots. Timings are rounded to one decimal so drawtext, SRT,
+ * and VTT reference the exact same boundaries.
+ *
+ * Guarantees:
+ *   - each card gets at least MIN_CARD_SEC = 1.5 s of screen time
+ *   - the last card ends exactly at `duration`
+ *   - card N+1 starts exactly when card N ends (no half-open gap between)
+ */
+function computeCardTimings(cards: string[], duration: number): CardTiming[] {
+  const MIN_CARD_SEC = 1.5;
+  const n = Math.max(1, cards.length);
+
+  const rawWeights = cards.map((c) => Math.max(1, c.trim().split(/\s+/).filter(Boolean).length));
+  const weightTotal = rawWeights.reduce((s, w) => s + w, 0);
+
+  // First pass: word-weighted allocation, floored at MIN_CARD_SEC.
+  const minTotal = n * MIN_CARD_SEC;
+  const flexTotal = Math.max(0, duration - minTotal);
+  const durations = rawWeights.map((w) => MIN_CARD_SEC + (flexTotal * w) / weightTotal);
+
+  // Rescale so sum equals `duration` even after flooring, then round to
+  // one decimal for stable FFmpeg + SRT boundaries.
+  const scale = duration / durations.reduce((s, d) => s + d, 0);
+  const scaled = durations.map((d) => Math.max(MIN_CARD_SEC, d * scale));
+
+  const timings: CardTiming[] = [];
+  let cursor = 0;
+  for (let i = 0; i < n; i += 1) {
+    const start = Math.round(cursor * 10) / 10;
+    const end = i === n - 1 ? duration : Math.round((cursor + (scaled[i] ?? 0)) * 10) / 10;
+    timings.push({ start, end });
+    cursor = end;
+  }
+  return timings;
 }
 
 // Build the filter_complex chain: fade in, per-card drawtext, progress bar, fade out.
@@ -346,15 +427,13 @@ function buildFilterComplex(
   accentHex: string,
   styleConfig: CaptionStyleConfig,
   rendererTier: RendererCapabilityTier,
+  timings: CardTiming[],
 ): string {
-  const slot = duration / textFiles.length;
   const accentRgb = accentHex.replace(/^0x/, "");
 
   const textFilters = textFiles.map((file, index) => {
-    const start = Math.floor(index * slot * 10) / 10;
-    const end = index === textFiles.length - 1
-      ? duration
-      : Math.floor((index + 1) * slot * 10) / 10;
+    const timing = timings[index] ?? { start: 0, end: duration };
+    const { start, end } = timing;
 
     const cardText = cardTexts[index] ?? "";
     const fontSize = fontSizeForText(cardText, styleConfig.baseFontSize);
@@ -401,17 +480,19 @@ function cueTimestamp(seconds: number, separator: "," | "."): string {
   return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}${separator}${String(ms).padStart(3, "0")}`;
 }
 
-function buildTimedText(cards: string[], duration: number): { srt: string; vtt: string } {
-  const slot = duration / Math.max(1, cards.length);
+function buildTimedText(
+  cards: string[],
+  duration: number,
+  timings: CardTiming[],
+): { srt: string; vtt: string } {
+  const resolved = timings.length === cards.length ? timings : computeCardTimings(cards, duration);
   const srt = cards.map((card, index) => {
-    const start = index * slot;
-    const end = index === cards.length - 1 ? duration : (index + 1) * slot;
-    return `${index + 1}\n${cueTimestamp(start, ",")} --> ${cueTimestamp(end, ",")}\n${card.replace(/\n/g, " ")}\n`;
+    const timing = resolved[index] ?? { start: 0, end: duration };
+    return `${index + 1}\n${cueTimestamp(timing.start, ",")} --> ${cueTimestamp(timing.end, ",")}\n${card.replace(/\n/g, " ")}\n`;
   }).join("\n");
   const vtt = `WEBVTT\n\n${cards.map((card, index) => {
-    const start = index * slot;
-    const end = index === cards.length - 1 ? duration : (index + 1) * slot;
-    return `${cueTimestamp(start, ".")} --> ${cueTimestamp(end, ".")}\n${card.replace(/\n/g, " ")}\n`;
+    const timing = resolved[index] ?? { start: 0, end: duration };
+    return `${cueTimestamp(timing.start, ".")} --> ${cueTimestamp(timing.end, ".")}\n${card.replace(/\n/g, " ")}\n`;
   }).join("\n")}`;
   return { srt, vtt };
 }
@@ -520,7 +601,8 @@ async function writeProductionPackage(input: {
   const packagedVoicePath = join(packageDir, "narration.wav");
   let voiceArtifact = input.voiceArtifact;
 
-  const timedText = buildTimedText(input.cards, input.duration);
+  const cardTimings = computeCardTimings(input.cards, input.duration);
+  const timedText = buildTimedText(input.cards, input.duration, cardTimings);
   await writeFile(transcriptPath, `${input.narration}\n`, "utf8");
   await writeFile(srtPath, timedText.srt, "utf8");
   await writeFile(vttPath, timedText.vtt, "utf8");
@@ -770,6 +852,7 @@ export async function renderWithFfmpeg(input: FfmpegRenderInput): Promise<{ outp
       }
     }
 
+    const renderTimings = computeCardTimings(cards, duration);
     const filterComplex = buildFilterComplex(
       fontFile,
       textFiles,
@@ -778,6 +861,7 @@ export async function renderWithFfmpeg(input: FfmpegRenderInput): Promise<{ outp
       accentColor,
       styleConfig,
       rendererTier,
+      renderTimings,
     );
 
     const inputArgs = voiceArtifact

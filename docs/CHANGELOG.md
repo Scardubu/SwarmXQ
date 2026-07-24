@@ -4,6 +4,45 @@
 
 ---
 
+## V6.2.56 — Voice/Text Sync + Ambient Motion Backgrounds (2026-07-24)
+
+### API — caption timing aligned to narration length
+
+- Added `computeCardTimings(cards, duration)` in `ffmpeg-video-renderer.ts`.
+  Card display windows are now weighted by word count so a 17-word body line
+  gets ~4.4 s of screen time while a 4-word CTA gets ~2.3 s — approximating
+  what the narrator actually spends on each card, instead of splitting the
+  video into equal slots regardless of content. Minimum readable floor per
+  card is 1.5 s. Boundaries rounded to one decimal for stable FFmpeg + SRT
+  alignment.
+- `buildFilterComplex()` and `buildTimedText()` (SRT + VTT) now consume the
+  same `CardTiming[]` array. The drawtext overlay, `captions.srt`, and
+  `captions.vtt` reference identical start/end times so on-screen text and
+  subtitles cannot drift apart.
+
+### API — ambient motion backgrounds
+
+- Added two full-height ambient glow layers (accent tone left, soft white
+  right) that oscillate width and horizontal position via `sin(t*1.6)` and
+  `sin(t*1.6+π)` respectively. The alternating breathing gives kinetic scenes
+  an organic pulse without stealing focus from the caption card.
+- Two drifting accent/white panels now use `mod(t*V + A*sin(t*ω), N)` for
+  linear + sine composite trajectories instead of pure linear scan, so
+  large moving elements feel wave-driven rather than robotic.
+- Added twin top/bottom edge vignette bars (`black@0.35`) that darken the
+  6% edges of the frame — cheaper and safer than FFmpeg's `vignette` filter
+  on 4-core CPU, but visually similar in centering attention on the caption.
+- Renderer tier scaling preserved: `ffmpeg_kinetic_text` gets the strongest
+  glow (0.09 accent), `ffmpeg_faceless_broll` middle (0.07), and
+  `ffmpeg_cinematic_explainer` stays muted (0.06) so overlaid b-roll is
+  never fought.
+
+### Artifact — improved v3 golden render
+
+- Regenerated `video_first-video-v3.mp4` with the two improvements: same
+  720×1280 H.264 @ 30 fps, 18.00 s, ~418 KB (up from 393 KB due to richer
+  motion). SRT card boundaries now match card word counts (2.3–4.4 s).
+
 ## V6.2.55 — M13 Golden-Path Live Re-Certification (2026-07-24)
 
 ### API — live pipeline resilience
