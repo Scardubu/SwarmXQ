@@ -13,28 +13,39 @@ import { getSwarmHealthSummary } from "../services/swarm-pressure-monitor.js";
 import { resolveRuntimeProfile } from "../services/runtime-profiles.js";
 import { readVoiceBenchmarkReport } from "../services/voice-benchmark-report.js";
 import { loadEnv } from "../lib/env.js";
+import { resolveCanonicalTag } from "@swarmx/types/operator-map";
 
 const execFileAsync = promisify(execFile);
 
-function getCanonicalModelTriad() {
+export function getCanonicalModelTriad() {
   const e = loadEnv();
   return [
     {
       role: "router",
-      tag: e.SWARMX_MODEL_ULTRA_ROUTER,
+      tag: resolveCanonicalTag(e.SWARMX_MODEL_ULTRA_ROUTER),
       gguf: "microsoft_Phi-4-mini-instruct-Q8_0.gguf",
     },
     {
       role: "reason",
-      tag: e.SWARMX_MODEL_REASON,
+      tag: resolveCanonicalTag(e.SWARMX_MODEL_REASON),
       gguf: "DeepSeek-R1-Distill-Qwen-7B-Q5_K_M.gguf",
     },
     {
       role: "code",
-      tag: e.SWARMX_MODEL_CODE,
+      tag: resolveCanonicalTag(e.SWARMX_MODEL_CODE),
       gguf: "Qwen2.5-7B-Instruct-Q5_K_M.gguf",
     },
   ] as const;
+}
+
+export function getSystemHealthModelConfig() {
+  const e = loadEnv();
+  return {
+    modelRouter: resolveCanonicalTag(e.SWARMX_MODEL_ULTRA_ROUTER),
+    modelFast: resolveCanonicalTag(e.SWARMX_MODEL_FAST),
+    modelReason: resolveCanonicalTag(e.SWARMX_MODEL_REASON),
+    modelCode: resolveCanonicalTag(e.SWARMX_MODEL_CODE),
+  };
 }
 
 type ModelStatus = "ready" | "missing" | "error";
@@ -271,12 +282,7 @@ export async function systemRouter(server: FastifyInstance): Promise<void> {
       config: (({ e }) => ({
         healthProbeTimeoutMs: livenessTimeoutMs,
         healthModelProbeTimeoutMs: modelProbeTimeoutMs,
-        // [V6.2-FIX-14] Alias chains resolved centrally in env.ts so diagnostics
-        // always reflect the same precedence as API routes/services at runtime.
-        modelRouter: e.SWARMX_MODEL_ULTRA_ROUTER,
-        modelFast: e.SWARMX_MODEL_FAST,
-        modelReason: e.SWARMX_MODEL_REASON,
-        modelCode: e.SWARMX_MODEL_CODE,
+        ...getSystemHealthModelConfig(),
         apiPort: e.SWARMX_API_PORT,
         ollamaPerf: {
           numParallel: e.OLLAMA_NUM_PARALLEL,

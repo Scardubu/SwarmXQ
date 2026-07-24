@@ -28,31 +28,36 @@ const { buildOutputMetadata } = await import("../src/services/video-assets.js");
 const { certifyProductionPack } = await import("../src/services/creative-factory-certification.js");
 
 const request: VideoJobRequest = {
-  prompt: "Create a short narrator-led explainer about why small daily systems outperform motivation.",
+  prompt: "Create a short kinetic text video titled \"Daily Systems Beat Motivation\".",
   platform: "tiktok",
   niche: "tech",
   targetDurationSeconds: 18,
-  tone: "educational",
-  style: "faceless_broll",
+  tone: "kinetic_text",
+  style: "kinetic_text",
   captionStyle: "bold_center",
   voice: "narrator",
   clientRequestId: "golden-path-first-video-v2",
 };
 
 const scriptText = [
-  "Motivation is a spark. Systems are the wiring.",
-  "Pick one daily trigger, then make the next action obvious.",
-  "Reduce the decision to a two minute start.",
-  "Track the streak, not the mood.",
-  "When the system is visible, consistency stops needing drama.",
+  "[HOOK]",
+  "Motivation loses by Wednesday. A visible system keeps going.",
+  "[BODY]",
+  "One trigger turns intention into motion. [VISUAL: glowing trigger card snaps into place, kinetic type, dark workspace, high contrast]",
+  "Make the next action impossible to miss. [VISUAL: oversized arrow points to a two-minute task, rapid text reveal, amber accent]",
+  "Track the streak, not the mood. [VISUAL: progress line climbs across five days, punchy motion typography, clean grid]",
+  "[RESOLUTION]",
+  "Design the first step before you need discipline. The system carries you when motivation leaves.",
+  "[CTA]",
+  "Build the trigger tonight.",
 ].join("\n");
 
 const storyboardFrames = [
-  "Opening title over a dark workspace with a moving focus ring and progress bar.",
-  "Checklist frame showing a single daily trigger and one highlighted next action.",
-  "Timer frame with a two minute countdown and kinetic caption emphasis.",
-  "Progress frame showing a visible streak line and completed task chips.",
-  "Final brand frame with a concise call to action and safe-zone caption placement.",
+  "Pattern-interrupt hook over black canvas with amber motion type and a progress bar.",
+  "Trigger card snaps into place beside a single highlighted next action.",
+  "Two-minute timer pulses while the arrow points to the first step.",
+  "Five-day streak line climbs with completed task chips.",
+  "Final loop frame repeats the trigger with a concise CTA in safe-zone text.",
 ];
 
 const result = await renderWithFfmpeg({

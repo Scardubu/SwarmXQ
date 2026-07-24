@@ -4,6 +4,29 @@
 
 ---
 
+## Unreleased — M9 Golden-Path Runtime Readiness (2026-07-24)
+
+### API — artifact config schema alignment
+
+- `/api/system/health` now reports canonical model tags for configured router,
+  fast, reason, and code models even when legacy aliases are supplied.
+- Video artifact storage now resolves export directory, artifact directory, and
+  public URL base through `loadEnv()` instead of direct service-level
+  `process.env` reads.
+- Added `SWARMX_VIDEO_PUBLIC_URL_BASE` with legacy
+  `VIDEO_PUBLIC_URL_BASE` compatibility; legacy `VIDEO_OUTPUT_DIR` is now
+  normalized by the env schema into `SWARMX_VIDEO_EXPORT_DIR`.
+- Video write auth now reads `SWARMX_VIDEO_API_TOKEN` at auth-check time
+  instead of caching it at module import, preserving fail-closed production
+  behavior while avoiding import-order surprises in scripts/process managers.
+
+### Quality gates
+
+- Extended `video-regression-check.ts` and `system-health-regression.ts` to
+  cover canonical diagnostics plus schema-backed artifact URL/path resolution.
+
+---
+
 ## V6.2.47 — Script Quality Bleed Fix + Creative Factory UI Polish (2026-07-23)
 
 ### API — Script quality signal

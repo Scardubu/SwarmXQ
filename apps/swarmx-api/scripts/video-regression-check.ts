@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import {
   FULL_PIPELINE_MIN_AVAILABLE_MB,
@@ -142,8 +142,25 @@ for (const errorCode of [
 const tempOutput = await mkdtemp(join(tmpdir(), "swarmx-video-regression-"));
 process.env["SWARMX_VIDEO_EXPORT_DIR"] = tempOutput;
 process.env["SWARMX_VIDEO_ALLOW_STUB_RENDER"] = "0";
+resetEnvForTesting();
 const assets = await import("../src/services/video-assets.js");
 assert.equal(assets.outputDir(), tempOutput);
+process.env["SWARMX_VIDEO_PUBLIC_URL_BASE"] = "https://cdn.example.test/video/";
+resetEnvForTesting();
+assert.equal(
+  assets.resolvePublicUrl("clip one.mp4"),
+  "https://cdn.example.test/video/clip%20one.mp4",
+);
+delete process.env["SWARMX_VIDEO_PUBLIC_URL_BASE"];
+
+const legacyOutput = await mkdtemp(join(tmpdir(), "swarmx-video-legacy-output-"));
+delete process.env["SWARMX_VIDEO_EXPORT_DIR"];
+process.env["VIDEO_OUTPUT_DIR"] = legacyOutput;
+resetEnvForTesting();
+assert.equal(assets.outputDir(), resolve(legacyOutput));
+delete process.env["VIDEO_OUTPUT_DIR"];
+process.env["SWARMX_VIDEO_EXPORT_DIR"] = tempOutput;
+resetEnvForTesting();
 await assert.rejects(
   () => assets.buildOutputMetadata({
     jobId: "missing",
@@ -212,6 +229,15 @@ assert.equal(
   authSource.includes("void reply.code(401)"),
   false,
   "video-auth must not use 'void reply.code(401)' — execution would continue past auth failure",
+);
+assert.ok(
+  authSource.includes("function readVideoWriteToken"),
+  "video-auth must read SWARMX_VIDEO_API_TOKEN at auth-check time",
+);
+assert.equal(
+  authSource.includes("const VIDEO_WRITE_TOKEN"),
+  false,
+  "video-auth must not cache SWARMX_VIDEO_API_TOKEN at module import time",
 );
 
 // ── Sanitizer integration regression (Phase-1 fix) ────────────────────────────

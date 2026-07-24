@@ -15,6 +15,10 @@
  *   PYTHONPATH                — system variable, not app config
  *   readBoundedEnvInt(name)   — parametric lookup in video-runtime-config.ts
  *   resolveVideoModelTag()    — dynamic stage-keyed lookup in video-runtime-config.ts
+ *
+ * Legacy aliases normalized here:
+ *   VIDEO_OUTPUT_DIR          → SWARMX_VIDEO_EXPORT_DIR
+ *   VIDEO_PUBLIC_URL_BASE     → SWARMX_VIDEO_PUBLIC_URL_BASE
  */
 
 import { z } from "zod";
@@ -145,8 +149,15 @@ const schema = z.object({
   SWARMX_VIDEO_ALLOW_UNSTRUCTURED_INTENT: boolFlag,
   SWARMX_VIDEO_RENDER_BACKEND: z.string().default("auto"),
   SWARMX_VIDEO_MAX_BATCH_SIZE: positiveInt.default(8),
-  SWARMX_VIDEO_EXPORT_DIR: z.string().default(".swarmx/video/exports"),
-  SWARMX_VIDEO_ARTIFACT_DIR: z.string().default(".swarmx/video/artifacts"),
+  SWARMX_VIDEO_EXPORT_DIR: z.preprocess(
+    (val) => val ?? process.env["VIDEO_OUTPUT_DIR"] ?? ".swarmx/video/exports",
+    z.string().min(1),
+  ),
+  SWARMX_VIDEO_ARTIFACT_DIR: z.string().min(1).default(".swarmx/video/artifacts"),
+  SWARMX_VIDEO_PUBLIC_URL_BASE: z.preprocess(
+    (val) => val ?? process.env["VIDEO_PUBLIC_URL_BASE"] ?? "/api/video/files",
+    z.string().min(1),
+  ),
   SWARMX_VIDEO_TEMP_DIR: z.preprocess(
     (val) => val ?? path.join(process.cwd(), ".swarmx", "video", "tmp"),
     z.string(),

@@ -43,7 +43,8 @@ decisions use physical `MemAvailable` and report ZRAM separately.
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `SWARMX_VIDEO_ARTIFACT_DIR` | `.swarmx/video/artifacts` | Job metadata, queue recovery data, and performance records. |
-| `SWARMX_VIDEO_EXPORT_DIR` | `.swarmx/video/exports` | Final rendered files served by the API. |
+| `SWARMX_VIDEO_EXPORT_DIR` | `.swarmx/video/exports` | Final rendered files served by the API. Legacy `VIDEO_OUTPUT_DIR` is still accepted by the env schema. |
+| `SWARMX_VIDEO_PUBLIC_URL_BASE` | `/api/video/files` | Public URL prefix embedded in final output metadata. Legacy `VIDEO_PUBLIC_URL_BASE` is still accepted by the env schema. |
 | `SWARMX_VIDEO_TEMP_DIR` | `.swarmx/video/tmp` | Per-render FFmpeg workspaces, removed after each render. |
 | `SWARMX_VIDEO_FFMPEG_TIMEOUT_MS` | `240000` | Local render command timeout, bounded to 30–900 seconds. |
 | `SWARMX_VIDEO_FFPROBE_TIMEOUT_MS` | `15000` | Artifact validation timeout, bounded to 5–60 seconds. |

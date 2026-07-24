@@ -120,6 +120,7 @@ SWARMX_MODEL_CODE=code-qwen25-pro-q5km-prod             # script + storyboard ge
 SWARMX_COMFYUI_URL=http://127.0.0.1:8188
 SWARMX_VIDEO_ARTIFACT_DIR=./.swarmx/video/artifacts
 SWARMX_VIDEO_EXPORT_DIR=./.swarmx/video/exports
+SWARMX_VIDEO_PUBLIC_URL_BASE=/api/video/files
 SWARMX_VIDEO_TEMP_DIR=./.swarmx/video/tmp
 SWARMX_VIDEO_FFMPEG_TIMEOUT_MS=240000
 SWARMX_VIDEO_FFPROBE_TIMEOUT_MS=15000

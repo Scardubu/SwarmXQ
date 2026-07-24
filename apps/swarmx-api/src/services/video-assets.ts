@@ -11,7 +11,7 @@
 
 import { createHash } from "node:crypto";
 import { copyFile, stat, unlink, writeFile, mkdir } from "node:fs/promises";
-import { basename, join, resolve, sep } from "node:path";
+import { basename, resolve, sep } from "node:path";
 import { createReadStream, existsSync } from "node:fs";
 import type { VideoOutputMetadata, VideoJobRequest, VideoJobStage } from "../types/video.js";
 import type { FfmpegRenderPackage } from "./ffmpeg-video-renderer.js";
@@ -20,20 +20,21 @@ import { loadEnv } from "../lib/env.js";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const OUTPUT_DIR = resolve(
-  process.env.SWARMX_VIDEO_EXPORT_DIR ??
-    process.env.VIDEO_OUTPUT_DIR ??
-    join(process.cwd(), ".swarmx", "video", "exports")
-);
+function configuredOutputDir(): string {
+  return resolve(loadEnv().SWARMX_VIDEO_EXPORT_DIR);
+}
 
-const ARTIFACT_DIR = resolve(
-  process.env.SWARMX_VIDEO_ARTIFACT_DIR ??
-    join(process.cwd(), ".swarmx", "video", "artifacts"),
-);
+function configuredArtifactDir(): string {
+  return resolve(loadEnv().SWARMX_VIDEO_ARTIFACT_DIR);
+}
 
-const PUBLIC_URL_BASE = process.env.VIDEO_PUBLIC_URL_BASE ?? "/api/video/files";
+function configuredPublicUrlBase(): string {
+  return loadEnv().SWARMX_VIDEO_PUBLIC_URL_BASE.replace(/\/+$/, "");
+}
 
-const FFPROBE_TIMEOUT_MS = Math.min(60_000, Math.max(5_000, loadEnv().SWARMX_VIDEO_FFPROBE_TIMEOUT_MS));
+function configuredFfprobeTimeoutMs(): number {
+  return Math.min(60_000, Math.max(5_000, loadEnv().SWARMX_VIDEO_FFPROBE_TIMEOUT_MS));
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,12 +51,13 @@ export interface BuildMetadataInput {
 // ─── Path Resolution ──────────────────────────────────────────────────────────
 
 export function outputDir(): string {
-  return OUTPUT_DIR;
+  return configuredOutputDir();
 }
 
 export function resolveOutputPath(filename: string): string {
-  const resolved = resolve(OUTPUT_DIR, filename);
-  const root = OUTPUT_DIR.endsWith(sep) ? OUTPUT_DIR : `${OUTPUT_DIR}${sep}`;
+  const exportDir = configuredOutputDir();
+  const resolved = resolve(exportDir, filename);
+  const root = exportDir.endsWith(sep) ? exportDir : `${exportDir}${sep}`;
   if (!resolved.startsWith(root)) {
     throw Object.assign(new Error("Output filename escapes export directory"), {
       code: "ARTIFACT_PATH_TRAVERSAL",
@@ -65,7 +67,7 @@ export function resolveOutputPath(filename: string): string {
 }
 
 export function resolvePublicUrl(filename: string): string {
-  return `${PUBLIC_URL_BASE}/${filename}`;
+  return `${configuredPublicUrlBase()}/${encodeURIComponent(filename)}`;
 }
 
 // ─── Metadata Builder ─────────────────────────────────────────────────────────
@@ -191,7 +193,7 @@ export async function importComfyOutput(filename: string): Promise<string> {
     });
   }
 
-  await mkdir(OUTPUT_DIR, { recursive: true });
+  await mkdir(outputDir(), { recursive: true });
   const target = resolveOutputPath(safeName);
   await copyFile(source, target);
   return safeName;
@@ -233,7 +235,7 @@ async function probeMedia(
         "json",
         filePath,
       ],
-      { timeout: FFPROBE_TIMEOUT_MS, maxBuffer: 1024 * 1024 },
+      { timeout: configuredFfprobeTimeoutMs(), maxBuffer: 1024 * 1024 },
     );
 
     const parsed = JSON.parse(stdout) as {
@@ -297,7 +299,7 @@ export interface ArtifactManifestEntry {
 export async function listArtifacts(): Promise<ArtifactManifestEntry[]> {
   try {
     const { readdir } = await import("node:fs/promises");
-    const files = await readdir(OUTPUT_DIR);
+    const files = await readdir(outputDir());
     return files
       .filter((f) => f.endsWith(".mp4") || f.endsWith(".webm"))
       .map((f) => ({
@@ -319,8 +321,9 @@ export async function recordVideoPerformance(
   jobId: string,
   metrics: VideoPerformanceMetrics,
 ): Promise<string> {
-  await mkdir(ARTIFACT_DIR, { recursive: true });
-  const outputPath = resolve(ARTIFACT_DIR, `${jobId}.performance.json`);
+  const artifactDir = configuredArtifactDir();
+  await mkdir(artifactDir, { recursive: true });
+  const outputPath = resolve(artifactDir, `${jobId}.performance.json`);
   await writeFile(outputPath, `${JSON.stringify(metrics, null, 2)}\n`, "utf8");
   return outputPath;
 }

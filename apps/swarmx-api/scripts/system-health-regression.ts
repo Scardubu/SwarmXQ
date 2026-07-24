@@ -3,6 +3,8 @@ import { writeFileSync, unlinkSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  getCanonicalModelTriad,
+  getSystemHealthModelConfig,
   getSystemHealthLivenessTimeoutMs,
   getSystemHealthModelTimeoutMs,
   readWarmupStatus,
@@ -46,6 +48,18 @@ function main(): void {
   assert.strictEqual(unreachableModels.length, 3);
   assert.ok(unreachableModels.every((model) => model.status === "error"));
   assert.ok(unreachableModels.every((model) => model.error === "Ollama unreachable"));
+  withEnvironment("SWARMX_MODEL_FAST", "phi4-fast", () => {
+    withEnvironment("SWARMX_MODEL_REASON", "deepseek-reasoner", () => {
+      withEnvironment("SWARMX_MODEL_CODE", "qwen-worker", () => {
+        const config = getSystemHealthModelConfig();
+        assert.strictEqual(config.modelFast, "instruct-phi4-pro-q8-prod");
+        assert.strictEqual(config.modelReason, "reason-deepseekr1-pro-q5km-prod");
+        assert.strictEqual(config.modelCode, "code-qwen25-pro-q5km-prod");
+        assert.ok(getCanonicalModelTriad().every((model) => !model.tag.includes("qwen-worker")));
+        assert.ok(getCanonicalModelTriad().every((model) => !model.tag.includes("deepseek-reasoner")));
+      });
+    });
+  });
 
   // ── Warmup status reader (V6.2.26) ────────────────────────────────────────
   const tmpDir = mkdtempSync(join(tmpdir(), "swarmxq-warmup-"));

@@ -1,5 +1,5 @@
-# NEXUS — Task Orchestration Engine v2.2 (SwarmXQ Edition)
-# Baseline: V6.2.22 · APEX-17 r8 · 38-skill registry
+# NEXUS — Task Orchestration Engine v3.0 (SwarmXQ Edition)
+# Baseline: V6.2.53 · APEX-17 r8 · 39-skill registry
 
 > **Disambiguation — read this first.**
 >
@@ -73,6 +73,12 @@ Classify every incoming task. A task may map to multiple types; resolve the full
 | **CI / Release Gates** | "GitHub Actions", "ci.yml", "quality gate", "pnpm cache", "regression script", "vitest run", "tsc --noEmit", "next build", "release checklist", "deploy gate", "CHANGELOG" |
 | **Python Agent Brain** | "src/swarmx/", "structlog", "asyncio", "agent catalog", "IEP-ELITE", "ORIENT", "LOAD", "PLAN", "μ-GATE", "EXECUTE", "REFLECT", "EMIT", "operator taxonomy" |
 | **Meta-Evolution / Evolver** | "evolver agent", "tournament selection", "promote agent", "tournament judge", "evolution cycle", "meta-evolution", "self-evolving", "skill curator", "memory curator", "Lab operator" |
+| **Creative Intelligence** | "hook laboratory", "HookFamily", "HOOK_FAMILIES", "validateHookCandidate", "classifyHookFamily", "concept tournament", "ConceptCandidate", "ConceptTournament", "runConceptTournament", "fingerprintCandidate", "pairwiseDiversityWarnings", "scoreCandidate", "creative-quality.ts", "hook-laboratory.ts", "creative-tournament.ts" |
+| **Retention Analysis** | "RetentionMap", "RetentionBeat", "BeatLabel", "DropOffRisk", "generateRetentionMap", "retention-map/preview", "Retention Lab", "thin-content", "unrecoveredHighRiskCount" |
+| **Scene DSL / Render Recipe** | "SceneSpec", "ValidatedRenderRecipe", "render-recipe-compiler", "compileRenderRecipe", "sanitizeTextForFilter", "MotionPreset", "TransitionPreset", "safeFilterTokens" |
+| **Audio Mastering** | "audio mastering", "EBU R128", "loudnorm", "masterAudio", "AudioMasteringRequest", "targetLUFS", "truePeakCeiling", "AUDIO_PLATFORM_PROFILES" |
+| **Template-Aware QC** | "template-aware QC", "TemplateQcResult", "RawQcFinding", "QcFindingInterpretation", "runTemplateQc", "parseDetectorIntervals", "UNCONDITIONAL_BLOCKERS", "TIER_RULES" |
+| **Runtime Profiles** | "RuntimeProfileId", "constrained_cpu_8gb", "standard_cpu_16gb", "accelerated_optional", "RUNTIME_PROFILE_DEFINITIONS", "normalizeRuntimeProfileId" |
 
 ---
 
@@ -358,8 +364,13 @@ Use the repo's stack to sharpen routing.
 
 **Creative Output Quality**
 - `TONE_RULES`, `HOOK_BLOCKLIST`, `CAPTION_RULES`, `VIRALITY_SCORE_RUBRIC` → `swarmxq-creative-director`
+- `creative-quality.ts`, `hook-laboratory.ts`, `creative-tournament.ts`, `retention-map.ts` → `swarmxq-creative-director`
 - Stage prompts in `video-orchestrator.ts` → `swarmxq-creative-director` + `prompt-engineering-architect`
-- Dashboard: script section renderer, virality panel, caption editor → `swarmxq-creative-director` + `data-visualization-architect`
+- Dashboard: script section renderer, virality panel, caption editor, RetentionMap preview → `swarmxq-creative-director` + `data-visualization-architect`
+
+**Render & Media Quality**
+- `render-recipe-compiler.ts`, `audio-mastering.ts`, `template-aware-qc.ts` → `swarmxq-video-pipeline-architect`
+- `runtime-profiles.ts`, `video-runtime-config.ts` → `swarmxq-model-orchestrator`
 
 ---
 
@@ -421,7 +432,7 @@ When skills produce conflicting recommendations, resolve in this order:
 
 ---
 
-# FULL SKILL REGISTRY (38 SKILLS)
+# FULL SKILL REGISTRY (39 SKILLS)
 
 ## Cluster 1 — Editor & Environment
 
@@ -534,21 +545,32 @@ Followed by:
 
 ---
 
-# VERIFIED COMPONENT STATE (V6.2.21 — 2026-07-17)
+# VERIFIED COMPONENT STATE (V6.2.53 — 2026-07-24)
 
 ## Routing Implications from Verified Ground Truth
 
 | Verified Fact | NEXUS Routing Implication |
 |---|---|
-| Zero `console.*` in services/routes (V6.2.21) | Logging tasks: `log.*` from `src/lib/logger.ts` only; reject any PR adding `console.*` |
+| Zero `console.*` in services/routes | Logging tasks: `log.*` from `src/lib/logger.ts` only; reject any PR adding `console.*` |
 | `loadEnv()` wired in `server.ts` | Env tasks: always add to `env.ts` Zod schema; never direct `process.env` for validated vars |
-| VOT-09 through VOT-13 applied to `video-orchestrator.ts` | Video pipeline tasks: `modelsUsed` set in stage fn; `{ once: true }` on all listeners; `sanitizeReasoningOutput()` mandatory |
-| `MAX_CONCURRENT_JOBS=1` (SINGLE-VIDEO LOCK) | Queue tasks: never suggest concurrent video jobs; CPU inference is serial |
-| BullMQ disabled by default | Queue tasks: Priority 1 milestone; route to `bullmq-job-architect` |
-| 52 vitest tests passing (dashboard package only) | Testing tasks: API package has zero unit tests; Priority 4 milestone |
-| No GitHub Actions CI | Release tasks: Priority 2 milestone; route to `swarmxq-ci-release-architect` + `git-workflow-architect` |
-| 16 GB hardware | Model tasks: `OLLAMA_MAX_LOADED_MODELS=2` is valid; dual-model residency unlocked but not yet activated via `startup-enhanced.sh` |
-| TONE_RULES completeness unverified | Creative tasks: verify `faceless_broll` and `kinetic_text` in `TONE_RULES` before any tone-related change |
+| VOT-09 through VOT-13 applied | Video pipeline: `modelsUsed` in stage fn; `{ once: true }` on listeners; `sanitizeReasoningOutput()` mandatory |
+| `MAX_CONCURRENT_JOBS=1` | Queue tasks: never suggest concurrent video jobs; CPU inference is serial |
+| BullMQ enabled, Worker co-located | Queue tasks: Worker + Queue use separate ioredis connections; Redis fallback to in-memory |
+| 338 vitest tests passing | Testing: ≥338 baseline; route to `testing-strategy-architect` for any new test file |
+| GitHub Actions CI active | Release: route to `swarmxq-ci-release-architect` + `git-workflow-architect` |
+| 16 GB profile active | Model: `OLLAMA_MAX_LOADED_MODELS=2` valid; dual-model residency unlocked |
+| TONE_RULES all 8 variants | Creative: `faceless_broll` and `kinetic_text` confirmed present; CI grep gate validates |
+| HOOK_BLOCKLIST consolidated | Creative: single source at `src/lib/creative-quality.ts`; both orchestrator + preproducer import |
+| Hook laboratory (10 families) | Creative: `validateHookCandidate()` + `classifyHookFamily()` wired; route to `swarmxq-creative-director` |
+| Concept tournament (11-axis) | Creative: `fingerprintCandidate()` + Levenshtein diversity; `scoreCandidate()` composite |
+| RetentionMap (7 beats) | Creative: soft guard only; `generateRetentionMap()` available; preview endpoint wired |
+| Render recipe compiler | Pipeline: `sanitizeTextForFilter()` + SHA-256 asset validation; route to `swarmxq-video-pipeline-architect` |
+| EBU R128 audio mastering | Pipeline: two-pass loudnorm; 5 platform profiles; route to `swarmxq-video-pipeline-architect` |
+| Template-aware QC | Pipeline: per-tier finding interpretation; `UNCONDITIONAL_BLOCKERS` cannot be overridden |
+| INV-18 transitions exist | Cert: 4 transition functions (`transitionToPublishing` etc.) + `LATERAL_TERMINAL_TIERS` |
+| Doctor CLI scaffolded | Startup: 6 checks; route to `swarmxq-startup-ops-architect` |
+| Runtime profiles typed | Model: `constrained_cpu_8gb`, `standard_cpu_16gb`, `accelerated_optional` defined |
+| RuntimeCapabilityStrip | Dashboard: Ollama/RAM/Warmup/Voice status in top bar |
 
 ---
 
@@ -566,3 +588,10 @@ While executing any task, NEXUS adds these to the skill selection if violations 
 | `COMFY_POLL_MAX_ATTEMPTS` as literal | `swarmxq-video-pipeline-architect` → derive from stage timeout |
 | Cold-start ETA hard-coded in dashboard | `swarmxq-startup-ops-architect` → read from `/api/system/health` |
 | `RAM_CRITICAL_MB` or `MAX_CONCURRENT_JOBS` changed | Revert immediately — protected constants |
+| `certificationTier` assigned without `clampCertificationTier()` | `swarmxq-video-pipeline-architect` → fix; INV-15 |
+| `HOOK_BLOCKLIST` defined in more than one file | `swarmxq-creative-director` → must import from `src/lib/creative-quality.ts` |
+| `sanitizeTextForFilter()` bypassed in render recipe | `swarmxq-video-pipeline-architect` → fix; INV-19 |
+| Audio output not loudness-normalized | `swarmxq-video-pipeline-architect` → wire through `masterAudio()`; INV-20 |
+| Template-aware QC skipped for production renderer | `swarmxq-video-pipeline-architect` → add `runTemplateQc()` call; INV-21 |
+| `UNCONDITIONAL_BLOCKERS` overridden by template tier | `swarmxq-video-pipeline-architect` → BLOCK; INV-21 — `MISSING_AUDIO` and `FIRST_FRAME_EMPTY` are never expected |
+| RetentionMap throws on high risk | `swarmxq-video-pipeline-architect` → fix; INV-22 — soft guard only, never throw |

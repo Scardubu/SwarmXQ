@@ -1,30 +1,57 @@
 # AI Engineering Control System (Claude Code)
 # SwarmXQ — Autonomous Multi-Agent AI Orchestration Platform
 # Baseline: V6.2.53 · APEX-17 r8 · Hardware: 16 GB RAM (HP EliteBook 850 G3 · CPU-only · bare-metal Linux)
-# Video Generator Principal Engineer Directive: V3.2.0
+# Video Generator Principal Engineer Directive: V3.4.0
 # Lagos precision. Global scale.
 #
 # CHANGELOG
-# V3.2.0 (2026-07-23): IEP-ELITE meta-protocol for Claude Code; μ-GATE/BLOCK taxonomy; FREE TOOL INTEGRATION
-#   REGISTRY (Kokoro-82M, Piper, whisper.cpp, Openverse); session-end protocol; INV-18 cert-tier
-#   state-machine wiring constraint; V4 S2–S5 + doctor CLI + JSON-mode milestones; corrected release
-#   gate counts (248 API tests as of V6.2.50, 14 dashboard routes); SAFE DEFAULTS updated with voice benchmark env vars
+# V3.4.0 (2026-07-24): Reconciliation with V6.2.50–53 codebase reality:
+#   - 39 skills confirmed on disk (swarmxq-ci-release-architect was missing from count)
+#   - Skill count, NEXUS baseline, slash commands, test counts all corrected to V6.2.53
+#   - NEXUS Required+Conditional skill graph routing tables added from NEXUS.md Step 2
+#   - Stack Fingerprint Routing from NEXUS.md Step 3 embedded
+#   - Companion skill co-loading requirements formalized (11 mandatory pairings)
+#   - Python Agent Brain + Meta-Evolution/Evolver intent types added
+#   - NEXUS Autonomous Scanning Triggers wired into Opportunity Discovery
+#   - Milestones 9–11 (doctor, HOOK_BLOCKLIST, QUICK_DRAFT, hook lab, tournament,
+#     RetentionMap, scene DSL, audio mastering, template-aware QC) marked DONE
+#   - INV-18 updated: 4 transition functions now exist (V6.2.50)
+#   - INV-19 (render recipe compiler security) + INV-20 (audio mastering) +
+#     INV-21 (template-aware QC) + INV-22 (retention map soft guard) added
+#   - Verified Ground Truth updated: 338 API tests, 21 test files, 14 new services
+#   - SAFE DEFAULTS: SWARMX_AUDIO_PLATFORM added
+#   - Confirmed Incomplete table reflects current V6.2.53 state
+# V3.2.0 (2026-07-23): IEP-ELITE meta-protocol; μ-GATE/BLOCK taxonomy; FREE TOOL INTEGRATION
+#   REGISTRY; session-end protocol; INV-18; corrected release gate counts
 # V3.1.0 (V6.2.45): APEX-17 r8 operator migration; SYSTEM-PROMPT V3.0; INV-15/16/17 added
 # V3.0.0 (V6.2.21): Original production control document
 
 This repository is governed by a modular AI skill system located at:
 
 ```
-.ai/skills/          ← 38-skill domain suite (34 generic + 4 SwarmXQ-platform)
-.claude/commands/    ← Claude Code slash commands (/nexus, /audit, /video, /forge, /model-ops)
+.ai/skills/          ← 39-skill domain suite (35 generic + 4 SwarmXQ-platform)
+.claude/commands/    ← Claude Code slash commands (5 commands — see table below)
+NEXUS.md             ← NEXUS orchestration engine v3.0 (routing intelligence)
 ```
 
-Orchestration is handled by **NEXUS** — every task routes through NEXUS before
-any implementation begins. See the mandatory entry point section below.
+**Slash commands:**
+
+| Command | Purpose |
+|---|---|
+| `/nexus` | Task intent classification → skill graph selection → execution ordering |
+| `/video` | Video pipeline deep-dive: stage contracts, render backend, invariants |
+| `/audit` | System-wide production-readiness audit against invariants + quality gates |
+| `/forge` | Skill generation via `elite-skill-forge` only |
+| `/model-ops` | APEX-17 r8 model routing, SINGLE-7B LOCK, RAM pressure, startup ops |
+
+Orchestration is handled by **NEXUS** (`NEXUS.md`) — every task routes through
+NEXUS's 4-step protocol (CLASSIFY → SELECT GRAPH → STACK FINGERPRINT → CONFLICT
+RESOLUTION) before any implementation begins.
 
 > ⚠️ **Skill directory notice**: The `.ai/skills/` folder must contain ONLY the
-> 38 skills listed in the registry below. Do not install `sabiscore-*` skills here —
+> 39 skills listed in the registry below. Do not install `sabiscore-*` skills here —
 > those belong to the SabiScore vertical repository, not SwarmXQ.
+> Verify with: `ls .ai/skills/ | wc -l  # must equal 39`
 
 ---
 
@@ -174,10 +201,11 @@ Before ANY action that involves understanding, modifying, or generating code:
 
 1. Run the IEP-ELITE meta-protocol silently (see above)
 2. Route through **NEXUS** for task classification and skill selection
-3. Load ONLY the skills NEXUS selects — never blind-load all 38
-4. Execute skills in NEXUS's dependency order
-5. Resolve conflicts using the priority hierarchy below
-6. Open every code response with a **Skill Trace Block**
+3. Load ONLY the skills NEXUS selects — never blind-load all 39
+4. Load mandatory companion skills (see table below) — violating pairings produces unsafe code
+5. Execute skills in NEXUS's dependency order
+6. Resolve conflicts using the priority hierarchy below
+7. Open every code response with a **Skill Trace Block**
 
 ```
 ┌─ NEXUS ─────────────────────────────────────────────────────┐
@@ -199,24 +227,109 @@ All tasks MUST begin with:
 
 👉 **NEXUS** (`/nexus` or read `NEXUS.md`)
 
-NEXUS is the system orchestrator responsible for:
-- Task intent classification (including SwarmXQ-domain intents)
-- Skill selection from the 38-skill registry
-- Dependency graph resolution and execution ordering
-- Conflict resolution using the priority hierarchy
+NEXUS operates in 4 steps — execute all before writing code:
 
-**No other skill may be invoked before NEXUS has run.**
+```
+STEP 1 — CLASSIFY INTENT: Map task to an intent type (see §SWARMXQ-SPECIFIC INTENT TYPES)
+STEP 2 — SELECT SKILL GRAPH: Required + Conditional skills for the intent (see graph tables below)
+STEP 3 — STACK FINGERPRINT: Match the file being edited to its primary skills
+STEP 4 — CONFLICT RESOLUTION: Resolve conflicting recommendations using the priority hierarchy
+```
+
+**No other skill may be invoked before NEXUS has classified the intent.**
+NEXUS does not implement — it routes. All implementation happens inside the selected skills.
+
+## Companion Skill Requirements (Mandatory Co-loading)
+
+These pairings are declared inside the skill SKILL.md files themselves. Violating them
+produces incomplete, contradictory, or hardware-unsafe implementations.
+
+| Primary Skill | Must Co-load | Reason |
+|---|---|---|
+| `swarmxq-video-pipeline-architect` | `swarmxq-model-orchestrator` | Model acquisition is inseparable from pipeline stage execution |
+| `swarmxq-creative-director` | `swarmxq-video-pipeline-architect` | Creative quality gates enforce inside pipeline stage functions |
+| `swarmxq-startup-ops-architect` | `swarmxq-model-orchestrator` | Startup ops directly gates model acquisition behavior |
+| `swarmxq-model-orchestrator` | `swarmxq-video-pipeline-architect` | When model changes affect pipeline stage contracts |
+| `motion-interaction-architect` | `motion-performance-architect` (first) | Strategy before implementation |
+| `multi-agent-orchestration-architect` | `swarmxq-model-orchestrator` | Agent dispatch requires operator tag resolution |
+| `bullmq-job-architect` | `backend-systems-auditor` | Graceful Worker shutdown is a backend contract |
+| `swarmxq-ci-release-architect` | `git-workflow-architect` | CI gates require commit + branch protection config |
+
+## NEXUS Skill Graph Selection (Step 2 — Required + Conditional per Intent)
+
+### Video Pipeline
+```
+Required:   swarmxq-video-pipeline-architect + swarmxq-model-orchestrator + swarmxq-creative-director
+Conditional: swarmxq-startup-ops-architect · real-time-systems-architect · bullmq-job-architect
+             opentelemetry-observability-architect · testing-strategy-architect
+             prompt-engineering-architect · backend-systems-auditor
+```
+
+### Creative Quality / Script / Virality / Captions
+```
+Required:   swarmxq-creative-director + swarmxq-video-pipeline-architect
+Conditional: prompt-engineering-architect · testing-strategy-architect · data-visualization-architect
+```
+
+### Model Orchestration / SINGLE-7B LOCK
+```
+Required:   swarmxq-model-orchestrator
+Conditional: swarmxq-startup-ops-architect · swarmxq-video-pipeline-architect
+             opentelemetry-observability-architect · testing-strategy-architect
+```
+
+### Agent System / Multi-Agent / Python Brain
+```
+Required:   multi-agent-orchestration-architect + swarmxq-model-orchestrator
+Conditional: prompt-engineering-architect · bullmq-job-architect · security-hardening-auditor
+```
+
+### Dashboard Frontend
+```
+Required:   frontend-product-design-architect + accessibility-system-architect + component-quality-gate
+Conditional: design-token-system-architect · motion-performance-architect → motion-interaction-architect
+             data-visualization-architect · nextjs-performance-architect · real-time-systems-architect
+```
+
+### GitHub Actions CI / Release
+```
+Required:   swarmxq-ci-release-architect + git-workflow-architect + testing-strategy-architect
+```
+
+### Skill Generation → `elite-skill-forge` only (no other skill handles SKILL.md creation)
+
+## Stack Fingerprint Routing (Step 3 — File → Skill Mapping)
+
+| File / Pattern | Primary Skills |
+|---|---|
+| `video-orchestrator.ts`, `video-queue.ts`, `ffmpeg-video-renderer.ts` | `swarmxq-video-pipeline-architect` + `swarmxq-model-orchestrator` |
+| `virality-scorer.ts`, `caption-generator.ts`, `creative-quality.ts`, `hook-laboratory.ts` | `swarmxq-creative-director` + `swarmxq-video-pipeline-architect` |
+| `creative-tournament.ts`, `retention-map.ts`, `render-recipe-compiler.ts` | `swarmxq-creative-director` + `swarmxq-video-pipeline-architect` |
+| `audio-mastering.ts`, `template-aware-qc.ts` | `swarmxq-video-pipeline-architect` |
+| `model-orchestrator.ts`, `video-runtime-config.ts`, `runtime-profiles.ts` | `swarmxq-model-orchestrator` |
+| `startup-enhanced.sh`, `/api/system/health`, warmup status | `swarmxq-startup-ops-architect` + `swarmxq-model-orchestrator` |
+| `voice-providers.ts`, `voice-benchmark-report.ts`, `voice-benchmark.ts` | `swarmxq-startup-ops-architect` |
+| `creative-factory-workflow.ts`, `creative-factory-certification.ts` | `swarmxq-video-pipeline-architect` |
+| `creative-factory-registry.ts`, `creative-factory-analytics.ts` | `swarmxq-creative-director` |
+| `server.ts` boot, graceful shutdown | `backend-systems-auditor` |
+| `src/lib/env.ts` (Zod schema) | `typescript-config-surgeon` + `backend-systems-auditor` |
+| `video-queue.ts`, BullMQ Worker code | `bullmq-job-architect` + `backend-systems-auditor` |
+| SSE routes, `subscribeToJob`, `BroadcastFn` | `real-time-systems-architect` |
+| OTel spans, `instrumentation.ts`, `tracer.ts` | `opentelemetry-observability-architect` |
+| `src/swarmx/` (Python brain), `operator_map.py` | `multi-agent-orchestration-architect` + `swarmxq-model-orchestrator` |
+| Any file with `process.env[` or `console.` | `backend-systems-auditor` (Critical — fix before other work) |
 
 > ⚠️ **Name disambiguation:**
 >
 > | Tool | Location | Purpose |
 > |---|---|---|
 > | NEXUS | `NEXUS.md` / `.claude/commands/nexus.md` | Routes tasks → selects skill graphs → orders execution |
-> | `elite-skill-forge` | `.ai/skills/elite-skill-forge/` | Generates new SKILL.md files from domain descriptions |
-> | `swarmxq-video-pipeline-architect` | `.ai/skills/swarmxq-video-pipeline-architect/` | SwarmXQ 6-stage pipeline contracts and invariants |
-> | `swarmxq-model-orchestrator` | `.ai/skills/swarmxq-model-orchestrator/` | APEX-17 r8 model routing and SINGLE-7B LOCK enforcement |
-> | `swarmxq-creative-director` | `.ai/skills/swarmxq-creative-director/` | Script quality, virality scoring, caption rules, TONE_RULES |
-> | `swarmxq-startup-ops-architect` | `.ai/skills/swarmxq-startup-ops-architect/` | startup-enhanced.sh, Ollama CPU perf tuning, warmup health |
+> | `elite-skill-forge` | `.ai/skills/elite-skill-forge/` | Generates new SKILL.md files — never NEXUS |
+> | `swarmxq-video-pipeline-architect` | `.ai/skills/swarmxq-video-pipeline-architect/` | 6-stage pipeline contracts and invariants |
+> | `swarmxq-model-orchestrator` | `.ai/skills/swarmxq-model-orchestrator/` | SINGLE-7B LOCK, canonical tags, 16 GB profile |
+> | `swarmxq-creative-director` | `.ai/skills/swarmxq-creative-director/` | Script quality, virality, captions, TONE_RULES |
+> | `swarmxq-startup-ops-architect` | `.ai/skills/swarmxq-startup-ops-architect/` | startup-enhanced.sh, Ollama CPU perf, warmup |
+> | `swarmxq-ci-release-architect` | `.ai/skills/swarmxq-ci-release-architect/` | 8-gate release checklist, CI, CHANGELOG |
 
 ---
 
@@ -319,14 +432,21 @@ NEXUS must recognize these SwarmXQ-domain intents in addition to the general tax
 | **Observability / Logging** | "structured logger", "log.ts", "Pino-compatible", "NDJSON", "console.* migration", "fatal log", "unhandledRejection", "uncaughtException" |
 | **CI / Release Gates** | "GitHub Actions", "ci.yml", "quality gate", "pnpm cache", "regression script", "vitest", "tsc --noEmit", "next build", "release checklist", "deploy gate" |
 | **Video QA Loop** | "whisper.cpp", "transcription", "script drift", "subtitle sync", "audio transcription", "video QA", "STT verification" |
+| **Creative Intelligence** | "hook laboratory", "hook candidate", "HookFamily", "HOOK_FAMILIES", "validateHookCandidate", "classifyHookFamily", "concept tournament", "ConceptCandidate", "ConceptTournament", "runConceptTournament", "fingerprintCandidate", "pairwiseDiversityWarnings", "scoreCandidate", "creative-quality.ts", "hook-laboratory.ts", "creative-tournament.ts" |
+| **Retention Analysis** | "RetentionMap", "RetentionBeat", "BeatLabel", "DropOffRisk", "generateRetentionMap", "retention-map/preview", "Retention Lab", "thin-content", "unrecoveredHighRiskCount", "HOOK beat", "ESCALATION beat", "PAYOFF beat", "CTA_OR_LOOP" |
+| **Scene DSL / Render Recipe** | "SceneSpec", "ValidatedRenderRecipe", "render-recipe-compiler", "compileRenderRecipe", "sanitizeTextForFilter", "FFMPEG_METACHAR_RE", "MotionPreset", "TransitionPreset", "safeFilterTokens", "RenderRecipeCompilationError" |
+| **Audio Mastering** | "audio mastering", "EBU R128", "loudnorm", "masterAudio", "AudioMasteringRequest", "targetLUFS", "truePeakCeiling", "two-pass", "AUDIO_PLATFORM_PROFILES", "loudness normalization" |
+| **Template-Aware QC** | "template-aware QC", "TemplateQcResult", "RawQcFinding", "QcFindingInterpretation", "runTemplateQc", "parseDetectorIntervals", "UNCONDITIONAL_BLOCKERS", "TIER_RULES", "BLACK_FRAME", "FREEZE_FRAME", "MISSING_AUDIO", "FIRST_FRAME_EMPTY" |
+| **Runtime Profiles** | "RuntimeProfileId", "constrained_cpu_8gb", "standard_cpu_16gb", "accelerated_optional", "RuntimeProfileDefinition", "normalizeRuntimeProfileId", "RUNTIME_PROFILE_DEFINITIONS" |
+| **Python Agent Brain** | "src/swarmx/", "structlog", "asyncio", "agent catalog", "IEP-ELITE", "operator taxonomy", "operator_map.py", "memory curator", "skill curator", "httpx.AsyncClient" |
+| **Meta-Evolution / Evolver** | "evolver agent", "tournament selection", "promote agent", "tournament judge", "evolution cycle", "meta-evolution", "Lab operator", "synth-qwen25-exp-q4km-dev" |
 
 ---
 
-# FULL SKILL REGISTRY (38 SKILLS)
+# FULL SKILL REGISTRY (39 SKILLS)
 
-The suite consists of **38 unique skills** organized across 9 clusters.
-`data-visualization-architect` is in Cluster 2 (UI concern) and Cluster 7 (real-time data).
-Both appearances refer to the SAME skill file — no duplication exists on disk.
+The suite consists of **39 skills** organized across 9 clusters (35 generic + 4 SwarmXQ-platform + 1 CI/release = 39 unique dirs on disk).
+`data-visualization-architect` is in Cluster 2 (UI concern) and Cluster 7 (real-time data) — same file, listed twice.
 
 ## Cluster 1 — Editor & Environment (6 skills)
 
@@ -407,21 +527,13 @@ Both appearances refer to the SAME skill file — no duplication exists on disk.
 | 37 | `swarmxq-creative-director` | Script quality gates, TONE_RULES, virality scoring, caption rules, storyboard |
 | 38 | `swarmxq-startup-ops-architect` | startup-enhanced.sh, Ollama CPU perf vars, warmup health endpoint |
 
-> **Unique skills on disk: 38.** `data-visualization-architect` appears in C2 and C7 but
-> is a single file. Total `.ai/skills/` directories: exactly 38.
+> **Unique skills on disk: 39.** Total `.ai/skills/` directories: exactly 39.
 
-## Cluster 9 — SwarmXQ CI / Release (1 skill — new)
+## Cluster 9 — SwarmXQ CI / Release (1 skill)
 
 | # | Skill | Domain |
 |---|---|---|
-| 39 | `swarmxq-ci-release-architect` | GitHub Actions CI, quality gate sequencing, pnpm cache, release CHANGELOG |
-
-> ⚠️ **These four SwarmXQ platform skills are NOT included in the generic `.ai/` skill zip.**
-> They are provided separately and must be manually placed at:
-> - `.ai/skills/swarmxq-video-pipeline-architect/SKILL.md`
-> - `.ai/skills/swarmxq-model-orchestrator/SKILL.md`
-> - `.ai/skills/swarmxq-creative-director/SKILL.md`
-> - `.ai/skills/swarmxq-startup-ops-architect/SKILL.md`
+| 39 | `swarmxq-ci-release-architect` | 8-gate release checklist, GitHub Actions ci.yml, pnpm cache, TONE_RULES grep, console.* grep, CHANGELOG protocol |
 
 > 🚫 **Skills to EXCLUDE from `.ai/skills/` in this repository:**
 > - `sabiscore-betting-engine-auditor` — SabiScore vertical only
@@ -792,12 +904,17 @@ Execute these steps at the start of every session, before writing any code:
 
 ```bash
 # 1. Confirm baseline
-git log --oneline -5           # verify correct commit (expect HEAD near fb6cbe9 or later)
+git log --oneline -5           # verify correct commit
 git status                     # must be clean working tree
 
-# 2. Load prior context
+# 2. Verify skill suite integrity
+ls .ai/skills/ | wc -l         # must equal 39
+ls .ai/skills/ | grep swarmxq  # must show 5: video-pipeline, model-orchestrator, creative-director, startup-ops, ci-release
+cat NEXUS.md | head -3          # verify NEXUS.md is present
+
+# 3. Load prior context
 cat .serena/memories/MEMORY.md          # session index — find the most recent project_v*.md
-cat .serena/memories/project_v6249.md   # most recent session note as of V6.2.49
+cat .serena/memories/project_v6253.md   # most recent session note as of V6.2.53
 
 # 3. Environment check
 awk '/MemAvailable/ {printf "MemAvailable: %d MB\n", $2/1024}' /proc/meminfo
@@ -981,19 +1098,22 @@ Push only after all quality gates pass.
 | ~~1~~ | ~~**BullMQ Default-On**~~ | ✅ V6.2.22+V6.2.40 |
 | ~~2~~ | ~~**GitHub Actions CI**~~ | ✅ V6.2.40 |
 | ~~3~~ | ~~**Env Schema Expansion**~~ | ✅ V6.2.38 — ≤10 process.env hits, all documented |
-| ~~4~~ | ~~**First API Unit Tests**~~ | ✅ V6.2.39 — 228 tests at V6.2.49, 248 at V6.2.50 |
+| ~~4~~ | ~~**First API Unit Tests**~~ | ✅ V6.2.39 — 338 tests at V6.2.53 |
 | ~~5~~ | ~~**16 GB Profile Config**~~ | ✅ V6.2.44 — startup-enhanced.sh complete |
 | ~~6~~ | ~~**TONE_RULES Completeness Audit**~~ | ✅ V6.2.23 — all 8 variants CI-gated |
 | ~~7~~ | ~~**Smoke Renderer Certification Ceiling + Per-Stage Zod Validation**~~ | ✅ V6.2.49 |
 | ~~8~~ | ~~**S1: Voice Benchmark**~~ | ✅ V6.2.49 — CLI + report reader + ranker + /api/system/health block |
-| **9** | **S5: Golden-Path Re-Cert Under V6.2.49** | Clean clone → real MP4 → `/api/system/health` shows voice.benchmark; `stageValidationTrace` populated; cert tier reaches `PUBLISHED_VERIFIED` on kinetic/faceless render |
-| **10** | **`doctor` CLI Command** | `pnpm -F @swarmx/api exec tsx scripts/doctor.ts` exits 0 on healthy host; exit 1 with structured error list on failure; checks: Redis ping, Ollama reachable, RAM headroom, Piper/Kokoro probe, voice benchmark freshness, warmup status |
-| **11** | **S2: Template Family Expansion (+8 templates)** | myth-vs-fact, list/countdown, mystery/reveal, product-demo, quote-to-insight, chart/data, motivational, series-recap all wired as selectable `templateFamily` in `VideoJobRequest`; each has tone mapping + storyboard style hints |
-| **12** | **Ollama JSON-mode Migration** | CPU JSON-mode reliability benchmark run first (< 5% parse failure rate required); if passes: `planning` and `storyboard_generation` stages migrated from regex extraction to `format: "json"` in Ollama request; regression scripts updated |
-| **13** | **Cert-Tier State Machine Transition Wiring** | Explicit transition functions for `PUBLISHING`, `PUBLISH_FAILED`, `BLOCKED`, `NEEDS_REVISION` tiers (currently exist in type but no code transitions into/out of them); wired through `canPromoteTo()` contract |
-| **14** | **S3: Preview Pipeline (Proxy Renders)** | `PLAN_ONLY` and `QUICK_DRAFT` modes skip full-resolution encode; proxy render at 360p using `ffmpeg_text_smoke` renderer; certification ceiling respected; `previewUrl` field in VideoJob |
-| **15** | **S4: Openverse Adapter** | ADR written and approved first (per V4 §22); adapter searches CC0/CC-BY assets; `AssetLicense` metadata attached; rate-limit aware; whisper.cpp transcript used as search seed if available |
-| **16** | **Voice Benchmark Real-Provider Run** | First actual benchmark with Piper + Kokoro installed; `/api/system/health` surfaces `voice.benchmark.recommendedProviderId`; confirm `/api/system/health` response shape correct; update session note |
+| ~~9~~ | ~~**SCAR-X V5.0.0 P1 Hygiene**~~ | ✅ V6.2.50 — HOOK_BLOCKLIST consolidated, QUICK_DRAFT mode, INV-18 transitions, doctor CLI scaffolded |
+| ~~10~~ | ~~**P1 Creative Intelligence**~~ | ✅ V6.2.51 — hook laboratory (10 families), concept tournament (Levenshtein diversity), RetentionMap (7 beats), scene DSL + render recipe compiler |
+| ~~11~~ | ~~**P1 Completion + Audio**~~ | ✅ V6.2.52 — tournament 11-axis diversity, EBU R128 audio mastering, template-aware QC, path traversal fix |
+| ~~12~~ | ~~**Integrations + UX**~~ | ✅ V6.2.53 — template-aware QC wired into renderer, RetentionMap preview endpoint, RuntimeCapabilityStrip, prefers-reduced-motion |
+| **13** | **S5: Golden-Path Re-Cert** | Clean clone → real MP4 from production renderer → `/api/system/health` shows voice.benchmark + runtime profile; `stageValidationTrace` populated; cert tier ≥ `PRODUCTION_PACK_VALID`; template-aware QC runs |
+| **14** | **S2: Template Family Expansion (+8 templates)** | myth-vs-fact, list/countdown, mystery/reveal, product-demo, quote-to-insight, chart/data, motivational, series-recap all wired as selectable `templateFamily` in `VideoJobRequest`; each has tone mapping + storyboard style hints |
+| **15** | **Ollama JSON-mode Migration** | CPU JSON-mode reliability benchmark run first (< 5% parse failure rate required); if passes: `planning` and `storyboard_generation` stages migrated from regex extraction to `format: "json"` in Ollama request; regression scripts updated |
+| **16** | **S3: Preview Pipeline (Proxy Renders)** | `PLAN_ONLY` and `QUICK_DRAFT` modes skip full-resolution encode; proxy render at 360p; certification ceiling respected; `previewUrl` field |
+| **17** | **S4: Openverse Adapter** | ADR written and approved first (per V4 §22); adapter searches CC0/CC-BY assets; `AssetLicense` metadata attached; rate-limit aware |
+| **18** | **Voice Benchmark Real-Provider Run** | First actual benchmark with Piper + Kokoro installed; confirm `/api/system/health` surfaces `voice.benchmark.recommendedProviderId` |
+| **19** | **Golden Artifact from Production Renderer** | End-to-end `FULL_RENDER` producing a real MP4 through `ffmpeg_kinetic_text` or `ffmpeg_faceless_broll` renderer with neural TTS, EBU R128 mastering, template-aware QC, and cert tier ≥ `PRODUCTION_PACK_VALID` |
 
 ---
 
@@ -1067,9 +1187,22 @@ Repository code overrides all prior documentation. Grep/read before acting.
 | Renderer certification ceiling | `renderer-certification.ts` clamps all tier assignments; `ffmpeg_text_smoke → TECHNICALLY_VALID` |
 | Voice benchmark infrastructure | `voice-benchmark.ts` CLI + `voice-benchmark-report.ts` reader + `selectVoiceProvider()` report integration + `/api/system/health` `voice.benchmark` block |
 | TONE_RULES all 8 variants | CI grep gate confirms all 8 present: `contrarian`, `urgent`, `educational`, `cinematic`, `warm`, `minimal`, `faceless_broll`, `kinetic_text` |
-| API tests | 228 passing (as of V6.2.49) across 12+ test files; 248 at V6.2.50 across 14 test files |
+| API tests | 338 passing (V6.2.53) across 21 test files |
 | Dashboard build | 14 routes, zero build errors |
 | APEX-17 r8 operator map | Both `operator-map.ts` and `operator_map.py` semantically identical; V5 names eliminated |
+| HOOK_BLOCKLIST consolidated | `src/lib/creative-quality.ts` — single source; imported by orchestrator + preproducer |
+| QUICK_DRAFT execution mode | 6th mode in `CreativeFactoryExecutionMode`; wired in workflow with cert ceiling |
+| Hook laboratory | `src/lib/hook-laboratory.ts` — 10 families, 18-word validation, forbidden-opener regex |
+| Concept tournament | `src/services/creative-tournament.ts` — 11-axis fingerprint, Levenshtein diversity, winner + backup |
+| RetentionMap | `src/services/retention-map.ts` — 7-beat timing, thin-content upgrade, soft guard per INV-16 |
+| Scene DSL + render recipe compiler | `src/services/render-recipe-compiler.ts` — SHA-256 validation, SRT path traversal defense, FFmpeg metachar sanitization |
+| EBU R128 audio mastering | `src/services/audio-mastering.ts` — two-pass spawnSync, 5 platform profiles (youtube/tiktok/reels/shorts/broadcast) |
+| Template-aware QC | `src/services/template-aware-qc.ts` — per-tier finding interpretation; wired into ffmpeg-video-renderer |
+| INV-18 transition functions | `transitionToPublishing()`, `transitionToPublishFailed()`, `transitionToBlocked()`, `transitionToNeedsRevision()` — all 4 exist |
+| Doctor CLI | `scripts/doctor.ts` — 6 checks (env, Redis, Ollama, RAM, voice probe, benchmark freshness) |
+| Runtime profiles | `src/services/runtime-profiles.ts` — `constrained_cpu_8gb`, `standard_cpu_16gb`, `accelerated_optional` |
+| RuntimeCapabilityStrip | Dashboard component showing Ollama/RAM/Warmup/Voice status in top bar |
+| RetentionMap preview | `POST /api/video/factory/retention-map/preview` endpoint |
 
 ## Confirmed incomplete (next milestone queue items)
 
@@ -1077,18 +1210,26 @@ Repository code overrides all prior documentation. Grep/read before acting.
 |---|---|---|
 | ~~BullMQ disabled by default~~ | ✅ V6.2.22+V6.2.40 | done |
 | ~~Zero CI~~ | ✅ V6.2.40 | done |
-| ~~`process.env[…]` scattered in services~~ | ✅ V6.2.38 — 6 escape hatches remain (≤10) | done |
-| ~~Zero API unit tests~~ | ✅ V6.2.49 — 228 tests, 248 at V6.2.50 | done |
+| ~~`process.env[…]` scattered in services~~ | ✅ V6.2.38 | done |
+| ~~Zero API unit tests~~ | ✅ V6.2.53 — 338 tests | done |
 | ~~`startup-enhanced.sh` not wired for 16 GB~~ | ✅ V6.2.44 | done |
 | ~~TONE_RULES completeness unverified~~ | ✅ V6.2.23 | done |
-| Voice benchmark real-provider run | Deferred — Piper not installed this session | Milestone 16 |
-| `doctor.ts` CLI | Not started | Milestone 10 |
-| V4 S2 template expansion | Not started | Milestone 11 |
-| Ollama JSON-mode migration | Seed — benchmark required first | Milestone 12 |
-| Cert-tier state machine transitions | Seed — `PUBLISHING`/`PUBLISH_FAILED`/`BLOCKED`/`NEEDS_REVISION` have no explicit transition functions | Milestone 13 |
-| V4 S3 preview pipeline | Not started | Milestone 14 |
-| V4 S4 Openverse adapter | Not started — ADR required | Milestone 15 |
-| V4 S5 golden-path re-cert | Not started | Milestone 9 (next) |
+| ~~HOOK_BLOCKLIST duplicated~~ | ✅ V6.2.50 — consolidated to `src/lib/creative-quality.ts` | done |
+| ~~Doctor CLI not started~~ | ✅ V6.2.50 — scaffolded with 6 checks | done |
+| ~~Cert-tier transitions~~ | ✅ V6.2.50 — 4 transition functions exist | done |
+| ~~Hook laboratory~~ | ✅ V6.2.51 — 10 families, validation, classification | done |
+| ~~Concept tournament~~ | ✅ V6.2.51 — 11-axis diversity scoring | done |
+| ~~RetentionMap~~ | ✅ V6.2.51 — 7-beat timing, thin-content upgrade | done |
+| ~~Scene DSL~~ | ✅ V6.2.51 — render recipe compiler with security hardening | done |
+| ~~EBU R128 audio mastering~~ | ✅ V6.2.52 — two-pass loudnorm, 5 platform profiles | done |
+| ~~Template-aware QC~~ | ✅ V6.2.52 + V6.2.53 — per-tier rules, wired into renderer | done |
+| S5 golden-path re-cert | Real MP4 from production renderer with full QC pipeline | Milestone 13 |
+| V4 S2 template expansion | Not started — 8 additional template families | Milestone 14 |
+| Ollama JSON-mode migration | Seed — benchmark required first | Milestone 15 |
+| V4 S3 preview pipeline | Not started — QUICK_DRAFT mode exists, proxy rendering does not | Milestone 16 |
+| V4 S4 Openverse adapter | Not started — ADR required | Milestone 17 |
+| Voice benchmark real-provider run | Deferred — Piper/Kokoro not installed in recent sessions | Milestone 18 |
+| Golden artifact from production renderer | No real MP4 from `ffmpeg_kinetic_text`/`ffmpeg_faceless_broll` yet | Milestone 19 |
 
 ---
 
@@ -1128,7 +1269,15 @@ Repository code overrides all prior documentation. Grep/read before acting.
 
 17. **Voice provider selection is benchmark-informed**: When `SWARMX_TTS_PROVIDER=auto`, `selectVoiceProvider()` consults the JSON benchmark report at `SWARMX_VOICE_BENCHMARK_FILE` (default `/tmp/swarmxq-voice-benchmark.json`) to rank providers before probing. The report is generated by `apps/swarmx-api/scripts/voice-benchmark.ts` and expires after `SWARMX_VOICE_BENCHMARK_MAX_AGE_HOURS` (default 168 h). Without a fresh report the current default order (Kokoro → Piper → eSpeak) is preserved. The `neural_local` tier is always preferred over `synthetic_fallback` regardless of RTF — eSpeak may have lower RTF but is not a production voice. Kokoro voice selection uses `KOKORO_VOICE_MAP` keyed by tone.
 
-18. **Cert-tier state machine transitions must be explicit**: The `PUBLISHING`, `PUBLISH_FAILED`, `BLOCKED`, and `NEEDS_REVISION` tiers exist in `CertificationTier` but no explicit transition function currently moves jobs into or out of them. Before any feature writes directly to these tiers, a transition function must exist that calls `canPromoteTo()`. Until Milestone 13 ships, these tiers are **write-protected** — do not use them in new code without implementing the transition function first.
+18. **Cert-tier state machine transitions are explicit**: Four transition functions exist in `renderer-certification.ts`: `transitionToPublishing()`, `transitionToPublishFailed()`, `transitionToBlocked()`, `transitionToNeedsRevision()`. `LATERAL_TERMINAL_TIERS` prevents invalid lateral moves. All four functions must be used for state transitions — never assign these tiers directly without going through the transition function. ✅ V6.2.50 implemented.
+
+19. **Render recipe compiler security**: All free-text `SceneSpec` fields must be sanitized by `sanitizeTextForFilter()` in `render-recipe-compiler.ts` before reaching FFmpeg arguments. Asset references must pass SHA-256 validation via `validateAssetHash()`. SRT/VTT paths must pass `validateSrtPath()` (path traversal defense: `..` segments and unsafe characters are rejected). `safeFilterTokens` in `ValidatedRenderRecipe` contains only enum-derived values — never free-text from model output. Model output must never reach raw FFmpeg filter graphs.
+
+20. **EBU R128 audio mastering is two-pass**: `masterAudio()` in `audio-mastering.ts` runs FFmpeg pass 1 (measure input loudness) then pass 2 (apply linear loudness normalization to target LUFS). Five platform profiles are defined: `youtube` (-14 LUFS), `tiktok` (-14), `reels` (-16), `shorts` (-14), `broadcast` (-23). True-peak ceiling is -1.0 dBTP for all profiles. FFmpeg args are built as arrays passed to `spawnSync()` — never string interpolation.
+
+21. **Template-aware QC interprets, never overrides**: `template-aware-qc.ts` maps raw detector findings (black frames, freeze frames) to renderer-tier-specific interpretations. Template context may downgrade severity (e.g., dark backgrounds in `ffmpeg_kinetic_text` are expected). But `UNCONDITIONAL_BLOCKERS` (`MISSING_AUDIO`, `FIRST_FRAME_EMPTY`) cannot be overridden by any template tier — they are always blockers.
+
+22. **RetentionMap is a soft guard**: `generateRetentionMap()` in `retention-map.ts` produces a 7-beat time-coded risk assessment. Beats with fewer than `MIN_WORDS_PER_BEAT` words are upgraded from `MEDIUM` to `HIGH` risk (thin-content signal). `unrecoveredHighRiskCount > 0` emits a `stageValidationTrace` warn entry — it does NOT throw. Only scripting failures throw (per INV-16).
 
 ---
 

@@ -1,6 +1,9 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
+import { loadEnv } from "../lib/env.js";
 
-const VIDEO_WRITE_TOKEN = process.env["SWARMX_VIDEO_API_TOKEN"]?.trim() ?? "";
+function readVideoWriteToken(): string {
+  return process.env["SWARMX_VIDEO_API_TOKEN"]?.trim() ?? "";
+}
 
 function readBearerToken(header: string | undefined): string | null {
   if (!header) return null;
@@ -9,7 +12,7 @@ function readBearerToken(header: string | undefined): string | null {
 }
 
 export function isVideoAuthRequired(): boolean {
-  return VIDEO_WRITE_TOKEN.length > 0;
+  return readVideoWriteToken().length > 0;
 }
 
 export async function requireVideoWriteAuth(
@@ -19,7 +22,7 @@ export async function requireVideoWriteAuth(
   if (!isVideoAuthRequired()) {
     // In production with no token configured, fail closed — never allow open writes.
     // In development, allow through for local convenience.
-    if (process.env["NODE_ENV"] === "production") {
+    if (loadEnv().NODE_ENV === "production") {
       return reply.code(401).send({
         error: "unauthorized",
         message:
@@ -36,8 +39,9 @@ export async function requireVideoWriteAuth(
   const apiKeyHeader = request.headers["x-video-api-key"];
   const apiKeyToken = Array.isArray(apiKeyHeader) ? apiKeyHeader[0] : apiKeyHeader;
   const candidate = bearerToken ?? apiKeyToken ?? "";
+  const expectedToken = readVideoWriteToken();
 
-  if (candidate !== VIDEO_WRITE_TOKEN) {
+  if (candidate !== expectedToken) {
     return reply.code(401).send({
       error: "unauthorized",
       message: "Missing or invalid video write token",
