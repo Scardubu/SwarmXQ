@@ -136,6 +136,8 @@ export interface VideoOutputMetadata {
   rendererTier?: RendererCapabilityTier;
   /** V3 certification level after deterministic package checks. */
   certificationTier?: CertificationTier;
+  /** Human-readable reasons why the job did not reach PRODUCTION_PACK_VALID. */
+  certificationBlockers?: string[];
   /** Voice/provider lineage for the narration artifact. */
   voiceArtifact?: VoiceArtifact;
   /** Deterministic media QC report generated during render/finalize. */
@@ -182,6 +184,9 @@ export interface VideoJob {
   errorLog?: VideoError[];
   scriptQualityWarnings?: ScriptQualityWarning[];
   stageValidationTrace?: StageValidationEntry[];
+  /** 0–1 hook quality score set immediately after scripting completes.
+   *  Cleared and replaced by viralitySignal.hookStrength post-pipeline. */
+  preliminaryHookScore?: number;
 }
 
 // Re-export for downstream consumers of the API bridge.

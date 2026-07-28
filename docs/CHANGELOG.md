@@ -43,6 +43,23 @@
   FFmpeg `mean_volume: -20.0 dB`, `max_volume: -1.3 dB`, package sidecars
   present, and `/api/video/files/:filename` serving `206 Partial Content`.
 
+### Stabilization follow-up — 2026-07-28
+
+- Added a shared backend fetch classification boundary for Ollama and ComfyUI
+  network failures. Connection-level failures now become `OLLAMA_UNAVAILABLE`
+  or `COMFY_UNAVAILABLE` before retry logic, while explicit timeout and
+  cancellation abort reasons remain `TIMEOUT` and `CANCELLED_BY_USER`.
+- Dashboard runtime guidance now blocks full-pipeline submissions when live
+  CPU telemetry reports `load1m / coreCount >= 0.85`, independent of the RAM
+  floor. Missing CPU telemetry remains non-blocking.
+- Client-facing video surfaces now expose operator names, certification tiers,
+  certification blockers, virality component scores, and retry hints without
+  rendering raw canonical model tags outside explicit operator/admin views.
+- `SWARMX_VIDEO_MAX_RETRIES` now defaults to `2`, with retryable codes still
+  limited to `TIMEOUT`, `OLLAMA_UNAVAILABLE`, and `COMFY_UNAVAILABLE`.
+- Reconciled startup/model tuning docs with the verified safe CPU defaults:
+  `OLLAMA_FLASH_ATTENTION=0` and `OLLAMA_KV_CACHE_TYPE=f16`.
+
 ## V6.2.57 — Operator Documentation Closeout (2026-07-24)
 
 ### Docs — M13 and browser verification runbooks

@@ -10,10 +10,12 @@
 
 import { CheckCircle2, XCircle } from "lucide-react";
 import type { VideoJob, VideoJobStage } from "../../lib/video-dashboard";
-import { VIDEO_JOB_STAGE_ORDER, VIDEO_JOB_STAGE_LABELS } from "../../lib/video-dashboard";
+import { VIDEO_JOB_STAGE_ORDER, VIDEO_JOB_STAGE_LABELS, errorCodeHint } from "../../lib/video-dashboard";
 import { safeErrorMessage } from "@/lib/utils";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
+
+const DEFAULT_MAX_RETRIES = 2;
 
 interface VideoJobTimelineProps {
   job: VideoJob;
@@ -195,8 +197,13 @@ export function VideoJobTimeline({ job, compact = false }: VideoJobTimelineProps
             {job.error.code}: {safeErrorMessage(job.error.message, "See operator trace for details.")}
           </p>
           {job.error.retryable && (
-            <p className="mt-0.5 text-[10px] text-status-error/75">Will retry automatically</p>
+            <p className="mt-0.5 text-[10px] text-status-error/75">
+              {job.retryCount < DEFAULT_MAX_RETRIES
+                ? `Retry ${job.retryCount + 1}/${DEFAULT_MAX_RETRIES} will run automatically`
+                : `Retry ${job.retryCount}/${DEFAULT_MAX_RETRIES} exhausted; free resources and retry from failed stage`}
+            </p>
           )}
+          {(() => { const hint = errorCodeHint(job.error.code); return hint ? <p className="mt-0.5 text-[10px] text-text-secondary">{hint}</p> : null; })()}
         </div>
       )}
     </div>

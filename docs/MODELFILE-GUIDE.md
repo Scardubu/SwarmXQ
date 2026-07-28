@@ -54,8 +54,11 @@ All three GGUFs are stored in `~/models/llm-local/`. The install script patches
 
 ## Memory Math Reference
 
-All estimates assume `OLLAMA_KV_CACHE_TYPE=q8_0` (primary models) or `q4_0` (phi4 models).
-GPU overhead ~400 MB. Co-load overhead negligible (shared runtime).
+The estimates below are comparative KV-cache math for historical q8/q4 model-file
+tuning. They are not the active conservative CPU runtime profile, which keeps
+`OLLAMA_FLASH_ATTENTION=0` and `OLLAMA_KV_CACHE_TYPE=f16` unless a host-specific
+compatibility pass proves a quantized KV cache is stable. GPU overhead ~400 MB.
+Co-load overhead negligible (shared runtime).
 
 ```
 KV cache formula (q8_0, 1 byte/element):
@@ -299,8 +302,8 @@ swarm-evolve.sh
 Source `setup/ollama_env.sh` before running `ollama serve`. Key variables:
 
 ```bash
-OLLAMA_FLASH_ATTENTION=1          # ALWAYS set — reduces KV bandwidth pressure
-OLLAMA_KV_CACHE_TYPE=q8_0         # Half KV VRAM vs f16, near-zero quality loss
+OLLAMA_FLASH_ATTENTION=0          # Conservative CPU default; enable only after host-specific validation
+OLLAMA_KV_CACHE_TYPE=f16          # Verified-stable pair with flash-attention disabled
 OLLAMA_MAX_LOADED_MODELS=1        # Strict single-model residency
 OLLAMA_KEEP_ALIVE=0               # Request-level keep_alive is authoritative
 OLLAMA_NUM_PARALLEL=1             # Must be 1 on constrained VRAM

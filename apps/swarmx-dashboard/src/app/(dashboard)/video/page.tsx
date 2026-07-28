@@ -129,6 +129,7 @@ export default function VideoPage() {
   const router = useRouter();
   const governorState = useEventsStore((s) => s.governorState);
   const startupSummary = useEventsStore((s) => s.startupSummary);
+  const systemMetrics = useEventsStore((s) => s.systemMetrics);
   const apiHealth = useApiHealth();
   const { fetchJobs, listJobs, isLoading, listError, selectedJobId, reorderQueue, retryFromStage } =
     useVideoStore();
@@ -165,6 +166,8 @@ export default function VideoPage() {
     runtimeBlockers: apiHealth.runtimeProfile?.blockers ?? [],
     runtimeWarnings,
     voiceBenchmarkRecommendedProviderId: apiHealth.voiceBenchmarkRecommendedProviderId,
+    cpuLoad: systemMetrics?.cpu.load1m ?? null,
+    cpuCoreCount: systemMetrics?.cpu.coreCount ?? null,
   });
 
   const handleRetry = useCallback(

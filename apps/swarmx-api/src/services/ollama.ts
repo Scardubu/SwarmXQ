@@ -13,6 +13,7 @@
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { sanitizeReasoningOutput } from "./reasoning-sanitizer.js";
+import { fetchBackend } from "./backend-fetch-errors.js";
 
 const execAsync = promisify(exec);
 
@@ -83,7 +84,10 @@ async function probeVersion(baseUrl: string, timeoutMs: number): Promise<boolean
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await fetch(`${baseUrl}/api/version`, { signal: controller.signal });
+      const res = await fetchBackend(`${baseUrl}/api/version`, {
+        backend: "ollama",
+        signal: controller.signal,
+      });
       return res.ok;
     } finally {
       clearTimeout(timeoutId);
@@ -98,7 +102,10 @@ async function probeTags(baseUrl: string, timeoutMs: number): Promise<{ ok: bool
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await fetch(`${baseUrl}/api/tags`, { signal: controller.signal });
+      const res = await fetchBackend(`${baseUrl}/api/tags`, {
+        backend: "ollama",
+        signal: controller.signal,
+      });
       if (!res.ok) return { ok: false, models: [] };
       const json = (await res.json()) as { models?: Array<{ name?: string }> };
       const names = (json.models ?? [])
@@ -329,7 +336,8 @@ export interface OllamaGenerateResult {
 export async function generateOllamaText(request: OllamaGenerateRequest): Promise<OllamaGenerateResult> {
   const baseUrl = await getOllamaBaseUrl();
 
-  const res = await fetch(`${baseUrl}/api/generate`, {
+  const res = await fetchBackend(`${baseUrl}/api/generate`, {
+    backend: "ollama",
     method: "POST",
     headers: { "Content-Type": "application/json" },
     ...(request.signal ? { signal: request.signal } : {}),

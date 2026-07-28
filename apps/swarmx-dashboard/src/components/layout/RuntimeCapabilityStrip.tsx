@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { resolveOperatorName } from "@swarmx/types/operator-map";
 import { useRuntimeCapabilities } from "@/hooks/useRuntimeCapabilities";
 import { cn } from "@/lib/utils";
 
@@ -81,7 +82,7 @@ export function RuntimeCapabilityStrip() {
     missingModels.length > 0
       ? missingModels
           .slice(0, 3)
-          .map((model) => `${model.role}: ${model.tag} (${model.status})`)
+          .map((model) => `${resolveOperatorName(model.tag)} (${model.status})`)
           .join(" · ")
       : "canonical router/reason/code profiles ready";
 

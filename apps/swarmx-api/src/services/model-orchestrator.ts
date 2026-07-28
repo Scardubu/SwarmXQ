@@ -97,6 +97,7 @@ import {
 import { recordEviction } from "./swarm-pressure-monitor.js";
 import type { TimeoutPressureLevel } from "@swarmx/types/operation-types";
 import { loadEnv } from "../lib/env.js";
+import { fetchBackend } from "./backend-fetch-errors.js";
 
 // ─── Memory pressure thresholds (orchestrator's own policy — see ORCH-r8-03) ──
 
@@ -495,7 +496,10 @@ export class ModelOrchestrator {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 3000);
       try {
-        const res = await fetch(`${this.ollamaBase}/api/ps`, { signal: ctrl.signal });
+        const res = await fetchBackend(`${this.ollamaBase}/api/ps`, {
+          backend: "ollama",
+          signal: ctrl.signal,
+        });
         if (!res.ok) return [];
         const data = (await res.json()) as OllamaPsResponse;
         const names = (data.models ?? []).map((m) => resolveCanonicalTag(m.name));
@@ -538,7 +542,8 @@ export class ModelOrchestrator {
         const ctrl = new AbortController();
         const t = setTimeout(() => ctrl.abort(), 5000);
         try {
-          await fetch(`${this.ollamaBase}/api/generate`, {
+          await fetchBackend(`${this.ollamaBase}/api/generate`, {
+            backend: "ollama",
             method:  "POST",
             headers: { "Content-Type": "application/json" },
             signal:  ctrl.signal,
@@ -586,7 +591,8 @@ export class ModelOrchestrator {
     const ctrl = new AbortController();
     const timeout = setTimeout(() => ctrl.abort(), 10_000);
 
-    fetch(`${this.ollamaBase}/api/generate`, {
+    fetchBackend(`${this.ollamaBase}/api/generate`, {
+      backend: "ollama",
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       signal:  ctrl.signal,

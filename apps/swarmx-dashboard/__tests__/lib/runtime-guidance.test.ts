@@ -101,4 +101,47 @@ describe("getRuntimeGuidance", () => {
     expect(guidance?.detail).toContain("Available RAM is 5.6 GB");
     expect(guidance?.recoveryHint).toContain("canonical model set");
   });
+
+  it("blocks full-pipeline submission when CPU load exceeds the safe ceiling", () => {
+    const guidance = getRuntimeGuidance({
+      apiOnline: true,
+      ollamaOnline: true,
+      pressureLevel: "normal",
+      availableMb: 8_500,
+      healthStatus: "ok",
+      cpuLoad: 4,
+      cpuCoreCount: 4,
+    });
+
+    expect(guidance).toMatchObject({
+      tone: "critical",
+      title: "Full video pipeline blocked",
+      blocksSubmission: true,
+    });
+    expect(guidance?.detail).toContain("CPU load is 100% across 4 cores");
+  });
+
+  it("does not block on normal CPU load or absent CPU telemetry", () => {
+    expect(
+      getRuntimeGuidance({
+        apiOnline: true,
+        ollamaOnline: true,
+        pressureLevel: "normal",
+        availableMb: 8_500,
+        healthStatus: "ok",
+        cpuLoad: 2,
+        cpuCoreCount: 4,
+      }),
+    ).toBeNull();
+
+    expect(
+      getRuntimeGuidance({
+        apiOnline: true,
+        ollamaOnline: true,
+        pressureLevel: "normal",
+        availableMb: 8_500,
+        healthStatus: "ok",
+      }),
+    ).toBeNull();
+  });
 });

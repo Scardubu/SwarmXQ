@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 import { useVideoStore } from "../../stores/video";
 import { VideoJobTimeline } from "./VideoJobTimeline";
 import { isTerminalVideoStatus, type VideoJob } from "../../lib/video-dashboard";
+import type { ViralitySignal } from "@swarmx/types/video-types";
 import { safeErrorMessage } from "@/lib/utils";
 import { useApiHealth } from "@/hooks/useApiHealth";
 
@@ -91,27 +92,85 @@ function StatusBadge({ status }: { status: VideoJob["status"] }) {
   );
 }
 
+// ─── Score colour helper ──────────────────────────────────────────────────────
+// Shared by ViralityBadge and ViralityBreakdown.
+
+function scoreColor(value: number): string {
+  if (value < 0.4) return "text-status-error";
+  if (value <= 0.7) return "text-status-warning";
+  return "text-status-success";
+}
+
 // ─── Virality Badge (V6.2.26) ─────────────────────────────────────────────────
 // Compact overall-score chip. Palette mirrors the color rules from CLAUDE.md
 // (<0.4 → red · 0.4–0.7 → amber · >0.7 → green). Shown on any job whose
 // virality signal has been scored — typically after the pipeline completes.
+function viralityBorderBg(value: number): string {
+  if (value < 0.4) return "border-status-error/35 bg-status-error/10";
+  if (value <= 0.7) return "border-status-warning/35 bg-status-warning/10";
+  return "border-status-success/35 bg-status-success/10";
+}
+
 function ViralityBadge({ overall }: { overall: number }) {
   const bounded = Math.max(0, Math.min(1, overall));
   const rounded = Math.round(bounded * 100) / 100;
-  const className =
-    bounded < 0.4
-      ? "border-status-error/35 bg-status-error/10 text-status-error"
-      : bounded <= 0.7
-        ? "border-status-warning/35 bg-status-warning/10 text-status-warning"
-        : "border-status-success/35 bg-status-success/10 text-status-success";
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${className}`}
+      className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${viralityBorderBg(bounded)} ${scoreColor(bounded)}`}
       title={`Virality overall score: ${rounded.toFixed(2)}`}
       aria-label={`Virality overall score ${rounded.toFixed(2)}`}
     >
       <span className="opacity-70">viral</span>
       <span className="font-mono tabular-nums">{rounded.toFixed(2)}</span>
+    </span>
+  );
+}
+
+// ─── Virality Breakdown (Task 3) ──────────────────────────────────────────────
+// Component scores surfaced on completed jobs. Palette mirrors the global
+// scoreColor rule (<0.4 red · 0.4–0.7 amber · >0.7 green).
+
+function ViralityBreakdown({ signal }: { signal: ViralitySignal }) {
+  const metrics: { key: string; label: string; value: number }[] = [
+    { key: "hook",  label: "Hook",  value: signal.hookStrength },
+    { key: "compl", label: "Compl", value: signal.completionProxy },
+    { key: "share", label: "Share", value: signal.shareability },
+    { key: "seo",   label: "SEO",   value: signal.seoScore },
+  ];
+  return (
+    <div
+      className="grid grid-cols-4 gap-1 rounded border border-border/60 bg-bg-input/40 px-2 py-1.5"
+      aria-label="Virality component scores"
+    >
+      {metrics.map(({ key, label, value }) => (
+        <div key={key} className="flex flex-col items-center gap-0.5">
+          <span className="text-[9px] font-mono uppercase tracking-wide text-text-muted">{label}</span>
+          <span className={`text-xs font-mono tabular-nums ${scoreColor(value)}`}>{value.toFixed(2)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Certification Tier Badge ─────────────────────────────────────────────────
+
+function CertTierBadge({ tier }: { tier: string }) {
+  const label = tier.replace(/_/g, " ");
+  const cls =
+    tier === "PRODUCTION_PACK_VALID" || tier === "READY_TO_POST" || tier === "PUBLISHED_VERIFIED"
+      ? "border-status-success/35 bg-status-success/10 text-status-success"
+      : tier === "TECHNICALLY_VALID"
+        ? "border-status-warning/35 bg-status-warning/10 text-status-warning"
+        : tier === "PUBLISHING"
+          ? "border-status-throttled/35 bg-status-throttled/10 text-status-throttled"
+          : "border-border bg-bg-surface text-text-muted";
+  return (
+    <span
+      className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${cls}`}
+      title={`Certification tier: ${label}`}
+      aria-label={`Certification tier: ${label}`}
+    >
+      {label}
     </span>
   );
 }
@@ -290,6 +349,9 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
               {job.viralitySignal && typeof job.viralitySignal.overall === "number" && (
                 <ViralityBadge overall={job.viralitySignal.overall} />
               )}
+              {job.output?.certificationTier && (
+                <CertTierBadge tier={job.output.certificationTier} />
+              )}
             </div>
             <p className="mt-1.5 line-clamp-2 text-sm font-medium leading-snug text-text-primary">
               {job.request.prompt}
@@ -312,6 +374,37 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
         <VideoJobTimeline job={job} compact />
 
         <PublishSummary job={job} />
+
+        {/* Certification blockers — explains why tier is below PRODUCTION_PACK_VALID (Task 4c) */}
+        {job.output?.certificationBlockers && job.output.certificationBlockers.length > 0 && (
+          <div
+            className="rounded border border-status-warning/30 bg-status-warning/10 px-2.5 py-1.5"
+            role="status"
+            aria-label={`${job.output.certificationBlockers.length} certification blocker${job.output.certificationBlockers.length === 1 ? "" : "s"}`}
+          >
+            <div className="flex items-center gap-1.5 text-[10px] font-medium text-status-warning">
+              <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+              <span>Cert blockers · {job.output.certificationBlockers.length}</span>
+            </div>
+            <ul className="mt-1 space-y-0.5 pl-4 text-[10px] text-text-secondary">
+              {job.output.certificationBlockers.slice(0, 3).map((blocker, i) => (
+                <li key={i} className="list-disc marker:text-status-warning/60">
+                  {blocker}
+                </li>
+              ))}
+              {job.output.certificationBlockers.length > 3 && (
+                <li className="list-none pl-0 font-mono text-text-muted">
+                  +{job.output.certificationBlockers.length - 3} more
+                </li>
+              )}
+            </ul>
+          </div>
+        )}
+
+        {/* Virality breakdown — component scores on completed jobs (Task 3) */}
+        {isComplete && job.viralitySignal && (
+          <ViralityBreakdown signal={job.viralitySignal} />
+        )}
 
         {/* Script-quality warnings — surfaced from validateScriptSections() in the API orchestrator.
             Soft signal only; the job succeeds regardless. Users see this to know a script was
@@ -364,7 +457,7 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
             {job.id.slice(0, 8)}…
           </span>
           {job.retryCount > 0 && (
-            <span className="text-status-warning">retry #{job.retryCount}</span>
+            <span className="text-status-warning">retry {job.retryCount}/2</span>
           )}
           {elapsed != null && job.status === "running" && (
             <span className="ml-auto">{elapsed}s elapsed</span>

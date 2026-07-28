@@ -6,6 +6,7 @@ import { useEventsStore } from "@/stores/events";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Cpu, MemoryStick, HardDrive, Network, Bot, AlertCircle, Zap, Gauge, Sparkles } from "lucide-react";
+import { resolveOperatorName } from "@swarmx/types/operator-map";
 
 // ── Micro sparkline (bar chart) ───────────────────────────────────────────────
 
@@ -308,15 +309,18 @@ function GovernorSummary() {
       </div>
 
       <div className="flex flex-wrap gap-1">
-        {Object.entries(governorState.tokenCeilings).map(([tier, limit]) => (
+        {Object.entries(governorState.tokenCeilings).map(([tier, limit]) => {
+          const operatorName = resolveOperatorName(tier);
+          return (
           <span
             key={tier}
             className="rounded border border-border/70 bg-bg-surface px-1.5 py-0.5 text-[9px] font-mono text-text-muted"
-            title={`${tier} token ceiling`}
+            title={`${operatorName} token ceiling`}
           >
-            {tier}:{limit}
+            {operatorName}:{limit}
           </span>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

@@ -379,8 +379,8 @@ SWARMX_OLLAMA_URL=http://127.0.0.1:11434
 SWARMX_OLLAMA_BASE_URL=http://127.0.0.1:11434
 OLLAMA_NUM_PARALLEL=1
 OLLAMA_MAX_LOADED_MODELS=1
-OLLAMA_FLASH_ATTENTION=1
-OLLAMA_KV_CACHE_TYPE=q8_0
+OLLAMA_FLASH_ATTENTION=0
+OLLAMA_KV_CACHE_TYPE=f16
 SWARMX_COMPOSER_MODEL=instruct-phi4-pro-q8-prod
 SWARMX_COMPOSER_NUM_PREDICT=96
 SWARMX_COMPOSER_TIMEOUT_MS=150000
@@ -393,6 +393,9 @@ Key notes:
 - `instruct-phi4-pro-q8-prod` requires ~4.3 GB RAM. If the host has <5 GB available, the model
   may be paged to RAM and take 2–3 min to answer. Token ceiling (`NUM_PREDICT=96`) keeps
   responses short and prevents runaway inference.
+- Keep `OLLAMA_FLASH_ATTENTION=0` and `OLLAMA_KV_CACHE_TYPE=f16` on this CPU host class unless
+  a measured compatibility pass proves a different pair is stable. Q8 Phi-4 plus
+  flash-attention/q8 KV has a documented segfault risk on the EliteBook profile.
 - `startup-enhanced.sh` auto-discovers the live Ollama endpoint on startup
   (`check_ollama()`) so stale `.env.local` entries self-correct at launch.
 - The Composer reports `mode: "fallback"` in its diagnostic payload. Check `diagnostics`

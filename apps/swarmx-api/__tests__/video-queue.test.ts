@@ -190,11 +190,23 @@ describe("failJob", () => {
   test("retryable error when retryCount < MAX_RETRIES requeues the job", () => {
     const job = enqueue({ prompt: "retry me" });
     startJob(job.id);
-    // retryCount=0, MAX_RETRIES=1 (default) → 0 < 1 → requeue
+    // retryCount=0, MAX_RETRIES=2 (default) → 0 < 2 → requeue
     const requeued = failJob(job.id, retryableError);
     expect(requeued.status).toBe("queued");
     expect(requeued.retryCount).toBe(1);
     expect(requeued.overallProgress).toBe(0);
+  });
+
+  test("retryable error exhausts after the second default retry", () => {
+    const job = enqueue({ prompt: "retry twice" });
+    startJob(job.id);
+    expect(failJob(job.id, retryableError).status).toBe("queued");
+    startJob(job.id);
+    expect(failJob(job.id, retryableError).status).toBe("queued");
+    startJob(job.id);
+    const exhausted = failJob(job.id, retryableError);
+    expect(exhausted.status).toBe("failed");
+    expect(exhausted.retryCount).toBe(2);
   });
 });
 

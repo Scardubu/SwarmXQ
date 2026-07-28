@@ -69,13 +69,13 @@ WARMUP_STATUS_FILE="${SWARMX_WARMUP_STATUS_FILE:-/tmp/swarmxq-warmup.json}"
 AVAIL_MB=$(awk '/MemAvailable/ {printf "%d", $2/1024}' /proc/meminfo)
 echo "[startup] RAM before warmup: ${AVAIL_MB} MB"
 
-# ── Step 2: CPU performance vars (ALWAYS set — applies to both 8 GB and 16 GB) ──
+# ── Step 2: CPU safety vars (ALWAYS set — applies to both 8 GB and 16 GB) ─────
 # These must be set before Ollama loads any model. Not hot-reloadable.
 export OLLAMA_NUM_PARALLEL=1          # CPU has 1 inference thread; > 1 adds scheduling waste
-export OLLAMA_FLASH_ATTENTION=1       # Fused attention: ~20% memory reduction on AVX2 CPU
-export OLLAMA_KV_CACHE_TYPE=q8_0     # int8 KV cache: ~30% memory savings vs f16
-export OLLAMA_NUM_THREADS=3           # 3 of 4 cores; 1 reserved for WSL2 hypervisor + OS
-echo "[startup] CPU performance vars: NUM_PARALLEL=1 FLASH_ATTENTION=1 KV_CACHE_TYPE=q8_0 NUM_THREADS=3"
+export OLLAMA_FLASH_ATTENTION=0       # Conservative CPU default; Q8 Phi-4 + flash-attn has segfault risk
+export OLLAMA_KV_CACHE_TYPE=f16       # Safe pair with flash-attention disabled
+export OLLAMA_NUM_THREADS=3           # WSL2: 3 of 4 cores; bare-metal script may set 4
+echo "[startup] CPU safety vars: NUM_PARALLEL=1 FLASH_ATTENTION=0 KV_CACHE_TYPE=f16 NUM_THREADS=3"
 
 # ── Step 3: Profile detection ─────────────────────────────────────────────────
 if [ "${AVAIL_MB}" -lt "${TWELVE_GB_THRESHOLD}" ]; then
@@ -224,25 +224,27 @@ These four variables control the inference characteristics of every model in the
   more inference threads on CPU
 - **Validation**: `echo $OLLAMA_NUM_PARALLEL` must return `1` before running any pipeline
 
-### OLLAMA_FLASH_ATTENTION=1
+### OLLAMA_FLASH_ATTENTION=0
 
 - **What it controls**: Enables fused multi-head attention kernel on CPUs with AVX2
-- **Why enable**: Reduces attention memory footprint ~20% by eliminating intermediate
-  `Q*K^T` and `softmax` allocations. On HP EliteBook 850 G3 (Skylake, AVX2 supported):
-  verified safe. Degrades gracefully to standard attention on non-AVX2 CPUs
-- **Memory impact at 4K context (Architect model)**: ~180 MB saved per inference run
+- **Why disabled by default**: Q8 Phi-4 with flash-attention has shown host-specific
+  CPU segfault risk on the HP EliteBook profile. The production-safe default is
+  conservative stability, not theoretical memory savings
+- **Memory impact at 4K context (Architect model)**: enabling it can save memory, but
+  it is not adopted unless a measured compatibility pass proves the active Ollama
+  version and model set are stable
 - **Validation**: No direct env check available — infer from Ollama logs at startup
 
-### OLLAMA_KV_CACHE_TYPE=q8_0
+### OLLAMA_KV_CACHE_TYPE=f16
 
 - **What it controls**: Quantisation of the KV (key-value) cache from float16 to int8
-- **Why q8_0 not q4_0**: `q8_0` saves ~30% KV memory vs f16 with negligible quality loss.
-  `q4_0` saves ~50% but degrades multi-step reasoning (scripting, storyboard) noticeably
-  on CPU where precision matters more than on GPU
-- **Memory impact**: For Architect at 4K context: `f16` costs ~320 MB; `q8_0` costs ~220 MB.
-  This 100 MB delta enables dual-model residency to fit more comfortably within 16 GB budget
-- **Never use `f16`** on the 16 GB profile — it prevents safe dual-model residency
-- **Validation**: `echo $OLLAMA_KV_CACHE_TYPE` must return `q8_0`
+- **Why f16**: It is the verified-stable pair with `OLLAMA_FLASH_ATTENTION=0` on the
+  current CPU-only host class. Do not switch to `q8_0` as a paper optimization without
+  measuring stability on the exact Ollama version and model set in use
+- **Memory impact**: For Architect at 4K context: `f16` costs more KV RAM than `q8_0`,
+  so admission control must rely on the RAM and CPU gates instead of unsafe cache tuning
+- **Validation**: `echo $OLLAMA_KV_CACHE_TYPE` must return `f16` for the conservative
+  local-first profile
 
 ### OLLAMA_NUM_THREADS=3
 
@@ -261,16 +263,16 @@ These four variables control the inference characteristics of every model in the
 Set `num_ctx` explicitly in Modelfile or API call. Defaults are model-dependent and often
 either too large (wastes KV RAM) or too small (truncates reasoning chains).
 
-| Model | Recommended num_ctx | KV RAM at q8_0 | Rationale |
+| Model | Recommended num_ctx | KV RAM at f16 | Rationale |
 |---|---|---|---|
-| Pilot (`instruct-phi4-pro-q8-prod`) | 2048 | ~120 MB | Intent classification ≤192 tokens; 2K keeps full conversation history for context |
-| Pilot lite (`instruct-phi4-lite-q4km-prod`) | 1024 | ~60 MB | Low-RAM path; 1K sufficient for simplified classification |
-| Architect (`plan-qwen25-pro-q5km-prod`) | 4096 | ~240 MB | Scripting generates 1024 tokens; storyboard needs full script in context |
-| Oracle (`reason-deepseekr1-pro-q5km-prod`) | 3072 | ~180 MB | Virality scoring with script + storyboard in context |
-| Forge (`code-qwen25-pro-q5km-prod`) | 4096 | ~240 MB | Code generation benefits from full file context |
-| Relay (`route-phi4-lite-q4km-prod`) | 512 | ~30 MB | Intent routing only; no long context needed |
+| Pilot (`instruct-phi4-pro-q8-prod`) | 2048 | ~240 MB | Intent classification ≤192 tokens; 2K keeps full conversation history for context |
+| Pilot lite (`instruct-phi4-lite-q4km-prod`) | 1024 | ~120 MB | Low-RAM path; 1K sufficient for simplified classification |
+| Architect (`plan-qwen25-pro-q5km-prod`) | 4096 | ~480 MB | Scripting generates 1024 tokens; storyboard needs full script in context |
+| Oracle (`reason-deepseekr1-pro-q5km-prod`) | 3072 | ~360 MB | Virality scoring with script + storyboard in context |
+| Forge (`code-qwen25-pro-q5km-prod`) | 4096 | ~480 MB | Code generation benefits from full file context |
+| Relay (`route-phi4-lite-q4km-prod`) | 512 | ~60 MB | Intent routing only; no long context needed |
 
-> **`FULL_PIPELINE_MIN_AVAILABLE_MB = 6170` accounts for**: Architect at 4K ctx (~240 MB KV) +
+> **`FULL_PIPELINE_MIN_AVAILABLE_MB = 6170` accounts for**: Architect at 4K ctx (~480 MB KV) +
 > model weights (~5 GB) + Pilot resident (~3 GB) + OS/API overhead (800 MB reserve) = ~9 GB peak.
 > The 6170 MB threshold is the post-Pilot-warmup floor — with Pilot resident (~3 GB loaded),
 > 6170 MB remaining is enough for Architect to load and run safely.
@@ -312,9 +314,9 @@ These vars belong in the Zod schema. Add in Priority 3 milestone alongside other
 const envSchema = z.object({
   // Ollama CPU performance (startup-ops responsibility)
   OLLAMA_NUM_PARALLEL:         z.coerce.number().int().min(1).max(1).default(1),
-  OLLAMA_FLASH_ATTENTION:      z.coerce.number().int().min(0).max(1).default(1),
-  OLLAMA_KV_CACHE_TYPE:        z.enum(['f16', 'q8_0', 'q4_0']).default('q8_0'),
-  OLLAMA_NUM_THREADS:          z.coerce.number().int().min(1).max(8).default(3),
+  OLLAMA_FLASH_ATTENTION:      z.enum(['0', '1']).default('0'),
+  OLLAMA_KV_CACHE_TYPE:        z.string().default('f16'),
+  OLLAMA_NUM_THREADS:          z.coerce.number().int().min(1).default(4),
 
   // Dual-model residency
   OLLAMA_MAX_LOADED_MODELS:    z.coerce.number().int().min(1).max(3).default(1),
@@ -331,8 +333,8 @@ const envSchema = z.object({
 
 **Risk level annotations** (add as JSDoc to each env schema field):
 - `OLLAMA_NUM_PARALLEL`: silent-fail (wrong value silently reduces throughput)
-- `OLLAMA_FLASH_ATTENTION`: silent-fail (missing value adds memory overhead)
-- `OLLAMA_KV_CACHE_TYPE`: silent-fail (wrong value bloats KV cache)
+- `OLLAMA_FLASH_ATTENTION`: stability-critical (unsafe value can crash this host class)
+- `OLLAMA_KV_CACHE_TYPE`: stability-critical (must stay paired with flash-attention policy)
 - `OLLAMA_NUM_THREADS`: silent-fail (wrong value causes hypervisor contention)
 - `FULL_PIPELINE_MIN_AVAILABLE_MB`: startup-crash-adjacent (used to block job acceptance)
 - `SWARMX_WARMUP_STATUS_FILE`: silent-fail (missing file → conservative ETA in dashboard)
@@ -368,7 +370,8 @@ const etaSecs = warmup?.coldStartEtaSecs ?? 140
 
 ### Critical (fix before committing anything else)
 - `OLLAMA_NUM_PARALLEL` not set before Ollama starts (or set > 1) → add to startup-enhanced.sh
-- `OLLAMA_KV_CACHE_TYPE` not set or set to `f16` on 16 GB host → switch to `q8_0`
+- `OLLAMA_FLASH_ATTENTION=1` or `OLLAMA_KV_CACHE_TYPE=q8_0` on the conservative CPU profile
+  without a measured compatibility note → restore `FLASH_ATTENTION=0` and `KV_CACHE_TYPE=f16`
 - `startup-enhanced.sh` does not exit 1 when post-warmup RAM < `FULL_PIPELINE_MIN_AVAILABLE_MB`
 - `/api/system/health` not reading warmup status file → add `readWarmupStatus()` call
 - Dashboard cold-start ETA hard-coded as 140 s regardless of warmup state → read from API

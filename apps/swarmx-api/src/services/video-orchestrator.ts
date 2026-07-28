@@ -107,12 +107,15 @@ import { generateLTXWorkflow } from "./video-workflows.js";
 import { scoreVirality } from "./virality-scorer.js";
 import { generateCaptionDraftWithValidation } from "./caption-generator.js";
 import { generateOllamaText } from "./ollama.js";
+import { fetchBackend } from "./backend-fetch-errors.js";
 import { log } from "../lib/logger.js";
 import { HOOK_BLOCKLIST, findHookBlocklistViolations } from "../lib/creative-quality.js";
 import { tracer, SpanStatusCode, trace } from "../lib/tracer.js";
 import { renderWithFfmpeg, type FfmpegRenderPackage } from "./ffmpeg-video-renderer.js";
 import { sanitizeReasoningOutput } from "./reasoning-sanitizer.js";
 import { validateStageResult, type ValidatedStage } from "./stage-schemas.js";
+import { certifyProductionPack } from "./creative-factory-certification.js";
+import { toVideoJobError } from "./video-error-classification.js";
 import type { StageValidationEntry } from "../types/video.js";
 import {
   LOW_RAM_VIDEO_MODEL,
@@ -417,7 +420,8 @@ async function comfyRunWorkflow(
   workflowJson: Record<string, unknown>,
   signal:       AbortSignal
 ): Promise<string> {
-  const submitRes = await fetch(`${COMFY_BASE}/prompt`, {
+  const submitRes = await fetchBackend(`${COMFY_BASE}/prompt`, {
+    backend: "comfyui",
     method:  "POST",
     headers: { "Content-Type": "application/json" },
     signal,
@@ -439,11 +443,14 @@ async function comfyRunWorkflow(
       const t = setTimeout(resolve, COMFY_POLL_INTERVAL_MS);
       signal.addEventListener("abort", () => {
         clearTimeout(t);
-        reject(new DOMException("Aborted", "AbortError"));
+        reject(signal.reason instanceof Error ? signal.reason : new DOMException("Aborted", "AbortError"));
       }, { once: true });
     });
 
-    const histRes = await fetch(`${COMFY_BASE}/history/${prompt_id}`, { signal });
+    const histRes = await fetchBackend(`${COMFY_BASE}/history/${prompt_id}`, {
+      backend: "comfyui",
+      signal,
+    });
     if (!histRes.ok) continue;
 
     const history = (await histRes.json()) as Record<
@@ -1229,6 +1236,13 @@ export async function runOrchestration(
       throw makeError("UNKNOWN", "finalizing stage did not produce output", false, "finalizing");
     }
 
+    // Store certification blockers so the dashboard can explain why the job
+    // did not reach PRODUCTION_PACK_VALID without needing a separate API call.
+    const certResult = certifyProductionPack({ output });
+    if (certResult.blockers.length > 0) {
+      output.certificationBlockers = certResult.blockers;
+    }
+
     if (!ctx.job.outputArtifacts) {
       ctx.job.outputArtifacts = {};
     }
@@ -1259,7 +1273,7 @@ export async function runOrchestration(
       return;
     }
 
-    const videoError = toVideoError(err);
+    const videoError = toVideoJobError(err);
     rootSpan.recordException(err instanceof Error ? err : new Error(String(err)));
     rootSpan.setAttribute("swarmx.job.error_code", videoError.code);
     rootSpan.setStatus({ code: SpanStatusCode.ERROR, message: videoError.code });
@@ -1420,7 +1434,12 @@ function stageController(
 ): AbortController {
   const controller = new AbortController();
   const timeout    = STAGE_TIMEOUT_MS[stage];
-  const timer      = setTimeout(() => controller.abort(), timeout);
+  const timer      = setTimeout(() => {
+    controller.abort(Object.assign(
+      new Error(`Stage ${stage} timed out after ${timeout}ms`),
+      { code: "TIMEOUT" },
+    ));
+  }, timeout);
 
   // Auto-removes after first fire — no manual cleanup needed
   controller.signal.addEventListener(
@@ -1430,7 +1449,7 @@ function stageController(
   );
   ctx.jobAbortSignal.addEventListener(
     "abort",
-    () => controller.abort(),
+    () => controller.abort(Object.assign(new Error("Job was cancelled"), { code: "CANCELLED_BY_USER" })),
     { once: true }
   );
 
@@ -1484,17 +1503,6 @@ function makeError(
   };
 }
 
-function toVideoError(err: unknown): VideoJobError {
-  if (err instanceof DOMException && err.name === "AbortError") {
-    return makeError("CANCELLED_BY_USER", "Stage was aborted", false);
-  }
-  const e         = err as { message?: string; code?: string };
-  const code      = (e.code as VideoJobError["code"]) ?? "UNKNOWN";
-  const message   = e.message ?? "An unknown error occurred";
-  const retryable = ["TIMEOUT", "OLLAMA_UNAVAILABLE", "COMFY_UNAVAILABLE"].includes(code);
-  return { code, message, retryable };
-}
-
 /**
  * [VOT-06] Fixed: The abort listener reference is now stored so
  * removeEventListener() can clean it up in the finally block.
@@ -1506,7 +1514,8 @@ async function isComfyAvailable(signal: AbortSignal): Promise<boolean> {
   signal.addEventListener("abort", onAbort, { once: true });
 
   try {
-    const res = await fetch(`${COMFY_BASE}/system_stats`, {
+    const res = await fetchBackend(`${COMFY_BASE}/system_stats`, {
+      backend: "comfyui",
       signal: controller.signal,
     });
     return res.ok;

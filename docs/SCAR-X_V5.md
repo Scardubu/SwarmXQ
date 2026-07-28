@@ -274,8 +274,8 @@ Invariants:
 ```env
 OLLAMA_NUM_PARALLEL=1
 OLLAMA_MAX_LOADED_MODELS=2   # Pilot resident + one 7B active (NOT concurrent inference)
-OLLAMA_FLASH_ATTENTION=1     # measure: ~20% VRAM reduction, graceful on non-AVX2
-OLLAMA_KV_CACHE_TYPE=q8_0   # measure: ~30% savings vs f16, negligible quality delta
+OLLAMA_FLASH_ATTENTION=0     # conservative CPU default; benchmark before enabling
+OLLAMA_KV_CACHE_TYPE=f16     # verified-stable pair with flash-attention disabled
 OLLAMA_NUM_THREADS=3         # WSL2: 3/4; bare-metal: 4/4
 OLLAMA_KEEP_ALIVE=0          # global; startup-enhanced.sh sets 5m for Pilot only
 ```

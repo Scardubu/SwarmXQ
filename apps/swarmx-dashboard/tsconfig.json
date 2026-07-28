@@ -24,7 +24,8 @@
     ],
     "paths": {
       "@/*": ["./src/*"],
-      "@swarmx/types": ["../../packages/swarmx-types/src/index.ts"]
+      "@swarmx/types": ["../../packages/swarmx-types/src/index.ts"],
+      "@swarmx/types/operator-map": ["../../packages/swarmx-types/src/operator-map.ts"]
     }
   },
   "include": [

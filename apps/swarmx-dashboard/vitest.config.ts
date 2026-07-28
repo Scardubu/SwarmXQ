@@ -7,6 +7,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@swarmx/types/operator-map": path.resolve(__dirname, "../../packages/swarmx-types/src/operator-map.ts"),
       "@swarmx/types": path.resolve(__dirname, "../../packages/swarmx-types/src/index.ts"),
     },
   },

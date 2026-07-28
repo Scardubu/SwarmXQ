@@ -108,6 +108,7 @@ export interface VideoOutputMetadata {
   modelsUsed: Partial<Record<VideoJobStage, string>>;
   rendererTier?: RendererCapabilityTier;
   certificationTier?: CertificationTier;
+  certificationBlockers?: string[];
   voiceArtifact?: VoiceArtifact;
   mediaQualityReport?: MediaQualityReport;
   productionPackageDir?: string;
@@ -282,6 +283,7 @@ function normalizeOutput(
     ...(output.storyboardFrames ? { storyboardFrames: output.storyboardFrames } : {}),
     ...(output.rendererTier ? { rendererTier: output.rendererTier } : {}),
     ...(output.certificationTier ? { certificationTier: output.certificationTier } : {}),
+    ...(output.certificationBlockers && output.certificationBlockers.length > 0 ? { certificationBlockers: output.certificationBlockers } : {}),
     ...(output.voiceArtifact ? { voiceArtifact: output.voiceArtifact } : {}),
     ...(output.mediaQualityReport ? { mediaQualityReport: output.mediaQualityReport } : {}),
     ...(output.productionPackageDir ? { productionPackageDir: output.productionPackageDir } : {}),
@@ -386,6 +388,7 @@ export function errorCodeHint(code: string): string {
     case "RENDER_FAILED":             return "Render assembly stage failed. Check ffmpeg logs.";
     case "TIMEOUT":                   return "Pipeline exceeded the allowed time limit.";
     case "OLLAMA_UNAVAILABLE":        return "Ollama is not reachable. Ensure it is running on port 11434.";
+    case "COMFY_UNAVAILABLE":         return "ComfyUI is not reachable. Check the render backend or switch to FFmpeg.";
     case "SCRIPTING_FAILED":          return "Script generation failed. Check Ollama model availability.";
     case "STORYBOARD_FAILED":         return "Storyboard generation failed. Check model state.";
     case "FFMPEG_UNAVAILABLE":        return "ffmpeg not found. Install with: sudo apt install ffmpeg";
@@ -398,6 +401,6 @@ export function errorCodeHint(code: string): string {
     case "PRESSURE_CRITICAL":         return "System memory was critically low at failure time. Free RAM and retry.";
     case "INTENT_VALIDATION_FAILED":  return "Prompt could not be classified. Try rephrasing it.";
     case "CANCELLED_BY_USER":         return "Job was cancelled before completion.";
-    default:                          return "An unexpected error stopped the pipeline. Check operator trace.";
+    default:                          return "Unexpected pipeline error. Retry is disabled until an operator reviews the trace.";
   }
 }

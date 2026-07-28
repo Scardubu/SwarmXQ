@@ -137,7 +137,7 @@ const schema = z.object({
   SWARMX_VIDEO_QUEUE_NAME: z.string().min(1).default("swarmx-video"),
   SWARMX_VIDEO_MAX_RETRIES: z.preprocess(
     (val) => val ?? process.env["VIDEO_MAX_RETRIES"],
-    nonNegativeInt.default(1),
+    nonNegativeInt.default(2),
   ),
   SWARMX_VIDEO_JOB_TTL_MS: z.preprocess(
     (val) => val ?? process.env["VIDEO_JOB_TTL_MS"],

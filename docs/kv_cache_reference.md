@@ -239,11 +239,11 @@ Status: Available in llama.cpp server mode.
 ## Practical KV Optimization Checklist
 
 ```
-□ 1. Set OLLAMA_KV_CACHE_TYPE=q8_0 before starting Ollama
-      → Verify in Ollama logs: "kv cache type = q8_0"
+□ 1. Keep OLLAMA_KV_CACHE_TYPE=f16 on the conservative CPU profile
+      → Verify in Ollama logs: "kv cache type = f16"
 
-□ 2. Set OLLAMA_FLASH_ATTENTION=1
-      → Reduces KV bandwidth pressure at 16k+ context
+□ 2. Keep OLLAMA_FLASH_ATTENTION=0 unless a compatibility run proves stability
+      → Q8 Phi-4 plus flash-attention/q8 KV has shown host-specific CPU crashes
 
 □ 3. Verify OLLAMA_MAX_LOADED_MODELS=1
       → Prevents KV cache from being split across two loaded models

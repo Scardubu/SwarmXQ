@@ -14,6 +14,7 @@ import { randomUUID } from "node:crypto";
 import type { ComfyWorkflow } from "@swarmx/types/video-types";
 import { ModelOrchestrator } from "./model-orchestrator.js";
 import { loadEnv } from "../lib/env.js";
+import { fetchBackend } from "./backend-fetch-errors.js";
 
 const _cenv = loadEnv();
 const DEFAULT_COMFY_BASE_URL = _cenv.SWARMX_COMFYUI_URL;
@@ -80,7 +81,7 @@ function requestInitWithSignal(signal?: AbortSignal): RequestInit {
 
 async function wait(ms: number, signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) {
-    throw new DOMException("Aborted", "AbortError");
+    throw signal.reason instanceof Error ? signal.reason : new DOMException("Aborted", "AbortError");
   }
   await new Promise<void>((resolve, reject) => {
     const t = setTimeout(resolve, ms);
@@ -88,7 +89,7 @@ async function wait(ms: number, signal?: AbortSignal): Promise<void> {
       "abort",
       () => {
         clearTimeout(t);
-        reject(new DOMException("Aborted", "AbortError"));
+        reject(signal.reason instanceof Error ? signal.reason : new DOMException("Aborted", "AbortError"));
       },
       { once: true },
     );
@@ -128,7 +129,10 @@ export class ComfyUIClient {
 
   async isAvailable(signal?: AbortSignal): Promise<boolean> {
     try {
-      const res = await fetch(`${this.baseUrl}/system_stats`, requestInitWithSignal(signal));
+      const res = await fetchBackend(`${this.baseUrl}/system_stats`, {
+        backend: "comfyui",
+        ...requestInitWithSignal(signal),
+      });
       return res.ok;
     } catch {
       return false;
@@ -139,7 +143,8 @@ export class ComfyUIClient {
     assertFrameBudget(workflow, this.maxFrameBudgetMb);
     assertRamHeadroom(workflow);
 
-    const response = await fetch(`${this.baseUrl}/prompt`, {
+    const response = await fetchBackend(`${this.baseUrl}/prompt`, {
+      backend: "comfyui",
       method: "POST",
       headers: { "Content-Type": "application/json" },
       ...requestInitWithSignal(signal),
@@ -169,7 +174,8 @@ export class ComfyUIClient {
     for (let attempt = 1; attempt <= this.pollMaxAttempts; attempt += 1) {
       await wait(this.pollIntervalMs, options.signal);
 
-      const response = await fetch(`${this.baseUrl}/history/${promptId}`, {
+      const response = await fetchBackend(`${this.baseUrl}/history/${promptId}`, {
+        backend: "comfyui",
         ...requestInitWithSignal(options.signal),
       });
       if (!response.ok) continue;
@@ -193,7 +199,8 @@ export class ComfyUIClient {
   async cancelWorkflow(promptId: string): Promise<void> {
     // ComfyUI supports deleting queue items by prompt id via /queue.
     // Use best-effort cancellation because some versions may return 404/405.
-    await fetch(`${this.baseUrl}/queue`, {
+    await fetchBackend(`${this.baseUrl}/queue`, {
+      backend: "comfyui",
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ delete: [promptId] }),

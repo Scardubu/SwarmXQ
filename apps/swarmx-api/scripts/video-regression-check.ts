@@ -247,7 +247,8 @@ await assert.rejects(
   /Video artifact media probe failed/,
 );
 
-process.env["VIDEO_MAX_RETRIES"] = "1";
+process.env["VIDEO_MAX_RETRIES"] = "2";
+resetEnvForTesting();
 const queue = await import("../src/services/video-queue.js");
 const first = queue.enqueue({ ...request, clientRequestId: "queue-first" });
 const second = queue.enqueue({ ...request, clientRequestId: "queue-second" });
@@ -256,6 +257,15 @@ assert.equal(queue.startJob(second.id), null);
 queue.failJob(first.id, {
   code: "TRANSIENT",
   message: "retry",
+  retryable: true,
+  stage: "planning",
+  timestamp: new Date().toISOString(),
+});
+assert.equal(queue.getJob(first.id)?.status, "queued");
+assert.equal(queue.startJob(first.id)?.status, "running");
+queue.failJob(first.id, {
+  code: "TRANSIENT",
+  message: "retry second attempt",
   retryable: true,
   stage: "planning",
   timestamp: new Date().toISOString(),
