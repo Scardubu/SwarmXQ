@@ -17,6 +17,8 @@ interface UIState {
   commandPaletteOpen: boolean;
   // Telemetry rail
   telemetryRailVisible: boolean;
+  // Progressive disclosure mode
+  operatorViewMode: "client" | "operator";
 }
 
 interface UIActions {
@@ -27,6 +29,7 @@ interface UIActions {
   openCommandPalette: () => void;
   closeCommandPalette: () => void;
   toggleTelemetryRail: () => void;
+  toggleOperatorViewMode: () => void;
   // Terminal tabs
   addTerminalTab: (label?: string, agentId?: string) => TerminalTab;
   removeTerminalTab: (id: string) => void;
@@ -55,6 +58,7 @@ export const useUIStore = create<UIState & UIActions>()(
     activeTerminalTabId: DEFAULT_TAB.id,
     commandPaletteOpen: false,
     telemetryRailVisible: true,
+    operatorViewMode: "client",
 
     toggleNav: () => set((s) => ({ navExpanded: !s.navExpanded })),
     setNavExpanded: (expanded) => set({ navExpanded: expanded }),
@@ -76,6 +80,9 @@ export const useUIStore = create<UIState & UIActions>()(
 
     toggleTelemetryRail: () =>
       set((s) => ({ telemetryRailVisible: !s.telemetryRailVisible })),
+
+    toggleOperatorViewMode: () =>
+      set((s) => ({ operatorViewMode: s.operatorViewMode === "client" ? "operator" : "client" })),
 
     addTerminalTab: (label?, agentId?) => {
       const tab: TerminalTab = {

@@ -38,6 +38,7 @@ function handleToggleShortcut(
     toggleTerminal: () => void;
     toggleTerminalFullscreen: () => void;
     toggleTelemetryRail: () => void;
+    toggleOperatorViewMode: () => void;
     addTerminalTab: UIStoreState["addTerminalTab"];
   }
 ): boolean {
@@ -78,6 +79,7 @@ function handleTShortcut(
   keyLower: string,
   actions: {
     toggleTelemetryRail: () => void;
+    toggleOperatorViewMode: () => void;
     addTerminalTab: UIStoreState["addTerminalTab"];
   }
 ): boolean {
@@ -88,6 +90,11 @@ function handleTShortcut(
 
   if (key === "T" && event.shiftKey) {
     actions.toggleTelemetryRail();
+    return true;
+  }
+
+  if (key === "O" && event.shiftKey) {
+    actions.toggleOperatorViewMode();
     return true;
   }
 
@@ -118,6 +125,7 @@ export function useKeyboard(): void {
   const toggleTerminalFullscreen = useUIStore((s: UIStoreState) => s.toggleTerminalFullscreen);
   const openCommandPalette = useUIStore((s: UIStoreState) => s.openCommandPalette);
   const toggleTelemetryRail = useUIStore((s: UIStoreState) => s.toggleTelemetryRail);
+  const toggleOperatorViewMode = useUIStore((s: UIStoreState) => s.toggleOperatorViewMode);
   const addTerminalTab = useUIStore((s: UIStoreState) => s.addTerminalTab);
   const router = useRouter();
 
@@ -135,6 +143,7 @@ export function useKeyboard(): void {
           toggleTerminal,
           toggleTerminalFullscreen,
           toggleTelemetryRail,
+          toggleOperatorViewMode,
           addTerminalTab,
         })
       ) {
@@ -152,7 +161,7 @@ export function useKeyboard(): void {
 
     document.addEventListener("keydown", handler, { capture: true });
     return () => document.removeEventListener("keydown", handler, { capture: true });
-  }, [toggleNav, toggleTerminal, toggleTerminalFullscreen, openCommandPalette, toggleTelemetryRail, addTerminalTab, router]);
+  }, [toggleNav, toggleTerminal, toggleTerminalFullscreen, openCommandPalette, toggleTelemetryRail, toggleOperatorViewMode, addTerminalTab, router]);
 }
 
 function isTerminalFocused(): boolean {

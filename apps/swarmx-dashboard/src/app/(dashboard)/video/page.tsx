@@ -24,6 +24,7 @@ import {
   ArrowDown,
   ArrowUp,
   Clapperboard,
+  Filter,
   GripVertical,
   ListVideo,
   RotateCcw,
@@ -134,6 +135,7 @@ export default function VideoPage() {
   const { fetchJobs, listJobs, isLoading, listError, selectedJobId, reorderQueue, retryFromStage } =
     useVideoStore();
   const [draggedJobId, setDraggedJobId] = useState<string | null>(null);
+  const [showFailedOnly, setShowFailedOnly] = useState(false);
 
   useEffect(() => {
     void fetchJobs();
@@ -145,6 +147,7 @@ export default function VideoPage() {
   );
 
   const jobs = listJobs();
+  const visibleJobs = showFailedOnly ? jobs.filter((j) => j.status === "failed") : jobs;
   const hasJobs = jobs.length > 0;
   const runningCount = jobs.filter((j) => j.status === "running").length;
   const queuedCount = jobs.filter((j) => j.status === "queued").length;
@@ -277,11 +280,26 @@ export default function VideoPage() {
                 <GripVertical className="h-3.5 w-3.5 text-text-muted" aria-hidden="true" />
                 Queue
               </div>
-              {queuedCount > 1 && (
-                <span className="font-mono text-[10px] uppercase tracking-wide text-text-muted">
-                  Drag or use move controls to reorder
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {failedCount > 0 && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={showFailedOnly ? "default" : "outline"}
+                    onClick={() => setShowFailedOnly((s) => !s)}
+                    aria-pressed={showFailedOnly}
+                    aria-label={showFailedOnly ? "Show all jobs" : "Show failed jobs only"}
+                  >
+                    <Filter className="h-3.5 w-3.5" aria-hidden="true" />
+                    {showFailedOnly ? "All Jobs" : `Failed (${failedCount})`}
+                  </Button>
+                )}
+                {queuedCount > 1 && !showFailedOnly && (
+                  <span className="font-mono text-[10px] uppercase tracking-wide text-text-muted">
+                    Drag or use move controls to reorder
+                  </span>
+                )}
+              </div>
             </div>
 
             {isLoading && (
@@ -303,9 +321,23 @@ export default function VideoPage() {
 
             {!isLoading && !hasJobs && <EmptyJobList />}
 
-            {hasJobs && (
+            {!isLoading && hasJobs && showFailedOnly && failedCount === 0 && (
+              <div className="rounded border border-dashed border-border bg-bg-surface/60 px-4 py-8 text-center text-xs text-text-muted">
+                No failed jobs right now.
+              </div>
+            )}
+
+            {!isLoading && failedCount > 0 && !showFailedOnly && (
+              <div className="rounded border border-status-error/35 bg-status-error/10 px-3 py-2.5" role="status" aria-live="polite">
+                <p className="text-xs text-status-error">
+                  {failedCount} failed job{failedCount === 1 ? "" : "s"} detected. Use the Failed filter for focused triage.
+                </p>
+              </div>
+            )}
+
+            {hasJobs && visibleJobs.length > 0 && (
               <div className="flex flex-col gap-2" role="list" aria-label="Video job queue">
-                {jobs.map((job) => {
+                {visibleJobs.map((job) => {
                   const queuedIndex = queuedJobIds.indexOf(job.id);
                   const canMoveQueued = job.status === "queued" && queuedCount > 1;
 

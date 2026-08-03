@@ -3,8 +3,10 @@
 import React, { useMemo } from "react";
 import { cn, formatBps, formatPct } from "@/lib/utils";
 import { useEventsStore } from "@/stores/events";
+import { useUIStore } from "@/stores/ui";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { DisclosureModeBadge } from "@/components/ui/disclosure-mode-badge";
 import { Cpu, MemoryStick, HardDrive, Network, Bot, AlertCircle, Zap, Gauge, Sparkles } from "lucide-react";
 import { resolveOperatorName } from "@swarmx/types/operator-map";
 
@@ -273,6 +275,7 @@ function governorSurface(level: "normal" | "high" | "critical"): string {
 
 function GovernorSummary() {
   const governorState = useEventsStore((s) => s.governorState);
+  const operatorViewMode = useUIStore((s) => s.operatorViewMode);
 
   if (!governorState) {
     return <div className="h-20 skeleton w-full rounded" />;
@@ -308,20 +311,22 @@ function GovernorSummary() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-1">
-        {Object.entries(governorState.tokenCeilings).map(([tier, limit]) => {
-          const operatorName = resolveOperatorName(tier);
-          return (
-          <span
-            key={tier}
-            className="rounded border border-border/70 bg-bg-surface px-1.5 py-0.5 text-[9px] font-mono text-text-muted"
-            title={`${operatorName} token ceiling`}
-          >
-            {operatorName}:{limit}
-          </span>
-          );
-        })}
-      </div>
+      {operatorViewMode === "operator" && (
+        <div className="flex flex-wrap gap-1">
+          {Object.entries(governorState.tokenCeilings).map(([tier, limit]) => {
+            const operatorName = resolveOperatorName(tier);
+            return (
+            <span
+              key={tier}
+              className="rounded border border-border/70 bg-bg-surface px-1.5 py-0.5 text-[9px] font-mono text-text-muted"
+              title={`${operatorName} token ceiling`}
+            >
+              {operatorName}:{limit}
+            </span>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -383,9 +388,12 @@ export function TelemetryRail() {
     >
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-        <span className="text-[10px] font-mono text-text-muted uppercase tracking-widest">
-          Telemetry
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-mono text-text-muted uppercase tracking-widest">
+            Telemetry
+          </span>
+          <DisclosureModeBadge />
+        </div>
         <div className="flex items-center gap-2">
           {isStale ? (
             <span className="text-[9px] font-mono text-status-warning flex items-center gap-1">

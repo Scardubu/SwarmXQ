@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AlertTriangle, ArrowLeft, Clapperboard, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DisclosureModeBadge } from "@/components/ui/disclosure-mode-badge";
 import { useVideoStore } from "../../../../stores/video";
+import { useUIStore } from "@/stores/ui";
 import { VideoJobTimeline } from "../../../../components/video/VideoJobTimeline";
 import { ViralityMeter } from "../../../../components/video/ViralityMeter";
 import { CaptionEditor } from "../../../../components/video/CaptionEditor";
@@ -104,6 +106,7 @@ export default function VideoJobDetailPage() {
   const publishJob = useVideoStore((s) => s.publishJob);
   const recordJobSseStream = useVideoStore((s) => s.recordJobSseStream);
   const retryFromStage = useVideoStore((s) => s.retryFromStage);
+  const operatorViewMode = useUIStore((s) => s.operatorViewMode);
 
   useEffect(() => {
     if (!id) return;
@@ -273,7 +276,15 @@ export default function VideoJobDetailPage() {
 
           {job.operatorTrace && job.operatorTrace.length > 0 && (
             <div className="rounded border border-border bg-bg-elevated p-4">
-              <p className="text-[10px] text-text-muted font-mono uppercase tracking-wider mb-2">Operator Trace</p>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-[10px] text-text-muted font-mono uppercase tracking-wider">Operator Trace</p>
+                <DisclosureModeBadge />
+              </div>
+              {operatorViewMode !== "operator" ? (
+                <p className="text-xs text-text-muted">
+                  Hidden in client view. Switch to operator view (⌘⇧O) to see model routing, latency, and token usage.
+                </p>
+              ) : (
               <div className="max-h-64 overflow-y-auto">
                 <table className="w-full text-xs">
                   <caption className="sr-only">Operator trace for job {job.id.slice(0, 8)}</caption>
@@ -301,6 +312,7 @@ export default function VideoJobDetailPage() {
                   </tbody>
                 </table>
               </div>
+              )}
             </div>
           )}
         </section>

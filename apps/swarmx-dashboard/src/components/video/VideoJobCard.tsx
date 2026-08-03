@@ -224,6 +224,7 @@ function PublishSummary({ job }: { job: VideoJob }) {
 export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
   const cancelJob = useVideoStore((s) => s.cancelJob);
   const router = useRouter();
+  const maxRetries = job.maxRetries ?? 3;
 
   const canCancel = job.status === "queued" || job.status === "running";
   const isComplete = job.status === "completed";
@@ -456,8 +457,18 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
           <span title="Job ID" className="max-w-[8rem] truncate">
             {job.id.slice(0, 8)}…
           </span>
+          {job.preliminaryHookScore !== undefined && job.viralitySignal == null && (
+            <span className="text-status-throttled">
+              hook {(Math.max(0, Math.min(1, job.preliminaryHookScore)) * 100).toFixed(0)}%
+            </span>
+          )}
           {job.retryCount > 0 && (
-            <span className="text-status-warning">retry {job.retryCount}/2</span>
+            <span className="text-status-warning">retry {job.retryCount}/{maxRetries}</span>
+          )}
+          {job.nextRetryAt && job.status === "queued" && (
+            <span className="text-status-warning/80">
+              next {new Date(job.nextRetryAt).toLocaleTimeString()}
+            </span>
           )}
           {elapsed != null && job.status === "running" && (
             <span className="ml-auto">{elapsed}s elapsed</span>

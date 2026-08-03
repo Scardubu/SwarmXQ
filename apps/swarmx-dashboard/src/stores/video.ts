@@ -581,9 +581,17 @@ export const useVideoStore = create<VideoStore>()(
                     ...job,
                     status: job.retryCount < event.data.retryCount ? "queued" : "failed",
                     retryCount: event.data.retryCount,
+                    ...(event.data.maxRetries !== undefined ? { maxRetries: event.data.maxRetries } : {}),
+                    ...(event.data.nextRetryAt !== undefined ? { nextRetryAt: event.data.nextRetryAt } : {}),
+                    ...(event.data.nextRetryDelayMs !== undefined ? { nextRetryDelayMs: event.data.nextRetryDelayMs } : {}),
+                    ...(event.data.errorLog !== undefined ? { errorLog: event.data.errorLog } : {}),
                     error: event.data.error,
                     updatedAt: event.timestamp,
                   };
+                  if (next.status === "failed") {
+                    delete next.nextRetryAt;
+                    delete next.nextRetryDelayMs;
+                  }
                   delete next.currentStage;
                   jobs.set(job.id, next);
                 }
@@ -653,6 +661,11 @@ export const useVideoStore = create<VideoStore>()(
                 ? { completedAt: data.timestamp }
                 : {}),
             };
+
+            if (!isTerminalVideoStatus(nextStatus)) {
+              delete next.nextRetryAt;
+              delete next.nextRetryDelayMs;
+            }
 
             jobs.set(job.id, next);
             return { jobs };

@@ -28,6 +28,7 @@ const TERMINAL_COMMANDS = [
 const UI_COMMANDS = [
   { id: "ui-nav",      label: "Toggle Sidebar",      shortcut: "⌘B",  action: "toggleNav" as const },
   { id: "ui-telemetry",label: "Toggle Telemetry Rail",shortcut: "⌘⇧T", action: "toggleTelemetryRail" as const },
+  { id: "ui-disclosure",label: "Toggle Operator View",shortcut: "⌘⇧O", action: "toggleOperatorViewMode" as const },
 ] as const;
 
 // ── Command Palette ───────────────────────────────────────────────────────────
@@ -40,6 +41,7 @@ export function CommandPalette() {
   const addTerminalTab = useUIStore((s) => s.addTerminalTab);
   const toggleNav = useUIStore((s) => s.toggleNav);
   const toggleTelemetryRail = useUIStore((s) => s.toggleTelemetryRail);
+  const toggleOperatorViewMode = useUIStore((s) => s.toggleOperatorViewMode);
 
   const agentsMap = useEventsStore((s) => s.agents);
   const agents = React.useMemo(() => [...agentsMap.values()], [agentsMap]);
@@ -56,12 +58,13 @@ export function CommandPalette() {
   );
 
   const runUIAction = useCallback(
-    (action: "toggleNav" | "toggleTelemetryRail") => {
+    (action: "toggleNav" | "toggleTelemetryRail" | "toggleOperatorViewMode") => {
       closeCommandPalette();
       if (action === "toggleNav") toggleNav();
-      else toggleTelemetryRail();
+      else if (action === "toggleTelemetryRail") toggleTelemetryRail();
+      else toggleOperatorViewMode();
     },
-    [closeCommandPalette, toggleNav, toggleTelemetryRail]
+    [closeCommandPalette, toggleNav, toggleTelemetryRail, toggleOperatorViewMode]
   );
 
   const navigate = useCallback(
@@ -131,7 +134,7 @@ interface InnerProps {
   readonly agents: AgentState[];
   readonly onNavigate: (href: string) => void;
   readonly onTerminalAction: (a: "toggleTerminal" | "addTerminalTab" | "toggleTerminalFullscreen") => void;
-  readonly onUIAction: (a: "toggleNav" | "toggleTelemetryRail") => void;
+  readonly onUIAction: (a: "toggleNav" | "toggleTelemetryRail" | "toggleOperatorViewMode") => void;
   readonly onFocusAgent: (id: string) => void;
   readonly onClose: () => void;
 }

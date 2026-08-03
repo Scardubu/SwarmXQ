@@ -142,11 +142,15 @@ export interface VideoJob {
   startedAt?: string;
   completedAt?: string;
   retryCount: number;
+  maxRetries?: number;
+  nextRetryAt?: string;
+  nextRetryDelayMs?: number;
   resumeFromStage?: VideoJobStage;
   pressureTierAtStart?: "normal" | "high" | "critical";
   clientRequestId?: string;
   operatorTrace?: OperatorTraceEntry[];
   viralitySignal?: ViralitySignal;
+  preliminaryHookScore?: number;
   outputArtifacts?: VideoArtifacts;
   publishHistory?: PublishResult[];
   errorLog?: VideoError[];
@@ -361,10 +365,14 @@ export function normalizeVideoJob(raw: RawVideoJob): VideoJob {
     ...(error ? { error } : {}),
     ...(raw.startedAt ? { startedAt: raw.startedAt } : {}),
     ...(raw.completedAt ? { completedAt: raw.completedAt } : {}),
+    ...(raw.maxRetries !== undefined ? { maxRetries: raw.maxRetries } : {}),
+    ...(raw.nextRetryAt ? { nextRetryAt: raw.nextRetryAt } : {}),
+    ...(raw.nextRetryDelayMs !== undefined ? { nextRetryDelayMs: raw.nextRetryDelayMs } : {}),
     ...(raw.resumeFromStage ? { resumeFromStage: raw.resumeFromStage } : {}),
     ...(raw.pressureTierAtStart ? { pressureTierAtStart: raw.pressureTierAtStart } : {}),
     ...(raw.clientRequestId ? { clientRequestId: raw.clientRequestId } : {}),
     ...(raw.operatorTrace ? { operatorTrace: raw.operatorTrace } : {}),
+    ...(raw.preliminaryHookScore !== undefined ? { preliminaryHookScore: raw.preliminaryHookScore } : {}),
     ...(raw.viralitySignal ? { viralitySignal: raw.viralitySignal } : {}),
     ...(raw.outputArtifacts ? { outputArtifacts: raw.outputArtifacts } : {}),
     ...(publishHistory ? { publishHistory } : {}),

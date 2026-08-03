@@ -4,7 +4,7 @@ import React from "react";
 import { cn } from "@/lib/utils";
 import { useEventsStore } from "@/stores/events";
 import { useUIStore } from "@/stores/ui";
-import { Terminal, PanelRight } from "lucide-react";
+import { Terminal, PanelRight, Eye } from "lucide-react";
 import type { ApiHealthState } from "@/hooks/useApiHealth";
 import { getRuntimeGuidance } from "@/lib/runtime-guidance";
 import type { PressureLevel, StartupSummary } from "@swarmx/types";
@@ -131,6 +131,8 @@ export function CommandBar({ breadcrumb = "Overview", apiHealth }: CommandBarPro
   const terminalVisible = useUIStore((s) => s.terminalVisible);
   const toggleTelemetryRail = useUIStore((s) => s.toggleTelemetryRail);
   const telemetryRailVisible = useUIStore((s) => s.telemetryRailVisible);
+  const operatorViewMode = useUIStore((s) => s.operatorViewMode);
+  const toggleOperatorViewMode = useUIStore((s) => s.toggleOperatorViewMode);
   const startupBadge = startupSummary ? getStartupBadge(startupSummary) : null;
   const pressureLevel = governorState?.pressureLevel ?? startupSummary?.pressureLevel;
   const availableMb = governorState?.availableMb ?? startupSummary?.availableMb;
@@ -333,6 +335,25 @@ export function CommandBar({ breadcrumb = "Overview", apiHealth }: CommandBarPro
 
         {/* Separator */}
         <span className="h-3.5 w-px bg-border hidden lg:block" aria-hidden />
+
+        <button
+          type="button"
+          onClick={toggleOperatorViewMode}
+          title={operatorViewMode === "operator" ? "Switch to client view" : "Switch to operator view"}
+          aria-label={operatorViewMode === "operator" ? "Switch to client view" : "Switch to operator view"}
+          aria-pressed={operatorViewMode === "operator"}
+          className={cn(
+            "hidden md:flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wide",
+            "transition-colors duration-(--duration-micro)",
+            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
+            operatorViewMode === "operator"
+              ? "border-status-throttled/35 bg-status-throttled/10 text-status-throttled"
+              : "border-border text-text-muted hover:text-text-secondary",
+          )}
+        >
+          <Eye className="h-3 w-3" />
+          {operatorViewMode === "operator" ? "Operator" : "Client"}
+        </button>
 
         {/* Telemetry rail toggle */}
         <button

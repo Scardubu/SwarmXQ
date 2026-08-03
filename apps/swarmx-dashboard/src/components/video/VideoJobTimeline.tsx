@@ -15,7 +15,7 @@ import { safeErrorMessage } from "@/lib/utils";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
-const DEFAULT_MAX_RETRIES = 2;
+const DEFAULT_MAX_RETRIES = 3;
 
 interface VideoJobTimelineProps {
   job: VideoJob;
@@ -93,6 +93,7 @@ function StageProgressBar({ progress }: { progress: number }) {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function VideoJobTimeline({ job, compact = false }: VideoJobTimelineProps) {
+  const maxRetries = job.maxRetries ?? DEFAULT_MAX_RETRIES;
   const isTerminal =
     job.status === "completed" ||
     job.status === "failed" ||
@@ -198,9 +199,9 @@ export function VideoJobTimeline({ job, compact = false }: VideoJobTimelineProps
           </p>
           {job.error.retryable && (
             <p className="mt-0.5 text-[10px] text-status-error/75">
-              {job.retryCount < DEFAULT_MAX_RETRIES
-                ? `Retry ${job.retryCount + 1}/${DEFAULT_MAX_RETRIES} will run automatically`
-                : `Retry ${job.retryCount}/${DEFAULT_MAX_RETRIES} exhausted; free resources and retry from failed stage`}
+              {job.retryCount < maxRetries
+                ? `Retry ${job.retryCount + 1}/${maxRetries}${job.nextRetryAt ? ` scheduled (${new Date(job.nextRetryAt).toLocaleTimeString()})` : " will run automatically"}`
+                : `Retry ${job.retryCount}/${maxRetries} exhausted; free resources and retry from failed stage`}
             </p>
           )}
           {(() => { const hint = errorCodeHint(job.error.code); return hint ? <p className="mt-0.5 text-[10px] text-text-secondary">{hint}</p> : null; })()}
