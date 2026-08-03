@@ -171,6 +171,12 @@ export interface VideoJob {
   completedAt?: string;
   /** Retry count against the same job id (v1: 0 or 1). */
   retryCount: number;
+  /** Effective retry ceiling applied by the queue for this job. */
+  maxRetries?: number;
+  /** Next scheduled automatic retry attempt timestamp (ISO), if pending. */
+  nextRetryAt?: string;
+  /** Delay (ms) until next automatic retry, if pending. */
+  nextRetryDelayMs?: number;
   resumeFromStage?: VideoJobStage;
   /** Pressure tier at job start. */
   pressureTierAtStart?: "normal" | "high" | "critical";

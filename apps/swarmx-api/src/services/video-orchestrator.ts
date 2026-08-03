@@ -110,6 +110,7 @@ import { generateOllamaText } from "./ollama.js";
 import { fetchBackend } from "./backend-fetch-errors.js";
 import { log } from "../lib/logger.js";
 import { HOOK_BLOCKLIST, findHookBlocklistViolations } from "../lib/creative-quality.js";
+import { classifyHookFamily, validateHookCandidate } from "../lib/hook-laboratory.js";
 import { tracer, SpanStatusCode, trace } from "../lib/tracer.js";
 import { renderWithFfmpeg, type FfmpegRenderPackage } from "./ffmpeg-video-renderer.js";
 import { sanitizeReasoningOutput } from "./reasoning-sanitizer.js";
@@ -138,6 +139,9 @@ const GOVERNOR_BASE = videoConfig.SWARMX_API_INTERNAL;
  * Default: 3000ms (3 seconds). Acceptable range: 1000–30000 ms.
  */
 const HIGH_PRESSURE_DELAY_MS = videoConfig.SWARMX_VIDEO_HIGH_PRESSURE_DELAY_MS;
+const RETRY_BASE_DELAY_MS = videoConfig.SWARMX_VIDEO_RETRY_BASE_DELAY_MS;
+const RETRY_MAX_DELAY_MS = videoConfig.SWARMX_VIDEO_RETRY_MAX_DELAY_MS;
+const RETRY_JITTER_MS = videoConfig.SWARMX_VIDEO_RETRY_JITTER_MS;
 
 /** Per-stage timeout matrix (ms) — aligned with architecture review §3. */
 const STAGE_TIMEOUT_MS: Record<VideoJobStage, number> = {
@@ -1208,6 +1212,19 @@ export async function runOrchestration(
       const result = await stageScripting(ctx, plan);
       scriptText = result.scriptText;
       ctx.scriptText = scriptText;
+      ctx.job.preliminaryHookScore = derivePreliminaryHookScore(scriptText);
+      ctx.job.updatedAt = new Date().toISOString();
+      ctx.broadcast({
+        type: "video:stream",
+        timestamp: new Date().toISOString(),
+        data: {
+          jobId: ctx.job.id,
+          stage: "scripting",
+          pct: 50,
+          operatorTag: "system",
+          message: `Pre-render hook confidence ${ctx.job.preliminaryHookScore.toFixed(2)}`,
+        },
+      });
     });
 
     let frames: string[] = [];
@@ -1280,9 +1297,26 @@ export async function runOrchestration(
 
     const failedJob  = queue.failJob(jobId, videoError);
 
+    let retryDelayMs: number | undefined;
+    let nextRetryAt: string | undefined;
+    if (failedJob.status === "queued") {
+      retryDelayMs = computeRetryDelayMs(failedJob.retryCount);
+      const scheduled = queue.setRetrySchedule(jobId, retryDelayMs);
+      nextRetryAt = scheduled?.nextRetryAt;
+    }
+
     broadcast(makeVideoFailedEvent(
-      jobId, videoError, failedJob.retryCount,
-      Date.now() - ctx.startedAt, ctx.job.currentStage
+      jobId,
+      videoError,
+      failedJob.retryCount,
+      Date.now() - ctx.startedAt,
+      ctx.job.currentStage,
+      {
+        ...(failedJob.errorLog !== undefined ? { errorLog: failedJob.errorLog } : {}),
+        ...(failedJob.maxRetries !== undefined ? { maxRetries: failedJob.maxRetries } : {}),
+        ...(nextRetryAt !== undefined ? { nextRetryAt } : {}),
+        ...(retryDelayMs !== undefined ? { nextRetryDelayMs: retryDelayMs } : {}),
+      },
     ));
 
     if (failedJob.status === "queued") {
@@ -1295,7 +1329,7 @@ export async function runOrchestration(
           stage: "retry",
           pct: 0,
           operatorTag: "system",
-          message: `Retry attempt ${failedJob.retryCount} queued`,
+          message: `Retry ${failedJob.retryCount}/${failedJob.maxRetries ?? videoConfig.SWARMX_VIDEO_MAX_RETRIES} queued${retryDelayMs !== undefined ? ` · next in ${Math.ceil(retryDelayMs / 1000)}s` : ""}`,
         },
       });
       setTimeout(() => {
@@ -1303,7 +1337,7 @@ export async function runOrchestration(
         if (retryJob) {
           void runOrchestration(jobId, broadcast);
         }
-      }, 5_000);
+      }, retryDelayMs ?? RETRY_BASE_DELAY_MS);
     }
   } finally {
     clearInterval(cancelWatcher);
@@ -1536,6 +1570,30 @@ function extractHookLine(scriptText: string | undefined): string | undefined {
     return lines.slice(hookIdx + 1).find((l) => l.trim().length > 0)?.trim();
   }
   return lines[0]?.trim() || undefined;
+}
+
+function computeRetryDelayMs(retryCount: number): number {
+  const attempt = Math.max(1, retryCount);
+  const base = RETRY_BASE_DELAY_MS * 2 ** Math.max(0, attempt - 1);
+  const bounded = Math.min(RETRY_MAX_DELAY_MS, base);
+  const jitter = RETRY_JITTER_MS > 0 ? Math.floor(Math.random() * (RETRY_JITTER_MS + 1)) : 0;
+  return bounded + jitter;
+}
+
+function derivePreliminaryHookScore(scriptText: string): number {
+  const hook = extractHookLine(scriptText);
+  if (!hook) return 0.2;
+
+  const validation = validateHookCandidate(hook);
+  const family = classifyHookFamily(hook);
+
+  let score = validation.passes ? 0.82 : 0.58;
+  score -= Math.min(validation.failedRules.length, 3) * 0.12;
+  if (validation.wordCount > 18) score -= 0.1;
+  if (validation.violations.length > 0) score -= 0.15;
+  score += family === "unknown" ? -0.06 : 0.04;
+
+  return Math.max(0, Math.min(1, Number(score.toFixed(2))));
 }
 
 function creativeBriefLines(req: VideoJobRequest): string {

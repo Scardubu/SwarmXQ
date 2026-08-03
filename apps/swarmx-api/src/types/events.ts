@@ -116,8 +116,12 @@ export interface VideoJobFailedEvent {
   data: {
     jobId: string;
     error: VideoJobError;
+    errorLog?: VideoJob["errorLog"];
     stage?: VideoJobStage;
     retryCount: number;
+    maxRetries?: number;
+    nextRetryAt?: string;
+    nextRetryDelayMs?: number;
     totalDurationMs: number;
   };
 }
@@ -255,6 +259,7 @@ export function makeVideoFailedEvent(
   retryCount: number,
   totalDurationMs: number,
   stage?: VideoJobStage,
+  extra?: Partial<Omit<VideoJobFailedEvent["data"], "jobId" | "error" | "retryCount" | "totalDurationMs" | "stage">>,
 ): VideoJobFailedEvent {
   return {
     type: "video:failed",
@@ -265,6 +270,7 @@ export function makeVideoFailedEvent(
       retryCount,
       totalDurationMs,
       ...(stage !== undefined ? { stage } : {}),
+      ...(extra ?? {}),
     },
   };
 }

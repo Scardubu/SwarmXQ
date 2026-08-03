@@ -66,6 +66,17 @@ function persistJob(event: string, job: VideoJob): void {
   writeSnapshot("video-jobs", [...registry.values()]);
 }
 
+function appendErrorHistory(job: VideoJob, error: VideoJobError): void {
+  const entry = {
+    code: error.code,
+    message: error.message,
+    retryable: error.retryable,
+    ...(error.stage !== undefined ? { stage: error.stage } : {}),
+    ...(error.details !== undefined ? { details: error.details } : {}),
+  };
+  job.errorLog = [...(job.errorLog ?? []), entry].slice(-25);
+}
+
 function getBullQueue(): Queue<VideoJobRequest> {
   if (!bullQueue) {
     bullQueue = new Queue<VideoJobRequest>(VIDEO_QUEUE_NAME, {
@@ -129,6 +140,7 @@ export function enqueue(request: VideoJobRequest): VideoJob {
     stages: {},
     overallProgress: 0,
     retryCount: 0,
+    maxRetries: MAX_RETRIES,
     createdAt: now(),
     updatedAt: now(),
     ...(request.clientRequestId !== undefined
@@ -204,6 +216,8 @@ export function startJob(id: string): VideoJob | null {
   job.status = "running";
   job.startedAt = now();
   job.updatedAt = now();
+  delete job.nextRetryAt;
+  delete job.nextRetryDelayMs;
   delete job.error;
   persistJob("start", job);
   return job;
@@ -282,6 +296,8 @@ export function completeJob(
     job.output = output;
   }
   job.overallProgress = 100;
+  delete job.nextRetryAt;
+  delete job.nextRetryDelayMs;
   job.completedAt = now();
   job.updatedAt = now();
   delete job.currentStage;
@@ -299,6 +315,11 @@ export function failJob(id: string, error: VideoJobError): VideoJob {
   const job = registry.get(id);
   if (!job) throw new Error(`VideoQueue: job ${id} not found`);
   assertMutable(job, "failJob");
+
+  appendErrorHistory(job, error);
+  job.maxRetries = MAX_RETRIES;
+  delete job.nextRetryAt;
+  delete job.nextRetryDelayMs;
 
   if (error.retryable && job.retryCount < MAX_RETRIES) {
     job.status = "queued";
@@ -322,6 +343,19 @@ export function failJob(id: string, error: VideoJobError): VideoJob {
   return job;
 }
 
+export function setRetrySchedule(id: string, delayMs: number): VideoJob | null {
+  const job = registry.get(id);
+  if (!job || job.status !== "queued") return null;
+
+  const boundedDelayMs = Math.max(0, Math.floor(delayMs));
+  const nextRetryAt = new Date(Date.now() + boundedDelayMs).toISOString();
+  job.nextRetryDelayMs = boundedDelayMs;
+  job.nextRetryAt = nextRetryAt;
+  job.updatedAt = now();
+  persistJob("retry_schedule", job);
+  return job;
+}
+
 /**
  * Cancel a job.
  * Returns false if the job is already in a terminal state.
@@ -331,6 +365,8 @@ export function cancelJob(id: string): boolean {
   if (!job || isTerminalStatus(job.status)) return false;
 
   job.status = "cancelled";
+  delete job.nextRetryAt;
+  delete job.nextRetryDelayMs;
   job.completedAt = now();
   job.updatedAt = now();
   delete job.currentStage;
@@ -430,6 +466,9 @@ export function resumeJob(id: string, fromStage: VideoJobStage): VideoJob {
   job.status = "queued";
   job.resumeFromStage = fromStage;
   job.retryCount += 1;
+  job.maxRetries = MAX_RETRIES;
+  delete job.nextRetryAt;
+  delete job.nextRetryDelayMs;
   job.updatedAt = now();
   delete job.error;
   delete job.completedAt;
@@ -452,6 +491,7 @@ export function restoreJobFromBullMQ(
     stages: {},
     overallProgress: 0,
     retryCount: 0,
+    maxRetries: MAX_RETRIES,
     createdAt: now(),
     updatedAt: now(),
     ...(request.clientRequestId !== undefined

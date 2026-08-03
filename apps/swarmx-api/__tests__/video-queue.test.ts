@@ -30,6 +30,7 @@ import {
   runningCount,
   queuedCount,
   hydrateVideoQueueFromDisk,
+  setRetrySchedule,
 } from "../src/services/video-queue.js";
 
 let tempHome: string | undefined;
@@ -70,6 +71,7 @@ describe("enqueue", () => {
     expect(job.status).toBe("queued");
     expect(job.overallProgress).toBe(0);
     expect(job.retryCount).toBe(0);
+    expect(job.maxRetries).toBe(3);
     expect(job.request.prompt).toBe("make a video");
   });
 
@@ -185,20 +187,24 @@ describe("failJob", () => {
     const failed = failJob(job.id, nonRetryableError);
     expect(failed.status).toBe("failed");
     expect(failed.error?.code).toBe("RENDER_FAILED");
+    expect(failed.errorLog?.at(-1)?.code).toBe("RENDER_FAILED");
   });
 
   test("retryable error when retryCount < MAX_RETRIES requeues the job", () => {
     const job = enqueue({ prompt: "retry me" });
     startJob(job.id);
-    // retryCount=0, MAX_RETRIES=2 (default) → 0 < 2 → requeue
+    // retryCount=0, MAX_RETRIES=3 (default) → 0 < 3 → requeue
     const requeued = failJob(job.id, retryableError);
     expect(requeued.status).toBe("queued");
     expect(requeued.retryCount).toBe(1);
     expect(requeued.overallProgress).toBe(0);
+    expect(requeued.errorLog?.length).toBe(1);
   });
 
-  test("retryable error exhausts after the second default retry", () => {
-    const job = enqueue({ prompt: "retry twice" });
+  test("retryable error exhausts after the third default retry", () => {
+    const job = enqueue({ prompt: "retry thrice" });
+    startJob(job.id);
+    expect(failJob(job.id, retryableError).status).toBe("queued");
     startJob(job.id);
     expect(failJob(job.id, retryableError).status).toBe("queued");
     startJob(job.id);
@@ -206,7 +212,19 @@ describe("failJob", () => {
     startJob(job.id);
     const exhausted = failJob(job.id, retryableError);
     expect(exhausted.status).toBe("failed");
-    expect(exhausted.retryCount).toBe(2);
+    expect(exhausted.retryCount).toBe(3);
+    expect(exhausted.errorLog?.length).toBe(4);
+  });
+
+  test("retry scheduling metadata can be set on queued retries", () => {
+    const job = enqueue({ prompt: "schedule retry" });
+    startJob(job.id);
+    failJob(job.id, retryableError);
+
+    const scheduled = setRetrySchedule(job.id, 12_500);
+    expect(scheduled).not.toBeNull();
+    expect(scheduled?.nextRetryDelayMs).toBe(12_500);
+    expect(scheduled?.nextRetryAt).toBeDefined();
   });
 });
 
