@@ -794,7 +794,14 @@ Current implementation degrades via retryable/terminal failures and pressure-awa
   and format.
 - Final artifacts served by `/api/video/files/:filename` are allowlisted to
   `.mp4` and `.webm`. Unknown extensions return `415 unsupported_media_type`.
-- Job retry behavior is controlled by queue policy (`VIDEO_MAX_RETRIES`).
+- Job retry behavior is controlled by queue policy (`SWARMX_VIDEO_MAX_RETRIES`, default `3`).
+  Each retryable failure re-queues after an exponential backoff delay
+  (`SWARMX_VIDEO_RETRY_BASE_DELAY_MS * 2^retryCount`, jittered by
+  `SWARMX_VIDEO_RETRY_JITTER_MS`, capped at `SWARMX_VIDEO_RETRY_MAX_DELAY_MS`).
+  The scheduled time is recorded on the job as `nextRetryAt` /
+  `nextRetryDelayMs` and cleared once the job resumes, completes, or is
+  cancelled. Every failure — retryable or terminal — appends a capped
+  (25-entry) record to `job.errorLog` for dead-letter triage.
 
 ### Creative Factory V4 contracts
 
@@ -1041,6 +1048,28 @@ via the NavRail at keyboard shortcut `⌘7`.
 - All caption editor form controls have programmatic `<label htmlFor>` associations.
 - Publish status feedback is announced via `aria-live="polite"`.
 - ViralityMeter dimension bars expose `role="progressbar"` with `aria-valuenow`.
+
+**Dead-letter triage (queue page):**
+
+- The `/video` queue header shows a "Failed (`n`)" filter toggle whenever at
+  least one job is in the `failed` state; toggling it narrows the list to
+  failed jobs only, with an empty-state message when none remain.
+- An advisory banner (`role="status"`) surfaces above the queue when failed
+  jobs exist and the filter is not yet active.
+- Job cards show retry progress as `retry {retryCount}/{maxRetries}` (default
+  ceiling `3`) plus the next scheduled retry time when `nextRetryAt` is set.
+
+**Client / operator disclosure mode:**
+
+- `useUIStore.operatorViewMode` (`"client" | "operator"`, default `"client"`)
+  gates internal/debugging surfaces — the Operator Trace table on
+  `/video/[id]` and the per-operator token-ceiling chips in the Telemetry
+  rail's Governor section.
+- Toggle via the CommandBar "Client"/"Operator" button, the command palette
+  ("Toggle Operator View"), or the global shortcut `⌘⇧O`.
+- A small `DisclosureModeBadge` next to the Telemetry rail header and the
+  Operator Trace section header always shows the active mode so a hidden
+  section is never mistaken for missing data.
 
 ---
 

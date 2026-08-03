@@ -64,7 +64,10 @@ decisions use physical `MemAvailable` and report ZRAM separately.
 | `SWARMX_VIDEO_JOB_LIMIT_PER_HOUR` | `10` | Max video job submissions per connection per hour (sliding window). Returns 429 when exceeded. |
 | `SWARMX_VIDEO_QUEUE_MAX_SIZE` | `20` | Max queued or running video jobs accepted by the local registry. |
 | `SWARMX_VIDEO_QUEUE_NAME` | `swarmx-video` | BullMQ queue name when Redis-backed video jobs are enabled. |
-| `SWARMX_VIDEO_MAX_RETRIES` | `2` | Retry count for retryable video job failures. Legacy `VIDEO_MAX_RETRIES` is still accepted by the env schema. |
+| `SWARMX_VIDEO_MAX_RETRIES` | `3` | Retry count for retryable video job failures. Legacy `VIDEO_MAX_RETRIES` is still accepted by the env schema. |
+| `SWARMX_VIDEO_RETRY_BASE_DELAY_MS` | `5000` | Base delay before a retryable job re-queues. Actual delay grows exponentially per attempt (`base * 2^retryCount`) plus jitter, capped by `SWARMX_VIDEO_RETRY_MAX_DELAY_MS`. |
+| `SWARMX_VIDEO_RETRY_MAX_DELAY_MS` | `30000` | Ceiling on the computed exponential-backoff retry delay. |
+| `SWARMX_VIDEO_RETRY_JITTER_MS` | `1000` | Max random jitter (ms) added to each retry delay to avoid thundering-herd re-queues. |
 | `SWARMX_VIDEO_JOB_TTL_MS` | `14400000` | Terminal job retention window before in-memory cleanup. Legacy `VIDEO_JOB_TTL_MS` is still accepted by the env schema. |
 | `SWARMX_VIDEO_MAX_CONCURRENT_JOBS` | `1` | Configuration visibility for concurrency requests. The SINGLE-VIDEO LOCK still enforces one active video job on CPU-only hosts. Legacy `VIDEO_MAX_CONCURRENT_JOBS` is still accepted by the env schema. |
 | `SWARMX_VIDEO_EXPORT_TTL_DAYS` | `7` | Days after which rendered exports and artifacts are eligible for cleanup. Minimum 1. |
