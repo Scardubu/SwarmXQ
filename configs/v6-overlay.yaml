@@ -1,6 +1,8 @@
-# SwarmX APEX-17 r7 · configs/v6-overlay.yaml
+# SwarmX APEX-17 r8 · configs/v6-overlay.yaml
 # Evolution layer overlay — V6 production-grade settings.
 #
+# Changelog v2026.6.28-apex17-r8:
+#   [V6-r8-00] Header/version alignment to repository-wide r8 canonical baseline.
 # Changelog v2026.5.25-apex17-r7:
 #   [V6-r7-01] Lab Operator models for evolve workflow.
 #              Production live traffic stays on Pilot/Oracle/Forge canonical tags.

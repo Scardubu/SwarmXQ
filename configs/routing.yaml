@@ -1,5 +1,7 @@
-# SwarmXQ APEX-17 r7-final · configs/routing.yaml
+# SwarmXQ APEX-17 r8 · configs/routing.yaml
 # ─────────────────────────────────────────────────────────────────────────────
+# CHANGELOG v2026.6.28-apex17-r8:
+#   [ROUTE-r8-00] Header/version alignment to repository-wide r8 canonical baseline.
 # CHANGELOG v2026.5.25-apex17-r7:
 #   [ROUTE-r7-01] All model identifiers migrated from -scar suffix to canonical
 #                 grammar: <role>-<family>-<tier>-<quant>-<env>

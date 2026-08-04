@@ -1,5 +1,5 @@
 # SwarmXQ AI Skill Suite — Setup & Implementation Guide
-## V6.2.21 · APEX-17 r8 · 36 Skills · Claude Code Edition
+## V6.2.21 · APEX-17 r8 · 39 Skills · Claude Code Edition
 
 This guide covers the complete setup of the SwarmXQ AI skill system, including
 the critical SwarmXQ platform skills that are NOT included in the generic skill zip.
@@ -13,10 +13,12 @@ SwarmXQ repo root/
 ├── CLAUDE.md                    ← AI control document (Claude Code reads this first)
 ├── NEXUS.md                     ← NEXUS orchestration engine
 ├── .ai/
-│   └── skills/                  ← 36 SKILL.md files (34 generic + 2 SwarmXQ-specific)
+│   └── skills/                  ← 39 SKILL.md files (35 generic + 4 SwarmXQ-specific)
 │       ├── swarmxq-video-pipeline-architect/SKILL.md   ← PROVIDED SEPARATELY
 │       ├── swarmxq-model-orchestrator/SKILL.md         ← PROVIDED SEPARATELY
-│       └── [34 other skills from generic zip]
+│       ├── swarmxq-creative-director/SKILL.md          ← PROVIDED SEPARATELY
+│       ├── swarmxq-startup-ops-architect/SKILL.md      ← PROVIDED SEPARATELY
+│       └── [35 other skills from generic zip]
 └── .claude/
     └── commands/                ← Slash commands for Claude Code
         ├── nexus.md             ← /nexus  — task routing

@@ -1,9 +1,12 @@
 # swarmx_model_manifest.yaml
 # ─────────────────────────────────────────────────────────────────────────────
-# SwarmX APEX-17 r7-final · Canonical Model Stack Manifest
-# Version    : v2026.5.25-apex17-r7
+# SwarmX APEX-17 r8 · Canonical Model Stack Manifest
+# Version    : v2026.6.28-apex17-r8
 # Hardware   : HP EliteBook 850 G3 · 8 GB RAM · CPU-only · 4 cores · WSL2
-# Generated  : 2026-05-25
+# Generated  : 2026-06-28
+#
+# APEX-17 r8 changes from r7:
+#   [MAN-r8-00] Header/version alignment to repository-wide r8 canonical baseline.
 #
 # APEX-17 r7 changes from r5:
 #   [MAN-r7-01] All model identifiers migrated to canonical production tags
@@ -15,8 +18,8 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 meta:
-  version: "v2026.5.25-apex17-r7"
-  generated_at: "2026-05-25T00:00:00Z"
+  version: "v2026.6.28-apex17-r8"
+  generated_at: "2026-06-28T00:00:00Z"
   hardware:
     device: "HP EliteBook 850 G3"
     ram_gb: 8

@@ -1,6 +1,8 @@
-# SwarmX APEX-17 r7 · configs/evolution.yaml
+# SwarmX APEX-17 r8 · configs/evolution.yaml
 # Evolution overlay — Lab Operator assignments.
 #
+# Changelog v2026.6.28-apex17-r8:
+#   [EVO-r8-00] Header/version alignment to repository-wide r8 canonical baseline.
 # Changelog v2026.5.25-apex17-r7:
 #   [EVO-r7-01] observer_model, critic_model, mutator_model migrated from
 #               pre-scar canonical names to APEX-17 canonical production tags.
