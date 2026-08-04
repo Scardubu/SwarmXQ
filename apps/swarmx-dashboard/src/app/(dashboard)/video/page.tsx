@@ -136,6 +136,7 @@ export default function VideoPage() {
     useVideoStore();
   const [draggedJobId, setDraggedJobId] = useState<string | null>(null);
   const [showFailedOnly, setShowFailedOnly] = useState(false);
+  const [showDeadLetterOnly, setShowDeadLetterOnly] = useState(false);
 
   useEffect(() => {
     void fetchJobs();
@@ -147,12 +148,23 @@ export default function VideoPage() {
   );
 
   const jobs = listJobs();
-  const visibleJobs = showFailedOnly ? jobs.filter((j) => j.status === "failed") : jobs;
+  const deadLetterJobs = jobs.filter(
+    (job) =>
+      job.status === "failed" &&
+      job.maxRetries !== undefined &&
+      job.retryCount >= job.maxRetries,
+  );
+  const visibleJobs = showDeadLetterOnly
+    ? deadLetterJobs
+    : showFailedOnly
+      ? jobs.filter((j) => j.status === "failed")
+      : jobs;
   const hasJobs = jobs.length > 0;
   const runningCount = jobs.filter((j) => j.status === "running").length;
   const queuedCount = jobs.filter((j) => j.status === "queued").length;
   const doneCount = jobs.filter((j) => j.status === "completed").length;
   const failedCount = jobs.filter((j) => j.status === "failed").length;
+  const deadLetterCount = deadLetterJobs.length;
   const queuedJobIds = jobs.filter((job) => job.status === "queued").map((job) => job.id);
   const pressureLevel = governorState?.pressureLevel ?? startupSummary?.pressureLevel;
   const availableMb = governorState?.availableMb ?? startupSummary?.availableMb ?? null;
@@ -285,13 +297,32 @@ export default function VideoPage() {
                   <Button
                     type="button"
                     size="sm"
-                    variant={showFailedOnly ? "default" : "outline"}
-                    onClick={() => setShowFailedOnly((s) => !s)}
-                    aria-pressed={showFailedOnly}
-                    aria-label={showFailedOnly ? "Show all jobs" : "Show failed jobs only"}
+                    variant={showFailedOnly && !showDeadLetterOnly ? "default" : "outline"}
+                    onClick={() => {
+                      setShowDeadLetterOnly(false);
+                      setShowFailedOnly((s) => !s);
+                    }}
+                    aria-pressed={showFailedOnly && !showDeadLetterOnly}
+                    aria-label={showFailedOnly && !showDeadLetterOnly ? "Show all jobs" : "Show failed jobs only"}
                   >
                     <Filter className="h-3.5 w-3.5" aria-hidden="true" />
-                    {showFailedOnly ? "All Jobs" : `Failed (${failedCount})`}
+                    {showFailedOnly && !showDeadLetterOnly ? "All Jobs" : `Failed (${failedCount})`}
+                  </Button>
+                )}
+                {deadLetterCount > 0 && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={showDeadLetterOnly ? "default" : "outline"}
+                    onClick={() => {
+                      setShowFailedOnly(false);
+                      setShowDeadLetterOnly((s) => !s);
+                    }}
+                    aria-pressed={showDeadLetterOnly}
+                    aria-label={showDeadLetterOnly ? "Show all jobs" : "Show retry-exhausted jobs only"}
+                  >
+                    <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
+                    {showDeadLetterOnly ? "All Jobs" : `Dead Letter (${deadLetterCount})`}
                   </Button>
                 )}
                 {queuedCount > 1 && !showFailedOnly && (
@@ -321,13 +352,27 @@ export default function VideoPage() {
 
             {!isLoading && !hasJobs && <EmptyJobList />}
 
-            {!isLoading && hasJobs && showFailedOnly && failedCount === 0 && (
+            {!isLoading && hasJobs && showFailedOnly && failedCount === 0 && !showDeadLetterOnly && (
               <div className="rounded border border-dashed border-border bg-bg-surface/60 px-4 py-8 text-center text-xs text-text-muted">
                 No failed jobs right now.
               </div>
             )}
 
-            {!isLoading && failedCount > 0 && !showFailedOnly && (
+            {!isLoading && hasJobs && showDeadLetterOnly && deadLetterCount === 0 && (
+              <div className="rounded border border-dashed border-border bg-bg-surface/60 px-4 py-8 text-center text-xs text-text-muted">
+                No retry-exhausted jobs right now.
+              </div>
+            )}
+
+            {!isLoading && deadLetterCount > 0 && !showDeadLetterOnly && (
+              <div className="rounded border border-status-warning/35 bg-status-warning/10 px-3 py-2.5" role="status" aria-live="polite">
+                <p className="text-xs text-status-warning">
+                  {deadLetterCount} retry-exhausted job{deadLetterCount === 1 ? "" : "s"} in dead-letter triage.
+                </p>
+              </div>
+            )}
+
+            {!isLoading && failedCount > 0 && !showFailedOnly && !showDeadLetterOnly && (
               <div className="rounded border border-status-error/35 bg-status-error/10 px-3 py-2.5" role="status" aria-live="polite">
                 <p className="text-xs text-status-error">
                   {failedCount} failed job{failedCount === 1 ? "" : "s"} detected. Use the Failed filter for focused triage.

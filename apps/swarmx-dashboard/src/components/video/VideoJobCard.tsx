@@ -101,6 +101,12 @@ function scoreColor(value: number): string {
   return "text-status-success";
 }
 
+function hookConfidenceLabel(value: number): "low" | "medium" | "high" {
+  if (value < 0.4) return "low";
+  if (value <= 0.7) return "medium";
+  return "high";
+}
+
 // ─── Virality Badge (V6.2.26) ─────────────────────────────────────────────────
 // Compact overall-score chip. Palette mirrors the color rules from CLAUDE.md
 // (<0.4 → red · 0.4–0.7 → amber · >0.7 → green). Shown on any job whose
@@ -225,6 +231,7 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
   const cancelJob = useVideoStore((s) => s.cancelJob);
   const router = useRouter();
   const maxRetries = job.maxRetries ?? 3;
+  const retryExhausted = job.status === "failed" && job.retryCount >= maxRetries;
 
   const canCancel = job.status === "queued" || job.status === "running";
   const isComplete = job.status === "completed";
@@ -353,12 +360,53 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
               {job.output?.certificationTier && (
                 <CertTierBadge tier={job.output.certificationTier} />
               )}
+              {retryExhausted && (
+                <span
+                  className="inline-flex items-center gap-1 rounded border border-status-warning/35 bg-status-warning/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-warning"
+                  title="Retry budget exhausted; move to dead-letter triage"
+                  aria-label="Retry budget exhausted"
+                >
+                  <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                  dead letter
+                </span>
+              )}
             </div>
             <p className="mt-1.5 line-clamp-2 text-sm font-medium leading-snug text-text-primary">
               {job.request.prompt}
             </p>
           </div>
         </div>
+
+        {job.preliminaryHookScore !== undefined && job.viralitySignal == null && (
+          <div
+            className="rounded border border-status-throttled/35 bg-status-throttled/8 px-2.5 py-1.5"
+            role="status"
+            aria-live="polite"
+            aria-label={`Pre-render hook confidence ${Math.round(Math.max(0, Math.min(1, job.preliminaryHookScore)) * 100)} percent`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-mono uppercase tracking-wide text-text-muted">pre-render signal</span>
+              <span className={`text-[11px] font-semibold uppercase tracking-wide ${scoreColor(job.preliminaryHookScore)}`}>
+                {hookConfidenceLabel(job.preliminaryHookScore)} confidence
+              </span>
+            </div>
+            <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-border/70" aria-hidden="true">
+              <div
+                className={`h-full rounded-full transition-[width] duration-500 ${
+                  job.preliminaryHookScore < 0.4
+                    ? "bg-status-error"
+                    : job.preliminaryHookScore <= 0.7
+                      ? "bg-status-warning"
+                      : "bg-status-success"
+                }`}
+                style={{ width: `${Math.round(Math.max(0, Math.min(1, job.preliminaryHookScore)) * 100)}%` }}
+              />
+            </div>
+            <p className="mt-1 text-[10px] text-text-muted">
+              Hook {Math.round(Math.max(0, Math.min(1, job.preliminaryHookScore)) * 100)}% — review before full render spend.
+            </p>
+          </div>
+        )}
 
         {/* Progress bar — visible while running, animates smoothly */}
         {job.status === "running" && job.overallProgress != null && job.overallProgress > 0 && (
@@ -435,6 +483,23 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
           </div>
         )}
 
+        {retryExhausted && job.errorLog && job.errorLog.length > 0 && (
+          <div
+            className="rounded border border-status-error/35 bg-status-error/10 px-2.5 py-1.5"
+            role="status"
+            aria-label="Retry history"
+          >
+            <p className="text-[10px] font-mono uppercase tracking-wide text-status-error">retry history</p>
+            <ul className="mt-1 space-y-0.5 text-[10px] text-text-secondary">
+              {job.errorLog.slice(-3).reverse().map((entry, index) => (
+                <li key={`${entry.code}-${index}`} className="font-mono">
+                  {entry.code}: {safeErrorMessage(entry.message, "See operator trace for details.")}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* Loading Model hint — shown when model cold-start is likely (>30 s at first stage). */}
         {elapsed != null && elapsed > 30 &&
           (job.status === "classifying" || job.status === "running") && (
@@ -457,11 +522,6 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
           <span title="Job ID" className="max-w-[8rem] truncate">
             {job.id.slice(0, 8)}…
           </span>
-          {job.preliminaryHookScore !== undefined && job.viralitySignal == null && (
-            <span className="text-status-throttled">
-              hook {(Math.max(0, Math.min(1, job.preliminaryHookScore)) * 100).toFixed(0)}%
-            </span>
-          )}
           {job.retryCount > 0 && (
             <span className="text-status-warning">retry {job.retryCount}/{maxRetries}</span>
           )}
