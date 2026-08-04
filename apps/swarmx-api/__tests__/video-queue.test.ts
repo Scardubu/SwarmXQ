@@ -228,6 +228,99 @@ describe("failJob", () => {
   });
 });
 
+// The dashboard (video/page.tsx, VideoJobCard.tsx) classifies a job as
+// "dead-letter" using exactly this predicate against the queue payload:
+//   job.status === "failed" && job.maxRetries !== undefined
+//     && job.retryCount >= job.maxRetries
+// These tests lock that contract at the source (video-queue.ts), since both
+// GET /api/video/jobs[/:id] and the video:failed SSE event forward this
+// object (or its retryCount/maxRetries fields) to the UI unmodified.
+describe("dead-letter UI contract (retryCount >= maxRetries)", () => {
+  function exhaustRetries(jobId: string): void {
+    for (let i = 0; i < 3; i++) {
+      expect(failJob(jobId, retryableError).status).toBe("queued");
+      startJob(jobId);
+    }
+  }
+
+  test("retry-budget exhaustion satisfies the full dead-letter predicate", () => {
+    const job = enqueue({ prompt: "exhaust retries" });
+    startJob(job.id);
+    exhaustRetries(job.id);
+
+    const deadLetter = failJob(job.id, retryableError);
+
+    expect(deadLetter.status).toBe("failed");
+    expect(deadLetter.maxRetries).toBeDefined();
+    expect(deadLetter.retryCount).toBeGreaterThanOrEqual(deadLetter.maxRetries!);
+  });
+
+  test("retryCount never overshoots maxRetries on the exhausting failure", () => {
+    const job = enqueue({ prompt: "no overshoot" });
+    startJob(job.id);
+    exhaustRetries(job.id);
+
+    const deadLetter = failJob(job.id, retryableError);
+    expect(deadLetter.retryCount).toBe(deadLetter.maxRetries);
+  });
+
+  test("an immediate non-retryable failure is terminal but does NOT satisfy the dead-letter predicate", () => {
+    // Locks the semantic distinction: "failed" alone does not mean
+    // dead-letter. A hard failure that never entered the retry loop has
+    // retryCount(0) < maxRetries, so the dashboard must not badge it as
+    // retry-exhausted dead-letter even though it is a terminal failure.
+    const job = enqueue({ prompt: "hard fail" });
+    startJob(job.id);
+    const failed = failJob(job.id, nonRetryableError);
+
+    expect(failed.status).toBe("failed");
+    expect(failed.maxRetries).toBeDefined();
+    expect(failed.retryCount).toBeLessThan(failed.maxRetries!);
+  });
+
+  test("maxRetries is always defined on payloads the predicate's guard clause depends on", () => {
+    const queuedJob = enqueue({ prompt: "guard queued" });
+    expect(queuedJob.maxRetries).toBeDefined();
+
+    startJob(queuedJob.id);
+    const failed = failJob(queuedJob.id, nonRetryableError);
+    expect(failed.maxRetries).toBeDefined();
+  });
+
+  test("a dead-letter job clears any pending retry schedule", () => {
+    const job = enqueue({ prompt: "clear schedule" });
+    startJob(job.id);
+    failJob(job.id, retryableError);
+    setRetrySchedule(job.id, 5_000);
+    startJob(job.id);
+    // First fail() already consumed one retry above; two more exhaust it.
+    failJob(job.id, retryableError);
+    startJob(job.id);
+    failJob(job.id, retryableError);
+    startJob(job.id);
+
+    const deadLetter = failJob(job.id, retryableError);
+
+    expect(deadLetter.status).toBe("failed");
+    expect(deadLetter.nextRetryAt).toBeUndefined();
+    expect(deadLetter.nextRetryDelayMs).toBeUndefined();
+  });
+
+  test("errorLog on a dead-letter job preserves history for the retry-history UI block", () => {
+    const job = enqueue({ prompt: "history preserved" });
+    startJob(job.id);
+    exhaustRetries(job.id);
+
+    const deadLetter = failJob(job.id, nonRetryableError);
+
+    expect(deadLetter.errorLog).toBeDefined();
+    expect(deadLetter.errorLog!.length).toBe(4);
+    expect(deadLetter.errorLog!.at(-1)?.code).toBe("RENDER_FAILED");
+    // VideoJobCard renders the last 3 entries, most-recent first.
+    expect(deadLetter.errorLog!.slice(-3)).toHaveLength(3);
+  });
+});
+
 describe("cancelJob", () => {
   test("cancels a queued job and returns true", () => {
     const job = enqueue({ prompt: "cancel me" });
