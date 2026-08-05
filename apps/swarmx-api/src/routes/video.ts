@@ -285,6 +285,21 @@ const VideoJobRequestSchema = {
       type: "string",
       enum: ["default", "calm", "energetic", "narrator"],
     },
+    voiceProfileId: {
+      type: "string",
+      enum: [
+        "auto",
+        "kokoro_warm",
+        "kokoro_narrator",
+        "kokoro_energetic",
+        "kokoro_contrarian",
+        "kokoro_storytime_dual",
+      ],
+    },
+    storyMode: {
+      type: "string",
+      enum: ["single_narrator", "dialogue_storytime"],
+    },
     clientRequestId: { type: "string", maxLength: 128 },
   },
 } as const;

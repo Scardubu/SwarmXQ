@@ -44,6 +44,47 @@ const KOKORO_SPEED_MAP: Record<string, number> = {
   energetic: 1.1,
 };
 
+const VOICE_PROFILE_STYLE_MAP: Record<
+  Exclude<NonNullable<VoiceSynthesisRequest["voiceProfileId"]>, "auto">,
+  string
+> = {
+  kokoro_warm: "warm",
+  kokoro_narrator: "narrator",
+  kokoro_energetic: "energetic",
+  kokoro_contrarian: "contrarian",
+  kokoro_storytime_dual: "narrator",
+};
+
+const ESPEAK_STYLE_MAP: Record<string, string> = {
+  default: "default",
+  calm: "calm",
+  warm: "calm",
+  energetic: "energetic",
+  contrarian: "energetic",
+  narrator: "narrator",
+};
+
+export function resolveVoiceStyle(
+  request: Pick<VoiceSynthesisRequest, "voiceId" | "voiceProfileId" | "storyMode">,
+): string {
+  if (request.voiceProfileId && request.voiceProfileId !== "auto") {
+    return VOICE_PROFILE_STYLE_MAP[request.voiceProfileId] ?? request.voiceId ?? "default";
+  }
+
+  if (request.storyMode === "dialogue_storytime" && (!request.voiceId || request.voiceId === "default")) {
+    return "narrator";
+  }
+
+  return request.voiceId ?? "default";
+}
+
+export function resolvePreferredVoiceProviderId(
+  options?: { voiceProfileId?: VoiceSynthesisRequest["voiceProfileId"] },
+): string | undefined {
+  if (!options?.voiceProfileId || options.voiceProfileId === "auto") return undefined;
+  return options.voiceProfileId.startsWith("kokoro_") ? "kokoro" : undefined;
+}
+
 export interface VoiceProvider {
   id: string;
   probe(): Promise<VoiceCapability>;
@@ -234,6 +275,8 @@ abstract class BaseVoiceProvider implements VoiceProvider {
       providerId: this.id,
       ...(providerVersion ? { providerVersion } : {}),
       voiceId: descriptor.voiceId,
+      ...(request.voiceProfileId ? { voiceProfileId: request.voiceProfileId } : {}),
+      ...(request.storyMode ? { storyMode: request.storyMode } : {}),
       displayName: descriptor.displayName,
       locale: descriptor.locale,
       qualityTier: descriptor.qualityTier,
@@ -330,8 +373,8 @@ export class KokoroVoiceProvider extends BaseVoiceProvider {
     const env = loadEnv();
     await mkdir(outputPath.split("/").slice(0, -1).join("/") || ".", { recursive: true });
     const normalizedText = normalizeScriptForSpeech(request.text);
-    const requestedVoice = request.voiceId ?? "default";
-    const voiceId = KOKORO_VOICE_MAP[requestedVoice] ?? requestedVoice;
+    const requestedVoiceStyle = resolveVoiceStyle(request);
+    const voiceId = KOKORO_VOICE_MAP[requestedVoiceStyle] ?? requestedVoiceStyle;
     const voices = await this.listVoices(request.locale);
     const descriptor = voices.find((voice) => voice.voiceId === voiceId) ?? voices.find((voice) => voice.voiceId === KOKORO_VOICE_MAP.default) ?? voices[0]!;
     const started = Date.now();
@@ -341,7 +384,7 @@ export class KokoroVoiceProvider extends BaseVoiceProvider {
       body: JSON.stringify({
         text: normalizedText,
         voice: voiceId,
-        speed: KOKORO_SPEED_MAP[requestedVoice] ?? 1,
+        speed: KOKORO_SPEED_MAP[requestedVoiceStyle] ?? 1,
       }),
       signal: signal ?? AbortSignal.timeout(VOICE_COMMAND_TIMEOUT_MS),
     });
@@ -470,7 +513,8 @@ export class EspeakVoiceProvider extends BaseVoiceProvider {
   async synthesize(request: VoiceSynthesisRequest, outputPath: string, signal?: AbortSignal): Promise<VoiceArtifact> {
     const normalizedText = normalizeScriptForSpeech(request.text);
     const voices = await this.listVoices(request.locale);
-    const descriptor = voices.find((voice) => voice.voiceId === request.voiceId) ?? voices[0]!;
+    const requestedVoiceStyle = resolveVoiceStyle(request);
+    const descriptor = voices.find((voice) => voice.voiceId === (ESPEAK_STYLE_MAP[requestedVoiceStyle] ?? requestedVoiceStyle)) ?? voices[0]!;
     const speedByVoice: Record<string, string> = {
       default: "165",
       calm: "145",
@@ -499,7 +543,7 @@ export function voiceProviders(): VoiceProvider[] {
   return [new KokoroVoiceProvider(), new PiperVoiceProvider(), new EspeakVoiceProvider()];
 }
 
-export async function selectVoiceProvider(): Promise<{ provider: VoiceProvider; capability: VoiceCapability; fallbackReason?: string; benchmarkAppliedProviderId?: string }> {
+export async function selectVoiceProvider(options?: { voiceProfileId?: VoiceSynthesisRequest["voiceProfileId"] }): Promise<{ provider: VoiceProvider; capability: VoiceCapability; fallbackReason?: string; benchmarkAppliedProviderId?: string }> {
   const env = loadEnv();
   const providers = voiceProviders();
   const preferred = env.SWARMX_TTS_PROVIDER;
@@ -524,12 +568,25 @@ export async function selectVoiceProvider(): Promise<{ provider: VoiceProvider; 
     });
   }
 
+  const requestedProviderId = resolvePreferredVoiceProviderId(options);
+  let requestedProfileFallbackReason: string | undefined;
+  if (requestedProviderId) {
+    const requestedProvider = providers.find((provider) => provider.id === requestedProviderId);
+    if (requestedProvider) {
+      const capability = await requestedProvider.probe();
+      if (capability.state === "available") {
+        return { provider: requestedProvider, capability };
+      }
+      requestedProfileFallbackReason = `${options?.voiceProfileId} requested ${requestedProviderId}, but that provider is unavailable; falling back to the next available voice provider`;
+    }
+  }
+
   const loadedBenchmark = await readVoiceBenchmarkReport();
   const defaultOrder = providers.map((p) => p.id);
   const rankedIds = rankAvailableProviders(loadedBenchmark, defaultOrder);
   const rankedProviders = rankedIds
     .map((id) => providers.find((p) => p.id === id))
-    .filter((p): p is VoiceProvider => p !== undefined);
+    .filter((p): p is VoiceProvider => p !== undefined && p.id !== requestedProviderId);
   const orderChanged = rankedIds.join(",") !== defaultOrder.join(",");
   const benchmarkAppliedProviderId = orderChanged && loadedBenchmark
     ? loadedBenchmark.report.recommendedProviderId ?? rankedIds[0]
@@ -538,9 +595,13 @@ export async function selectVoiceProvider(): Promise<{ provider: VoiceProvider; 
   for (const provider of rankedProviders) {
     const capability = await provider.probe();
     if (capability.state === "available") {
-      const fallbackReason = provider.id === "espeak-ng"
-        ? "Kokoro/Piper neural providers unavailable; using explicit espeak-ng fallback"
-        : undefined;
+      const fallbackReasonParts = [
+        requestedProfileFallbackReason,
+        provider.id === "espeak-ng"
+          ? "Kokoro/Piper neural providers unavailable; using explicit espeak-ng fallback"
+          : undefined,
+      ].filter((reason): reason is string => Boolean(reason));
+      const fallbackReason = fallbackReasonParts.length > 0 ? fallbackReasonParts.join("; ") : undefined;
       return {
         provider,
         capability,

@@ -365,9 +365,13 @@ Create a new video generation job and enqueue it.
   "style": "faceless_broll | kinetic_text | storytime | tutorial | myth_busting",
   "captionStyle": "bold_center | lower_third | minimal",
   "voice": "default | calm | energetic | narrator",
+  "voiceProfileId": "auto | kokoro_warm | kokoro_narrator | kokoro_energetic | kokoro_contrarian | kokoro_storytime_dual",
+  "storyMode": "single_narrator | dialogue_storytime",
   "clientRequestId": "optional-idempotency-key"
 }
 ```
+
+`voice` remains the coarse fallback hint. `voiceProfileId` pins a concrete recurring profile when supported, and `storyMode` nudges narration defaults for formats like storytime without changing the rest of the script contract. When a Kokoro profile is requested, the renderer now prefers the Kokoro provider ahead of benchmark ordering; if that provider is unavailable, the fallback reason is preserved in the packaged voice artifact.
 
 **Minimal request:**
 
@@ -384,7 +388,7 @@ Observed smoke result on the current local stack: the route returns `201 Created
 ```bash
 curl -X POST http://localhost:3001/api/video/jobs \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Explain compound interest in a way that motivates a first-time investor", "platform": "tiktok", "niche": "finance", "targetDurationSeconds": 45, "audience":"first-time investors", "tone":"warm", "style":"faceless_broll", "captionStyle":"bold_center", "voice":"narrator"}'
+  -d '{"prompt": "Explain compound interest in a way that motivates a first-time investor", "platform": "tiktok", "niche": "finance", "targetDurationSeconds": 45, "audience":"first-time investors", "tone":"warm", "style":"faceless_broll", "captionStyle":"bold_center", "voice":"narrator", "voiceProfileId":"kokoro_narrator", "storyMode":"single_narrator"}'
 ```
 
 **Response `201`:**
@@ -865,8 +869,14 @@ http://${SWARMX_API_HOST ?? "127.0.0.1"}:${SWARMX_API_PORT ?? "3001"}
 
 Storyboard extraction accepts strict numbered/bulleted scene lines first, then
 falls back to `[SCENE N | BEAT]` lines and `[VISUAL: ...]` tags from either the
-storyboard response or the script. Generic safe-default frames are only used when
-no script-specific visual beats can be recovered.
+storyboard response or the script. Extracted frames are normalized and clamped to
+the storyboard schema budget before validation so one overlong scene line does not
+invalidate the entire storyboard stage. Generic safe-default frames are only used
+when no script-specific visual beats can be recovered.
+
+For the CPU `ffmpeg_kinetic_text` renderer, template-aware QC treats deliberate text
+holds up to 6 seconds as expected. Longer freezes remain review warnings because they
+usually indicate a missing motion beat rather than normal narration pacing.
 
 Set `SWARMX_VIDEO_LOW_RAM_MODE=1` to force all four text stages to
 `instruct-phi4-lite-q4km-prod`. Do not send `modelTier` in the first low-RAM
@@ -1040,6 +1050,12 @@ via the NavRail at keyboard shortcut `⌘7`.
 
 - `/video` (list page) — left panel: submit form + job queue; right panel (lg+): empty state prompting job selection or navigates to `/video/:id` on card click.
 - `/video/[id]` (detail page) — two-column layout: left column has the video player, metadata, timeline, and operator trace; right column has ViralityMeter, CaptionEditor, and PlatformPublishPanel.
+
+**Submission UX and failure guidance:**
+
+- The submit form now exposes quick-start presets plus an Essentials/Advanced split so the common path stays short while tone, style, caption, and voice routing remain available.
+- Runtime readiness messaging from `/api/system/health` can block submission before enqueue when RAM or CPU telemetry indicates the host cannot safely admit a full pipeline job.
+- Failed job surfaces now render both the normalized error hint and a concrete next-action string so operators can distinguish retryable pressure problems from missing-binary or configuration failures.
 
 **Accessibility notes (V6.2.5+):**
 

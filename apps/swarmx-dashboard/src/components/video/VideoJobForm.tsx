@@ -4,10 +4,12 @@ import { useId, useState } from "react";
 import { AlertTriangle, Clapperboard, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { QUICK_START_PRESETS, mapQuickStartPresetToDraft, type QuickStartPreset } from "@/lib/video-form-presets";
 import { useVideoStore } from "../../stores/video";
 import type { VideoJobRequest } from "../../lib/video-dashboard";
 
 type ModelRoute = NonNullable<VideoJobRequest["modelTier"]> | "auto";
+
 
 function Select<T extends string>({
   id,
@@ -75,12 +77,31 @@ export function VideoJobForm({
   const [style, setStyle] = useState<NonNullable<VideoJobRequest["style"]>>("faceless_broll");
   const [captionStyle, setCaptionStyle] = useState<NonNullable<VideoJobRequest["captionStyle"]>>("bold_center");
   const [voice, setVoice] = useState<NonNullable<VideoJobRequest["voice"]>>("default");
+  const [voiceProfileId, setVoiceProfileId] = useState<NonNullable<VideoJobRequest["voiceProfileId"]>>("auto");
+  const [storyMode, setStoryMode] = useState<NonNullable<VideoJobRequest["storyMode"]>>("single_narrator");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [lastQueuedId, setLastQueuedId] = useState<string | null>(null);
 
   const trimmedPrompt = prompt.trim();
   const canSubmit = trimmedPrompt.length > 0 && !isSubmitting && !submissionBlocked;
   const modelTier = modelRoute === "auto" ? undefined : modelRoute;
   const submitDescriptionId = submissionBlocked ? `${formId}-submit-blocked` : undefined;
+
+  const applyQuickStart = (preset: QuickStartPreset) => {
+    const draft = mapQuickStartPresetToDraft(preset);
+    setPrompt(draft.prompt);
+    setPlatform(draft.platform);
+    setNiche(draft.niche);
+    setTargetDuration(draft.targetDuration);
+    setTone(draft.tone);
+    setStyle(draft.style);
+    setCaptionStyle(draft.captionStyle);
+    setVoice(draft.voice);
+    setVoiceProfileId(draft.voiceProfileId);
+    setStoryMode(draft.storyMode);
+    setAudience(draft.audience);
+    setShowAdvanced(true);
+  };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -98,6 +119,8 @@ export function VideoJobForm({
       style,
       captionStyle,
       voice,
+      voiceProfileId,
+      storyMode,
       ...(audience.trim() ? { audience: audience.trim() } : {}),
       ...(modelTier !== undefined ? { modelTier } : {}),
     };
@@ -154,6 +177,25 @@ export function VideoJobForm({
         >
           Prompt
         </label>
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Quick-start prompt presets">
+          {QUICK_START_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() => applyQuickStart(preset)}
+              disabled={isSubmitting}
+              className={cn(
+                "rounded border border-border bg-bg-surface px-2 py-1 text-[10px] font-mono uppercase tracking-wide text-text-secondary",
+                "hover:border-border-active hover:bg-bg-elevated",
+                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
+                "disabled:cursor-not-allowed disabled:opacity-50",
+              )}
+              title={`Apply ${preset.label} preset`}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
         <textarea
           id={`${formId}-prompt`}
           value={prompt}
@@ -191,65 +233,174 @@ export function VideoJobForm({
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        <Select
-          id={`${formId}-platform`}
-          label="Platform"
-          value={platform}
-          onChange={setPlatform}
-          disabled={isSubmitting}
-          options={[
-            { value: "tiktok", label: "TikTok" },
-            { value: "youtube_shorts", label: "YT Shorts" },
-            { value: "reels", label: "Reels" },
-            { value: "generic", label: "Generic" },
-          ]}
-        />
-        <Select
-          id={`${formId}-niche`}
-          label="Niche"
-          value={niche}
-          onChange={setNiche}
-          disabled={isSubmitting}
-          options={[
-            { value: "tech", label: "Tech" },
-            { value: "motivational", label: "Motivational" },
-            { value: "finance", label: "Finance" },
-            { value: "facts", label: "Facts" },
-            { value: "true_crime", label: "True Crime" },
-            { value: "other", label: "Other" },
-          ]}
-        />
-        <Select
-          id={`${formId}-duration`}
-          label="Duration"
-          value={targetDuration}
-          onChange={setTargetDuration}
-          disabled={isSubmitting}
-          options={[
-            { value: "15", label: "15s" },
-            { value: "30", label: "30s" },
-            { value: "60", label: "60s" },
-            { value: "90", label: "90s" },
-            { value: "120", label: "2 min" },
-            { value: "180", label: "3 min" },
-          ]}
-        />
-        <Select
-          id={`${formId}-model`}
-          label="Model"
-          value={modelRoute}
-          onChange={setModelRoute}
-          disabled={isSubmitting}
-          options={[
-            { value: "auto", label: "Auto (recommended)" },
-            { value: "fast", label: "Fast (3.8B)" },
-            { value: "worker", label: "Worker (7B)" },
-            { value: "supervisor", label: "Supervisor (7B)" },
-            { value: "reasoner", label: "Reasoner (7B)" },
-          ]}
-        />
-      </div>
+      <section className="rounded border border-border/60 bg-bg-surface/30 p-3" aria-label="Essentials">
+        <div className="mb-2 text-[10px] font-mono uppercase tracking-wide text-text-muted">Essentials</div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <Select
+            id={`${formId}-platform`}
+            label="Platform"
+            value={platform}
+            onChange={setPlatform}
+            disabled={isSubmitting}
+            options={[
+              { value: "tiktok", label: "TikTok" },
+              { value: "youtube_shorts", label: "YT Shorts" },
+              { value: "reels", label: "Reels" },
+              { value: "generic", label: "Generic" },
+            ]}
+          />
+          <Select
+            id={`${formId}-duration`}
+            label="Duration"
+            value={targetDuration}
+            onChange={setTargetDuration}
+            disabled={isSubmitting}
+            options={[
+              { value: "15", label: "15s" },
+              { value: "30", label: "30s" },
+              { value: "60", label: "60s" },
+              { value: "90", label: "90s" },
+              { value: "120", label: "2 min" },
+              { value: "180", label: "3 min" },
+            ]}
+          />
+          <Select
+            id={`${formId}-voice`}
+            label="Voice"
+            value={voice}
+            onChange={setVoice}
+            disabled={isSubmitting}
+            options={[
+              { value: "default", label: "Default" },
+              { value: "calm", label: "Calm" },
+              { value: "energetic", label: "Energetic" },
+              { value: "narrator", label: "Narrator" },
+            ]}
+          />
+        </div>
+      </section>
+
+      <section className="rounded border border-border/60 bg-bg-surface/30 p-3" aria-label="Advanced options">
+        <button
+          type="button"
+          onClick={() => setShowAdvanced((value) => !value)}
+          className="flex w-full items-center justify-between text-[10px] font-mono uppercase tracking-wide text-text-muted"
+          aria-expanded={showAdvanced}
+          aria-controls={`${formId}-advanced-grid`}
+        >
+          <span>Advanced</span>
+          <span aria-hidden="true">{showAdvanced ? "▴" : "▾"}</span>
+        </button>
+
+        {showAdvanced && (
+          <div id={`${formId}-advanced-grid`} className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <Select
+              id={`${formId}-niche`}
+              label="Niche"
+              value={niche}
+              onChange={setNiche}
+              disabled={isSubmitting}
+              options={[
+                { value: "tech", label: "Tech" },
+                { value: "motivational", label: "Motivational" },
+                { value: "finance", label: "Finance" },
+                { value: "facts", label: "Facts" },
+                { value: "true_crime", label: "True Crime" },
+                { value: "other", label: "Other" },
+              ]}
+            />
+            <Select
+              id={`${formId}-model`}
+              label="Model"
+              value={modelRoute}
+              onChange={setModelRoute}
+              disabled={isSubmitting}
+              options={[
+                { value: "auto", label: "Auto (recommended)" },
+                { value: "fast", label: "Fast (3.8B)" },
+                { value: "worker", label: "Worker (7B)" },
+                { value: "supervisor", label: "Supervisor (7B)" },
+                { value: "reasoner", label: "Reasoner (7B)" },
+              ]}
+            />
+            <Select
+              id={`${formId}-tone`}
+              label="Tone"
+              value={tone}
+              onChange={setTone}
+              disabled={isSubmitting}
+              options={[
+                { value: "educational", label: "Educational" },
+                { value: "urgent", label: "Urgent" },
+                { value: "warm", label: "Warm" },
+                { value: "contrarian", label: "Contrarian" },
+                { value: "cinematic", label: "Cinematic" },
+                { value: "minimal", label: "Minimal" },
+                { value: "faceless_broll", label: "Faceless B-roll" },
+                { value: "kinetic_text", label: "Kinetic Text" },
+              ]}
+            />
+            <Select
+              id={`${formId}-style`}
+              label="Style"
+              value={style}
+              onChange={setStyle}
+              disabled={isSubmitting}
+              options={[
+                { value: "faceless_broll", label: "Faceless B-roll" },
+                { value: "kinetic_text", label: "Kinetic Text" },
+                { value: "storytime", label: "Storytime" },
+                { value: "tutorial", label: "Tutorial" },
+                { value: "myth_busting", label: "Myth Busting" },
+              ]}
+            />
+            <Select
+              id={`${formId}-caption-style`}
+              label="Captions"
+              value={captionStyle}
+              onChange={setCaptionStyle}
+              disabled={isSubmitting}
+              options={[
+                { value: "bold_center", label: "Bold Center" },
+                { value: "lower_third", label: "Lower Third" },
+                { value: "minimal", label: "Minimal" },
+              ]}
+            />
+            <Select
+              id={`${formId}-voice-profile`}
+              label="Voice Profile"
+              value={voiceProfileId}
+              onChange={setVoiceProfileId}
+              disabled={isSubmitting}
+              options={[
+                { value: "auto", label: "Auto" },
+                { value: "kokoro_warm", label: "Kokoro Warm" },
+                { value: "kokoro_narrator", label: "Kokoro Narrator" },
+                { value: "kokoro_energetic", label: "Kokoro Energetic" },
+                { value: "kokoro_contrarian", label: "Kokoro Contrarian" },
+                { value: "kokoro_storytime_dual", label: "Kokoro Storytime Dual" },
+              ]}
+            />
+            <Select
+              id={`${formId}-story-mode`}
+              label="Story Mode"
+              value={storyMode}
+              onChange={setStoryMode}
+              disabled={isSubmitting}
+              options={[
+                { value: "single_narrator", label: "Single Narrator" },
+                { value: "dialogue_storytime", label: "Dialogue Storytime" },
+              ]}
+            />
+          </div>
+        )}
+      </section>
+
+      {showAdvanced && (
+        <p className="text-[10px] leading-4 text-text-muted">
+          Tone controls palette/motion mood, style controls shot grammar and pacing, and voice profile pins how narration should sound across repeat uploads.
+        </p>
+      )}
 
       <details className="group rounded border border-border/60 bg-bg-surface/40 px-3 py-2">
         <summary className="flex cursor-pointer list-none items-center justify-between text-[10px] font-mono uppercase tracking-wider text-text-muted transition-colors hover:text-text-secondary">
@@ -286,62 +437,6 @@ export function VideoJobForm({
             )}
           />
         </div>
-        <Select
-          id={`${formId}-tone`}
-          label="Tone"
-          value={tone}
-          onChange={setTone}
-          disabled={isSubmitting}
-          options={[
-            { value: "educational", label: "Educational" },
-            { value: "urgent", label: "Urgent" },
-            { value: "warm", label: "Warm" },
-            { value: "contrarian", label: "Contrarian" },
-            { value: "cinematic", label: "Cinematic" },
-            { value: "minimal", label: "Minimal" },
-            { value: "faceless_broll", label: "Faceless B-roll" },
-            { value: "kinetic_text", label: "Kinetic Text" },
-          ]}
-        />
-        <Select
-          id={`${formId}-style`}
-          label="Style"
-          value={style}
-          onChange={setStyle}
-          disabled={isSubmitting}
-          options={[
-            { value: "faceless_broll", label: "Faceless B-roll" },
-            { value: "kinetic_text", label: "Kinetic Text" },
-            { value: "storytime", label: "Storytime" },
-            { value: "tutorial", label: "Tutorial" },
-            { value: "myth_busting", label: "Myth Busting" },
-          ]}
-        />
-        <Select
-          id={`${formId}-caption-style`}
-          label="Captions"
-          value={captionStyle}
-          onChange={setCaptionStyle}
-          disabled={isSubmitting}
-          options={[
-            { value: "bold_center", label: "Bold Center" },
-            { value: "lower_third", label: "Lower Third" },
-            { value: "minimal", label: "Minimal" },
-          ]}
-        />
-        <Select
-          id={`${formId}-voice`}
-          label="Voice"
-          value={voice}
-          onChange={setVoice}
-          disabled={isSubmitting}
-          options={[
-            { value: "default", label: "Default" },
-            { value: "calm", label: "Calm" },
-            { value: "energetic", label: "Energetic" },
-            { value: "narrator", label: "Narrator" },
-          ]}
-        />
       </div>
 
       {modelRoute !== "auto" && (

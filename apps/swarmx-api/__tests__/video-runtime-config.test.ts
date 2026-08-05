@@ -6,6 +6,7 @@ import {
   stageTimeoutMs,
   resolveVideoModelTag,
   videoModelTagsForRequest,
+  resetLowRamModeCacheForTesting,
   LOW_RAM_VIDEO_MODEL,
   VIDEO_TEXT_STAGES,
 } from "../src/services/video-runtime-config.js";
@@ -16,6 +17,7 @@ import {
 
 beforeEach(() => {
   resetEnvForTesting();
+  resetLowRamModeCacheForTesting();
   delete process.env["VIDEO_INTENT_CLASSIFY_TIMEOUT_MS"];
   delete process.env["SWARMX_VIDEO_LOW_RAM_MODE"];
   delete process.env["TEST_BOUNDED_INT"];
@@ -28,6 +30,7 @@ beforeEach(() => {
 
 afterEach(() => {
   resetEnvForTesting();
+  resetLowRamModeCacheForTesting();
   delete process.env["VIDEO_INTENT_CLASSIFY_TIMEOUT_MS"];
   delete process.env["SWARMX_VIDEO_LOW_RAM_MODE"];
   delete process.env["TEST_BOUNDED_INT"];
@@ -89,7 +92,15 @@ describe("stageTimeoutMs", () => {
 });
 
 describe("resolveVideoModelTag", () => {
-  test("returns canonical qwen25 tag for planning stage by default", () => {
+  test("returns canonical qwen25 tag for planning stage when low-RAM mode is explicitly disabled", () => {
+    // Explicit "0" (not unset) so this assertion is deterministic regardless
+    // of the test host's live available RAM: isLowRamVideoMode() falls back
+    // to a live /proc/meminfo check when unset, which is intentional
+    // (auto-enable on constrained hosts) but would make this specific
+    // "default" assertion flaky on a real low-RAM CI/dev box.
+    process.env["SWARMX_VIDEO_LOW_RAM_MODE"] = "0";
+    resetEnvForTesting();
+    resetLowRamModeCacheForTesting();
     const tag = resolveVideoModelTag({ prompt: "test" }, "planning");
     expect(tag).toBe("plan-qwen25-pro-q5km-prod");
   });
@@ -97,6 +108,7 @@ describe("resolveVideoModelTag", () => {
   test("returns LOW_RAM_VIDEO_MODEL when SWARMX_VIDEO_LOW_RAM_MODE=1", () => {
     process.env["SWARMX_VIDEO_LOW_RAM_MODE"] = "1";
     resetEnvForTesting();
+    resetLowRamModeCacheForTesting();
     const tag = resolveVideoModelTag({ prompt: "test" }, "planning");
     expect(tag).toBe(LOW_RAM_VIDEO_MODEL);
   });

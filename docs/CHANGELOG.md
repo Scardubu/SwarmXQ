@@ -4,7 +4,65 @@
 
 ---
 
+## V6.2.59 — Low-RAM Auto-Enable ESM Ordering Fix (2026-08-05)
+
+### Video pipeline — low-RAM auto-enable now actually engages on constrained hosts
+
+- Fixed `shouldAutoEnableLowRamMode()` in `video-runtime-config.ts`, which
+  compared the Zod-defaulted `loadEnv().SWARMX_VIDEO_LOW_RAM_MODE` value
+  (always `"0"` unless explicitly set) instead of the raw env var, so it could
+  never return `true` — auto-enable on constrained RAM was dead code.
+- **Deeper root cause found after the above fix still didn't take effect on a
+  live restart**: ES module import execution order runs every imported
+  module's top-level side effects *before* the importing module's own body
+  runs. Many services (`composer.ts`, `ollama.ts`, `video-queue.ts`, and
+  a dozen others) call `loadEnv()` at their own top level, so by the time
+  `server.ts`'s own statements execute — no matter how they're ordered within
+  `server.ts` — `env.ts`'s module-level cache is already populated. Reordering
+  statements inside a single file cannot fix a timing bug rooted in a shared
+  singleton cache populated by other imported modules.
+- `isLowRamVideoMode()` now owns a dedicated, self-contained memoized cache
+  (`cachedLowRamMode`) populated from `readRawEnv()` plus a live
+  `/proc/meminfo` check on first real invocation — never from `env.ts`'s
+  `loadEnv()` cache. This is immune to import-ordering hazards because the
+  first real call always happens after all module imports have completed.
+- Added `resetLowRamModeCacheForTesting()` so tests and the regression script
+  can flip `SWARMX_VIDEO_LOW_RAM_MODE` mid-run and observe the new value,
+  matching the existing `resetEnvForTesting()` pattern in `env.ts`.
+- `video-regression-check.ts` and `video-runtime-config.test.ts` updated:
+  assertions that previously assumed "unset env var" always means "full
+  7B pipeline" now explicitly set `SWARMX_VIDEO_LOW_RAM_MODE=0` for that
+  case, since "unset" now correctly falls back to live RAM detection
+  (which is the point of the fix) and would otherwise make those specific
+  assertions flaky on real constrained hosts.
+- Verified end-to-end after a full stack restart: the
+  `"Video pipeline runtime mode resolved"` startup log now reflects live
+  `/proc/meminfo` state (`lowRamMode` tracks `availableMb` against the
+  6170 MB threshold) instead of being permanently stuck at `false`. A fresh
+  video job was regenerated post-fix and completed with
+  `certificationTier: PRODUCTION_PACK_VALID` (all technical, creative,
+  accessibility, audio, and rights gates passed).
+
+### Dashboard/API — voice profile routing and guided submission UX
+
+- Added `voiceProfileId` and `storyMode` to the canonical video request contracts, route validation, dashboard normalization, and API bridge types so the form and runtime share the same schema.
+- The dashboard video form now ships quick-start presets, an Essentials/Advanced layout split, runtime submission blocking messaging, and failure surfaces with concrete next actions.
+- The FFmpeg narration path now forwards `voiceProfileId` and `storyMode` into synthesis, stamps both fields onto the packaged `voiceArtifact`, and records provider fallback reasons when a requested Kokoro profile has to degrade.
+- Voice provider selection now honors explicit Kokoro profile requests ahead of benchmark ordering, while preserving benchmark-guided ranking for the normal `auto` path.
+
+---
+
 ## V6.2.58 — Creative Quality Contract + Runtime UI Hardening (2026-07-24)
+
+### Post-certification video polish — storyboard resilience + kinetic QC alignment
+
+- Storyboard extraction now clamps normalized frame text to the schema budget
+  before validation. A single overlong storyboard line no longer causes the
+  entire `storyboard_generation` result to fail softly and fall back to the
+  generic 3-frame default.
+- Template-aware QC for `ffmpeg_kinetic_text` now treats deliberate text holds
+  up to 6 seconds as expected on the CPU renderer. Longer freezes still surface
+  as review warnings so genuinely stalled motion beats remain visible.
 
 ### API — script quality and env-boundary hardening
 

@@ -339,6 +339,14 @@ export interface RenderRecipe {
 
 export type VoiceQualityTier = "neural_local" | "synthetic_fallback" | "silent_fixture";
 export type VoiceProviderState = "available" | "degraded" | "unavailable";
+export type VoiceProfileId =
+  | "auto"
+  | "kokoro_warm"
+  | "kokoro_narrator"
+  | "kokoro_energetic"
+  | "kokoro_contrarian"
+  | "kokoro_storytime_dual";
+export type VoiceStoryMode = "single_narrator" | "dialogue_storytime";
 
 export interface VoiceCapability {
   providerId: string;
@@ -367,6 +375,8 @@ export interface VoiceSynthesisRequest {
   text: string;
   locale: string;
   voiceId: string;
+  voiceProfileId?: VoiceProfileId;
+  storyMode?: VoiceStoryMode;
   speakingRate?: number;
   sentencePauseMs?: number;
   requestedSampleRateHz: number;
@@ -376,6 +386,8 @@ export interface VoiceArtifact {
   providerId: string;
   providerVersion?: string;
   voiceId: string;
+  voiceProfileId?: VoiceProfileId;
+  storyMode?: VoiceStoryMode;
   displayName: string;
   locale: string;
   qualityTier: VoiceQualityTier;

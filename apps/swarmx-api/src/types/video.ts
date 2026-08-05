@@ -19,6 +19,8 @@ import type {
   VideoError,
   PublishResult,
   VideoTone,
+  VoiceProfileId,
+  VoiceStoryMode,
   VoiceArtifact,
   ScriptQualityWarning,
 } from "@swarmx/types/video-types";
@@ -77,6 +79,10 @@ export interface VideoJobRequest {
   captionStyle?: "bold_center" | "lower_third" | "minimal";
   /** Voice style hint for local TTS/render metadata. */
   voice?: "default" | "calm" | "energetic" | "narrator";
+  /** Optional pinned Kokoro profile for recurring creators (backward compatible). */
+  voiceProfileId?: VoiceProfileId;
+  /** Optional narration mode for future multi-speaker story styles. */
+  storyMode?: VoiceStoryMode;
   /** Client-supplied idempotency key. */
   clientRequestId?: string;
   // ── Series Engine fields (populated by series planner when producing an episode) ──

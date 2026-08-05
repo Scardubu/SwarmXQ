@@ -91,6 +91,16 @@ import {
 import { loadEnv } from "./lib/env.js";
 import { initOtel, shutdownOtel } from "./lib/otel.js";
 
+// Auto-enable LOW_RAM_MODE when physical RAM is below the full-7B threshold.
+// MUST run before the first loadEnv() call below: loadEnv() caches its parsed
+// result on first call, so mutating process.env afterward has no effect on
+// isLowRamVideoMode() (which reads loadEnv().SWARMX_VIDEO_LOW_RAM_MODE from
+// the stale cache). shouldAutoEnableLowRamMode() itself only reads the raw
+// env value, so calling it pre-cache is safe. Explicit env value always wins.
+if (shouldAutoEnableLowRamMode()) {
+  process.env["SWARMX_VIDEO_LOW_RAM_MODE"] = "1";
+}
+
 // Fail-fast on invalid env before any other module reads process.env.
 // Errors are formatted with the invalid key path so operators can fix quickly.
 try {
@@ -103,12 +113,6 @@ try {
 const PORT = Number.parseInt(process.env["SWARMX_API_PORT"] ?? "3001", 10);
 const HOST = process.env["SWARMX_API_HOST"] ?? "127.0.0.1";
 const IS_PRODUCTION = (process.env["NODE_ENV"] ?? "production") === "production";
-
-// Auto-enable LOW_RAM_MODE when physical RAM is below the full-7B threshold.
-// Runs at boot before any video job is admitted; explicit env value wins.
-if (shouldAutoEnableLowRamMode()) {
-  process.env["SWARMX_VIDEO_LOW_RAM_MODE"] = "1";
-}
 
 // ── [API-FIX-03] Build CORS origin list from environment only ───────────────
 //

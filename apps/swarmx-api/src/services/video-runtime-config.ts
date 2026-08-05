@@ -74,8 +74,60 @@ export function isTextVideoStage(stage: VideoJobStage): stage is TextVideoJobSta
   return stage !== "render_assembly" && stage !== "finalizing";
 }
 
+/**
+ * Effective low-RAM mode state. Reads the raw (non-cached) env value first so
+ * an explicit operator choice always wins; when unset, falls back to a live
+ * /proc/meminfo check against FULL_PIPELINE_MIN_AVAILABLE_MB.
+ *
+ * Deliberately does NOT use loadEnv().SWARMX_VIDEO_LOW_RAM_MODE: loadEnv()
+ * caches its parsed result on first call, and many services (composer.ts,
+ * video-queue.ts, video-orchestrator.ts, etc.) call loadEnv() at module
+ * top-level scope. Because ESM import side effects run before the importing
+ * module's own body, those top-level loadEnv() calls execute — and cache the
+ * env — before server.ts's own startup code has a chance to auto-detect and
+ * set SWARMX_VIDEO_LOW_RAM_MODE. Any later loadEnv() call would keep
+ * returning the stale, pre-auto-detection cached value. Reading the raw env
+ * var directly (and re-detecting RAM live) sidesteps the cache entirely and
+ * always reflects the current, correct state.
+ */
+let cachedLowRamMode: boolean | null = null;
+
+/**
+ * Effective low-RAM mode state. Reads the raw (non-cached) env value first so
+ * an explicit operator choice always wins; when unset, falls back to a live
+ * /proc/meminfo check against FULL_PIPELINE_MIN_AVAILABLE_MB on first call and
+ * memoizes the result for the rest of the process lifetime (decide once at
+ * boot, stay stable — a job should never see its stage models flip mid-run
+ * because RAM briefly crossed the threshold).
+ *
+ * Deliberately does NOT use loadEnv().SWARMX_VIDEO_LOW_RAM_MODE: loadEnv()
+ * caches its parsed result on first call, and many services (composer.ts,
+ * video-queue.ts, video-orchestrator.ts, etc.) call loadEnv() at module
+ * top-level scope. Because ESM import side effects run before the importing
+ * module's own body, those top-level loadEnv() calls execute — and cache the
+ * env — before server.ts's own startup code has a chance to auto-detect and
+ * set SWARMX_VIDEO_LOW_RAM_MODE. Any later loadEnv() call would keep
+ * returning the stale, pre-auto-detection cached value. This function keeps
+ * its own dedicated cache, populated on first real (post-import) call, which
+ * sidesteps that hazard entirely.
+ */
 export function isLowRamVideoMode(): boolean {
-  return loadEnv().SWARMX_VIDEO_LOW_RAM_MODE === "1";
+  if (cachedLowRamMode !== null) return cachedLowRamMode;
+  const raw = readRawEnv("SWARMX_VIDEO_LOW_RAM_MODE");
+  if (raw === "1") {
+    cachedLowRamMode = true;
+  } else if (raw === "0") {
+    cachedLowRamMode = false;
+  } else {
+    const available = detectAvailableMemoryMb();
+    cachedLowRamMode = available !== null && available < FULL_PIPELINE_MIN_AVAILABLE_MB;
+  }
+  return cachedLowRamMode;
+}
+
+/** Test-only: clear the memoized low-RAM decision so tests can simulate different env/RAM states. */
+export function resetLowRamModeCacheForTesting(): void {
+  cachedLowRamMode = null;
 }
 
 /** Read /proc/meminfo once and return current physical RAM in MB, or null on non-Linux hosts. */
@@ -96,7 +148,10 @@ export function detectAvailableMemoryMb(): number | null {
  * explicit env value.
  */
 export function shouldAutoEnableLowRamMode(): boolean {
-  if (loadEnv().SWARMX_VIDEO_LOW_RAM_MODE) return false;
+  // Check the raw, non-defaulted env value. loadEnv() always returns "0" or
+  // "1" (schema default), which are both truthy strings — using it here would
+  // make this function permanently return false and never auto-enable.
+  if (readRawEnv("SWARMX_VIDEO_LOW_RAM_MODE") !== undefined) return false;
   const available = detectAvailableMemoryMb();
   return available !== null && available < FULL_PIPELINE_MIN_AVAILABLE_MB;
 }

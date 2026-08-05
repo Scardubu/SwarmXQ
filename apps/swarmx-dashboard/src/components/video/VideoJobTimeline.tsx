@@ -10,7 +10,7 @@
 
 import { CheckCircle2, XCircle } from "lucide-react";
 import type { VideoJob, VideoJobStage } from "../../lib/video-dashboard";
-import { VIDEO_JOB_STAGE_ORDER, VIDEO_JOB_STAGE_LABELS, errorCodeHint } from "../../lib/video-dashboard";
+import { VIDEO_JOB_STAGE_ORDER, VIDEO_JOB_STAGE_LABELS, errorCodeHint, errorCodeNextAction } from "../../lib/video-dashboard";
 import { safeErrorMessage } from "@/lib/utils";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -205,6 +205,9 @@ export function VideoJobTimeline({ job, compact = false }: VideoJobTimelineProps
             </p>
           )}
           {(() => { const hint = errorCodeHint(job.error.code); return hint ? <p className="mt-0.5 text-[10px] text-text-secondary">{hint}</p> : null; })()}
+          <p className="mt-0.5 text-[10px] text-text-secondary">
+            Next action: {errorCodeNextAction(job.error.code)}
+          </p>
         </div>
       )}
     </div>

@@ -33,6 +33,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useApiHealth } from "@/hooks/useApiHealth";
 import { getRuntimeGuidance, type RuntimeGuidance } from "@/lib/runtime-guidance";
+import { formatSubmissionBlockReason } from "@/lib/video-runtime-messaging";
 import { useEventsStore } from "@/stores/events";
 import { useVideoStore } from "../../../stores/video";
 import { VideoJobForm } from "../../../components/video/VideoJobForm";
@@ -281,7 +282,7 @@ export default function VideoPage() {
           <VideoJobForm
             onSubmitted={handleSubmitted}
             submissionBlocked={videoRuntimeGuidance?.blocksSubmission ?? false}
-            submissionBlockReason={videoRuntimeGuidance?.title ?? null}
+            submissionBlockReason={formatSubmissionBlockReason(videoRuntimeGuidance)}
           />
 
           <VideoRuntimeBanner guidance={videoRuntimeGuidance} />

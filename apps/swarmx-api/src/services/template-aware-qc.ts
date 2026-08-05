@@ -32,6 +32,8 @@ const UNCONDITIONAL_BLOCKERS: ReadonlySet<FindingType> = new Set([
   "FIRST_FRAME_EMPTY",
 ]);
 
+const KINETIC_TEXT_HOLD_BUDGET_SEC = 6;
+
 const TIER_RULES: Record<RendererCapabilityTier, Partial<Record<FindingType, TierRule>>> = {
   ffmpeg_text_smoke: {
     BLACK_FRAME: {
@@ -56,13 +58,13 @@ const TIER_RULES: Record<RendererCapabilityTier, Partial<Record<FindingType, Tie
       notes: () => "Kinetic text templates use dark backgrounds for contrast; black frames are by design",
     },
     FREEZE_FRAME: {
-      isExpected: (f) => f.durationSec <= 3,
-      plannedEvent: (f) => f.durationSec <= 3 ? "text hold — deliberate static moment" : null,
-      interpretedSeverity: (f) => f.durationSec <= 3 ? "NONE" : "MEDIUM",
+      isExpected: (f) => f.durationSec <= KINETIC_TEXT_HOLD_BUDGET_SEC,
+      plannedEvent: (f) => f.durationSec <= KINETIC_TEXT_HOLD_BUDGET_SEC ? "text hold — deliberate static moment" : null,
+      interpretedSeverity: (f) => f.durationSec <= KINETIC_TEXT_HOLD_BUDGET_SEC ? "NONE" : "MEDIUM",
       notes: (f) =>
-        f.durationSec <= 3
-          ? "Short freezes are intentional text holds in kinetic sequences"
-          : `Freeze of ${f.durationSec}s exceeds kinetic text hold budget (3s) — may indicate missing animation`,
+        f.durationSec <= KINETIC_TEXT_HOLD_BUDGET_SEC
+          ? "Kinetic text on the CPU renderer uses longer deliberate text holds while narration catches up"
+          : `Freeze of ${f.durationSec}s exceeds kinetic text hold budget (${KINETIC_TEXT_HOLD_BUDGET_SEC}s) — may indicate missing animation`,
     },
   },
 

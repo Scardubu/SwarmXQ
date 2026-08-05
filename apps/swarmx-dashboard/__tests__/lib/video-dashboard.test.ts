@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { errorCodeHint, normalizeVideoJob } from "@/lib/video-dashboard";
+import { errorCodeHint, errorCodeNextAction, normalizeVideoJob } from "@/lib/video-dashboard";
 
 describe("video dashboard normalization", () => {
   it("preserves certification blockers from completed job output", () => {
@@ -31,8 +31,41 @@ describe("video dashboard normalization", () => {
     expect(job.output?.certificationBlockers).toEqual(["Rights and provenance manifest is missing"]);
   });
 
+  it("preserves extended request fields during normalization", () => {
+    const job = normalizeVideoJob({
+      id: "job-2",
+      status: "queued",
+      request: {
+        prompt: "Test prompt",
+        platform: "tiktok",
+        niche: "tech",
+        tone: "urgent",
+        style: "kinetic_text",
+        captionStyle: "bold_center",
+        voice: "energetic",
+        voiceProfileId: "kokoro_energetic",
+        storyMode: "dialogue_storytime",
+        audience: "developers",
+      },
+      createdAt: "2026-07-28T00:00:00.000Z",
+      updatedAt: "2026-07-28T00:00:01.000Z",
+    });
+
+    expect(job.request.platform).toBe("tiktok");
+    expect(job.request.tone).toBe("urgent");
+    expect(job.request.voiceProfileId).toBe("kokoro_energetic");
+    expect(job.request.storyMode).toBe("dialogue_storytime");
+    expect(job.request.audience).toBe("developers");
+  });
+
   it("surfaces classified backend hints and does not present UNKNOWN as retryable", () => {
     expect(errorCodeHint("COMFY_UNAVAILABLE")).toContain("ComfyUI is not reachable");
     expect(errorCodeHint("UNKNOWN")).toContain("Retry is disabled");
+  });
+
+  it("maps known failure codes to actionable next steps", () => {
+    expect(errorCodeNextAction("PRESSURE_CRITICAL")).toContain("Free RAM");
+    expect(errorCodeNextAction("FFMPEG_UNAVAILABLE")).toContain("Install ffmpeg");
+    expect(errorCodeNextAction("UNKNOWN")).toContain("inspect trace");
   });
 });

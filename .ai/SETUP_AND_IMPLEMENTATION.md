@@ -88,11 +88,11 @@ grep -c "V6.2.21" NEXUS.md
 
 ---
 
-## Part 3 — Installing the 34 Generic Skills
+## Part 3 — Installing the 35 Generic Skills
 
 ### From the `_ai.zip` archive
 
-The generic skill zip contains 36 entries but **you must install only 34 of them**.
+The generic skill zip contains 37 entries but **you must install only 35 of them**.
 Two skills in the zip are SabiScore-specific and must NOT be placed in SwarmXQ's
 `.ai/skills/` directory.
 
@@ -126,11 +126,11 @@ rm -rf .ai/skills/sabiscore-betting-engine-auditor/
 rm -rf .ai/skills/sabiscore-provider-adapter-architect/
 ```
 
-### Verify the 34 generic skills are installed
+### Verify the 35 generic skills are installed
 
 ```bash
 ls .ai/skills/ | grep -v "swarmxq-" | wc -l
-# Must return 34
+# Must return 35
 
 ls .ai/skills/ | grep "sabiscore"
 # Must return nothing (empty)
@@ -138,9 +138,9 @@ ls .ai/skills/ | grep "sabiscore"
 
 ---
 
-## Part 4 — Installing the 2 SwarmXQ Platform Skills
+## Part 4 — Installing the 4 SwarmXQ Platform Skills
 
-These two skills are the most critical for SwarmXQ and are **not in the generic zip**.
+These four skills are the most critical for SwarmXQ and are **not in the generic zip**.
 They are provided separately with this guide.
 
 ### Step 1: Create skill directories
@@ -148,6 +148,8 @@ They are provided separately with this guide.
 ```bash
 mkdir -p .ai/skills/swarmxq-video-pipeline-architect
 mkdir -p .ai/skills/swarmxq-model-orchestrator
+mkdir -p .ai/skills/swarmxq-creative-director
+mkdir -p .ai/skills/swarmxq-startup-ops-architect
 ```
 
 ### Step 2: Place the skill files
@@ -158,6 +160,8 @@ Copy the provided SKILL.md files:
 # Place provided files:
 cp swarmxq-video-pipeline-architect/SKILL.md .ai/skills/swarmxq-video-pipeline-architect/SKILL.md
 cp swarmxq-model-orchestrator/SKILL.md       .ai/skills/swarmxq-model-orchestrator/SKILL.md
+cp swarmxq-creative-director/SKILL.md        .ai/skills/swarmxq-creative-director/SKILL.md
+cp swarmxq-startup-ops-architect/SKILL.md    .ai/skills/swarmxq-startup-ops-architect/SKILL.md
 ```
 
 ### Step 3: Verify SwarmXQ skills
@@ -165,13 +169,21 @@ cp swarmxq-model-orchestrator/SKILL.md       .ai/skills/swarmxq-model-orchestrat
 ```bash
 ls .ai/skills/ | grep "swarmxq-"
 # Must return:
+# swarmxq-creative-director
 # swarmxq-model-orchestrator
+# swarmxq-startup-ops-architect
 # swarmxq-video-pipeline-architect
 
 grep -l "SINGLE-7B" .ai/skills/swarmxq-model-orchestrator/SKILL.md
 # Must return the file path
 
 grep -l "render_assembly" .ai/skills/swarmxq-video-pipeline-architect/SKILL.md
+# Must return the file path
+
+grep -l "ViralitySignal" .ai/skills/swarmxq-creative-director/SKILL.md
+# Must return the file path
+
+grep -l "startup-enhanced.sh" .ai/skills/swarmxq-startup-ops-architect/SKILL.md
 # Must return the file path
 ```
 
@@ -218,10 +230,10 @@ echo "--- Checking NEXUS.md ---"
 test -f NEXUS.md && echo "✓ NEXUS.md present" || echo "✗ NEXUS.md MISSING"
 
 echo ""
-echo "--- Counting generic skills (expect 34) ---"
+echo "--- Counting generic skills (expect 35) ---"
 GENERIC_COUNT=$(ls .ai/skills/ | grep -v "^swarmxq-" | wc -l | tr -d ' ')
 echo "Generic skills: $GENERIC_COUNT"
-[ "$GENERIC_COUNT" -eq 34 ] && echo "✓ Correct count" || echo "✗ Expected 34, got $GENERIC_COUNT"
+[ "$GENERIC_COUNT" -eq 35 ] && echo "✓ Correct count" || echo "✗ Expected 35, got $GENERIC_COUNT"
 
 echo ""
 echo "--- Checking SwarmXQ platform skills ---"
@@ -233,6 +245,14 @@ test -f .ai/skills/swarmxq-model-orchestrator/SKILL.md \
   && echo "✓ swarmxq-model-orchestrator installed" \
   || echo "✗ swarmxq-model-orchestrator MISSING"
 
+test -f .ai/skills/swarmxq-creative-director/SKILL.md \
+  && echo "✓ swarmxq-creative-director installed" \
+  || echo "✗ swarmxq-creative-director MISSING"
+
+test -f .ai/skills/swarmxq-startup-ops-architect/SKILL.md \
+  && echo "✓ swarmxq-startup-ops-architect installed" \
+  || echo "✗ swarmxq-startup-ops-architect MISSING"
+
 echo ""
 echo "--- Checking SabiScore skills are NOT present (must be empty) ---"
 SABISCORE=$(ls .ai/skills/ | grep "^sabiscore-")
@@ -241,10 +261,10 @@ SABISCORE=$(ls .ai/skills/ | grep "^sabiscore-")
   || echo "✗ SabiScore skills found — remove them: $SABISCORE"
 
 echo ""
-echo "--- Counting total skills (expect 36) ---"
+echo "--- Counting total skills (expect 39) ---"
 TOTAL=$(ls .ai/skills/ | wc -l | tr -d ' ')
 echo "Total skills: $TOTAL"
-[ "$TOTAL" -eq 36 ] && echo "✓ Correct total" || echo "✗ Expected 36, got $TOTAL"
+[ "$TOTAL" -eq 39 ] && echo "✓ Correct total" || echo "✗ Expected 39, got $TOTAL"
 
 echo ""
 echo "--- Checking Claude Code commands ---"

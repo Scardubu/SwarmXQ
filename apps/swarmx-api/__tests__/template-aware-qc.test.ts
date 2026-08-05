@@ -20,14 +20,14 @@ describe("kinetic_text — BLACK_FRAME", () => {
 });
 
 describe("kinetic_text — FREEZE_FRAME", () => {
-  it("marks short freeze (≤3s) as expected text hold", () => {
-    const r = interpretFinding(makeFreeze(2), "ffmpeg_kinetic_text");
+  it("marks freeze within the 6s hold budget as expected text hold", () => {
+    const r = interpretFinding(makeFreeze(5), "ffmpeg_kinetic_text");
     expect(r.isExpected).toBe(true);
     expect(r.interpretedSeverity).toBe("NONE");
   });
 
-  it("marks long freeze (>3s) as unexpected MEDIUM", () => {
-    const r = interpretFinding(makeFreeze(5), "ffmpeg_kinetic_text");
+  it("marks freeze beyond the 6s hold budget as unexpected MEDIUM", () => {
+    const r = interpretFinding(makeFreeze(7), "ffmpeg_kinetic_text");
     expect(r.isExpected).toBe(false);
     expect(r.interpretedSeverity).toBe("MEDIUM");
     expect(r.plannedEvent).toBeNull();
@@ -93,7 +93,7 @@ describe("runTemplateQc", () => {
   it("blockers contains only non-expected HIGH-severity interpretations", () => {
     const findings: RawQcFinding[] = [
       makeBlackFrame(1),           // expected (kinetic_text) → not a blocker
-      makeFreeze(20),              // unexpected MEDIUM (kinetic_text >3s) → warning, not blocker
+      makeFreeze(20),              // unexpected MEDIUM (kinetic_text >6s) → warning, not blocker
       { type: "MISSING_AUDIO", startSec: 0, durationSec: 30, severity: "HIGH" }, // blocker
     ];
     const result = runTemplateQc(findings, "ffmpeg_kinetic_text");

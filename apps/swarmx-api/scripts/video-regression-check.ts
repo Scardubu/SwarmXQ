@@ -8,6 +8,7 @@ import {
   PILOT_VIDEO_MODEL,
   detectAvailableMemoryMb,
   minimumRamRequiredForVideoRequest,
+  resetLowRamModeCacheForTesting,
   resolveVideoModelTag,
   shouldAutoEnableLowRamMode,
   stageTimeoutMs,
@@ -29,12 +30,20 @@ delete process.env["SWARMX_VIDEO_INTENT_MODEL"];
 delete process.env["SWARMX_VIDEO_PLAN_MODEL"];
 delete process.env["SWARMX_VIDEO_SCRIPT_MODEL"];
 delete process.env["SWARMX_VIDEO_STORYBOARD_MODEL"];
+// Explicit "0" (not unset) so this baseline assertion is deterministic
+// regardless of the host's live available RAM — isLowRamVideoMode() now
+// falls back to a live /proc/meminfo check when the env var is unset, which
+// is intentional (auto-enable on constrained hosts) but would make this
+// specific assertion flaky on a real low-RAM dev box if left unset.
+process.env["SWARMX_VIDEO_LOW_RAM_MODE"] = "0";
 resetEnvForTesting();
+resetLowRamModeCacheForTesting();
 const defaultProfileRequiredMb = minimumRamRequiredForVideoRequest(request);
 assert.equal(defaultProfileRequiredMb, 6170);
 
 process.env["SWARMX_VIDEO_LOW_RAM_MODE"] = "1";
 resetEnvForTesting();
+resetLowRamModeCacheForTesting();
 assert.equal(resolveVideoModelTag(request, "intent_classification"), LOW_RAM_VIDEO_MODEL);
 assert.equal(resolveVideoModelTag(request, "planning"), LOW_RAM_VIDEO_MODEL);
 assert.equal(resolveVideoModelTag(request, "scripting"), LOW_RAM_VIDEO_MODEL);
@@ -44,6 +53,7 @@ assert.equal(minimumRamRequiredForVideoRequest(request), 3300);
 process.env["SWARMX_VIDEO_LOW_RAM_MODE"] = "0";
 process.env["SWARMX_VIDEO_PLAN_MODEL"] = "plan-phi4-pro-q8-prod";
 resetEnvForTesting();
+resetLowRamModeCacheForTesting();
 assert.equal(resolveVideoModelTag(request, "planning"), "plan-phi4-pro-q8-prod");
 delete process.env["SWARMX_VIDEO_PLAN_MODEL"];
 
@@ -139,6 +149,20 @@ assert.ok(routesSource.includes('event.type === "video:completed"'), "SSE must c
 const serverSource = await readFile(new URL("../src/server.ts", import.meta.url), "utf8");
 assert.ok(serverSource.includes("shouldAutoEnableLowRamMode()"), "server must auto-enable low-RAM mode");
 assert.ok(serverSource.includes("LOW_RAM_VIDEO_MODEL"), "server must reference the video prewarm model");
+// Post-M13 fix — the shouldAutoEnableLowRamMode() check + process.env mutation
+// MUST run BEFORE the first loadEnv() call. loadEnv() caches its parsed result
+// on first invocation, so mutating process.env after that point is invisible
+// to every later loadEnv() call (including isLowRamVideoMode()), silently
+// disabling the entire low-RAM auto-enable feature on constrained hosts.
+{
+  const autoEnableIdx = serverSource.indexOf("if (shouldAutoEnableLowRamMode())");
+  const firstLoadEnvCallIdx = serverSource.indexOf("  loadEnv();");
+  assert.ok(autoEnableIdx > 0 && firstLoadEnvCallIdx > 0, "server must call both shouldAutoEnableLowRamMode() and loadEnv()");
+  assert.ok(
+    autoEnableIdx < firstLoadEnvCallIdx,
+    "shouldAutoEnableLowRamMode() must run before the first loadEnv() call so the auto-enabled flag is visible to loadEnv()'s cache",
+  );
+}
 
 // Services/routes must centralize env access through env.ts. Dynamic secrets
 // and parametric overrides still stay non-cached, but not scattered at call sites.
@@ -153,6 +177,31 @@ assert.ok(runtimeConfigSource.includes("readRawEnv(envName)"));
 assert.ok(runtimeConfigSource.includes("readRawEnv(TEXT_STAGE_MODEL_ENV[stage])"));
 assert.equal(runtimeConfigSource.includes("process.env[envName]"), false);
 assert.equal(runtimeConfigSource.includes("process.env[TEXT_STAGE_MODEL_ENV[stage]]"), false);
+// Post-M13 fix — shouldAutoEnableLowRamMode must check the RAW env value, not
+// the Zod-defaulted cache. loadEnv().SWARMX_VIDEO_LOW_RAM_MODE is always "0" or
+// "1" (both truthy strings), so checking it directly makes the function
+// permanently return false and never auto-enable on constrained hosts.
+assert.ok(
+  runtimeConfigSource.includes('readRawEnv("SWARMX_VIDEO_LOW_RAM_MODE")'),
+  "shouldAutoEnableLowRamMode must check the raw env value so unset hosts can still auto-enable low-RAM mode",
+);
+// Post-M13 fix #2 — isLowRamVideoMode() must NOT read loadEnv().SWARMX_VIDEO_LOW_RAM_MODE.
+// Many services (composer.ts, video-queue.ts, video-orchestrator.ts, etc.) call
+// loadEnv() at module TOP-LEVEL scope. ESM import side effects run before the
+// importing module's own body, so those top-level loadEnv() calls populate the
+// cache before server.ts's own startup code can auto-detect and set
+// SWARMX_VIDEO_LOW_RAM_MODE — no statement reordering in server.ts can fix that.
+// isLowRamVideoMode() must own a dedicated, self-contained cache (populated on
+// first real post-import call) instead of relying on env.ts's loadEnv() cache.
+assert.equal(
+  /function isLowRamVideoMode\(\)[\s\S]*?\n\}/.exec(runtimeConfigSource)?.[0]?.includes("loadEnv()") ?? true,
+  false,
+  "isLowRamVideoMode must not read loadEnv().SWARMX_VIDEO_LOW_RAM_MODE — ESM import ordering makes that cache stale before auto-detection can run",
+);
+assert.ok(
+  runtimeConfigSource.includes("let cachedLowRamMode"),
+  "isLowRamVideoMode must memoize its own decision independent of env.ts's loadEnv() cache",
+);
 
 const m13CertSource = await readFile(new URL("./m13-live-cert.ts", import.meta.url), "utf8");
 assert.ok(m13CertSource.includes('process.env["SWARMX_API_URL"]'), "M13 cert must honor SWARMX_API_URL");

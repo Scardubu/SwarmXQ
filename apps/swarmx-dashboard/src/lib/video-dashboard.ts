@@ -8,6 +8,8 @@ import type {
   VideoArtifacts,
   VideoError,
   VideoExportPlatform,
+  VoiceProfileId,
+  VoiceStoryMode,
   VideoJobStatus as CanonicalVideoJobStatus,
   ViralitySignal,
   VoiceArtifact,
@@ -74,6 +76,8 @@ export interface VideoJobRequest {
   style?: "faceless_broll" | "kinetic_text" | "storytime" | "tutorial" | "myth_busting";
   captionStyle?: "bold_center" | "lower_third" | "minimal";
   voice?: "default" | "calm" | "energetic" | "narrator";
+  voiceProfileId?: VoiceProfileId;
+  storyMode?: VoiceStoryMode;
   clientRequestId?: string;
   seriesId?: string;
   episodeNumber?: number;
@@ -219,7 +223,18 @@ function normalizeRequest(request: RawVideoJob["request"]): VideoJobRequest {
       ? { targetDurationSeconds: request.targetDurationSeconds }
       : {}),
     ...(request?.modelTier ? { modelTier: request.modelTier } : {}),
+    ...(request?.audience ? { audience: request.audience } : {}),
+    ...(request?.tone ? { tone: request.tone } : {}),
+    ...(request?.style ? { style: request.style } : {}),
+    ...(request?.captionStyle ? { captionStyle: request.captionStyle } : {}),
+    ...(request?.voice ? { voice: request.voice } : {}),
+    ...(request?.voiceProfileId ? { voiceProfileId: request.voiceProfileId } : {}),
+    ...(request?.storyMode ? { storyMode: request.storyMode } : {}),
     ...(request?.clientRequestId ? { clientRequestId: request.clientRequestId } : {}),
+    ...(request?.seriesId ? { seriesId: request.seriesId } : {}),
+    ...(request?.episodeNumber !== undefined ? { episodeNumber: request.episodeNumber } : {}),
+    ...(request?.totalEpisodes !== undefined ? { totalEpisodes: request.totalEpisodes } : {}),
+    ...(request?.seriesContext ? { seriesContext: request.seriesContext } : {}),
   };
 }
 
@@ -410,5 +425,45 @@ export function errorCodeHint(code: string): string {
     case "INTENT_VALIDATION_FAILED":  return "Prompt could not be classified. Try rephrasing it.";
     case "CANCELLED_BY_USER":         return "Job was cancelled before completion.";
     default:                          return "Unexpected pipeline error. Retry is disabled until an operator reviews the trace.";
+  }
+}
+
+export function errorCodeNextAction(code: string): string {
+  switch (code) {
+    case "OLLAMA_UNAVAILABLE":
+      return "Start Ollama, wait for health to recover, then retry from the failed stage.";
+    case "COMFY_UNAVAILABLE":
+      return "Switch to FFmpeg backend or restore ComfyUI, then retry from the failed stage.";
+    case "RENDER_FAILED":
+    case "COMFY_PROTOCOL_ERROR":
+    case "RENDER_BACKEND_INVALID":
+      return "Open operator trace for this job, fix the renderer issue, and retry from the failed stage.";
+    case "TIMEOUT":
+      return "Reduce duration or complexity, then retry when host pressure is lower.";
+    case "PRESSURE_CRITICAL":
+    case "comfyui_ram_budget_exceeded":
+      return "Free RAM first (evict heavy models), then retry with auto model routing.";
+    case "FRAME_BUDGET_EXCEEDED":
+      return "Lower target duration or frame density, then resubmit.";
+    case "SCRIPTING_FAILED":
+    case "SCRIPT_SCHEMA_INVALID":
+    case "STORYBOARD_FAILED":
+    case "STAGE_SCHEMA_INVALID":
+    case "INTENT_VALIDATION_FAILED":
+      return "Tighten the prompt with a clearer hook and structure, then resubmit.";
+    case "FFMPEG_UNAVAILABLE":
+    case "FFPROBE_UNAVAILABLE":
+      return "Install ffmpeg on the host and rerun startup checks before retrying.";
+    case "ESPEAK_UNAVAILABLE":
+    case "VOICE_PROVIDER_UNAVAILABLE":
+      return "Restore at least one voice provider (Kokoro, Piper, or eSpeak), then retry.";
+    case "ARTIFACT_MISSING":
+    case "ARTIFACT_EMPTY":
+    case "ARTIFACT_INVALID":
+      return "Output artifacts are invalid. Resubmit the job from scratch.";
+    case "CANCELLED_BY_USER":
+      return "Resubmit when you are ready to run the full pipeline.";
+    default:
+      return "Open operator view, inspect trace and stage logs, then decide between retry or resubmit.";
   }
 }

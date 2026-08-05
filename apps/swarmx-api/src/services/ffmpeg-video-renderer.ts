@@ -727,6 +727,8 @@ async function writeProductionPackage(input: {
     schemaVersion: 1,
     providerId: voiceArtifact?.providerId ?? "unavailable",
     qualityTier: voiceArtifact?.qualityTier ?? "none",
+    voiceProfileId: voiceArtifact?.voiceProfileId ?? input.request.voiceProfileId ?? null,
+    storyMode: voiceArtifact?.storyMode ?? input.request.storyMode ?? null,
     outputPath: voiceArtifact?.outputPath ?? null,
     sha256: voiceArtifact?.sha256 ?? null,
     createdAt: new Date().toISOString(),
@@ -836,14 +838,21 @@ export async function renderWithFfmpeg(input: FfmpegRenderInput): Promise<{ outp
     const narration = narrationText(input, cards);
     let voiceArtifact: VoiceArtifact | undefined;
     try {
-      const selected = await selectVoiceProvider();
+      const selected = await selectVoiceProvider({
+        voiceProfileId: input.request.voiceProfileId,
+      });
       voiceArtifact = await selected.provider.synthesize({
         jobId: input.jobId,
         text: narration,
         locale: loadEnv().SWARMX_TTS_LOCALE,
         voiceId: input.request.voice ?? "default",
+        ...(input.request.voiceProfileId ? { voiceProfileId: input.request.voiceProfileId } : {}),
+        ...(input.request.storyMode ? { storyMode: input.request.storyMode } : {}),
         requestedSampleRateHz: loadEnv().SWARMX_AUDIO_MASTER_SAMPLE_RATE_HZ,
       }, narrationPath, input.signal);
+      if (selected.fallbackReason) {
+        voiceArtifact = { ...voiceArtifact, fallbackReason: selected.fallbackReason };
+      }
     } catch (error) {
       if (loadEnv().SWARMX_VIDEO_ALLOW_SILENT_AUDIO !== "1") {
         throw Object.assign(error instanceof Error ? error : new Error(String(error)), {

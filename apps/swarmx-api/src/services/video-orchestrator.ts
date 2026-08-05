@@ -670,11 +670,15 @@ function normalizeStoryboardFrame(text: string): string {
 
 function appendStoryboardFrame(frames: string[], frame: string): void {
   const normalized = normalizeStoryboardFrame(frame);
-  if (normalized.length < 8 || normalized.length > 260) {
+  if (normalized.length < 8) {
     return;
   }
-  if (!frames.some((existing) => existing.toLowerCase() === normalized.toLowerCase())) {
-    frames.push(normalized);
+  const clamped = normalized.slice(0, 240).trim();
+  if (clamped.length < 8) {
+    return;
+  }
+  if (!frames.some((existing) => existing.toLowerCase() === clamped.toLowerCase())) {
+    frames.push(clamped);
   }
 }
 

@@ -12,7 +12,7 @@ import { ViralityMeter } from "../../../../components/video/ViralityMeter";
 import { CaptionEditor } from "../../../../components/video/CaptionEditor";
 import { PlatformPublishPanel } from "../../../../components/video/PlatformPublishPanel";
 import type { VideoExportPlatform } from "@swarmx/types/video-types";
-import { errorCodeHint, getVideoPublishPlatform } from "../../../../lib/video-dashboard";
+import { errorCodeHint, errorCodeNextAction, getVideoPublishPlatform } from "../../../../lib/video-dashboard";
 import VideoJobDetailLoading from "./loading";
 
 type ScriptSectionKey = "HOOK" | "BODY" | "RESOLUTION" | "CTA";
@@ -336,6 +336,9 @@ export default function VideoJobDetailPage() {
                       <p className="mt-1 font-mono text-xs text-status-error">{job.error.code}</p>
                       <p className="mt-0.5 text-xs text-text-secondary">
                         {errorCodeHint(job.error.code)}
+                      </p>
+                      <p className="mt-0.5 text-xs text-text-secondary">
+                        Next action: {errorCodeNextAction(job.error.code)}
                       </p>
                     </>
                   )}
