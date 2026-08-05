@@ -149,6 +149,14 @@ assert.ok(routesSource.includes('event.type === "video:completed"'), "SSE must c
 const serverSource = await readFile(new URL("../src/server.ts", import.meta.url), "utf8");
 assert.ok(serverSource.includes("shouldAutoEnableLowRamMode()"), "server must auto-enable low-RAM mode");
 assert.ok(serverSource.includes("LOW_RAM_VIDEO_MODEL"), "server must reference the video prewarm model");
+assert.ok(
+  serverSource.includes('import { fetchBackend } from "./services/backend-fetch-errors.js";'),
+  "server startup prewarm must use fetchBackend() for stable Ollama failure classification",
+);
+assert.ok(
+  serverSource.includes('fetchBackend(`${ollamaUrl}/api/generate`'),
+  "server startup prewarm /api/generate call must use fetchBackend() rather than bare fetch()",
+);
 // Post-M13 fix — the shouldAutoEnableLowRamMode() check + process.env mutation
 // MUST run BEFORE the first loadEnv() call. loadEnv() caches its parsed result
 // on first invocation, so mutating process.env after that point is invisible
@@ -214,6 +222,16 @@ assert.ok(m13CertSource.includes("hasQualityReport"), "M13 cert must assert QC f
 assert.ok(m13CertSource.includes("formatProgress"), "M13 cert must display 0–100 job progress correctly");
 
 const composerSource = await readFile(new URL("../src/routes/composer.ts", import.meta.url), "utf8");
+assert.ok(
+  composerSource.includes('import { fetchBackend } from "../services/backend-fetch-errors.js";'),
+  "Composer Ollama calls must use fetchBackend() so network failures classify as OLLAMA_UNAVAILABLE",
+);
+for (const endpoint of ["/api/chat", "/api/ps", "/api/generate"]) {
+  assert.ok(
+    composerSource.includes(`fetchBackend(\`${"${ollamaBase}"}${endpoint}`),
+    `Composer ${endpoint} calls must use fetchBackend() rather than bare fetch()`,
+  );
+}
 const preloadStart = composerSource.indexOf("function startModelPreload");
 const preloadEnd = composerSource.indexOf("function timeoutBucketFor");
 assert.ok(preloadStart > 0 && preloadEnd > preloadStart);

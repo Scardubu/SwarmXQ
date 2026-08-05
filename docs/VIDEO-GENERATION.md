@@ -867,6 +867,14 @@ Planning asks for only the five required production beats and is capped at 320
 generated tokens; intent classification keeps a 256-token cap so Pilot-lite can
 return complete strict JSON.
 
+All Ollama and ComfyUI HTTP calls in the video-adjacent API surface must use the
+shared backend classifier. The video pipeline, ComfyUI client, Ollama service,
+Composer route, and server startup prewarm call `fetchBackend()` so network
+failures keep stable error codes such as `OLLAMA_UNAVAILABLE` and
+`COMFY_UNAVAILABLE`. Do not introduce a bare `fetch()` for those backends;
+`video-regression-check.ts` guards the Composer `/api/chat`, `/api/ps`, and
+`/api/generate` call sites plus server prewarm explicitly.
+
 `pnpm --filter @swarmx/api run test:m13` validates the HTTP job detail contract
 against the canonical completed-job `output` metadata. The required production
 evidence is `output.modelsUsed`, `output.certificationTier`, and

@@ -1,5 +1,5 @@
 # NEXUS — Task Orchestration Engine v3.0 (SwarmXQ Edition)
-# Baseline: V6.2.53 · APEX-17 r8 · 39-skill registry
+# Baseline: V6.2.62 · APEX-17 r8 · 39-skill registry
 
 > **Disambiguation — read this first.**
 >
@@ -545,7 +545,7 @@ Followed by:
 
 ---
 
-# VERIFIED COMPONENT STATE (V6.2.53 — 2026-07-24)
+# VERIFIED COMPONENT STATE (V6.2.62 — 2026-08-05)
 
 ## Routing Implications from Verified Ground Truth
 
@@ -556,7 +556,7 @@ Followed by:
 | VOT-09 through VOT-13 applied | Video pipeline: `modelsUsed` in stage fn; `{ once: true }` on listeners; `sanitizeReasoningOutput()` mandatory |
 | `MAX_CONCURRENT_JOBS=1` | Queue tasks: never suggest concurrent video jobs; CPU inference is serial |
 | BullMQ enabled, Worker co-located | Queue tasks: Worker + Queue use separate ioredis connections; Redis fallback to in-memory |
-| 338 vitest tests passing | Testing: ≥338 baseline; route to `testing-strategy-architect` for any new test file |
+| 355 API tests + 65 dashboard tests passing | Testing: keep both package baselines green; route to `testing-strategy-architect` for any new test file |
 | GitHub Actions CI active | Release: route to `swarmxq-ci-release-architect` + `git-workflow-architect` |
 | 16 GB profile active | Model: `OLLAMA_MAX_LOADED_MODELS=2` valid; dual-model residency unlocked |
 | TONE_RULES all 8 variants | Creative: `faceless_broll` and `kinetic_text` confirmed present; CI grep gate validates |

@@ -36,6 +36,12 @@ Set these before starting Ollama or the SwarmX stack. The startup script auto-de
 | `SWARMX_SYSTEM_HEALTH_MODEL_PROBE_TIMEOUT_MS` | `2500` | Readiness budget for model listing after liveness succeeds; bounded to 250–10000 ms. |
 | `SWARMX_API_INTERNAL` | `http://localhost:7380` | Internal Python sidecar base URL used for governor pressure probes. |
 
+The `standard_cpu_16gb` profile permits `OLLAMA_MAX_LOADED_MODELS=2` only for
+dual residency; it does not permit concurrent inference. Keep
+`OLLAMA_NUM_PARALLEL=1`, and route application-level Ollama HTTP calls through
+the shared backend classifier so network failures retain the stable
+`OLLAMA_UNAVAILABLE` code.
+
 ZRAM is compressed swap capacity, not free physical RAM. Runtime pressure
 decisions use physical `MemAvailable` and report ZRAM separately.
 

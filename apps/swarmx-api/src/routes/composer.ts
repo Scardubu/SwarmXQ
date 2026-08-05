@@ -32,6 +32,7 @@ import {
   sanitizeReasoningOutput,
   extractJson,
 } from "../services/reasoning-sanitizer.js";
+import { fetchBackend } from "../services/backend-fetch-errors.js";
 import { getModelOrchestrator } from "../services/model-orchestrator.js";
 import { resolveCanonicalTag } from "@swarmx/types/operator-map";
 import { loadEnv } from "../lib/env.js";
@@ -186,7 +187,8 @@ async function callOllama(
   tokens?: number;
   raw?: unknown;
 }> {
-  const ollamaRes = await fetch(`${ollamaBase}/api/chat`, {
+  const ollamaRes = await fetchBackend(`${ollamaBase}/api/chat`, {
+    backend: "ollama",
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -260,7 +262,10 @@ async function getLoadedModelState(ollamaBase: string): Promise<LoadedModelState
     const ctrl = new AbortController();
     const tid = setTimeout(() => ctrl.abort(), 3_000);
     try {
-      const res = await fetch(`${ollamaBase}/api/ps`, { signal: ctrl.signal });
+      const res = await fetchBackend(`${ollamaBase}/api/ps`, {
+        backend: "ollama",
+        signal: ctrl.signal,
+      });
       if (!res.ok) return { reachable: false, names: new Set() };
       const json = (await res.json()) as { models?: Array<{ name?: string }> };
       return {
@@ -298,7 +303,8 @@ function startModelPreload(ollamaBase: string, modelTag: string): void {
   const state = { startedAt: Date.now(), done: false };
   _preloadState.set(modelTag, state);
   // Intentionally no await — fire and forget
-  void fetch(`${ollamaBase}/api/generate`, {
+  void fetchBackend(`${ollamaBase}/api/generate`, {
+    backend: "ollama",
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

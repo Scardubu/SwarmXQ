@@ -2,7 +2,7 @@
  * packages/swarmx-types/src/operator-map.ts
  * ─────────────────────────────────────────────────────────────────────────────
  * SwarmXQ Dual-Layer Naming System — TypeScript Source of Truth
- * Version : v2026.5.25-apex17-r7-final
+ * Version : v2026.8.5-apex17-r8-final
  *
  * Layer 1 — Canonical runtime tags (machine truth)
  *   Grammar: <role>-<family>-<tier>-<quant>-<env>

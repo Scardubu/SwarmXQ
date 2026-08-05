@@ -2,7 +2,7 @@
 src/swarmx/operator_map.py
 ─────────────────────────────────────────────────────────────────────────────
 SwarmXQ Dual-Layer Naming System — Python Source of Truth
-Version : v2026.5.25-apex17-r7-final
+Version : v2026.8.5-apex17-r8-final
 
 Mirrors packages/swarmx-types/src/operator-map.ts. The two files are kept
 byte-exact equivalent in semantics — any change here requires the same change

@@ -81,6 +81,7 @@ import { hydrateVideoQueueFromDisk, setBullMQRuntimeEnabled } from "./services/v
 import { hydrateWorkflowRunsFromDisk } from "./services/creative-factory-workflow.js";
 import { startVideoWorker, stopVideoWorker } from "./workers/video-worker.js";
 import { ModelOrchestrator } from "./services/model-orchestrator.js";
+import { fetchBackend } from "./services/backend-fetch-errors.js";
 import {
   LOW_RAM_VIDEO_MODEL,
   PILOT_VIDEO_MODEL,
@@ -284,7 +285,8 @@ try {
     const prewarmTag = isLowRamVideoMode() ? LOW_RAM_VIDEO_MODEL : PILOT_VIDEO_MODEL;
     const keepAliveSecs = loadEnv().OLLAMA_KEEP_ALIVE_PILOT_S;
     const ollamaUrl = loadEnv().OLLAMA_HOST ?? loadEnv().SWARMX_OLLAMA_URL ?? "http://127.0.0.1:11434";
-    void fetch(`${ollamaUrl}/api/generate`, {
+    void fetchBackend(`${ollamaUrl}/api/generate`, {
+      backend: "ollama",
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

@@ -1,10 +1,18 @@
 # AI Engineering Control System (Claude Code)
 # SwarmXQ — Autonomous Multi-Agent AI Orchestration Platform
-# Baseline: V6.2.53 · APEX-17 r8 · Hardware: 16 GB RAM (HP EliteBook 850 G3 · CPU-only · bare-metal Linux)
-# Video Generator Principal Engineer Directive: V3.4.0
+# Baseline: V6.2.62 · APEX-17 r8 · Hardware: 16 GB RAM (HP EliteBook 850 G3 · CPU-only · bare-metal Linux)
+# Video Generator Principal Engineer Directive: V3.5.0
 # Lagos precision. Global scale.
 #
 # CHANGELOG
+# V3.5.0 (2026-08-05): Reconciliation with V6.2.61–62 codebase reality:
+#   - Baseline, test counts, and latest memory-note pointer updated after dashboard
+#     motion/prosody usability and Composer fetch-classification hardening.
+#   - Ollama CPU tuning guidance corrected to match env.ts/startup-enhanced.sh:
+#     flash attention defaults off and KV cache stays f16 unless a host-specific
+#     validation explicitly opts in to a faster profile.
+#   - APEX-17 operator-map headers now align with r8 governance while preserving
+#     the same canonical runtime tags and Python mirror semantics.
 # V3.4.0 (2026-07-24): Reconciliation with V6.2.50–53 codebase reality:
 #   - 39 skills confirmed on disk (swarmxq-ci-release-architect was missing from count)
 #   - Skill count, NEXUS baseline, slash commands, test counts all corrected to V6.2.53
@@ -682,8 +690,8 @@ and validated via `env.ts`. Wrong values cause silent throughput degradation —
 |---|---|---|
 | `OLLAMA_NUM_PARALLEL` | `1` | CPU has one effective inference thread; parallelism > 1 adds scheduling overhead with zero throughput gain |
 | `OLLAMA_MAX_LOADED_MODELS` | `2` (16 GB) / `1` (8 GB) | Dual-resident on 16 GB only |
-| `OLLAMA_FLASH_ATTENTION` | `1` | Fused attention kernel: ~20% memory reduction on CPU AVX2; degrades gracefully on non-AVX2 |
-| `OLLAMA_KV_CACHE_TYPE` | `q8_0` | int8 KV cache: ~30% memory savings vs f16, negligible quality loss; never use f16 on 16 GB |
+| `OLLAMA_FLASH_ATTENTION` | `0` | Conservative CPU default; operators may opt in only after a measured host-specific AVX2 compatibility pass |
+| `OLLAMA_KV_CACHE_TYPE` | `f16` | Conservative CPU default paired with flash-attention off; do not switch to quantized KV without validation on the target host |
 | `OLLAMA_NUM_THREADS` | `3` (WSL2) / `4` (bare-metal) | Leave 1 core for OS + WSL2 hypervisor; detect via `grep -qi microsoft /proc/version` |
 | `OLLAMA_KEEP_ALIVE` | `0` (global) / `5m` (Pilot only) | Global evict-after-run; Pilot override in startup-enhanced.sh |
 
@@ -874,8 +882,8 @@ OLLAMA_HOST=http://localhost:11434
 
 # Ollama CPU performance (WSL2/bare-metal, 4-core, CPU-only) — set all before starting Ollama
 OLLAMA_NUM_PARALLEL=1              # single inference thread on CPU — never increase
-OLLAMA_FLASH_ATTENTION=1           # fused attention kernel: ~20% memory reduction on CPU AVX2
-OLLAMA_KV_CACHE_TYPE=q8_0         # int8 KV cache: ~30% memory savings vs f16, negligible quality loss
+OLLAMA_FLASH_ATTENTION=0           # conservative CPU default; opt in only after host validation
+OLLAMA_KV_CACHE_TYPE=f16           # conservative CPU default paired with flash-attention off
 OLLAMA_NUM_THREADS=3               # 3 of 4 cores; reserves 1 for WSL2 hypervisor + OS (use 4 on bare-metal)
 OLLAMA_KEEP_ALIVE_PILOT_S=300      # 5 minutes; set by startup-enhanced.sh for Pilot only
 
@@ -914,7 +922,7 @@ cat NEXUS.md | head -3          # verify NEXUS.md is present
 
 # 3. Load prior context
 cat .serena/memories/MEMORY.md          # session index — find the most recent project_v*.md
-cat .serena/memories/project_v6253.md   # most recent session note as of V6.2.53
+ls .serena/memories/project_v*.md | sort | tail -1 | xargs cat  # latest local session note
 
 # 3. Environment check
 awk '/MemAvailable/ {printf "MemAvailable: %d MB\n", $2/1024}' /proc/meminfo
@@ -924,8 +932,8 @@ redis-cli ping 2>/dev/null || echo "[OFFLINE] Redis not reachable"
 
 # 4. Verify CPU performance vars (must be set before inference)
 echo "OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-UNSET}      (must be 1)"
-echo "OLLAMA_FLASH_ATTENTION=${OLLAMA_FLASH_ATTENTION:-UNSET} (must be 1)"
-echo "OLLAMA_KV_CACHE_TYPE=${OLLAMA_KV_CACHE_TYPE:-UNSET}    (must be q8_0)"
+echo "OLLAMA_FLASH_ATTENTION=${OLLAMA_FLASH_ATTENTION:-UNSET} (default 0 unless host-validated)"
+echo "OLLAMA_KV_CACHE_TYPE=${OLLAMA_KV_CACHE_TYPE:-UNSET}    (default f16 unless host-validated)"
 echo "OLLAMA_NUM_THREADS=${OLLAMA_NUM_THREADS:-UNSET}         (must be 3/WSL2 or 4/bare-metal)"
 
 # 5. Voice benchmark freshness check
@@ -957,8 +965,8 @@ Execute these steps before closing any session where code was written:
 pnpm -F swarmx-api tsc --noEmit
 pnpm -F swarmx-types tsc --noEmit
 pnpm -F swarmx-dashboard tsc --noEmit
-pnpm -F swarmx-api vitest run              # must be ≥338 (as of V6.2.53)
-pnpm -F swarmx-dashboard vitest run        # must be ≥52
+pnpm -F swarmx-api vitest run              # must be ≥355 (as of V6.2.62)
+pnpm -F swarmx-dashboard vitest run        # must be ≥65
 npx tsx apps/swarmx-api/scripts/video-regression-check.ts
 npx tsx apps/swarmx-api/scripts/system-health-regression.ts
 npx tsx apps/swarmx-api/scripts/reasoning-sanitizer-regression.ts
@@ -1021,8 +1029,8 @@ pnpm -F swarmx-api tsc --noEmit           # zero type errors
 pnpm -F swarmx-types tsc --noEmit         # zero type errors
 pnpm -F swarmx-dashboard tsc --noEmit     # zero type errors
 
-pnpm -F swarmx-dashboard vitest run       # ≥52 passing
-pnpm -F swarmx-api vitest run             # ≥338 passing (V6.2.53 baseline; grows with V4 slices)
+pnpm -F swarmx-dashboard vitest run       # ≥65 passing
+pnpm -F swarmx-api vitest run             # ≥355 passing (V6.2.62 baseline; grows with V4 slices)
 
 # API regression scripts (no Ollama/Redis needed)
 npx tsx apps/swarmx-api/scripts/adaptive-timeout-regression.ts
@@ -1098,7 +1106,7 @@ Push only after all quality gates pass.
 | ~~1~~ | ~~**BullMQ Default-On**~~ | ✅ V6.2.22+V6.2.40 |
 | ~~2~~ | ~~**GitHub Actions CI**~~ | ✅ V6.2.40 |
 | ~~3~~ | ~~**Env Schema Expansion**~~ | ✅ V6.2.38 — ≤10 process.env hits, all documented |
-| ~~4~~ | ~~**First API Unit Tests**~~ | ✅ V6.2.39 — 338 tests at V6.2.53 |
+| ~~4~~ | ~~**First API Unit Tests**~~ | ✅ V6.2.39 — seeded API unit coverage; current V6.2.62 baseline is 355 tests |
 | ~~5~~ | ~~**16 GB Profile Config**~~ | ✅ V6.2.44 — startup-enhanced.sh complete |
 | ~~6~~ | ~~**TONE_RULES Completeness Audit**~~ | ✅ V6.2.23 — all 8 variants CI-gated |
 | ~~7~~ | ~~**Smoke Renderer Certification Ceiling + Per-Stage Zod Validation**~~ | ✅ V6.2.49 |
@@ -1106,7 +1114,7 @@ Push only after all quality gates pass.
 | ~~9~~ | ~~**SCAR-X V5.0.0 P1 Hygiene**~~ | ✅ V6.2.50 — HOOK_BLOCKLIST consolidated, QUICK_DRAFT mode, INV-18 transitions, doctor CLI scaffolded |
 | ~~10~~ | ~~**P1 Creative Intelligence**~~ | ✅ V6.2.51 — hook laboratory (10 families), concept tournament (Levenshtein diversity), RetentionMap (7 beats), scene DSL + render recipe compiler |
 | ~~11~~ | ~~**P1 Completion + Audio**~~ | ✅ V6.2.52 — tournament 11-axis diversity, EBU R128 audio mastering, template-aware QC, path traversal fix |
-| ~~12~~ | ~~**Integrations + UX**~~ | ✅ V6.2.53 — template-aware QC wired into renderer, RetentionMap preview endpoint, RuntimeCapabilityStrip, prefers-reduced-motion |
+| ~~12~~ | ~~**Integrations + UX**~~ | ✅ V6.2.53–V6.2.62 — template-aware QC, RetentionMap preview, RuntimeCapabilityStrip, video dashboard motion/prosody UX, Composer fetch classification |
 | **13** | **S5: Golden-Path Re-Cert** | Clean clone → real MP4 from production renderer → `/api/system/health` shows voice.benchmark + runtime profile; `stageValidationTrace` populated; cert tier ≥ `PRODUCTION_PACK_VALID`; template-aware QC runs |
 | **14** | **S2: Template Family Expansion (+8 templates)** | myth-vs-fact, list/countdown, mystery/reveal, product-demo, quote-to-insight, chart/data, motivational, series-recap all wired as selectable `templateFamily` in `VideoJobRequest`; each has tone mapping + storyboard style hints |
 | **15** | **Ollama JSON-mode Migration** | CPU JSON-mode reliability benchmark run first (< 5% parse failure rate required); if passes: `planning` and `storyboard_generation` stages migrated from regex extraction to `format: "json"` in Ollama request; regression scripts updated |
@@ -1187,7 +1195,7 @@ Repository code overrides all prior documentation. Grep/read before acting.
 | Renderer certification ceiling | `renderer-certification.ts` clamps all tier assignments; `ffmpeg_text_smoke → TECHNICALLY_VALID` |
 | Voice benchmark infrastructure | `voice-benchmark.ts` CLI + `voice-benchmark-report.ts` reader + `selectVoiceProvider()` report integration + `/api/system/health` `voice.benchmark` block |
 | TONE_RULES all 8 variants | CI grep gate confirms all 8 present: `contrarian`, `urgent`, `educational`, `cinematic`, `warm`, `minimal`, `faceless_broll`, `kinetic_text` |
-| API tests | 338 passing (V6.2.53) across 21 test files |
+| API tests | 355 passing (V6.2.62) across 23 test files |
 | Dashboard build | 14 routes, zero build errors |
 | APEX-17 r8 operator map | Both `operator-map.ts` and `operator_map.py` semantically identical; V5 names eliminated |
 | HOOK_BLOCKLIST consolidated | `src/lib/creative-quality.ts` — single source; imported by orchestrator + preproducer |
@@ -1211,7 +1219,7 @@ Repository code overrides all prior documentation. Grep/read before acting.
 | ~~BullMQ disabled by default~~ | ✅ V6.2.22+V6.2.40 | done |
 | ~~Zero CI~~ | ✅ V6.2.40 | done |
 | ~~`process.env[…]` scattered in services~~ | ✅ V6.2.38 | done |
-| ~~Zero API unit tests~~ | ✅ V6.2.53 — 338 tests | done |
+| ~~Zero API unit tests~~ | ✅ V6.2.62 — 355 API tests | done |
 | ~~`startup-enhanced.sh` not wired for 16 GB~~ | ✅ V6.2.44 | done |
 | ~~TONE_RULES completeness unverified~~ | ✅ V6.2.23 | done |
 | ~~HOOK_BLOCKLIST duplicated~~ | ✅ V6.2.50 — consolidated to `src/lib/creative-quality.ts` | done |

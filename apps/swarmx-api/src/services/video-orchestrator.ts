@@ -2,7 +2,7 @@
  * apps/swarmx-api/src/services/video-orchestrator.ts
  * SwarmXQ Video Subsystem — Pressure-Aware Orchestrator
  *
- * Version : v2026.5.24-apex17-r7
+ * Version : v2026.8.5-apex17-r8
  *
  * Fixes applied in r7 (correctness pass on r6):
  *   [VOT-09] stageRenderAssembly() now fully destructures { modelTag, overrides }

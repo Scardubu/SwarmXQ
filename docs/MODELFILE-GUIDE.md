@@ -1,7 +1,9 @@
 # Historical SwarmX V5 Modelfile Guide
 > **Historical reference only.** The supported APEX-17 r8 runtime uses canonical
-> Operator tags, current Modelfiles under `models/Modelfiles/primary/`, and strict
-> single-model residency on the 8 GB CPU-only profile. Use [README.md](../README.md),
+> Operator tags, current Modelfiles under `models/Modelfiles/primary/`, and
+> profile-managed CPU residency. The constrained 8 GB profile stays strict
+> single-resident; the standard 16 GB profile may keep a second lightweight model
+> resident but never allows concurrent inference. Use [README.md](../README.md),
 > `models/registry.yaml`, `configs/v6-overlay.yaml`, and
 > `configs/video.defaults.yaml` for current operating policy.
 
@@ -10,11 +12,11 @@ larger-GPU co-load analysis. It must not be used to configure the supported host
 
 ## Current supported policy
 
-| Requirement | Supported 8 GB runtime |
+| Requirement | Current CPU runtime |
 | --- | --- |
 | Runtime tags | Canonical tags such as `route-phi4-lite-q4km-prod` and `code-qwen25-pro-q5km-prod` |
-| Startup residency | No model by default; Relay warmup is explicit opt-in |
-| Model concurrency | `OLLAMA_NUM_PARALLEL=1`, `OLLAMA_MAX_LOADED_MODELS=1` |
+| Startup residency | Profile-managed; heavyweight prewarm is off on constrained hosts |
+| Model concurrency | `OLLAMA_NUM_PARALLEL=1`; `OLLAMA_MAX_LOADED_MODELS=1` on 8 GB and `2` on validated 16 GB dual-residency hosts |
 | Global keep-alive | `OLLAMA_KEEP_ALIVE=0`; request-level lifecycle policy is authoritative |
 | 7B loading | Never load two 7B models; do not begin a 7B call below 2 GB available RAM |
 

@@ -4,6 +4,27 @@
 
 ---
 
+## V6.2.62 — Composer Fetch Classification and Governance Reconciliation (2026-08-05)
+
+### API — Composer Ollama failure classification
+
+- Composer chat, loaded-model, model-preload, and server startup prewarm Ollama
+  calls now use `fetchBackend(..., { backend: "ollama" })`, matching the video
+  pipeline and Ollama service discipline. Network failures now classify as
+  `OLLAMA_UNAVAILABLE` instead of surfacing as unstructured fetch errors.
+- `video-regression-check.ts` now guards Composer's `/api/chat`, `/api/ps`, and
+  `/api/generate` call sites plus server prewarm so future work cannot silently
+  bypass the shared backend classifier.
+
+### Governance/docs — runtime truth alignment
+
+- APEX-17 operator-map headers in TypeScript and Python now advertise r8 while
+  preserving the existing canonical tags and mirror semantics.
+- `CLAUDE.md` and `NEXUS.md` now reflect the V6.2.62 baseline, current test
+  counts, and the conservative CPU Ollama defaults from `env.ts` and
+  `startup-enhanced.sh`: `OLLAMA_FLASH_ATTENTION=0` and
+  `OLLAMA_KV_CACHE_TYPE=f16` unless a target-host validation opts in.
+
 ## V6.2.61 — Video Dashboard Motion, Prosody, and Mobile Usability (2026-08-05)
 
 ### API — style-aware renderer motion and Comfy prompt parity
