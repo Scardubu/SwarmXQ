@@ -63,7 +63,7 @@ decisions use physical `MemAvailable` and report ZRAM separately.
 | `SWARMX_TTS_PIPER_MODEL_PATH` | unset | Piper voice model path. Piper reports degraded/unavailable when the binary or model path is missing. |
 | `SWARMX_AUDIO_TARGET_LUFS` | `-16` | Local mastering loudness target for rendered short-form narration packages. |
 | `SWARMX_AUDIO_TRUE_PEAK_MAX_DBFS` | `-1.5` | Local mastering true-peak cap. |
-| `SWARMX_VIDEO_ALLOW_UNSTRUCTURED_INTENT` | unset | Set `1` only to continue when intent classification is not valid structured output. |
+| `SWARMX_VIDEO_ALLOW_UNSTRUCTURED_INTENT` | unset | Debug escape hatch: set `1` only to pass raw sanitized text through when intent classification is not valid structured output. By default, malformed intent JSON falls back to a deterministic structured intent derived from the validated request. |
 | `SWARMX_VIDEO_INTENT_MODEL` | `instruct-phi4-pro-q8-prod` | Intent classification model override. The default Q8 Pilot is attempted first; retryable Ollama failures fall back to canonical Pilot-lite inside the same stage timeout. Once intent uses Pilot-lite, later text stages keep the Pilot-lite recovery profile for that job. |
 | `SWARMX_VIDEO_LOW_RAM_MODE` | unset | Set `1` to force all video text stages through the 2.5 GB Pilot-lite profile; requires at least 3300 MB available RAM. |
 | `SWARMX_VIDEO_API_TOKEN` | unset | Server-only bearer/API-key token for video and series write routes. Production writes fail closed when unset. Never expose through `NEXT_PUBLIC_*`. |

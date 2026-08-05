@@ -1,5 +1,5 @@
 # NEXUS — Task Orchestration Engine v3.0 (SwarmXQ Edition)
-# Baseline: V6.2.62 · APEX-17 r8 · 39-skill registry
+# Baseline: V6.2.63 · APEX-17 r8 · 39-skill registry
 
 > **Disambiguation — read this first.**
 >
@@ -545,7 +545,7 @@ Followed by:
 
 ---
 
-# VERIFIED COMPONENT STATE (V6.2.62 — 2026-08-05)
+# VERIFIED COMPONENT STATE (V6.2.63 — 2026-08-05)
 
 ## Routing Implications from Verified Ground Truth
 
@@ -553,7 +553,7 @@ Followed by:
 |---|---|
 | Zero `console.*` in services/routes | Logging tasks: `log.*` from `src/lib/logger.ts` only; reject any PR adding `console.*` |
 | `loadEnv()` wired in `server.ts` | Env tasks: always add to `env.ts` Zod schema; never direct `process.env` for validated vars |
-| VOT-09 through VOT-13 applied | Video pipeline: `modelsUsed` in stage fn; `{ once: true }` on listeners; `sanitizeReasoningOutput()` mandatory |
+| VOT-09 through VOT-13 plus V6.2.63 intent fallback applied | Video pipeline: `modelsUsed` in stage fn; `{ once: true }` on listeners; `sanitizeReasoningOutput()` mandatory; malformed sanitized intent JSON continues through `buildDeterministicIntentFallback()` |
 | `MAX_CONCURRENT_JOBS=1` | Queue tasks: never suggest concurrent video jobs; CPU inference is serial |
 | BullMQ enabled, Worker co-located | Queue tasks: Worker + Queue use separate ioredis connections; Redis fallback to in-memory |
 | 355 API tests + 65 dashboard tests passing | Testing: keep both package baselines green; route to `testing-strategy-architect` for any new test file |

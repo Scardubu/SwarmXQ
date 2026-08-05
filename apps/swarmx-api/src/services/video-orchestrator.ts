@@ -296,6 +296,29 @@ function parseIntentClassification(raw: string): { intent: string; complexity: n
   return { intent, complexity };
 }
 
+function summarizeBriefForIntent(prompt: string): string {
+  const normalized = prompt.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 120) return normalized;
+  return `${normalized.slice(0, 117).trimEnd()}...`;
+}
+
+function buildDeterministicIntentFallback(request: VideoJobRequest): { intent: string; complexity: number } {
+  const topic = summarizeBriefForIntent(request.prompt);
+  const style = request.style ?? "faceless_broll";
+  const niche = request.niche ?? "other";
+  const audience = request.audience?.trim() || "the target viewer";
+  const duration = request.targetDurationSeconds ?? 30;
+  const complexity = Math.min(0.8, Math.max(0.35, duration >= 45 ? 0.65 : 0.45));
+
+  return {
+    intent:
+      `HOOK: Make "${topic}" feel immediately visible and worth finishing. ` +
+      `| ARC: ${audience} moves from passive interest to a clear ${style} takeaway in the ${niche} niche. ` +
+      `| TAKEAWAY: Show one specific action the viewer can apply today.`,
+    complexity,
+  };
+}
+
 // ─── Pressure Guard ───────────────────────────────────────────────────────────
 
 interface GovernorSnapshot {
@@ -597,10 +620,26 @@ Respond as strict JSON only, no other text:
       }
       recordOperatorTrace(ctx, "intent_classification", model, startedAt, false, intentTokens, intentLatency);
       traceRecorded = true;
-      throw Object.assign(
-        new Error(`Intent classification did not return valid JSON: ${err instanceof Error ? err.message : String(err)}`),
-        { code: "INTENT_VALIDATION_FAILED" },
-      );
+      const fallback = buildDeterministicIntentFallback(ctx.job.request);
+      log.warn({
+        jobId: ctx.job.id,
+        stage: "intent_classification",
+        model,
+        errorCode: "INTENT_VALIDATION_FAILED",
+        reason: err instanceof Error ? err.message : String(err),
+      }, "intent classification returned malformed JSON — using deterministic request fallback");
+      ctx.broadcast({
+        type: "video:stream",
+        timestamp: new Date().toISOString(),
+        data: {
+          jobId: ctx.job.id,
+          stage: "intent_classification",
+          pct: 15,
+          operatorTag: model,
+          message: "Intent classifier returned malformed JSON; continuing with deterministic brief fallback.",
+        },
+      });
+      return fallback;
     }
   } catch (err) {
     if (!traceRecorded) {

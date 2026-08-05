@@ -988,7 +988,12 @@ HOOK: [one-sentence contrarian or surprising angle] | ARC: [viewer journey start
 ```
 
 `parseIntentClassification` validates `{ intent: string, complexity: number }`. Extra
-fields are silently ignored; the richness is in the `intent` string value.
+fields are silently ignored; the richness is in the `intent` string value. As of
+V6.2.63, sanitized model output that is malformed JSON no longer blocks the
+entire job: the orchestrator records the malformed model attempt in operator
+telemetry and continues with a deterministic structured intent derived from the
+validated request. Transport failures, cancellation, and pressure failures still
+follow the existing retry/error paths.
 
 **Planning stage** — exactly 5 named beats in order:
 

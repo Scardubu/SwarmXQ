@@ -4,6 +4,19 @@
 
 ---
 
+## V6.2.63 — Intent Fallback Resilience (2026-08-05)
+
+### API — malformed intent JSON no longer blocks video generation
+
+- Intent classification still sanitizes model output and attempts strict JSON
+  parsing first, but malformed JSON now falls back to a deterministic structured
+  intent derived from the already validated job request.
+- The fallback records the model attempt as failed in operator telemetry and
+  emits an explicit stream message, while allowing planning, scripting,
+  storyboard, render assembly, and finalizing to continue.
+- `video-regression-check.ts` now guards the deterministic fallback markers so
+  future refactors cannot silently restore hard failure on malformed intent JSON.
+
 ## V6.2.62 — Composer Fetch Classification and Governance Reconciliation (2026-08-05)
 
 ### API — Composer Ollama failure classification

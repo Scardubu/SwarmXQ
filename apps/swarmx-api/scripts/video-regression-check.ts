@@ -107,6 +107,8 @@ assert.equal((cappedBody.options as Record<string, unknown>).num_predict, 192);
 
 const orchestratorSource = await readFile(new URL("../src/services/video-orchestrator.ts", import.meta.url), "utf8");
 assert.ok(orchestratorSource.includes("parseIntentClassification"));
+assert.ok(orchestratorSource.includes("buildDeterministicIntentFallback"));
+assert.ok(orchestratorSource.includes("intent classification returned malformed JSON"));
 assert.ok(orchestratorSource.includes("INTENT_VALIDATION_FAILED"));
 assert.ok(orchestratorSource.includes("SWARMX_VIDEO_ALLOW_UNSTRUCTURED_INTENT"));
 assert.ok(orchestratorSource.includes("shouldFallbackIntentToPilotLite"));

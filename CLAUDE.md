@@ -1,10 +1,14 @@
 # AI Engineering Control System (Claude Code)
 # SwarmXQ — Autonomous Multi-Agent AI Orchestration Platform
-# Baseline: V6.2.62 · APEX-17 r8 · Hardware: 16 GB RAM (HP EliteBook 850 G3 · CPU-only · bare-metal Linux)
+# Baseline: V6.2.63 · APEX-17 r8 · Hardware: 16 GB RAM (HP EliteBook 850 G3 · CPU-only · bare-metal Linux)
 # Video Generator Principal Engineer Directive: V3.5.0
 # Lagos precision. Global scale.
 #
 # CHANGELOG
+# V3.5.1 (2026-08-05): V6.2.63 intent resilience patch:
+#   - Malformed sanitized intent JSON now falls back to a deterministic structured
+#     intent derived from the validated request while preserving model-attempt
+#     telemetry; transport and pressure failures still use existing retry/error paths.
 # V3.5.0 (2026-08-05): Reconciliation with V6.2.61–62 codebase reality:
 #   - Baseline, test counts, and latest memory-note pointer updated after dashboard
 #     motion/prosody usability and Composer fetch-classification hardening.
@@ -1251,35 +1255,37 @@ Repository code overrides all prior documentation. Grep/read before acting.
 
 4. **`sanitizeReasoningOutput()` on every Ollama response**: DeepSeek `<think>` blocks must never reach intent JSON, script text, or storyboard frames.
 
-5. **`console.*` zero tolerance**: `grep -rn 'console\.' apps/swarmx-api/src/{services,routes}` → zero hits, always.
+5. **Intent malformed-JSON fallback**: Intent classification must attempt sanitized strict JSON first. If parsing/schema validation fails after a model response, use `buildDeterministicIntentFallback()` rather than failing the entire job; transport, cancellation, and pressure failures still use existing retry/error paths.
 
-6. **`resolveCanonicalTag()` on every external tag**: Legacy aliases must never enter the registry or any log entry.
+6. **`console.*` zero tolerance**: `grep -rn 'console\.' apps/swarmx-api/src/{services,routes}` → zero hits, always.
 
-7. **`RAM_CRITICAL_MB = 800` is protected**: Below this → `PRESSURE_CRITICAL` failure. Do not change.
+7. **`resolveCanonicalTag()` on every external tag**: Legacy aliases must never enter the registry or any log entry.
 
-8. **`MAX_CONCURRENT_JOBS = 1` is protected**: CPU inference is serial. Increasing this degrades output quality without throughput gain.
+8. **`RAM_CRITICAL_MB = 800` is protected**: Below this → `PRESSURE_CRITICAL` failure. Do not change.
 
-9. **16 GB changes must degrade at 8 GB**: `shouldAutoEnableLowRamMode()` is the contract boundary. Test both paths when modifying RAM-sensitive code.
+9. **`MAX_CONCURRENT_JOBS = 1` is protected**: CPU inference is serial. Increasing this degrades output quality without throughput gain.
 
-10. **FFmpeg evicts Ollama before render**: `ModelOrchestrator.unloadModel()` loop must run before every FFmpeg render — never skip it.
+10. **16 GB changes must degrade at 8 GB**: `shouldAutoEnableLowRamMode()` is the contract boundary. Test both paths when modifying RAM-sensitive code.
 
-11. **Read before acting**: Grep and cat affected files before writing any code. Never act on assumptions — the repository is the source of truth.
+11. **FFmpeg evicts Ollama before render**: `ModelOrchestrator.unloadModel()` loop must run before every FFmpeg render — never skip it.
 
-12. **TONE_RULES must be exhaustive**: Every `VideoJobRequest.tone` variant must have a corresponding entry in `TONE_RULES`. Missing entries produce degraded output silently.
+12. **Read before acting**: Grep and cat affected files before writing any code. Never act on assumptions — the repository is the source of truth.
 
-13. **`OLLAMA_NUM_PARALLEL=1` is invariant on CPU**: This is not configurable — CPU has one inference thread. Any value > 1 silently degrades throughput without error.
+13. **TONE_RULES must be exhaustive**: Every `VideoJobRequest.tone` variant must have a corresponding entry in `TONE_RULES`. Missing entries produce degraded output silently.
 
-14. **startup-enhanced.sh must exit 1 on overload**: If post-warmup RAM < `FULL_PIPELINE_MIN_AVAILABLE_MB`, exit 1 immediately. Never allow the API to start on an overloaded host.
+14. **`OLLAMA_NUM_PARALLEL=1` is invariant on CPU**: This is not configurable — CPU has one inference thread. Any value > 1 silently degrades throughput without error.
 
-15. **Smoke renderer certification ceiling**: `ffmpeg_text_smoke` cannot certify above `TECHNICALLY_VALID`. Every `certificationTier` assignment routes through `clampCertificationTier()` in `apps/swarmx-api/src/services/renderer-certification.ts`. Downstream promotions must use `canPromoteTo()`. Any new promotion site must be added to the sites list in `creative-factory-certification.ts` comments.
+15. **startup-enhanced.sh must exit 1 on overload**: If post-warmup RAM < `FULL_PIPELINE_MIN_AVAILABLE_MB`, exit 1 immediately. Never allow the API to start on an overloaded host.
 
-16. **Per-stage schema validation for planning/scripting/storyboard**: Planning, scripting, and storyboard results are validated against Zod schemas in `apps/swarmx-api/src/services/stage-schemas.ts` before being persisted. Failures on planning and storyboard fall through to hard-coded safe defaults and are recorded in `job.stageValidationTrace`. Failure on scripting throws `SCRIPT_SCHEMA_INVALID` — there is no safe scripted default that can reach a production tier.
+16. **Smoke renderer certification ceiling**: `ffmpeg_text_smoke` cannot certify above `TECHNICALLY_VALID`. Every `certificationTier` assignment routes through `clampCertificationTier()` in `apps/swarmx-api/src/services/renderer-certification.ts`. Downstream promotions must use `canPromoteTo()`. Any new promotion site must be added to the sites list in `creative-factory-certification.ts` comments.
 
-17. **Voice provider selection is benchmark-informed**: When `SWARMX_TTS_PROVIDER=auto`, `selectVoiceProvider()` consults the JSON benchmark report at `SWARMX_VOICE_BENCHMARK_FILE` (default `/tmp/swarmxq-voice-benchmark.json`) to rank providers before probing. The report is generated by `apps/swarmx-api/scripts/voice-benchmark.ts` and expires after `SWARMX_VOICE_BENCHMARK_MAX_AGE_HOURS` (default 168 h). Without a fresh report the current default order (Kokoro → Piper → eSpeak) is preserved. The `neural_local` tier is always preferred over `synthetic_fallback` regardless of RTF — eSpeak may have lower RTF but is not a production voice. Kokoro voice selection uses `KOKORO_VOICE_MAP` keyed by tone.
+17. **Per-stage schema validation for planning/scripting/storyboard**: Planning, scripting, and storyboard results are validated against Zod schemas in `apps/swarmx-api/src/services/stage-schemas.ts` before being persisted. Failures on planning and storyboard fall through to hard-coded safe defaults and are recorded in `job.stageValidationTrace`. Failure on scripting throws `SCRIPT_SCHEMA_INVALID` — there is no safe scripted default that can reach a production tier.
 
-18. **Cert-tier state machine transitions are explicit**: Four transition functions exist in `renderer-certification.ts`: `transitionToPublishing()`, `transitionToPublishFailed()`, `transitionToBlocked()`, `transitionToNeedsRevision()`. `LATERAL_TERMINAL_TIERS` prevents invalid lateral moves. All four functions must be used for state transitions — never assign these tiers directly without going through the transition function. ✅ V6.2.50 implemented.
+18. **Voice provider selection is benchmark-informed**: When `SWARMX_TTS_PROVIDER=auto`, `selectVoiceProvider()` consults the JSON benchmark report at `SWARMX_VOICE_BENCHMARK_FILE` (default `/tmp/swarmxq-voice-benchmark.json`) to rank providers before probing. The report is generated by `apps/swarmx-api/scripts/voice-benchmark.ts` and expires after `SWARMX_VOICE_BENCHMARK_MAX_AGE_HOURS` (default 168 h). Without a fresh report the current default order (Kokoro → Piper → eSpeak) is preserved. The `neural_local` tier is always preferred over `synthetic_fallback` regardless of RTF — eSpeak may have lower RTF but is not a production voice. Kokoro voice selection uses `KOKORO_VOICE_MAP` keyed by tone.
 
-19. **Render recipe compiler security**: All free-text `SceneSpec` fields must be sanitized by `sanitizeTextForFilter()` in `render-recipe-compiler.ts` before reaching FFmpeg arguments. Asset references must pass SHA-256 validation via `validateAssetHash()`. SRT/VTT paths must pass `validateSrtPath()` (path traversal defense: `..` segments and unsafe characters are rejected). `safeFilterTokens` in `ValidatedRenderRecipe` contains only enum-derived values — never free-text from model output. Model output must never reach raw FFmpeg filter graphs.
+19. **Cert-tier state machine transitions are explicit**: Four transition functions exist in `renderer-certification.ts`: `transitionToPublishing()`, `transitionToPublishFailed()`, `transitionToBlocked()`, `transitionToNeedsRevision()`. `LATERAL_TERMINAL_TIERS` prevents invalid lateral moves. All four functions must be used for state transitions — never assign these tiers directly without going through the transition function. ✅ V6.2.50 implemented.
+
+20. **Render recipe compiler security**: All free-text `SceneSpec` fields must be sanitized by `sanitizeTextForFilter()` in `render-recipe-compiler.ts` before reaching FFmpeg arguments. Asset references must pass SHA-256 validation via `validateAssetHash()`. SRT/VTT paths must pass `validateSrtPath()` (path traversal defense: `..` segments and unsafe characters are rejected). `safeFilterTokens` in `ValidatedRenderRecipe` contains only enum-derived values — never free-text from model output. Model output must never reach raw FFmpeg filter graphs.
 
 20. **EBU R128 audio mastering is two-pass**: `masterAudio()` in `audio-mastering.ts` runs FFmpeg pass 1 (measure input loudness) then pass 2 (apply linear loudness normalization to target LUFS). Five platform profiles are defined: `youtube` (-14 LUFS), `tiktok` (-14), `reels` (-16), `shorts` (-14), `broadcast` (-23). True-peak ceiling is -1.0 dBTP for all profiles. FFmpeg args are built as arrays passed to `spawnSync()` — never string interpolation.
 
