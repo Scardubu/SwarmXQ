@@ -38,6 +38,7 @@ function handleToggleShortcut(
     toggleTerminal: () => void;
     toggleTerminalFullscreen: () => void;
     toggleTelemetryRail: () => void;
+    toggleTelemetryDrawer: () => void;
     toggleOperatorViewMode: () => void;
     addTerminalTab: UIStoreState["addTerminalTab"];
   }
@@ -79,6 +80,7 @@ function handleTShortcut(
   keyLower: string,
   actions: {
     toggleTelemetryRail: () => void;
+    toggleTelemetryDrawer: () => void;
     toggleOperatorViewMode: () => void;
     addTerminalTab: UIStoreState["addTerminalTab"];
   }
@@ -89,7 +91,11 @@ function handleTShortcut(
   }
 
   if (key === "T" && event.shiftKey) {
-    actions.toggleTelemetryRail();
+    if (typeof window !== "undefined" && !window.matchMedia("(min-width: 1024px)").matches) {
+      actions.toggleTelemetryDrawer();
+    } else {
+      actions.toggleTelemetryRail();
+    }
     return true;
   }
 
@@ -125,12 +131,19 @@ export function useKeyboard(): void {
   const toggleTerminalFullscreen = useUIStore((s: UIStoreState) => s.toggleTerminalFullscreen);
   const openCommandPalette = useUIStore((s: UIStoreState) => s.openCommandPalette);
   const toggleTelemetryRail = useUIStore((s: UIStoreState) => s.toggleTelemetryRail);
+  const toggleTelemetryDrawer = useUIStore((s: UIStoreState) => s.toggleTelemetryDrawer);
   const toggleOperatorViewMode = useUIStore((s: UIStoreState) => s.toggleOperatorViewMode);
+  const openShortcuts = useUIStore((s: UIStoreState) => s.openShortcuts);
   const addTerminalTab = useUIStore((s: UIStoreState) => s.addTerminalTab);
   const router = useRouter();
 
   useEffect(() => {
     const executeShortcut = (e: KeyboardEvent): boolean => {
+      if (!modKey(e) && e.key === "?" && !isEditableFocused() && !isTerminalFocused()) {
+        openShortcuts();
+        return true;
+      }
+
       if (!modKey(e)) return false;
 
       if (handleCommandPaletteShortcut(e, openCommandPalette)) {
@@ -143,6 +156,7 @@ export function useKeyboard(): void {
           toggleTerminal,
           toggleTerminalFullscreen,
           toggleTelemetryRail,
+          toggleTelemetryDrawer,
           toggleOperatorViewMode,
           addTerminalTab,
         })
@@ -161,10 +175,17 @@ export function useKeyboard(): void {
 
     document.addEventListener("keydown", handler, { capture: true });
     return () => document.removeEventListener("keydown", handler, { capture: true });
-  }, [toggleNav, toggleTerminal, toggleTerminalFullscreen, openCommandPalette, toggleTelemetryRail, toggleOperatorViewMode, addTerminalTab, router]);
+  }, [toggleNav, toggleTerminal, toggleTerminalFullscreen, openCommandPalette, toggleTelemetryRail, toggleTelemetryDrawer, toggleOperatorViewMode, openShortcuts, addTerminalTab, router]);
 }
 
 function isTerminalFocused(): boolean {
   const el = document.activeElement;
   return el?.closest("[data-terminal-instance]") != null;
+}
+
+function isEditableFocused(): boolean {
+  const el = document.activeElement;
+  if (!(el instanceof HTMLElement)) return false;
+  const tag = el.tagName.toLowerCase();
+  return tag === "input" || tag === "textarea" || tag === "select" || el.isContentEditable;
 }

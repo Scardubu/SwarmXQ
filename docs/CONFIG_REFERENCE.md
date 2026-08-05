@@ -73,6 +73,14 @@ decisions use physical `MemAvailable` and report ZRAM separately.
 | `SWARMX_VIDEO_EXPORT_TTL_DAYS` | `7` | Days after which rendered exports and artifacts are eligible for cleanup. Minimum 1. |
 | `SWARMX_VIDEO_CLEANUP_INTERVAL_MS` | `21600000` | How often the cleanup service scans for stale exports (ms). Minimum 60000. First run fires 30 s after startup. |
 
+Voice fallback visibility is derived from the voice benchmark report and
+`/api/system/health`; there is no separate environment flag. If Kokoro is
+unavailable and another provider is selected, the dashboard shows the warning
+without blocking submissions. Static dashboard preview clips must be generated
+from Kokoro into `apps/swarmx-dashboard/public/audio/voice-previews/`; the
+V6.2.61 dashboard ships five verified Kokoro WAV previews. Do not ship
+Piper/eSpeak substitutes under Kokoro preview names.
+
 Secrets and parametric override reads are centralized in
 `apps/swarmx-api/src/lib/env.ts`. `SWARMX_VIDEO_API_TOKEN`,
 `SWARMX_TIKTOK_ACCESS_TOKEN`, and `SWARMX_INSTAGRAM_ACCESS_TOKEN` are read

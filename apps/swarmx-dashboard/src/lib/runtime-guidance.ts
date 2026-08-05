@@ -18,6 +18,7 @@ export interface RuntimeGuidanceInput {
   runtimeBlockers?: string[] | null | undefined;
   runtimeWarnings?: string[] | null | undefined;
   voiceBenchmarkRecommendedProviderId?: string | null | undefined;
+  voiceFallbackWarning?: string | null | undefined;
   fullPipelineMinAvailableMb?: number | undefined;
   /** /proc/loadavg 1-minute load average from the API health endpoint. */
   cpuLoad?: number | null | undefined;
@@ -87,6 +88,7 @@ export function getRuntimeGuidance({
   runtimeBlockers,
   runtimeWarnings,
   voiceBenchmarkRecommendedProviderId,
+  voiceFallbackWarning,
   fullPipelineMinAvailableMb = DEFAULT_FULL_PIPELINE_MIN_AVAILABLE_MB,
   cpuLoad,
   cpuCoreCount,
@@ -172,6 +174,16 @@ export function getRuntimeGuidance({
       title: "Runtime warnings active",
       detail: runtimeWarnings.slice(0, 2).join(" "),
       recoveryHint: "Review the System page before starting a long production render.",
+      blocksSubmission: false,
+    };
+  }
+
+  if (apiOnline === true && voiceFallbackWarning) {
+    return {
+      tone: "warning",
+      title: "Voice provider fallback active",
+      detail: voiceFallbackWarning,
+      recoveryHint: "Start or restore Kokoro before production runs that require the pinned Kokoro voice profile.",
       blocksSubmission: false,
     };
   }

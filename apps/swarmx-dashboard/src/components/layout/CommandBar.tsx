@@ -130,9 +130,17 @@ export function CommandBar({ breadcrumb = "Overview", apiHealth }: CommandBarPro
   const toggleTerminal = useUIStore((s) => s.toggleTerminal);
   const terminalVisible = useUIStore((s) => s.terminalVisible);
   const toggleTelemetryRail = useUIStore((s) => s.toggleTelemetryRail);
+  const toggleTelemetryDrawer = useUIStore((s) => s.toggleTelemetryDrawer);
   const telemetryRailVisible = useUIStore((s) => s.telemetryRailVisible);
   const operatorViewMode = useUIStore((s) => s.operatorViewMode);
   const toggleOperatorViewMode = useUIStore((s) => s.toggleOperatorViewMode);
+  const handleTelemetryToggle = () => {
+    if (typeof window !== "undefined" && !window.matchMedia("(min-width: 1024px)").matches) {
+      toggleTelemetryDrawer();
+      return;
+    }
+    toggleTelemetryRail();
+  };
   const startupBadge = startupSummary ? getStartupBadge(startupSummary) : null;
   const pressureLevel = governorState?.pressureLevel ?? startupSummary?.pressureLevel;
   const availableMb = governorState?.availableMb ?? startupSummary?.availableMb;
@@ -358,9 +366,9 @@ export function CommandBar({ breadcrumb = "Overview", apiHealth }: CommandBarPro
         {/* Telemetry rail toggle */}
         <button
           type="button"
-          onClick={toggleTelemetryRail}
-          title={telemetryRailVisible ? "Hide telemetry rail (⌘⇧T)" : "Show telemetry rail (⌘⇧T)"}
-          aria-label={telemetryRailVisible ? "Hide telemetry panel" : "Show telemetry panel"}
+          onClick={handleTelemetryToggle}
+          title={telemetryRailVisible ? "Toggle telemetry panel (⌘⇧T)" : "Show telemetry panel (⌘⇧T)"}
+          aria-label="Toggle telemetry panel"
           aria-pressed={telemetryRailVisible}
           className={cn(
             "flex items-center justify-center h-5 w-5 rounded",

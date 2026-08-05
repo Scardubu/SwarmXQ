@@ -105,6 +105,20 @@ describe("voice profile integration", () => {
     })).toBe("narrator");
   });
 
+  test("maps default voice through tone when no explicit profile is pinned", () => {
+    expect(resolveVoiceStyle({
+      voiceId: "default",
+      tone: "urgent",
+      storyMode: "single_narrator",
+    })).toBe("urgent");
+
+    expect(resolveVoiceStyle({
+      voiceId: "default",
+      tone: "warm",
+      storyMode: "single_narrator",
+    })).toBe("warm");
+  });
+
   test("prefers Kokoro when an explicit Kokoro profile is requested, even if the benchmark ranks Piper first", async () => {
     writeFileSync(benchmarkPath, JSON.stringify({
       schemaVersion: 1,

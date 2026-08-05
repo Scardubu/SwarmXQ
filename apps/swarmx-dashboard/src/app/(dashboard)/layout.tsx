@@ -7,6 +7,7 @@ import { ConnectionBanner } from "@/components/layout/ConnectionBanner";
 import { NavRail } from "@/components/layout/NavRail";
 import { TelemetryRail } from "@/components/layout/TelemetryRail";
 import { TerminalStrip } from "@/components/layout/TerminalStrip";
+import { ShortcutsOverlay } from "@/components/layout/ShortcutsOverlay";
 import { CommandPalette } from "@/components/command-palette/CommandPalette";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useSwarmXEvents } from "@/hooks/useSwarmXEvents";
@@ -75,6 +76,7 @@ function DashboardShell({ children }: { readonly children: React.ReactNode }) {
 
       {/* Portals */}
       <CommandPalette />
+      <ShortcutsOverlay />
     </AppShell>
   );
 }

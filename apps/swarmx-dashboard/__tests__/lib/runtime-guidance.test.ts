@@ -144,4 +144,22 @@ describe("getRuntimeGuidance", () => {
       }),
     ).toBeNull();
   });
+
+  it("warns but does not block when voice provider fallback is active", () => {
+    const guidance = getRuntimeGuidance({
+      apiOnline: true,
+      ollamaOnline: true,
+      pressureLevel: "normal",
+      availableMb: 8_500,
+      healthStatus: "ok",
+      voiceFallbackWarning: "Kokoro is unavailable; voice generation will use espeak-ng.",
+    });
+
+    expect(guidance).toMatchObject({
+      tone: "warning",
+      title: "Voice provider fallback active",
+      blocksSubmission: false,
+    });
+    expect(guidance?.detail).toContain("Kokoro is unavailable");
+  });
 });

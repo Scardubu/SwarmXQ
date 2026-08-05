@@ -103,7 +103,7 @@ import {
 } from "./model-orchestrator.js";
 import { resolveOperatorName } from "@swarmx/types/operator-map";
 import { getComfyUIClient } from "./comfyui-client.js";
-import { generateLTXWorkflow } from "./video-workflows.js";
+import { buildCreativeComfyPrompt, generateLTXWorkflow } from "./video-workflows.js";
 import { scoreVirality } from "./virality-scorer.js";
 import { generateCaptionDraftWithValidation } from "./caption-generator.js";
 import { generateOllamaText } from "./ollama.js";
@@ -904,7 +904,13 @@ async function stageRenderAssembly(
       const ram = ModelOrchestrator.getInstance().getRamSnapshot();
       const workflow = generateLTXWorkflow({
         seed: Math.floor(Math.random() * 1_000_000_000),
-        prompt: frames[0] ?? ctx.job.request.prompt,
+        prompt: buildCreativeComfyPrompt({
+          prompt: ctx.job.request.prompt,
+          ...(ctx.job.request.tone ? { tone: ctx.job.request.tone } : {}),
+          ...(ctx.job.request.niche ? { niche: ctx.job.request.niche } : {}),
+          ...(ctx.job.request.style ? { style: ctx.job.request.style } : {}),
+          ...(frames[0] ? { frame: frames[0] } : {}),
+        }),
         negativePrompt: "low quality, blurry, watermark, artifact",
         resolution: "512x896",
         totalFrames: Math.max(16, Math.min(96, frames.length * 8)),

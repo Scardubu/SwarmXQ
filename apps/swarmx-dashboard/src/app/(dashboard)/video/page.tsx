@@ -57,7 +57,7 @@ function JobSkeleton() {
 
 // ─── Empty state ──────────────────────────────────────────────────────────────
 
-function EmptyJobList() {
+function EmptyJobList({ onShowPresets }: { onShowPresets: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 rounded border border-dashed border-border bg-bg-surface/50 px-4 py-14 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded border border-border bg-bg-elevated">
@@ -67,6 +67,10 @@ function EmptyJobList() {
       <p className="max-w-72 text-xs leading-5 text-text-muted">
         Submit a prompt above. New jobs appear here immediately, then advance by SSE updates.
       </p>
+      <Button type="button" variant="outline" size="sm" onClick={onShowPresets}>
+        <Clapperboard className="h-3.5 w-3.5" aria-hidden="true" />
+        Submit your first video
+      </Button>
     </div>
   );
 }
@@ -138,6 +142,7 @@ export default function VideoPage() {
   const [draggedJobId, setDraggedJobId] = useState<string | null>(null);
   const [showFailedOnly, setShowFailedOnly] = useState(false);
   const [showDeadLetterOnly, setShowDeadLetterOnly] = useState(false);
+  const [presetFocusSignal, setPresetFocusSignal] = useState(0);
 
   useEffect(() => {
     void fetchJobs();
@@ -182,6 +187,7 @@ export default function VideoPage() {
     runtimeBlockers: apiHealth.runtimeProfile?.blockers ?? [],
     runtimeWarnings,
     voiceBenchmarkRecommendedProviderId: apiHealth.voiceBenchmarkRecommendedProviderId,
+    voiceFallbackWarning: apiHealth.voiceFallbackWarning,
     cpuLoad: systemMetrics?.cpu.load1m ?? null,
     cpuCoreCount: systemMetrics?.cpu.coreCount ?? null,
   });
@@ -283,6 +289,7 @@ export default function VideoPage() {
             onSubmitted={handleSubmitted}
             submissionBlocked={videoRuntimeGuidance?.blocksSubmission ?? false}
             submissionBlockReason={formatSubmissionBlockReason(videoRuntimeGuidance)}
+            presetFocusSignal={presetFocusSignal}
           />
 
           <VideoRuntimeBanner guidance={videoRuntimeGuidance} />
@@ -351,7 +358,7 @@ export default function VideoPage() {
               </div>
             )}
 
-            {!isLoading && !hasJobs && <EmptyJobList />}
+            {!isLoading && !hasJobs && <EmptyJobList onShowPresets={() => setPresetFocusSignal((value) => value + 1)} />}
 
             {!isLoading && hasJobs && showFailedOnly && failedCount === 0 && !showDeadLetterOnly && (
               <div className="rounded border border-dashed border-border bg-bg-surface/60 px-4 py-8 text-center text-xs text-text-muted">

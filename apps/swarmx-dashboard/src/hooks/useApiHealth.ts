@@ -34,6 +34,7 @@ export interface ApiHealthState {
   runtimeProfile: ApiRuntimeProfileSnapshot | null;
   warnings: string[];
   voiceBenchmarkRecommendedProviderId: string | null;
+  voiceFallbackWarning: string | null;
 }
 
 function resolveDirectApiBaseUrl(): string {
@@ -57,6 +58,7 @@ const INITIAL_HEALTH: ApiHealthState = {
   runtimeProfile: null,
   warnings: [],
   voiceBenchmarkRecommendedProviderId: null,
+  voiceFallbackWarning: null,
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -150,6 +152,7 @@ async function fetchApiHealth(): Promise<ApiHealthState> {
         runtimeProfile: null,
         warnings: [],
         voiceBenchmarkRecommendedProviderId: null,
+        voiceFallbackWarning: null,
       };
     }
 
@@ -168,6 +171,7 @@ async function fetchApiHealth(): Promise<ApiHealthState> {
       runtimeProfile: parseRuntimeProfile(data["runtimeProfile"]),
       warnings: stringArray(data["warnings"]),
       voiceBenchmarkRecommendedProviderId: optionalString(voiceBenchmark?.["recommendedProviderId"]) ?? null,
+      voiceFallbackWarning: optionalString(voice?.["fallbackWarning"]) ?? null,
     };
   } catch {
     return {
@@ -181,6 +185,7 @@ async function fetchApiHealth(): Promise<ApiHealthState> {
       runtimeProfile: null,
       warnings: [],
       voiceBenchmarkRecommendedProviderId: null,
+      voiceFallbackWarning: null,
     };
   } finally {
     globalThis.clearTimeout(timeoutId);

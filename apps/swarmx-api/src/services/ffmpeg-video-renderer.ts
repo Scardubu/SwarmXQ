@@ -8,13 +8,14 @@ import type {
   MediaQualityReport,
   RawQcFinding,
   RendererCapabilityTier,
+  VoiceProsodySection,
   VoiceArtifact,
 } from "@swarmx/types/video-types";
 import type { VideoJobRequest } from "../types/video.js";
 import { outputDir, resolveOutputPath } from "./video-assets.js";
 import { loadEnv } from "../lib/env.js";
 import { clampCertificationTier } from "./renderer-certification.js";
-import { normalizeScriptForSpeech, selectVoiceProvider } from "./voice-providers.js";
+import { KokoroVoiceProvider, normalizeScriptForSpeech, selectVoiceProvider, type SectionVoiceSynthesisSegment } from "./voice-providers.js";
 import { runTemplateQc } from "./template-aware-qc.js";
 
 const _ffenv = loadEnv();
@@ -86,6 +87,35 @@ const TONE_ACCENTS: Record<string, string> = {
   faceless_broll:"0x00ccee",  // soft cyan — unobtrusive; doesn't fight b-roll footage
   kinetic_text:  "0xffcc00",  // bright amber — bold kinetic accent; distinct from minimal's white
 };
+
+const NICHE_ACCENT_OFFSETS: Record<NonNullable<VideoJobRequest["niche"]>, { hue: number; saturation: number; lightness: number }> = {
+  motivational: { hue: 8, saturation: 6, lightness: 4 },
+  finance: { hue: 150, saturation: -8, lightness: -2 },
+  facts: { hue: 205, saturation: -10, lightness: 3 },
+  true_crime: { hue: 220, saturation: -32, lightness: -8 },
+  tech: { hue: 28, saturation: 12, lightness: 2 },
+  other: { hue: 0, saturation: -6, lightness: 0 },
+};
+
+interface StyleMotionProfile {
+  pulseHz: number;
+  xAmp: number;
+  widthAmp: number;
+  panelSpeed: number;
+  slowPanelSpeed: number;
+  hookBoost: number;
+  parallaxAlpha: string;
+}
+
+const STYLE_MOTION_PROFILES: Record<NonNullable<VideoJobRequest["style"]>, StyleMotionProfile> = {
+  kinetic_text: { pulseHz: 2.25, xAmp: 30, widthAmp: 58, panelSpeed: 1.35, slowPanelSpeed: 0.44, hookBoost: 0.55, parallaxAlpha: "0.105" },
+  storytime: { pulseHz: 0.95, xAmp: 13, widthAmp: 24, panelSpeed: 0.7, slowPanelSpeed: 0.32, hookBoost: 0.24, parallaxAlpha: "0.075" },
+  tutorial: { pulseHz: 1.05, xAmp: 15, widthAmp: 28, panelSpeed: 0.78, slowPanelSpeed: 0.34, hookBoost: 0.22, parallaxAlpha: "0.070" },
+  myth_busting: { pulseHz: 1.75, xAmp: 24, widthAmp: 48, panelSpeed: 1.12, slowPanelSpeed: 0.42, hookBoost: 0.46, parallaxAlpha: "0.095" },
+  faceless_broll: { pulseHz: 1.15, xAmp: 16, widthAmp: 30, panelSpeed: 0.82, slowPanelSpeed: 0.35, hookBoost: 0.20, parallaxAlpha: "0.070" },
+};
+
+const DEFAULT_MOTION_PROFILE: StyleMotionProfile = STYLE_MOTION_PROFILES.faceless_broll;
 
 interface CaptionStyleConfig {
   yExpr: string;
@@ -169,6 +199,86 @@ function titleFromRequest(request: VideoJobRequest): string {
     .replace(/^create\s+(?:a|an)\s+/i, "")
     .slice(0, 80)
     .trim() || "SwarmXQ Video";
+}
+
+function clampChannel(value: number): number {
+  return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function clampPercent(value: number): number {
+  return Math.max(0, Math.min(100, value));
+}
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const normalized = hex.replace(/^0x/, "");
+  const parsed = Number.parseInt(normalized, 16);
+  if (!Number.isFinite(parsed)) return { r: 51, g: 153, b: 255 };
+  return {
+    r: (parsed >> 16) & 255,
+    g: (parsed >> 8) & 255,
+    b: parsed & 255,
+  };
+}
+
+function rgbToHsl({ r, g, b }: { r: number; g: number; b: number }): { h: number; s: number; l: number } {
+  const rn = r / 255;
+  const gn = g / 255;
+  const bn = b / 255;
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
+  const l = (max + min) / 2;
+  if (max === min) return { h: 0, s: 0, l: l * 100 };
+
+  const delta = max - min;
+  const s = l > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+  let h = 0;
+  if (max === rn) h = (gn - bn) / delta + (gn < bn ? 6 : 0);
+  else if (max === gn) h = (bn - rn) / delta + 2;
+  else h = (rn - gn) / delta + 4;
+  return { h: h * 60, s: s * 100, l: l * 100 };
+}
+
+function hslToRgb({ h, s, l }: { h: number; s: number; l: number }): { r: number; g: number; b: number } {
+  const hn = (((h % 360) + 360) % 360) / 360;
+  const sn = clampPercent(s) / 100;
+  const ln = clampPercent(l) / 100;
+  if (sn === 0) {
+    const channel = clampChannel(ln * 255);
+    return { r: channel, g: channel, b: channel };
+  }
+
+  const hueToRgb = (p: number, q: number, tInput: number): number => {
+    let t = tInput;
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+
+  const q = ln < 0.5 ? ln * (1 + sn) : ln + sn - ln * sn;
+  const p = 2 * ln - q;
+  return {
+    r: clampChannel(hueToRgb(p, q, hn + 1 / 3) * 255),
+    g: clampChannel(hueToRgb(p, q, hn) * 255),
+    b: clampChannel(hueToRgb(p, q, hn - 1 / 3) * 255),
+  };
+}
+
+function rgbToHex({ r, g, b }: { r: number; g: number; b: number }): string {
+  const toHex = (value: number) => clampChannel(value).toString(16).padStart(2, "0");
+  return `0x${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+export function resolveNicheAccentColor(accentHex: string, niche: VideoJobRequest["niche"]): string {
+  const offset = NICHE_ACCENT_OFFSETS[niche ?? "other"] ?? NICHE_ACCENT_OFFSETS.other;
+  const base = rgbToHsl(hexToRgb(accentHex));
+  return rgbToHex(hslToRgb({
+    h: base.h + offset.hue,
+    s: base.s + offset.saturation,
+    l: base.l + offset.lightness,
+  }));
 }
 
 // Extract structured [HOOK] / [BODY] / [RESOLUTION] / [CTA] sections from the
@@ -255,6 +365,48 @@ function narrationText(input: FfmpegRenderInput, cards: string[]): string {
   return normalized.slice(0, 600);
 }
 
+function dialogueEligible(request: VideoJobRequest): boolean {
+  return request.style === "storytime" &&
+    (request.storyMode === "dialogue_storytime" || request.voiceProfileId === "kokoro_storytime_dual");
+}
+
+function segmentSection(section: VoiceProsodySection, text: string, speakingRate: number): SectionVoiceSynthesisSegment | null {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean) return null;
+  return { section, text: clean, speakingRate };
+}
+
+function buildNarrationSegments(input: FfmpegRenderInput, cards: string[]): SectionVoiceSynthesisSegment[] {
+  if (!input.scriptText) {
+    const fallback = segmentSection("BODY", cards.join(". "), 1);
+    return fallback ? [fallback] : [];
+  }
+
+  const sections = extractScriptSections(input.scriptText);
+  const segments: SectionVoiceSynthesisSegment[] = [];
+  const hook = segmentSection("HOOK", sections.hook, 1.09);
+  if (hook) segments.push(hook);
+
+  for (const sentence of sections.body) {
+    const section: VoiceProsodySection = dialogueEligible(input.request) && /["“][^"”]{4,180}["”]/.test(sentence)
+      ? "DIALOGUE"
+      : "BODY";
+    const body = segmentSection(section, sentence, 1);
+    if (body) segments.push(body);
+  }
+
+  const resolution = segmentSection("RESOLUTION", sections.resolution, 0.95);
+  if (resolution) segments.push(resolution);
+  const cta = segmentSection("CTA", sections.cta, 0.95);
+  if (cta) segments.push(cta);
+
+  if (segments.length === 0) {
+    const fallback = segmentSection("BODY", narrationText(input, cards), 1);
+    return fallback ? [fallback] : [];
+  }
+  return segments;
+}
+
 function rendererTierForRequest(request: VideoJobRequest): RendererCapabilityTier {
   if (request.style === "faceless_broll" || request.tone === "faceless_broll") return "ffmpeg_faceless_broll";
   if (request.style === "kinetic_text" || request.tone === "kinetic_text") return "ffmpeg_kinetic_text";
@@ -315,9 +467,19 @@ function wrapCardText(text: string, baseFontSize: number): string {
   return lines.slice(0, 4).join("\n");
 }
 
-function buildBackgroundMotionLayers(rendererTier: RendererCapabilityTier, accentRgb: string): string[] {
+function resolveMotionProfile(request: VideoJobRequest): StyleMotionProfile {
+  return STYLE_MOTION_PROFILES[request.style ?? "faceless_broll"] ?? DEFAULT_MOTION_PROFILE;
+}
+
+function buildBackgroundMotionLayers(
+  rendererTier: RendererCapabilityTier,
+  accentRgb: string,
+  request: VideoJobRequest,
+  hookEndSeconds: number,
+): string[] {
   if (rendererTier === "ffmpeg_text_smoke") return [];
 
+  const profile = resolveMotionProfile(request);
   const cinematic = rendererTier === "ffmpeg_cinematic_explainer";
   const faceless = rendererTier === "ffmpeg_faceless_broll";
   const gridOpacity = cinematic ? "0.07" : faceless ? "0.09" : "0.13";
@@ -333,17 +495,25 @@ function buildBackgroundMotionLayers(rendererTier: RendererCapabilityTier, accen
   // period stays the same, but the trajectory now breathes instead of scanning
   // in a robotic straight line. FFmpeg needs commas inside expressions
   // escaped when the filter is joined into a comma-separated filter chain.
+  const safeHookEnd = Math.max(0.8, Math.min(2, hookEndSeconds));
+  const hookBoost = `(1+${profile.hookBoost}*lt(t\\,${safeHookEnd.toFixed(1)}))`;
+  const pulseHz = profile.pulseHz.toFixed(2);
+  const panelFast = (44 * profile.panelSpeed).toFixed(1);
+  const panelSlow = (18 * profile.slowPanelSpeed).toFixed(1);
   return [
     `drawgrid=width=90:height=90:thickness=1:color=${accentRgb}@${gridOpacity}`,
 
     // Left ambient accent glow — soft, wide; breathes via width oscillation.
-    `drawbox=x='-ih*0.35+20*sin(t*1.6)':y=ih*0.10:w='ih*0.9+40*sin(t*1.6)':h=ih*0.9:color=${accentRgb}@${glowAlpha}:t=fill`,
+    `drawbox=x='-ih*0.35+${profile.xAmp}*${hookBoost}*sin(t*${pulseHz})':y=ih*0.10:w='ih*0.9+${profile.widthAmp}*${hookBoost}*sin(t*${pulseHz})':h=ih*0.9:color=${accentRgb}@${glowAlpha}:t=fill`,
 
     // Right ambient soft glow — offset phase for alternate breathing.
-    `drawbox=x='iw-ih*0.55+18*sin(t*1.6+3.14)':y=ih*0.30:w='ih*0.9+30*sin(t*1.6+3.14)':h=ih*0.9:color=white@${glowSoft}:t=fill`,
+    `drawbox=x='iw-ih*0.55+${Math.round(profile.xAmp * 0.8)}*${hookBoost}*sin(t*${pulseHz}+3.14)':y=ih*0.30:w='ih*0.9+${Math.round(profile.widthAmp * 0.75)}*${hookBoost}*sin(t*${pulseHz}+3.14)':h=ih*0.9:color=white@${glowSoft}:t=fill`,
 
     // Drifting accent panel — linear+sine trajectory (breathing motion).
-    `drawbox=x='-280+mod(t*44+40*sin(t*1.2)\\,1000)':y=ih*0.10:w=280:h=280:color=${accentRgb}@${panelOpacity}:t=fill`,
+    `drawbox=x='-280+mod(t*${panelFast}+40*sin(t*1.2)\\,1000)':y=ih*0.10:w=280:h=280:color=${accentRgb}@${panelOpacity}:t=fill`,
+
+    // Third parallax layer — slower period (~2.5s) beneath the faster panels.
+    `drawbox=x='-420+mod(t*${panelSlow}+24*sin(t*0.40)\\,1320)':y=ih*0.42:w=420:h=420:color=${accentRgb}@${profile.parallaxAlpha}:t=fill`,
 
     // Drifting white panel — counter direction, faster sine wobble.
     `drawbox=x='iw-360-mod(t*32+50*sin(t*0.9)\\,1080)':y=ih*0.58:w=360:h=360:color=white@0.055:t=fill`,
@@ -427,6 +597,7 @@ function buildFilterComplex(
   accentHex: string,
   styleConfig: CaptionStyleConfig,
   rendererTier: RendererCapabilityTier,
+  request: VideoJobRequest,
   timings: CardTiming[],
 ): string {
   const accentRgb = accentHex.replace(/^0x/, "");
@@ -459,7 +630,7 @@ function buildFilterComplex(
   // Animated progress bar: grows from left to right over the full duration.
   // Accent color in hex without the 0x prefix for FFmpeg's color syntax.
   const progressBar = `drawbox=x=0:y=ih-8:w=trunc(iw*t/${duration}):h=8:color=${accentRgb}@0.9:t=fill`;
-  const motionLayers = buildBackgroundMotionLayers(rendererTier, accentRgb);
+  const motionLayers = buildBackgroundMotionLayers(rendererTier, accentRgb, request, timings[0]?.end ?? 2);
 
   return [
     "format=yuv420p",
@@ -805,7 +976,8 @@ export async function renderWithFfmpeg(input: FfmpegRenderInput): Promise<{ outp
   const tone         = input.request.tone ?? "educational";
   const captionKey   = input.request.captionStyle ?? "bold_center";
   const bgColor      = TONE_BACKGROUNDS[tone]         ?? TONE_BACKGROUNDS["educational"] ?? "0x070e1a";
-  const accentColor  = TONE_ACCENTS[tone]             ?? TONE_ACCENTS["educational"]     ?? "0x3399ff";
+  const baseAccentColor = TONE_ACCENTS[tone]          ?? TONE_ACCENTS["educational"]     ?? "0x3399ff";
+  const accentColor  = resolveNicheAccentColor(baseAccentColor, input.request.niche);
   const styleConfig  = CAPTION_STYLE_CONFIGS[captionKey] ?? CAPTION_STYLE_CONFIGS["bold_center"]!;
 
   const fontFile     = discoverFont();
@@ -841,15 +1013,24 @@ export async function renderWithFfmpeg(input: FfmpegRenderInput): Promise<{ outp
       const selected = await selectVoiceProvider({
         voiceProfileId: input.request.voiceProfileId,
       });
-      voiceArtifact = await selected.provider.synthesize({
+      const synthesisRequest = {
         jobId: input.jobId,
         text: narration,
         locale: loadEnv().SWARMX_TTS_LOCALE,
         voiceId: input.request.voice ?? "default",
+        ...(input.request.tone ? { tone: input.request.tone } : {}),
         ...(input.request.voiceProfileId ? { voiceProfileId: input.request.voiceProfileId } : {}),
         ...(input.request.storyMode ? { storyMode: input.request.storyMode } : {}),
         requestedSampleRateHz: loadEnv().SWARMX_AUDIO_MASTER_SAMPLE_RATE_HZ,
-      }, narrationPath, input.signal);
+      };
+      voiceArtifact = selected.provider instanceof KokoroVoiceProvider && input.scriptText
+        ? await selected.provider.synthesizeSegments(
+          synthesisRequest,
+          buildNarrationSegments(input, cards),
+          narrationPath,
+          input.signal,
+        )
+        : await selected.provider.synthesize(synthesisRequest, narrationPath, input.signal);
       if (selected.fallbackReason) {
         voiceArtifact = { ...voiceArtifact, fallbackReason: selected.fallbackReason };
       }
@@ -870,6 +1051,7 @@ export async function renderWithFfmpeg(input: FfmpegRenderInput): Promise<{ outp
       accentColor,
       styleConfig,
       rendererTier,
+      input.request,
       renderTimings,
     );
 

@@ -3,6 +3,7 @@ import { writeFileSync, unlinkSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  buildVoiceFallbackWarning,
   getCanonicalModelTriad,
   getSystemHealthModelConfig,
   getSystemHealthLivenessTimeoutMs,
@@ -115,7 +116,53 @@ function main(): void {
 
   unlinkSync(warmupPath);
 
-  console.log("PASS: system health uses bounded liveness/readiness budgets, explicit unreachable model state, and warmup status file parsing");
+  const voiceFallbackWarning = buildVoiceFallbackWarning({
+    path: "/tmp/voice-benchmark.json",
+    ageHours: 1,
+    stale: false,
+    report: {
+      schemaVersion: 1,
+      generatedAt: new Date().toISOString(),
+      host: { platform: "linux", cpuCores: 4, totalRamMb: 16_384, availableRamMb: 8_192 },
+      fixture: { text: "sample", approxWords: 1 },
+      measurements: [
+        {
+          providerId: "kokoro",
+          qualityTier: "neural_local",
+          probeState: "unavailable",
+          coldLatencyMs: null,
+          warmLatencyMs: null,
+          durationSeconds: null,
+          realTimeFactor: null,
+          sampleRateHz: null,
+          outputBytes: null,
+          runs: 1,
+          failures: 1,
+          failureReasons: ["offline"],
+        },
+        {
+          providerId: "espeak-ng",
+          qualityTier: "synthetic_fallback",
+          probeState: "available",
+          coldLatencyMs: 100,
+          warmLatencyMs: 100,
+          durationSeconds: 1,
+          realTimeFactor: 0.1,
+          sampleRateHz: 22_050,
+          outputBytes: 1_000,
+          runs: 1,
+          failures: 0,
+          failureReasons: [],
+        },
+      ],
+      recommendedProviderId: "espeak-ng",
+      recommendationReason: "Kokoro unavailable",
+    },
+  });
+  assert.ok(voiceFallbackWarning?.includes("Kokoro is unavailable"));
+  assert.ok(voiceFallbackWarning?.includes("espeak-ng"));
+
+  console.log("PASS: system health uses bounded liveness/readiness budgets, explicit unreachable model state, warmup status file parsing, and voice fallback warnings");
 }
 
 main();

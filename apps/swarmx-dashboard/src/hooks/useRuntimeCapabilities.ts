@@ -17,6 +17,7 @@ export interface RuntimeCapabilities {
   warmup: { done: boolean; coldStartEtaSecs: number | null; source: "file" | "default" } | null;
   voice: {
     preferredProvider: string;
+    fallbackWarning?: string;
     benchmark: {
       generatedAt: string;
       ageHours: number;

@@ -7,7 +7,7 @@ import { useUIStore } from "@/stores/ui";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { DisclosureModeBadge } from "@/components/ui/disclosure-mode-badge";
-import { Cpu, MemoryStick, HardDrive, Network, Bot, AlertCircle, Zap, Gauge, Sparkles } from "lucide-react";
+import { Cpu, MemoryStick, HardDrive, Network, Bot, AlertCircle, Zap, Gauge, Sparkles, X } from "lucide-react";
 import { resolveOperatorName } from "@swarmx/types/operator-map";
 
 // ── Micro sparkline (bar chart) ───────────────────────────────────────────────
@@ -319,9 +319,9 @@ function GovernorSummary() {
             <span
               key={tier}
               className="rounded border border-border/70 bg-bg-surface px-1.5 py-0.5 text-[9px] font-mono text-text-muted"
-              title={`${operatorName} token ceiling`}
+              title={`${operatorName} max context tokens for this stage`}
             >
-              {operatorName}:{limit}
+              {operatorName}:{limit} tok
             </span>
             );
           })}
@@ -341,6 +341,25 @@ export function TelemetryRail() {
   const netRxHistory = useEventsStore((s) => s.netRxHistory);
   const isStale = useEventsStore((s) => s.isStale);
   const lastEventAt = useEventsStore((s) => s.lastEventAt);
+  const drawerOpen = useUIStore((s) => s.telemetryDrawerOpen);
+  const closeDrawer = useUIStore((s) => s.closeTelemetryDrawer);
+  const drawerDialogRef = React.useRef<HTMLDialogElement | null>(null);
+
+  React.useEffect(() => {
+    if (!drawerOpen) return;
+    const dialog = drawerDialogRef.current;
+    if (!dialog) return;
+
+    if (!dialog.open) {
+      dialog.showModal();
+    }
+
+    return () => {
+      if (dialog.open) {
+        dialog.close();
+      }
+    };
+  }, [drawerOpen]);
 
   const lastUpdated = React.useMemo(() => {
     if (!lastEventAt) return null;
@@ -376,7 +395,7 @@ export function TelemetryRail() {
     memSparkColor = "var(--color-resource-warn)";
   }
 
-  return (
+  const rail = (
     <aside
       className={cn(
         "row-start-2 col-start-3 flex flex-col",
@@ -542,6 +561,42 @@ export function TelemetryRail() {
         </div>
       </ScrollArea>
     </aside>
+  );
+
+  return (
+    <>
+      <div className="hidden lg:contents">{rail}</div>
+      {drawerOpen && (
+        <dialog
+          ref={drawerDialogRef}
+          aria-modal="true"
+          aria-label="Live telemetry drawer"
+          className="fixed inset-0 z-100 flex bg-transparent lg:hidden"
+          onCancel={(event) => {
+            event.preventDefault();
+            closeDrawer();
+          }}
+        >
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/65"
+            aria-label="Close telemetry drawer"
+            onClick={closeDrawer}
+          />
+          <div className="relative ml-auto flex h-dvh w-full max-w-[22rem] flex-col border-l border-border bg-bg-surface shadow-[0_24px_48px_rgba(0,0,0,0.55)]">
+            <button
+              type="button"
+              className="absolute right-2 top-2 z-10 rounded p-1 text-text-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+              aria-label="Close telemetry drawer"
+              onClick={closeDrawer}
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+            {rail}
+          </div>
+        </dialog>
+      )}
+    </>
   );
 }
 

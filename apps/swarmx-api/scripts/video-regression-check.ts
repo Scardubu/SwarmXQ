@@ -501,6 +501,34 @@ assert.ok(
   rendererSource.includes("drawgrid-and-drawbox-motion-system"),
   "template lineage must describe the upgraded local background system",
 );
+assert.ok(
+  rendererSource.includes("STYLE_MOTION_PROFILES") && rendererSource.includes("hookBoost"),
+  "renderer must keep style-aware motion profiles with hook-window amplitude boost",
+);
+assert.ok(
+  rendererSource.includes("NICHE_ACCENT_OFFSETS") && rendererSource.includes("resolveNicheAccentColor"),
+  "renderer must apply deterministic niche-aware accent transforms",
+);
+assert.ok(
+  rendererSource.includes("Third parallax layer") && rendererSource.includes("slowPanelSpeed"),
+  "renderer must keep the third slow parallax drawbox layer",
+);
+assert.ok(
+  rendererSource.includes("synthesizeSegments") && rendererVoiceProviderSource.includes("prosodySegments"),
+  "renderer must route Kokoro narration through section-aware prosody segments",
+);
+
+const workflowSource = await readFile(new URL("../src/services/video-workflows.ts", import.meta.url), "utf8");
+assert.ok(
+  workflowSource.includes("buildCreativeComfyPrompt"),
+  "ComfyUI workflow generation must expose a creative prompt builder",
+);
+for (const axis of ["tone:", "niche:", "style:"]) {
+  assert.ok(
+    workflowSource.includes(axis),
+    `ComfyUI creative prompt must include ${axis} metadata`,
+  );
+}
 
 // ── V6.2.16 — Export cleanup service ─────────────────────────────────────────
 const cleanupSource = await readFile(new URL("../src/services/video-cleanup.ts", import.meta.url), "utf8");

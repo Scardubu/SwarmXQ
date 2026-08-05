@@ -4,7 +4,52 @@
 
 ---
 
-## V6.2.59 — Low-RAM Auto-Enable ESM Ordering Fix (2026-08-05)
+## V6.2.61 — Video Dashboard Motion, Prosody, and Mobile Usability (2026-08-05)
+
+### API — style-aware renderer motion and Comfy prompt parity
+
+- FFmpeg fallback motion now combines tone palette, niche accent transforms,
+  style-specific pulse/drift profiles, a third slow parallax `drawbox` layer,
+  and a hook-window amplitude boost derived from caption card timing.
+- ComfyUI LTX workflow prompts now include the user prompt plus `tone`, `niche`,
+  `style`, and first storyboard frame context so the optional generated-backdrop
+  path diversifies along the same creative axes as the FFmpeg fallback.
+- `video-regression-check.ts` now guards the new style/niche/hook motion
+  markers and Comfy prompt axis metadata.
+
+### API/dashboard — Kokoro prosody and fallback visibility
+
+- Voice contracts now carry optional `tone` on synthesis requests and optional
+  `prosodySegments` on voice artifacts.
+- Kokoro synthesis can segment HOOK/BODY/RESOLUTION/CTA narration with
+  section-specific speaking rates, and storytime dialogue can route quoted
+  lines to a second Kokoro speaker while Piper/eSpeak remain single-pass
+  fallbacks.
+- `/api/system/health` can now return a voice fallback warning when Kokoro is
+  unavailable and benchmark/provider state selects another provider; dashboard
+  runtime guidance surfaces that warning without blocking submission.
+
+### Dashboard — form guidance, shortcuts, telemetry drawer
+
+- Video form selects now show output-oriented help for niche, tone, style,
+  caption style, voice, and Kokoro profile choices.
+- Voice preview controls are wired for static Kokoro assets under
+  `public/audio/voice-previews/`. Five real Kokoro-generated WAV clips now ship
+  with the dashboard and were verified with `ffprobe`; controls remain guarded
+  by the missing-asset affordance if those files are removed in a future build.
+- Added a `?` shortcuts overlay, mobile telemetry drawer controlled by the
+  existing telemetry toggle, explicit `tok` suffixes for operator token
+  ceilings, a first-run queue CTA that focuses quick-start presets, and a
+  compact failed-card next-action line.
+- The shortcuts overlay and mobile telemetry drawer now use native modal
+  dialog activation so background dashboard controls are inert to keyboard and
+  assistive-technology users while overlays are open.
+- Browser verification found an already-running dashboard on port `3000`
+  serving stale `_next/static/chunks/*` assets. A fresh production server from
+  the rebuilt output served all chunks at 200; restart the live dashboard after
+  this release so port `3000` picks up the rebuilt assets.
+
+## V6.2.60 — Low-RAM Auto-Enable Fix + Voice Profile Routing (2026-08-05)
 
 ### Video pipeline — low-RAM auto-enable now actually engages on constrained hosts
 

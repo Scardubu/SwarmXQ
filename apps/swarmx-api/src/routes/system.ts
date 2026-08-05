@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { getAvailableModels, fastHealthProbe } from "../services/ollama.js";
 import { getSwarmHealthSummary } from "../services/swarm-pressure-monitor.js";
 import { resolveRuntimeProfile } from "../services/runtime-profiles.js";
+import type { LoadedVoiceBenchmark } from "../services/voice-benchmark-report.js";
 import { readVoiceBenchmarkReport } from "../services/voice-benchmark-report.js";
 import { loadEnv } from "../lib/env.js";
 import { resolveCanonicalTag } from "@swarmx/types/operator-map";
@@ -65,6 +66,26 @@ export function getSystemHealthLivenessTimeoutMs(): number {
 
 export function getSystemHealthModelTimeoutMs(): number {
   return loadEnv().SWARMX_SYSTEM_HEALTH_MODEL_PROBE_TIMEOUT_MS;
+}
+
+export function buildVoiceFallbackWarning(voiceBenchmark: LoadedVoiceBenchmark | null): string | null {
+  if (!voiceBenchmark || voiceBenchmark.stale) {
+    return null;
+  }
+
+  const kokoro = voiceBenchmark.report.measurements.find((measurement) => measurement.providerId === "kokoro");
+  if (!kokoro || kokoro.probeState === "available") {
+    return null;
+  }
+
+  const recommendedProviderId = voiceBenchmark.report.recommendedProviderId;
+  if (!recommendedProviderId || recommendedProviderId === "kokoro") {
+    return null;
+  }
+
+  const recommended = voiceBenchmark.report.measurements.find((measurement) => measurement.providerId === recommendedProviderId);
+  const qualityTier = recommended?.qualityTier ?? "unknown quality";
+  return `Kokoro is ${kokoro.probeState}; voice generation will use ${recommendedProviderId} (${qualityTier}) until the Kokoro service recovers.`;
 }
 
 // ─── Warmup status (V6.2.26) ─────────────────────────────────────────────────
@@ -213,6 +234,7 @@ export async function systemRouter(server: FastifyInstance): Promise<void> {
       : null;
 
     const swarm = getSwarmHealthSummary();
+    const voiceFallbackWarning = buildVoiceFallbackWarning(voiceBenchmark);
     const runtimeProfile = resolveRuntimeProfile({
       totalRamMb: Math.floor(mem.total / 1024 ** 2),
       availableRamMb: Math.floor(mem.available / 1024 ** 2),
@@ -242,6 +264,7 @@ export async function systemRouter(server: FastifyInstance): Promise<void> {
       warmup: readWarmupStatus(),
       voice: {
         preferredProvider: loadEnv().SWARMX_TTS_PROVIDER,
+        ...(voiceFallbackWarning ? { fallbackWarning: voiceFallbackWarning } : {}),
         benchmark: voiceBenchmark
           ? {
             generatedAt: voiceBenchmark.report.generatedAt,

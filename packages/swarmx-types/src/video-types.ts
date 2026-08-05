@@ -347,6 +347,14 @@ export type VoiceProfileId =
   | "kokoro_contrarian"
   | "kokoro_storytime_dual";
 export type VoiceStoryMode = "single_narrator" | "dialogue_storytime";
+export type VoiceProsodySection = "HOOK" | "BODY" | "RESOLUTION" | "CTA" | "DIALOGUE";
+
+export interface VoiceProsodySegment {
+  section: VoiceProsodySection;
+  voiceId: string;
+  speakingRate: number;
+  durationSeconds?: number;
+}
 
 export interface VoiceCapability {
   providerId: string;
@@ -375,6 +383,7 @@ export interface VoiceSynthesisRequest {
   text: string;
   locale: string;
   voiceId: string;
+  tone?: VideoTone;
   voiceProfileId?: VoiceProfileId;
   storyMode?: VoiceStoryMode;
   speakingRate?: number;
@@ -403,6 +412,7 @@ export interface VoiceArtifact {
   durationSeconds: number;
   peakDbfs?: number;
   integratedLufs?: number;
+  prosodySegments?: VoiceProsodySegment[];
   outputPath: string;
   sha256: string;
   generationLatencyMs: number;

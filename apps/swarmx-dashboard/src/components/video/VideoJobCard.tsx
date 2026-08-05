@@ -13,7 +13,7 @@ import { AlertTriangle, Download, RefreshCw, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useVideoStore } from "../../stores/video";
 import { VideoJobTimeline } from "./VideoJobTimeline";
-import { isTerminalVideoStatus, type VideoJob } from "../../lib/video-dashboard";
+import { errorCodeNextAction, isTerminalVideoStatus, type VideoJob } from "../../lib/video-dashboard";
 import type { ViralitySignal } from "@swarmx/types/video-types";
 import { safeErrorMessage } from "@/lib/utils";
 import { useApiHealth } from "@/hooks/useApiHealth";
@@ -421,6 +421,13 @@ export function VideoJobCard({ job, onSelect, isSelected }: VideoJobCardProps) {
         {/* Timeline — uses VideoJobTimeline (compact mode) */}
         {/* FIX: No more duplicated inline stage rendering logic here */}
         <VideoJobTimeline job={job} compact />
+
+        {job.status === "failed" && job.error?.code && (
+          <p className="rounded border border-status-error/25 bg-status-error/8 px-2.5 py-1.5 text-[10px] leading-4 text-text-secondary">
+            <span className="font-mono uppercase tracking-wide text-status-error">Next</span>{" "}
+            {errorCodeNextAction(job.error.code)}
+          </p>
+        )}
 
         <PublishSummary job={job} />
 

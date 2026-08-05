@@ -5,9 +5,12 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { basename } from "node:path";
 import type {
   AssetLicense,
+  VideoTone,
   VoiceArtifact,
   VoiceCapability,
   VoiceDescriptor,
+  VoiceProsodySection,
+  VoiceProsodySegment,
   VoiceProviderState,
   VoiceSynthesisRequest,
   VoiceQualityTier,
@@ -44,6 +47,19 @@ const KOKORO_SPEED_MAP: Record<string, number> = {
   energetic: 1.1,
 };
 
+const TONE_DEFAULT_VOICE_STYLE: Record<VideoTone, string> = {
+  educational: "educational",
+  urgent: "urgent",
+  warm: "warm",
+  contrarian: "contrarian",
+  cinematic: "cinematic",
+  minimal: "narrator",
+  faceless_broll: "narrator",
+  kinetic_text: "energetic",
+};
+
+const KOKORO_DIALOGUE_VOICE_ID = "af_nicole";
+
 const VOICE_PROFILE_STYLE_MAP: Record<
   Exclude<NonNullable<VoiceSynthesisRequest["voiceProfileId"]>, "auto">,
   string
@@ -65,10 +81,14 @@ const ESPEAK_STYLE_MAP: Record<string, string> = {
 };
 
 export function resolveVoiceStyle(
-  request: Pick<VoiceSynthesisRequest, "voiceId" | "voiceProfileId" | "storyMode">,
+  request: Pick<VoiceSynthesisRequest, "voiceId" | "voiceProfileId" | "storyMode" | "tone">,
 ): string {
   if (request.voiceProfileId && request.voiceProfileId !== "auto") {
     return VOICE_PROFILE_STYLE_MAP[request.voiceProfileId] ?? request.voiceId ?? "default";
+  }
+
+  if ((!request.voiceId || request.voiceId === "default") && request.tone) {
+    return TONE_DEFAULT_VOICE_STYLE[request.tone] ?? "default";
   }
 
   if (request.storyMode === "dialogue_storytime" && (!request.voiceId || request.voiceId === "default")) {
@@ -91,6 +111,12 @@ export interface VoiceProvider {
   listVoices(locale?: string): Promise<VoiceDescriptor[]>;
   synthesize(request: VoiceSynthesisRequest, outputPath: string, signal?: AbortSignal): Promise<VoiceArtifact>;
   health(): Promise<{ providerId: string; state: VoiceProviderState; message: string }>;
+}
+
+export interface SectionVoiceSynthesisSegment {
+  section: VoiceProsodySection;
+  text: string;
+  speakingRate: number;
 }
 
 function execFileChecked(command: string, args: string[], signal?: AbortSignal): Promise<{ stdout: string; stderr: string }> {
@@ -269,6 +295,7 @@ abstract class BaseVoiceProvider implements VoiceProvider {
     normalizedText: string,
     generationLatencyMs: number,
     fallbackReason?: string,
+    prosodySegments?: VoiceProsodySegment[],
   ): Promise<VoiceArtifact> {
     const probe = await probeAudio(outputPath);
     return {
@@ -293,6 +320,7 @@ abstract class BaseVoiceProvider implements VoiceProvider {
       outputPath,
       sha256: await sha256File(outputPath),
       generationLatencyMs,
+      ...(prosodySegments && prosodySegments.length > 0 ? { prosodySegments } : {}),
       ...(fallbackReason ? { fallbackReason } : {}),
       lineage: {
         sourceKind: "generated",
@@ -357,7 +385,7 @@ export class KokoroVoiceProvider extends BaseVoiceProvider {
   }
 
   async listVoices(locale = loadEnv().SWARMX_TTS_LOCALE): Promise<VoiceDescriptor[]> {
-    const uniqueVoices = [...new Set(Object.values(KOKORO_VOICE_MAP))].sort();
+    const uniqueVoices = [...new Set([...Object.values(KOKORO_VOICE_MAP), KOKORO_DIALOGUE_VOICE_ID])].sort();
     return uniqueVoices.map((voiceId) => ({
       providerId: this.id,
       voiceId,
@@ -369,22 +397,21 @@ export class KokoroVoiceProvider extends BaseVoiceProvider {
     }));
   }
 
-  async synthesize(request: VoiceSynthesisRequest, outputPath: string, signal?: AbortSignal): Promise<VoiceArtifact> {
+  private async synthesizeKokoroWav(
+    text: string,
+    voiceId: string,
+    speed: number,
+    outputPath: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
     const env = loadEnv();
-    await mkdir(outputPath.split("/").slice(0, -1).join("/") || ".", { recursive: true });
-    const normalizedText = normalizeScriptForSpeech(request.text);
-    const requestedVoiceStyle = resolveVoiceStyle(request);
-    const voiceId = KOKORO_VOICE_MAP[requestedVoiceStyle] ?? requestedVoiceStyle;
-    const voices = await this.listVoices(request.locale);
-    const descriptor = voices.find((voice) => voice.voiceId === voiceId) ?? voices.find((voice) => voice.voiceId === KOKORO_VOICE_MAP.default) ?? voices[0]!;
-    const started = Date.now();
     const response = await fetch(`${env.SWARMX_TTS_URL}/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        text: normalizedText,
+        text,
         voice: voiceId,
-        speed: KOKORO_SPEED_MAP[requestedVoiceStyle] ?? 1,
+        speed,
       }),
       signal: signal ?? AbortSignal.timeout(VOICE_COMMAND_TIMEOUT_MS),
     });
@@ -400,7 +427,93 @@ export class KokoroVoiceProvider extends BaseVoiceProvider {
       });
     }
     await writeFile(outputPath, Buffer.from(body.wav_b64, "base64"));
+  }
+
+  async synthesize(request: VoiceSynthesisRequest, outputPath: string, signal?: AbortSignal): Promise<VoiceArtifact> {
+    await mkdir(outputPath.split("/").slice(0, -1).join("/") || ".", { recursive: true });
+    const normalizedText = normalizeScriptForSpeech(request.text);
+    const requestedVoiceStyle = resolveVoiceStyle(request);
+    const voiceId = KOKORO_VOICE_MAP[requestedVoiceStyle] ?? requestedVoiceStyle;
+    const voices = await this.listVoices(request.locale);
+    const descriptor = voices.find((voice) => voice.voiceId === voiceId) ?? voices.find((voice) => voice.voiceId === KOKORO_VOICE_MAP.default) ?? voices[0]!;
+    const started = Date.now();
+    await this.synthesizeKokoroWav(
+      normalizedText,
+      voiceId,
+      request.speakingRate ?? KOKORO_SPEED_MAP[requestedVoiceStyle] ?? 1,
+      outputPath,
+      signal,
+    );
     return this.artifactBase(request, outputPath, "kokoro-82m", descriptor, normalizedText, Date.now() - started);
+  }
+
+  async synthesizeSegments(
+    request: VoiceSynthesisRequest,
+    segments: SectionVoiceSynthesisSegment[],
+    outputPath: string,
+    signal?: AbortSignal,
+  ): Promise<VoiceArtifact> {
+    const outputDirectory = outputPath.split("/").slice(0, -1).join("/") || ".";
+    await mkdir(outputDirectory, { recursive: true });
+
+    const requestedVoiceStyle = resolveVoiceStyle(request);
+    const baseVoiceId = KOKORO_VOICE_MAP[requestedVoiceStyle] ?? requestedVoiceStyle;
+    const voices = await this.listVoices(request.locale);
+    const descriptor = voices.find((voice) => voice.voiceId === baseVoiceId) ?? voices.find((voice) => voice.voiceId === KOKORO_VOICE_MAP.default) ?? voices[0]!;
+    const started = Date.now();
+    const normalizedSegments = segments
+      .map((segment, index) => ({
+        ...segment,
+        index,
+        text: normalizeScriptForSpeech(segment.text),
+        voiceId: segment.section === "DIALOGUE" ? KOKORO_DIALOGUE_VOICE_ID : baseVoiceId,
+      }))
+      .filter((segment) => segment.text.length > 0);
+
+    if (normalizedSegments.length === 0) {
+      throw Object.assign(new Error("Narration text is empty after segmentation"), {
+        code: "SCRIPT_NORMALIZATION_EMPTY",
+      });
+    }
+
+    const segmentArtifacts: VoiceProsodySegment[] = [];
+    const segmentPaths: string[] = [];
+    for (const segment of normalizedSegments) {
+      const segmentPath = `${outputPath}.segment-${segment.index}.wav`;
+      await this.synthesizeKokoroWav(segment.text, segment.voiceId, segment.speakingRate, segmentPath, signal);
+      const probe = await probeAudio(segmentPath);
+      segmentPaths.push(segmentPath);
+      segmentArtifacts.push({
+        section: segment.section,
+        voiceId: segment.voiceId,
+        speakingRate: segment.speakingRate,
+        durationSeconds: probe.durationSeconds,
+      });
+    }
+
+    const concatListPath = `${outputPath}.concat.txt`;
+    const concatList = segmentPaths.map((path) => `file '${path.replace(/'/g, "'\\''")}'`).join("\n");
+    await writeFile(concatListPath, `${concatList}\n`, "utf8");
+    await execFileChecked("ffmpeg", [
+      "-y",
+      "-f", "concat",
+      "-safe", "0",
+      "-i", concatListPath,
+      "-ar", String(request.requestedSampleRateHz),
+      "-ac", "2",
+      outputPath,
+    ], signal);
+
+    return this.artifactBase(
+      request,
+      outputPath,
+      "kokoro-82m",
+      descriptor,
+      normalizedSegments.map((segment) => segment.text).join(" "),
+      Date.now() - started,
+      undefined,
+      segmentArtifacts,
+    );
   }
 }
 

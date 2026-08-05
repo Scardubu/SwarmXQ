@@ -149,7 +149,15 @@ The local FFmpeg fallback is no longer a flat-color text plate. Production
 tiers render deterministic `drawgrid` texture, layered motion panels, accent
 scan lines, caption cards, and a progress bar directly in FFmpeg, so upgraded
 backgrounds remain reproducible without external media or model-generated
-filter graphs.
+filter graphs. The V6.2.61 motion pass keeps that CPU-safe filter class while
+adding style-specific pulse/drift profiles, niche-aware accent hue shifts, a
+third slow parallax `drawbox` layer, and a hook-window amplitude boost tied to
+the first caption card timing. Do not replace these with `zoompan`, `vignette`,
+or other heavier filters on the 16 GB CPU-only profile.
+
+The optional ComfyUI path now builds its LTX prompt from the user prompt plus
+`tone`, `niche`, `style`, and first storyboard-frame context. This keeps the
+AI-backdrop path visually aligned with the deterministic FFmpeg fallback.
 
 Kokoro support is installed at the application/provider layer. To make it the
 active neural voice provider on a host, start the local service from the repo
@@ -159,7 +167,14 @@ virtualenv. Install the optional Python extra only if import verification fails.
 SWARMX_TTS_PROVIDER=kokoro .venv/bin/python -m swarmx.services.kokoro_tts_server --port 8888
 ```
 
-If the service is not reachable or reports `engine: unavailable`, the API reports a degraded voice capability and falls back according to `SWARMX_TTS_PROVIDER`.
+If the service is not reachable or reports `engine: unavailable`, the API reports a degraded voice capability and falls back according to `SWARMX_TTS_PROVIDER`. `/api/system/health` can also include a voice fallback warning when Kokoro is unavailable and the benchmarked provider path selects Piper or eSpeak instead; the dashboard shows that as a warning without blocking submission.
+
+Kokoro synthesis supports section-level prosody for structured scripts. HOOK
+segments render slightly faster, BODY uses baseline speed, and
+RESOLUTION/CTA slow down for a deliberate close. For storytime jobs using
+`storyMode: "dialogue_storytime"` or `voiceProfileId:
+"kokoro_storytime_dual"`, quoted/dialogue lines can route to a second Kokoro
+speaker. Piper and eSpeak remain single-pass fallbacks.
 
 Create or extend your `apps/swarmx-dashboard/.env.local`:
 
@@ -371,7 +386,7 @@ Create a new video generation job and enqueue it.
 }
 ```
 
-`voice` remains the coarse fallback hint. `voiceProfileId` pins a concrete recurring profile when supported, and `storyMode` nudges narration defaults for formats like storytime without changing the rest of the script contract. When a Kokoro profile is requested, the renderer now prefers the Kokoro provider ahead of benchmark ordering; if that provider is unavailable, the fallback reason is preserved in the packaged voice artifact.
+`voice` remains the coarse fallback hint. `voiceProfileId` pins a concrete recurring profile when supported, and `storyMode` nudges narration defaults for formats like storytime without changing the rest of the script contract. When a Kokoro profile is requested, the renderer now prefers the Kokoro provider ahead of benchmark ordering; if that provider is unavailable, the fallback reason is preserved in the packaged voice artifact. Kokoro artifacts may also include `prosodySegments` documenting each section's voice id, speaking rate, and measured duration.
 
 **Minimal request:**
 
@@ -1054,8 +1069,13 @@ via the NavRail at keyboard shortcut `⌘7`.
 **Submission UX and failure guidance:**
 
 - The submit form now exposes quick-start presets plus an Essentials/Advanced split so the common path stays short while tone, style, caption, and voice routing remain available.
+- Select controls for niche, tone, style, caption style, voice, and voice profile now explain the visible output effect of the current choice. Voice preview buttons use real Kokoro-generated WAV clips in `apps/swarmx-dashboard/public/audio/voice-previews/`, verified with `ffprobe`; if those clips are removed or not generated in a future build, the controls render disabled instead of substituting another TTS provider.
 - Runtime readiness messaging from `/api/system/health` can block submission before enqueue when RAM or CPU telemetry indicates the host cannot safely admit a full pipeline job.
 - Failed job surfaces now render both the normalized error hint and a concrete next-action string so operators can distinguish retryable pressure problems from missing-binary or configuration failures.
+- The first-run empty queue CTA focuses the quick-start prompt gallery. `?`
+  opens the keyboard shortcuts overlay, and mobile/narrow dashboard layouts use
+  a telemetry drawer controlled by the same telemetry toggle that shows/hides
+  the desktop rail.
 
 **Accessibility notes (V6.2.5+):**
 
@@ -1086,6 +1106,12 @@ via the NavRail at keyboard shortcut `⌘7`.
 - A small `DisclosureModeBadge` next to the Telemetry rail header and the
   Operator Trace section header always shows the active mode so a hidden
   section is never mistaken for missing data.
+- Telemetry token ceilings render with a `tok` suffix and tooltip so operator
+  budget numbers are not confused with RAM or latency.
+- The shortcuts overlay and narrow-viewport telemetry drawer use native modal
+  dialog activation. When either overlay is open, background controls must not
+  appear in the accessibility tree; verify this with `agent-browser snapshot -i`
+  after dashboard changes that touch the shell or overlay components.
 
 ---
 

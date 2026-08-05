@@ -20,6 +20,14 @@ export interface WorkflowParams {
   imageInputPath?: string;
 }
 
+export interface CreativeComfyPromptParams {
+  prompt: string;
+  tone?: string;
+  niche?: string;
+  style?: string;
+  frame?: string;
+}
+
 const MAX_BATCH_FOR_RESOLUTION: Record<VideoResolution, number> = {
   "512x512": 8,
   "512x896": 4,
@@ -159,6 +167,20 @@ function workflow(version: string, modelTag: string, nodes: Record<string, Comfy
     ramBudgetMb: Math.max(1000, Math.round(frameMath.batchSize * 700 + frameMath.totalFrames * 12)),
     frameMath,
   };
+}
+
+export function buildCreativeComfyPrompt(params: CreativeComfyPromptParams): string {
+  const frame = params.frame?.trim();
+  return [
+    params.prompt.trim(),
+    "vertical 9:16",
+    "abstract cinematic backdrop",
+    "no faces",
+    `tone:${params.tone ?? "educational"}`,
+    `niche:${params.niche ?? "motivational"}`,
+    `style:${params.style ?? "faceless_broll"}`,
+    frame ? `first_scene:${frame}` : null,
+  ].filter((part): part is string => Boolean(part)).join(", ");
 }
 
 export function generateLTXWorkflow(params: WorkflowParams): ComfyWorkflow {

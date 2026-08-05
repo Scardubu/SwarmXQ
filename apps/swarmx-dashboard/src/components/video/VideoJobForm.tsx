@@ -1,7 +1,7 @@
 "use client";
 
-import { useId, useState } from "react";
-import { AlertTriangle, Clapperboard, Loader2, Sparkles } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
+import { AlertTriangle, Clapperboard, Info, Loader2, Sparkles, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { QUICK_START_PRESETS, mapQuickStartPresetToDraft, type QuickStartPreset } from "@/lib/video-form-presets";
@@ -10,6 +10,35 @@ import type { VideoJobRequest } from "../../lib/video-dashboard";
 
 type ModelRoute = NonNullable<VideoJobRequest["modelTier"]> | "auto";
 
+type SelectOption<T extends string> = {
+  value: T;
+  label: string;
+  help?: string;
+  previewSrc?: string | undefined;
+  previewUnavailable?: boolean;
+};
+
+const VOICE_PREVIEW_ASSETS_READY = true;
+const VOICE_PREVIEW_ASSETS: Record<string, string> = {
+  default: "/audio/voice-previews/kokoro-narrator.wav",
+  calm: "/audio/voice-previews/kokoro-warm.wav",
+  energetic: "/audio/voice-previews/kokoro-energetic.wav",
+  narrator: "/audio/voice-previews/kokoro-narrator.wav",
+  kokoro_warm: "/audio/voice-previews/kokoro-warm.wav",
+  kokoro_narrator: "/audio/voice-previews/kokoro-narrator.wav",
+  kokoro_energetic: "/audio/voice-previews/kokoro-energetic.wav",
+  kokoro_contrarian: "/audio/voice-previews/kokoro-contrarian.wav",
+  kokoro_storytime_dual: "/audio/voice-previews/kokoro-storytime-dual.wav",
+};
+
+function previewAsset(key: keyof typeof VOICE_PREVIEW_ASSETS): string | undefined {
+  return VOICE_PREVIEW_ASSETS_READY ? VOICE_PREVIEW_ASSETS[key] : undefined;
+}
+
+function playPreview(src: string): void {
+  if (typeof Audio === "undefined") return;
+  void new Audio(src).play();
+}
 
 function Select<T extends string>({
   id,
@@ -23,32 +52,58 @@ function Select<T extends string>({
   label: string;
   value: T;
   onChange: (v: T) => void;
-  options: { value: T; label: string }[];
+  options: SelectOption<T>[];
   disabled?: boolean;
 }) {
+  const selected = options.find((option) => option.value === value);
+  const selectedPreviewSrc = selected?.previewSrc;
+  const selectedLabel = selected?.label ?? label;
+  const showPreviewControl = Boolean(selectedPreviewSrc || selected?.previewUnavailable);
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       <label htmlFor={id} className="text-[10px] font-mono uppercase tracking-wide text-text-muted">
         {label}
       </label>
-      <select
-        id={id}
-        value={value}
-        onChange={(event) => onChange(event.target.value as T)}
-        disabled={disabled}
-        className={cn(
-          "h-9 w-full rounded border border-border bg-bg-input px-2.5 text-sm text-text-primary",
-          "transition-colors duration-(--duration-micro)",
-          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
-          "disabled:cursor-not-allowed disabled:opacity-50",
+      <div className="flex items-center gap-1.5">
+        <select
+          id={id}
+          value={value}
+          onChange={(event) => onChange(event.target.value as T)}
+          disabled={disabled}
+          className={cn(
+            "h-9 min-w-0 flex-1 rounded border border-border bg-bg-input px-2.5 text-sm text-text-primary",
+            "transition-colors duration-(--duration-micro)",
+            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
+            "disabled:cursor-not-allowed disabled:opacity-50",
+          )}
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        {showPreviewControl && (
+          <button
+            type="button"
+            onClick={() => {
+              if (selectedPreviewSrc) playPreview(selectedPreviewSrc);
+            }}
+            disabled={disabled || !selectedPreviewSrc}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-border bg-bg-surface text-text-muted hover:text-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
+            title={selectedPreviewSrc ? `Play ${selectedLabel} preview` : "Kokoro preview asset is not generated yet"}
+            aria-label={selectedPreviewSrc ? `Play ${selectedLabel} voice preview` : `${selectedLabel} voice preview unavailable`}
+          >
+            <Volume2 className="h-4 w-4" aria-hidden="true" />
+          </button>
         )}
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      </div>
+      {selected?.help && (
+        <p className="flex items-start gap-1 text-[10px] leading-4 text-text-muted">
+          <Info className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+          <span>{selected.help}</span>
+        </p>
+      )}
     </div>
   );
 }
@@ -57,14 +112,17 @@ interface VideoJobFormProps {
   onSubmitted?: (jobId: string) => void;
   submissionBlocked?: boolean;
   submissionBlockReason?: string | null;
+  presetFocusSignal?: number;
 }
 
 export function VideoJobForm({
   onSubmitted,
   submissionBlocked = false,
   submissionBlockReason = null,
+  presetFocusSignal = 0,
 }: VideoJobFormProps) {
   const formId = useId();
+  const presetGroupRef = useRef<HTMLDivElement | null>(null);
   const { submitJob, isSubmitting, submitError, clearErrors } = useVideoStore();
 
   const [prompt, setPrompt] = useState("");
@@ -86,6 +144,12 @@ export function VideoJobForm({
   const canSubmit = trimmedPrompt.length > 0 && !isSubmitting && !submissionBlocked;
   const modelTier = modelRoute === "auto" ? undefined : modelRoute;
   const submitDescriptionId = submissionBlocked ? `${formId}-submit-blocked` : undefined;
+
+  useEffect(() => {
+    if (presetFocusSignal === 0) return;
+    presetGroupRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    presetGroupRef.current?.focus();
+  }, [presetFocusSignal]);
 
   const applyQuickStart = (preset: QuickStartPreset) => {
     const draft = mapQuickStartPresetToDraft(preset);
@@ -177,7 +241,13 @@ export function VideoJobForm({
         >
           Prompt
         </label>
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Quick-start prompt presets">
+        <div
+          ref={presetGroupRef}
+          className="flex flex-wrap gap-1.5"
+          role="group"
+          aria-label="Quick-start prompt presets"
+          tabIndex={-1}
+        >
           {QUICK_START_PRESETS.map((preset) => (
             <button
               key={preset.id}
@@ -271,10 +341,10 @@ export function VideoJobForm({
             onChange={setVoice}
             disabled={isSubmitting}
             options={[
-              { value: "default", label: "Default" },
-              { value: "calm", label: "Calm" },
-              { value: "energetic", label: "Energetic" },
-              { value: "narrator", label: "Narrator" },
+              { value: "default", label: "Default", help: "Auto-selects a Kokoro speaker from the selected tone when Kokoro is available.", previewSrc: previewAsset("default"), previewUnavailable: !VOICE_PREVIEW_ASSETS_READY },
+              { value: "calm", label: "Calm", help: "Uses a warmer, slower delivery for reflective story and tutorial pacing.", previewSrc: previewAsset("calm"), previewUnavailable: !VOICE_PREVIEW_ASSETS_READY },
+              { value: "energetic", label: "Energetic", help: "Uses a faster, assertive delivery for kinetic text and urgent hooks.", previewSrc: previewAsset("energetic"), previewUnavailable: !VOICE_PREVIEW_ASSETS_READY },
+              { value: "narrator", label: "Narrator", help: "Uses a measured voice that suits cinematic and faceless b-roll formats.", previewSrc: previewAsset("narrator"), previewUnavailable: !VOICE_PREVIEW_ASSETS_READY },
             ]}
           />
         </div>
@@ -301,12 +371,12 @@ export function VideoJobForm({
               onChange={setNiche}
               disabled={isSubmitting}
               options={[
-                { value: "tech", label: "Tech" },
-                { value: "motivational", label: "Motivational" },
-                { value: "finance", label: "Finance" },
-                { value: "facts", label: "Facts" },
-                { value: "true_crime", label: "True Crime" },
-                { value: "other", label: "Other" },
+                { value: "tech", label: "Tech", help: "Shifts accents brighter and cooler so UI or code concepts feel sharper." },
+                { value: "motivational", label: "Motivational", help: "Keeps accents warmer and slightly brighter for higher-energy calls to action." },
+                { value: "finance", label: "Finance", help: "Shifts accents toward blue-green for a cooler, analytical look." },
+                { value: "facts", label: "Facts", help: "Uses colder, cleaner accents so explainers read as evidence-led." },
+                { value: "true_crime", label: "True Crime", help: "Desaturates the accent and darkens the palette for a colder reveal tone." },
+                { value: "other", label: "Other", help: "Uses the tone palette with only a small neutral adjustment." },
               ]}
             />
             <Select
@@ -330,14 +400,14 @@ export function VideoJobForm({
               onChange={setTone}
               disabled={isSubmitting}
               options={[
-                { value: "educational", label: "Educational" },
-                { value: "urgent", label: "Urgent" },
-                { value: "warm", label: "Warm" },
-                { value: "contrarian", label: "Contrarian" },
-                { value: "cinematic", label: "Cinematic" },
-                { value: "minimal", label: "Minimal" },
-                { value: "faceless_broll", label: "Faceless B-roll" },
-                { value: "kinetic_text", label: "Kinetic Text" },
+                { value: "educational", label: "Educational", help: "Blue-led palette with steady motion for explanatory pacing." },
+                { value: "urgent", label: "Urgent", help: "Red-orange palette with stronger early pulse for time-pressure hooks." },
+                { value: "warm", label: "Warm", help: "Peach accent and gentler drift for mentor-style narration." },
+                { value: "contrarian", label: "Contrarian", help: "High-contrast red accent for disagreement and myth-busting beats." },
+                { value: "cinematic", label: "Cinematic", help: "Gold accent and slower ambient motion for story-first framing." },
+                { value: "minimal", label: "Minimal", help: "White-on-black treatment with restrained motion and sparse captions." },
+                { value: "faceless_broll", label: "Faceless B-roll", help: "Neutral palette that lets b-roll and voice-over carry the scene." },
+                { value: "kinetic_text", label: "Kinetic Text", help: "High-contrast caption focus with faster pulse and sharper panels." },
               ]}
             />
             <Select
@@ -347,11 +417,11 @@ export function VideoJobForm({
               onChange={setStyle}
               disabled={isSubmitting}
               options={[
-                { value: "faceless_broll", label: "Faceless B-roll" },
-                { value: "kinetic_text", label: "Kinetic Text" },
-                { value: "storytime", label: "Storytime" },
-                { value: "tutorial", label: "Tutorial" },
-                { value: "myth_busting", label: "Myth Busting" },
+                { value: "faceless_broll", label: "Faceless B-roll", help: "Slower soft-panel movement beneath captions for voice-over scenes." },
+                { value: "kinetic_text", label: "Kinetic Text", help: "Faster pulse and scan motion to make text the primary visual object." },
+                { value: "storytime", label: "Storytime", help: "Calmer drift and optional dialogue voice routing for quoted lines." },
+                { value: "tutorial", label: "Tutorial", help: "Stable instructional pacing with low-amplitude motion." },
+                { value: "myth_busting", label: "Myth Busting", help: "Sharper reveal pulse during the hook before settling into proof." },
               ]}
             />
             <Select
@@ -361,9 +431,9 @@ export function VideoJobForm({
               onChange={setCaptionStyle}
               disabled={isSubmitting}
               options={[
-                { value: "bold_center", label: "Bold Center" },
-                { value: "lower_third", label: "Lower Third" },
-                { value: "minimal", label: "Minimal" },
+                { value: "bold_center", label: "Bold Center", help: "Large centered cards for high-retention text-first shorts." },
+                { value: "lower_third", label: "Lower Third", help: "Moves captions lower so background motion and b-roll stay visible." },
+                { value: "minimal", label: "Minimal", help: "Smaller caption box with lighter backing for sparse visual treatments." },
               ]}
             />
             <Select
@@ -373,12 +443,12 @@ export function VideoJobForm({
               onChange={setVoiceProfileId}
               disabled={isSubmitting}
               options={[
-                { value: "auto", label: "Auto" },
-                { value: "kokoro_warm", label: "Kokoro Warm" },
-                { value: "kokoro_narrator", label: "Kokoro Narrator" },
-                { value: "kokoro_energetic", label: "Kokoro Energetic" },
-                { value: "kokoro_contrarian", label: "Kokoro Contrarian" },
-                { value: "kokoro_storytime_dual", label: "Kokoro Storytime Dual" },
+                { value: "auto", label: "Auto", help: "Uses benchmark ranking unless a Kokoro profile is pinned." },
+                { value: "kokoro_warm", label: "Kokoro Warm", help: "Pins the warm Kokoro speaker across repeat submissions.", previewSrc: previewAsset("kokoro_warm"), previewUnavailable: !VOICE_PREVIEW_ASSETS_READY },
+                { value: "kokoro_narrator", label: "Kokoro Narrator", help: "Pins a measured narrator voice for explainers and cinematic shorts.", previewSrc: previewAsset("kokoro_narrator"), previewUnavailable: !VOICE_PREVIEW_ASSETS_READY },
+                { value: "kokoro_energetic", label: "Kokoro Energetic", help: "Pins a faster speaker for urgent and kinetic text formats.", previewSrc: previewAsset("kokoro_energetic"), previewUnavailable: !VOICE_PREVIEW_ASSETS_READY },
+                { value: "kokoro_contrarian", label: "Kokoro Contrarian", help: "Pins a sharper speaker for myth-busting and disagreement hooks.", previewSrc: previewAsset("kokoro_contrarian"), previewUnavailable: !VOICE_PREVIEW_ASSETS_READY },
+                { value: "kokoro_storytime_dual", label: "Kokoro Storytime Dual", help: "Pins narrator plus a second Kokoro speaker for quoted storytime lines.", previewSrc: previewAsset("kokoro_storytime_dual"), previewUnavailable: !VOICE_PREVIEW_ASSETS_READY },
               ]}
             />
             <Select

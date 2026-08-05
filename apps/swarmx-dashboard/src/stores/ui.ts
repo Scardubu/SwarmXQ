@@ -17,6 +17,8 @@ interface UIState {
   commandPaletteOpen: boolean;
   // Telemetry rail
   telemetryRailVisible: boolean;
+  telemetryDrawerOpen: boolean;
+  shortcutsOpen: boolean;
   // Progressive disclosure mode
   operatorViewMode: "client" | "operator";
 }
@@ -29,6 +31,10 @@ interface UIActions {
   openCommandPalette: () => void;
   closeCommandPalette: () => void;
   toggleTelemetryRail: () => void;
+  toggleTelemetryDrawer: () => void;
+  closeTelemetryDrawer: () => void;
+  openShortcuts: () => void;
+  closeShortcuts: () => void;
   toggleOperatorViewMode: () => void;
   // Terminal tabs
   addTerminalTab: (label?: string, agentId?: string) => TerminalTab;
@@ -58,6 +64,8 @@ export const useUIStore = create<UIState & UIActions>()(
     activeTerminalTabId: DEFAULT_TAB.id,
     commandPaletteOpen: false,
     telemetryRailVisible: true,
+    telemetryDrawerOpen: false,
+    shortcutsOpen: false,
     operatorViewMode: "client",
 
     toggleNav: () => set((s) => ({ navExpanded: !s.navExpanded })),
@@ -80,6 +88,14 @@ export const useUIStore = create<UIState & UIActions>()(
 
     toggleTelemetryRail: () =>
       set((s) => ({ telemetryRailVisible: !s.telemetryRailVisible })),
+
+    toggleTelemetryDrawer: () =>
+      set((s) => ({ telemetryDrawerOpen: !s.telemetryDrawerOpen })),
+
+    closeTelemetryDrawer: () => set({ telemetryDrawerOpen: false }),
+
+    openShortcuts: () => set({ shortcutsOpen: true }),
+    closeShortcuts: () => set({ shortcutsOpen: false }),
 
     toggleOperatorViewMode: () =>
       set((s) => ({ operatorViewMode: s.operatorViewMode === "client" ? "operator" : "client" })),
